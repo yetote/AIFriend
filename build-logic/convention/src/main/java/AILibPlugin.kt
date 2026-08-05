@@ -20,17 +20,16 @@ import org.gradle.api.Project
 import org.gradle.kotlin.dsl.apply
 import org.gradle.kotlin.dsl.configure
 import org.gradle.kotlin.dsl.dependencies
-import com.logic.convention.utils.configureKotlinAndroid
+import com.logic.convention.utils.configureKotlinLib
 import com.logic.convention.utils.libs
 
 class AILibPlugin : Plugin<Project> {
     override fun apply(target: Project) {
         with(target) {
             apply(plugin = "com.android.library")
-            apply(plugin = "org.jetbrains.kotlin.android")
 
             extensions.configure<LibraryExtension> {
-                configureKotlinAndroid(this)
+                configureKotlinLib(this)
                 testOptions.targetSdk = 36
                 lint.targetSdk = 36
                 defaultConfig.testInstrumentationRunner =

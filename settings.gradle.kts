@@ -26,4 +26,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "AIFriend"
 include(":app")
- 
+include(":core:ai")
