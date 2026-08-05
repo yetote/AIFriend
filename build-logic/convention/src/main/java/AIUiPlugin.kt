@@ -11,7 +11,6 @@ class AIUiPlugin : Plugin<Project> {
         with(target) {
             apply(plugin = "com.ai.library")
             apply(plugin = "org.jetbrains.kotlin.plugin.compose")
-            apply(plugin = "org.jetbrains.kotlin.android")
 
             extensions.configure<LibraryExtension> {
                 testOptions.animationsDisabled = true
