@@ -1,0 +1,123 @@
+apply plugin: 'base'
+
+project.ext {
+    OUTPUT_FILE = file("docs/module_dependency_graph.md")
+}
+
+task generateModuleGraph(type: DefaultTask) {
+    group = "Documentation"
+    outputs.upToDateWhen { false }
+
+    doLast {
+        def rootProject = project.rootProject
+        def allModules = []
+        def moduleDeps = [:].withDefault { [] }
+
+        rootProject.allprojects { p ->
+            allModules.add(p.name)
+            moduleDeps[p.name] = parseModuleDependencies(p)
+        }
+
+        def layer1_app = []
+        def layer2_ui = []
+        def layer3_feature = []
+        def layer4_core = []
+
+        allModules.each { name ->
+            if (name == "app") layer1_app.add(name)
+            else if (name.contains("ui")) layer2_ui.add(name)
+            else if (name.contains("feature")) layer3_feature.add(name)
+            else if (name.contains("core")) layer4_core.add(name)
+        }
+
+        // ==========================
+        // 最强修复：强制垂直分层，永不横躺
+        // ==========================
+        def mermaid = new StringBuilder()
+        mermaid.append("```mermaid\n")
+        mermaid.append("graph TD\n")
+        mermaid.append("    direction TD\n")
+
+        // 第一层 APP（最上面）
+        mermaid.append("    subgraph 第一层 APP 入口\n")
+        layer1_app.each { mermaid.append("        A_$it([$it])\n") }
+        mermaid.append("    end\n")
+
+        // 第二层 UI
+        mermaid.append("    subgraph 第二层 UI 层\n")
+        layer2_ui.each { mermaid.append("        B_$it([$it])\n") }
+        mermaid.append("    end\n")
+
+        // 第三层 Feature
+        mermaid.append("    subgraph 第三层 业务 FEATURE 层\n")
+        layer3_feature.each { mermaid.append("        C_$it([$it])\n") }
+        mermaid.append("    end\n")
+
+        // 第四层 Core（最下面）
+        mermaid.append("    subgraph 第四层 核心 CORE 层\n")
+        layer4_core.each { mermaid.append("        D_$it([$it])\n") }
+        mermaid.append("    end\n")
+
+        // 强制层级顺序（关键！不会横了）
+        layer1_app.each { a ->
+            layer2_ui.each { ui ->
+                mermaid.append("    A_$a --> B_$ui\n")
+            }
+        }
+        layer2_ui.each { ui ->
+            layer3_feature.each { f ->
+                mermaid.append("    B_$ui --> C_$f\n")
+            }
+        }
+        layer3_feature.each { f ->
+            layer4_core.each { c ->
+                mermaid.append("    C_$f --> D_$c\n")
+            }
+        }
+
+        mermaid.append("```")
+
+        OUTPUT_FILE.parentFile.mkdirs()
+        OUTPUT_FILE.write("""
+# 项目模块化分层架构图（垂直版）
+
+${mermaid}
+
+---
+## 分层结构（从上到下）
+1️⃣ APP 入口层
+2️⃣ UI 组件层
+3️⃣ Feature 业务层
+4️⃣ Core 核心层
+""", "UTF-8")
+
+        println "✅ 垂直分层图生成成功！docs/module_dependency_graph.md"
+    }
+}
+
+def parseModuleDependencies(project) {
+    def deps = []
+    def files = [
+            new File(project.projectDir, "build.gradle"),
+            new File(project.projectDir, "build.gradle.kts")
+    ]
+
+    files.each { file ->
+        if (file.exists()) {
+            def text = file.text
+            def matcher = (text =~ /project\(['"](:?[a-zA-Z0-9_\-:]+)['"]\)/)
+            matcher.each {
+                def moduleName = it[1].replace(":", "")
+                if (moduleName != project.name && !deps.contains(moduleName)) {
+                    deps.add(moduleName)
+                }
+            }
+        }
+    }
+    return deps
+}
+
+task generateGraph(type: DefaultTask) {
+    group "Documentation"
+    dependsOn generateModuleGraph
+}
