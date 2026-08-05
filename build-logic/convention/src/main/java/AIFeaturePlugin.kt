@@ -15,14 +15,12 @@
  */
 
 import com.android.build.api.dsl.LibraryExtension
+import com.logic.convention.utils.libs
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.kotlin.dsl.apply
 import org.gradle.kotlin.dsl.configure
 import org.gradle.kotlin.dsl.dependencies
-import com.logic.convention.utils.configureKotlinAndroid
-import com.logic.convention.utils.libs
-import com.logic.convention.utils.project
 
 class AIFeaturePlugin : Plugin<Project> {
     override fun apply(target: Project) {
@@ -41,7 +39,6 @@ class AIFeaturePlugin : Plugin<Project> {
                 "implementation"(libs.findLibrary("androidx.lifecycle.viewmodel").get())
                 "implementation"(libs.findLibrary("cn.therouter.route").get())
 
-                "implementation"(project.project(":core:utils"))
 
                 "testImplementation"(libs.findLibrary("junit").get())
                 "androidTestImplementation"(

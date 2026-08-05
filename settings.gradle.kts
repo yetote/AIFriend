@@ -27,3 +27,5 @@ dependencyResolutionManagement {
 rootProject.name = "AIFriend"
 include(":app")
 include(":core:ai")
+include(":feature:werewolf")
+include(":ui:werewolf")
