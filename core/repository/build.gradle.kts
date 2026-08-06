@@ -4,11 +4,10 @@ plugins {
 }
 
 android {
-    namespace = "com.core.ai"
+    namespace = "com.core.repository"
 }
 
 dependencies {
-    implementation(project(":core:repository"))
-    implementation(libs.androidx.datastore)
+    implementation(project(":core:network"))
     implementation(libs.ktor.serialization.json)
 }

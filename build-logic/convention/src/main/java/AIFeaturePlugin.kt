@@ -26,7 +26,6 @@ class AIFeaturePlugin : Plugin<Project> {
     override fun apply(target: Project) {
         with(target) {
             apply(plugin = "com.ai.library")
-
             extensions.configure<LibraryExtension> {
                 testOptions.animationsDisabled = true
             }
@@ -34,9 +33,8 @@ class AIFeaturePlugin : Plugin<Project> {
             dependencies {
                 "implementation"(libs.findLibrary("androidx.core.ktx").get())
                 "implementation"(libs.findLibrary("androidx.appcompat").get())
-                "implementation"(libs.findLibrary("androidx.appcompat").get())
                 "implementation"(libs.findLibrary("androidx.lifecycle.viewmodel").get())
-                "implementation"(libs.findLibrary("androidx.lifecycle.viewmodel").get())
+                "implementation"(libs.findLibrary("androidx.compose.viewmodel").get())
                 "implementation"(libs.findLibrary("cn.therouter.route").get())
 
 

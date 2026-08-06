@@ -14,9 +14,6 @@ class AIUiPlugin : Plugin<Project> {
 
             extensions.configure<LibraryExtension> {
                 testOptions.animationsDisabled = true
-                buildFeatures {
-                    compose = true
-                }
             }
 
             dependencies {

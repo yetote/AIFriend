@@ -1,5 +1,6 @@
 plugins {
     alias(libs.plugins.ai.feature)
+    alias(libs.plugins.kotlin.compose)
 }
 
 android {
