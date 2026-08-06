@@ -1,5 +1,6 @@
 plugins {
     alias(libs.plugins.ai.library)
+    alias (libs.plugins.ktor.serialization)
 }
 
 android {
@@ -7,5 +8,7 @@ android {
 }
 
 dependencies {
+    implementation(project(":core:repository"))
     implementation(libs.androidx.datastore)
+    implementation(libs.ktor.serialization.json)
 }
