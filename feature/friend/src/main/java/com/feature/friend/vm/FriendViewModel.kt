@@ -1,6 +1,5 @@
 package com.feature.friend.vm
 
-import android.view.View
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.core.ai.entity.IAI
@@ -15,10 +14,15 @@ class FriendViewModel : ViewModel() {
         if (aiClass != null) {
             friend = aiFactory.createAI(aiClass)
         }
+        requestModel()
+    }
+
+    fun requestModel() = viewModelScope.launch {
+        friend?.requestModel()
         chat("你好呀,你是谁？")
     }
 
     fun chat(message: String) = viewModelScope.launch {
-        friend?.chat(message)
+        friend?.chat(message, friend?.modelSet?.first() ?: "")
     }
 }
