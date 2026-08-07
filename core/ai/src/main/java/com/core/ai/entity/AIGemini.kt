@@ -1,20 +1,22 @@
 package com.core.ai.entity
 
-import android.util.Log
-import com.core.ai.GEMINI_KEY
 import com.core.ai.model.AIRequestBody
+import com.core.repository.AIConfigs
 import com.core.repository.WebRepository
 
-class AIGemini() : IAI {
-    override suspend fun chat(message: String): String {
+class AIGemini : IAI {
+    val config = AIConfigs.geminiConfig()
+    override suspend fun chat(message: String,model: String): String {
 
         val content = WebRepository.instance.chat<AIRequestBody>(
-            "https://generativelanguage.googleapis.com/v1beta/interactions",
-            AIRequestBody("gemini-3.6-flash", message),
-            GEMINI_KEY
+            config,
+            AIRequestBody(model, message),
         )
-        Log.i("AIGemini", "chat: $content ")
         return "Gemini AI response to: $content"
+    }
+
+    override suspend fun requestModel() {
+        TODO("Not yet implemented")
     }
 
     override var modelSet: MutableSet<String> = mutableSetOf()
