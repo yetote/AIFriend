@@ -46,6 +46,6 @@ fun Greeting(
     Text(
         text = "Hello $name!",
         modifier = modifier.clickable(true) {
-            viewModel.createFriend("gemini")
+            viewModel.createFriend("deepseek")
         })
 }

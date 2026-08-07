@@ -2,7 +2,7 @@ package com.core.repository
 
 import com.core.network.KtorClient
 import io.ktor.client.call.body
-import io.ktor.client.request.bearerAuth
+import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -18,13 +18,23 @@ class WebRepository {
         }
     }
 
-    suspend inline fun <reified T> chat(url: String, body: Any, apikey: String): Result<T> =
+    suspend inline fun <reified T> chat(config: ApiConfig, body: Any): Result<T> =
         runCatching {
-            httpClient.post(url) {
+            httpClient.post(config.chatUrl) {
                 contentType(ContentType.Application.Json)
                 setBody(body)
-                header("x-goog-api-key", apikey)
-                header("content-type", "application/json")
+                config.headers.forEach { (key, value) ->
+                    header(key, value)
+                }
             }.body()
         }
+
+    suspend inline fun <reified T> getModel(config: ApiConfig,): Result<T> = runCatching {
+        httpClient.get("${config.baseurl}/models") {
+            contentType(ContentType.Application.Json)
+            config.headers.forEach { (key, value) ->
+                header(key, value)
+            }
+        }.body()
+    }
 }
