@@ -1,0 +1,31 @@
+package com.core.repository
+
+import com.core.network.DEEPSEEK_KEY
+import com.core.network.GEMINI_KEY
+import com.core.network.URL_DEEPSEEK
+import com.core.network.URL_GEMINI
+import io.ktor.http.ContentType
+
+data class ApiConfig(
+    val baseurl: String,
+    val chatUrl: String = "",
+    val apiKey: String,
+    val headers: Map<String, String> = emptyMap(),
+    val contentType: ContentType = ContentType.Application.Json
+)
+
+object AIConfigs{
+    fun geminiConfig() = ApiConfig(
+        baseurl = URL_GEMINI,
+        chatUrl=URL_GEMINI,
+        apiKey = GEMINI_KEY,
+        headers = mapOf("x-goog-api-key" to GEMINI_KEY)
+    )
+
+    fun deepseekConfig() = ApiConfig(
+        baseurl = URL_DEEPSEEK,
+        chatUrl = "$URL_DEEPSEEK/responses",
+        apiKey = DEEPSEEK_KEY,
+        headers = mapOf("Authorization" to "Bearer $DEEPSEEK_KEY")
+    )
+}
