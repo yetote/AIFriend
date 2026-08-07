@@ -1,5 +1,7 @@
 package com.core.ai.model
 
+import kotlinx.serialization.SerialName
+
 data class AIResponseBody(
     val created: String,
     val id: String,
@@ -7,11 +9,13 @@ data class AIResponseBody(
     val `object`: String,
     val status: String,
     val steps: List<Step>,
-    val usage: Usage
+    @SerialName("usage")
+    val deepseekUsage: DeepseekUsage
 )
 
 data class Step(
-    val content: List<Content>,
+    @SerialName("content")
+    val deepseekContent: List<DeepseekContent>,
     val signature: String,
     val type: String
 )

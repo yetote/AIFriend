@@ -1,0 +1,31 @@
+package com.core.ai.entity
+
+import com.core.ai.model.AIRequestBody
+import com.core.ai.model.DeepseekChatResponse
+import com.core.ai.model.DeepseekModelResponse
+import com.core.repository.AIConfigs
+import com.core.repository.WebRepository
+
+class AIDeepseek : IAI {
+    val config = AIConfigs.deepseekConfig()
+    override suspend fun chat(message: String, model: String): String {
+        val content =
+            WebRepository.instance.chat<DeepseekChatResponse>(config, AIRequestBody(model, message))
+        return "Deepseek AI response to: $content"
+    }
+
+    override suspend fun requestModel() {
+        WebRepository.instance.getModel<DeepseekModelResponse>(config)
+            .fold(
+                onSuccess = { response ->
+                    modelSet.clear()
+                    modelSet.addAll(response.data.map { it.id })
+                },
+                onFailure = { error ->
+                    println("Error fetching model set: ${error.message}")
+                }
+            )
+    }
+
+    override var modelSet: MutableSet<String> = mutableSetOf()
+}

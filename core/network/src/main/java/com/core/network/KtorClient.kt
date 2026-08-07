@@ -8,11 +8,18 @@ import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logger
 import io.ktor.client.plugins.logging.Logging
 import io.ktor.serialization.kotlinx.json.json
+import kotlinx.serialization.json.Json
 
 class KtorClient {
     val client = HttpClient(Android) {
         install(ContentNegotiation) {
-            json()
+            json(Json{
+                ignoreUnknownKeys = true
+                isLenient = true
+                coerceInputValues = true
+                explicitNulls = false
+                prettyPrint = true
+            })
         }
         install(Logging) {
             logger = object : Logger {
