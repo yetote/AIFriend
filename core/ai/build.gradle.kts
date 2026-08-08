@@ -9,6 +9,7 @@ android {
 
 dependencies {
     implementation(project(":core:repository"))
+    implementation(project(":core:common"))
     implementation(libs.androidx.datastore)
     implementation(libs.ktor.serialization.json)
 }
