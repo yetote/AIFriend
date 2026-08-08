@@ -15,7 +15,9 @@ class AIDeepseek : IAI {
         val content =
             WebRepository.instance.chat<DeepseekChatResponse>(config, AIRequestBody(model, message)).fold(
                 onSuccess = { response ->
-                    response.output
+                    response.output.find {
+                        it.type == "message"
+                    }?.deepseekContent?.first()?.text ?: "No message found in response"
                 },
                 onFailure = { error ->
                     handleCoreError(error)
