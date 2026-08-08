@@ -7,7 +7,7 @@ import com.core.network.URL_GEMINI
 import io.ktor.http.ContentType
 
 data class ApiConfig(
-    val baseurl: String,
+    val baseUrl: String,
     val chatUrl: String = "",
     val apiKey: String,
     val headers: Map<String, String> = emptyMap(),
@@ -16,14 +16,14 @@ data class ApiConfig(
 
 object AIConfigs{
     fun geminiConfig() = ApiConfig(
-        baseurl = URL_GEMINI,
+        baseUrl = URL_GEMINI,
         chatUrl=URL_GEMINI,
         apiKey = GEMINI_KEY,
         headers = mapOf("x-goog-api-key" to GEMINI_KEY)
     )
 
     fun deepseekConfig() = ApiConfig(
-        baseurl = URL_DEEPSEEK,
+        baseUrl = URL_DEEPSEEK,
         chatUrl = "$URL_DEEPSEEK/responses",
         apiKey = DEEPSEEK_KEY,
         headers = mapOf("Authorization" to "Bearer $DEEPSEEK_KEY")
