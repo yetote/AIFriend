@@ -17,7 +17,7 @@ class WebRepository {
     }
 
     suspend inline fun <reified T> chat(config: ApiConfig, body: Any): Result<T> = runCatching {
-        httpClient.apiPost<T>("${config.baseUrl}${config.chatUrl}", body, config.headers)
+        httpClient.apiPost<T>(config.chatUrl, body, config.headers)
     }
 
     suspend inline fun <reified T> getModel(config: ApiConfig): Result<T> = runCatching {
