@@ -8,7 +8,7 @@ import com.feature.friend.vm.FriendViewModel
 import com.ui.friend.UIFriendList
 
 @Composable
-fun UIFriendRoute(viewModel: FriendViewModel = viewModel()) {
+fun FriendRoute(viewModel: FriendViewModel = viewModel()) {
     val friendList by viewModel.friendList.collectAsStateWithLifecycle()
     UIFriendList(friendList = friendList) {
         viewModel.createFriend("deepseek")
