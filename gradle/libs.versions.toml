@@ -33,6 +33,7 @@ activityCompose = "1.8.0"
 composeBom = "2026.02.01"
 compose = "1.11.0-beta02"
 navigation="2.8.9"
+material3 = "1.4.0"
 
 [libraries]
 

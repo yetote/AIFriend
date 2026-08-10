@@ -17,8 +17,8 @@ class AIUiPlugin : Plugin<Project> {
             }
 
             dependencies {
+                "implementation"(platform(libs.findLibrary("androidx.compose.bom").get()))
                 "implementation"(libs.findLibrary("androidx.activity.compose").get())
-                "implementation"(libs.findLibrary("androidx.compose.bom").get())
                 "implementation"(libs.findLibrary("androidx.compose.ui").get())
                 "implementation"(libs.findLibrary("androidx.compose.ui.graphics").get())
                 "implementation"(libs.findLibrary("androidx.compose.ui.tooling.preview").get())
