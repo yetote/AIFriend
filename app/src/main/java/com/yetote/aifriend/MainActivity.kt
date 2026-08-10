@@ -1,15 +1,18 @@
 package com.yetote.aifriend
 
-import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import com.feature.friend.MainActivity
+import com.feature.friend.route.UIFriendRoute
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        startActivity(Intent(this, MainActivity::class.java))
+        setContent {
+            GlobalUiEventObserver()
+            UIFriendRoute()
+        }
     }
 }
