@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.Lifecycle
@@ -23,6 +22,8 @@ import com.core.common.GlobalUiEventManager
 import com.core.common.ext.showToast
 import com.feature.friend.ui.theme.AIFriendTheme
 import com.feature.friend.vm.FriendViewModel
+import com.ui.friend.UIFriendInfo
+import com.ui.friend.UIFriendList
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -30,15 +31,14 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            AIFriendTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    Greeting(
-                        name = "Android",
-                        modifier = Modifier.padding(innerPadding)
-                    )
-                }
-            }
+            UIFriendListRoute()
         }
+
+        initObserver()
+
+    }
+
+    private fun initObserver() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 GlobalUiEventManager.eventFlow.collect { event ->
@@ -49,18 +49,12 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
-}
 
-@Composable
-fun Greeting(
-    viewModel: FriendViewModel = viewModel(),
-    name: String,
-    modifier: Modifier = Modifier
-) {
-    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    Text(
-        text = uiState.chatText,
-        modifier = modifier.clickable(true) {
+    @Composable
+    fun UIFriendListRoute(viewModel: FriendViewModel = viewModel()) {
+        val friendList by viewModel.friendList.collectAsStateWithLifecycle()
+        UIFriendList(friendList = friendList) {
             viewModel.createFriend("deepseek")
-        })
+        }
+    }
 }
