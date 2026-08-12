@@ -21,12 +21,21 @@ class FriendViewModel : BaseViewModel() {
     private val _friendList = MutableStateFlow<List<UIFriendListData>>(emptyList())
     val friendList: StateFlow<List<UIFriendListData>> = _friendList.asStateFlow()
 
-    fun createFriend(aiName: String) = viewModelScope.launch {
-        val aiClass = AIFactory.getAIClassByName(aiName)
+    private val _aiList = MutableStateFlow<List<String>>(emptyList())
+    val aiList: StateFlow<List<String>> = _aiList.asStateFlow()
+
+    init {
+        getai()
+    }
+
+    fun createFriend(aiFriend: UIFriendListData) = viewModelScope.launch {
+        val aiClass = AIFactory.getAIClassByName(aiFriend.aiBrand)
         if (aiClass != null) {
             friend = aiFactory.createAI(aiClass)
         }
-        requestModel()
+        _friendList.update { currentList ->
+            currentList + aiFriend
+        }
     }
 
     fun requestModel() = viewModelScope.launch {
@@ -37,14 +46,12 @@ class FriendViewModel : BaseViewModel() {
     fun chat(message: String) = viewModelScope.launch {
         val chatMessage = friend?.chat(message, friend?.modelSet?.first() ?: "") ?: ""
         _uiState.update { it.copy(chatText = chatMessage) }
-        _friendList.update { currentList ->
-            currentList + UIFriendListData(
-                nickname = "小深度",
-                aiName = "DeepSeek-V3",
-                logo = "deepseek",
-                model = "DeepSeek-V3",
-                company = "深度求索"
-            )
+
+    }
+
+    fun getai() {
+        _aiList.update { list ->
+            list + listOf("Deepseek", "Gemini", "ChatGPT")
         }
     }
 }

@@ -12,16 +12,9 @@ import androidx.compose.ui.window.Dialog
 @Composable
 fun UIFriendCreateDialogWrapper(
     onDismissRequest: () -> Unit, // 点击外部或返回键关闭
-    // 传递你的业务参数 ...
-    aiTypeList: List<String>,
-    presetNameList: List<String>,
-    selectedType: String,
-    selectedPresetName: String,
-    nickName: String,
-    onTypeSelected: (String) -> Unit,
-    onPresetNameSelected: (String) -> Unit,
-    onNickNameChange: (String) -> Unit,
-    onSubmit: () -> Unit
+    aiBrandList: List<String>,
+    aiModelList: List<String>,
+    onSubmit: (Int, String, String) -> Unit
 ) {
     Dialog(onDismissRequest = onDismissRequest) {
         // 使用 Card 或 Surface 作为 Dialog 的白色背景卡片底座
@@ -35,16 +28,10 @@ fun UIFriendCreateDialogWrapper(
                 .wrapContentHeight()
         ) {
             UIFriendCreateDialog(
-                aiTypeList = aiTypeList,
-                presetNameList = presetNameList,
-                selectedType = selectedType,
-                selectedPresetName = selectedPresetName,
-                nickName = nickName,
-                onTypeSelected = onTypeSelected,
-                onPresetNameSelected = onPresetNameSelected,
-                onNickNameChange = onNickNameChange,
-                onSubmit = {
-                    onSubmit()
+                aiBrandList = aiBrandList,
+                aiModelList = aiModelList,
+                onSubmit = { i, s, s2 ->
+                    onSubmit(i, s, s2)
                     onDismissRequest() // 点击提交后自动关闭弹窗
                 }
             )

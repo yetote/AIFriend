@@ -25,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -33,27 +34,20 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun UIFriendCreateDialog(
     // 1. 外部传入的 Model / 网络数据源列表
-    aiTypeList: List<String>,
-    presetNameList: List<String>,
-
-    // 2. 输入与选择的文本值
-    selectedType: String,
-    selectedPresetName: String,
-    nickName: String,
-
-    // 3. 值改变与点击事件回调
-    onTypeSelected: (String) -> Unit,
-    onPresetNameSelected: (String) -> Unit,
-    onNickNameChange: (String) -> Unit,
-    onSubmit: () -> Unit,
-    modifier: Modifier = Modifier
+    aiBrandList: List<String>,
+    aiModelList: List<String>,
+    onSubmit: (Int, String, String) -> Unit,
 ) {
     // 菜单展开/收起的纯 UI 状态
     var isTypeExpanded by remember { mutableStateOf(false) }
     var isNameExpanded by remember { mutableStateOf(false) }
 
+    var aiBrandIndex by remember { mutableStateOf(0) }
+    var aiBrandModel by remember { mutableStateOf("") }
+    var aiBrandNickname by remember { mutableStateOf("") }
+
     Box(
-        modifier = modifier
+        modifier = Modifier
             .wrapContentHeight()
             .padding(24.dp),
         contentAlignment = Alignment.Center
@@ -84,10 +78,10 @@ fun UIFriendCreateDialog(
                     onExpandedChange = { isTypeExpanded = it }
                 ) {
                     OutlinedTextField(
-                        value = selectedType,
+                        value = aiBrandList[aiBrandIndex],
                         onValueChange = {},
                         readOnly = true,
-                        placeholder = { Text("请选择 AI 类型") },
+                        placeholder = { Text("") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isTypeExpanded) },
                         modifier = Modifier
                             .menuAnchor(
@@ -100,11 +94,11 @@ fun UIFriendCreateDialog(
                         expanded = isTypeExpanded,
                         onDismissRequest = { isTypeExpanded = false }
                     ) {
-                        aiTypeList.forEach { item ->
+                        aiBrandList.forEach { item ->
                             DropdownMenuItem(
                                 text = { Text(item) },
                                 onClick = {
-                                    onTypeSelected(item)
+                                    aiBrandIndex = aiBrandList.indexOf(item)
                                     isTypeExpanded = false
                                 }
                             )
@@ -122,10 +116,10 @@ fun UIFriendCreateDialog(
                 Spacer(modifier = Modifier.height(6.dp))
                 ExposedDropdownMenuBox(
                     expanded = isNameExpanded,
-                    onExpandedChange = { isTypeExpanded = it }
+                    onExpandedChange = { isNameExpanded = it }
                 ) {
                     OutlinedTextField(
-                        value = selectedPresetName,
+                        value = aiBrandModel,
                         onValueChange = {},
                         readOnly = true,
                         placeholder = { Text("请选择预设名称") },
@@ -141,11 +135,11 @@ fun UIFriendCreateDialog(
                         expanded = isNameExpanded,
                         onDismissRequest = { isNameExpanded = false }
                     ) {
-                        presetNameList.forEach { item ->
+                        aiModelList.forEach { item ->
                             DropdownMenuItem(
                                 text = { Text(item) },
                                 onClick = {
-                                    onPresetNameSelected(item)
+                                    aiBrandModel = item
                                     isNameExpanded = false
                                 }
                             )
@@ -156,9 +150,9 @@ fun UIFriendCreateDialog(
 
             // 昵称输入框
             OutlinedTextField(
-                value = nickName,
-                onValueChange = onNickNameChange,
-                placeholder = { Text("请给你的AI起一个好听的昵称") },
+                value = aiBrandNickname,
+                onValueChange = { aiBrandNickname = it },
+                placeholder = { Text("请给你的朋友起一个好听的昵称", color = Color.Gray) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
@@ -167,10 +161,12 @@ fun UIFriendCreateDialog(
 
             // 确认按钮
             Button(
-                onClick = onSubmit,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp)
+                    .height(48.dp),
+                onClick = {
+                    onSubmit.invoke(aiBrandIndex, aiBrandModel, aiBrandNickname)
+                }
             ) {
                 Text("确认创建")
             }
@@ -186,14 +182,9 @@ private fun UIFriendCreateDialogP() {
     var nickName by remember { mutableStateOf("") }
 
     UIFriendCreateDialog(
-        aiTypeList = listOf("Deepseek", "ChatGPT", "Claude"),
-        presetNameList = listOf("预设名称 A", "预设名称 B", "预设名称 C"),
-        selectedType = selectedType,
-        selectedPresetName = selectedPresetName,
-        nickName = nickName,
-        onTypeSelected = { selectedType = it },
-        onPresetNameSelected = { selectedPresetName = it },
-        onNickNameChange = { nickName = it },
-        onSubmit = {}
+        aiBrandList = listOf("Deepseek", "ChatGPT", "Claude"),
+        aiModelList = listOf("预设名称 A", "预设名称 B", "预设名称 C"),
+        onSubmit = { _, _, _ ->
+        }
     )
 }
