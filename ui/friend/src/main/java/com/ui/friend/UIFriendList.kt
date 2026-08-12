@@ -46,7 +46,7 @@ fun UIFriendList(friendList: List<UIFriendListData>, addListener: () -> Unit) {
                         .background(MaterialTheme.colorScheme.surface),
                     contentAlignment = Alignment.Center
                 ) {
-                    UICreateFriend(addListener)
+                    UICreateFriend()
                 }
             }
         }
