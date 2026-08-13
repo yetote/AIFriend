@@ -19,7 +19,13 @@ import androidx.compose.ui.unit.dp
 import com.ui.friend.data.UIFriendListData
 
 @Composable
-fun UIFriendList(aiList: List<String>, aiModelList: List<String>, friendList: List<UIFriendListData>, onBrandListSelected: (String) -> Unit, onAddListener: (UIFriendListData) -> Unit) {
+fun UIFriendList(
+    aiList: List<String>,
+    aiModelList: List<String>,
+    friendList: List<UIFriendListData>,
+    onBrandListSelected: (String) -> Unit,
+    onAddListener: (UIFriendListData) -> Unit
+) {
     Column(modifier = Modifier.fillMaxSize()) {
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),
@@ -37,7 +43,7 @@ fun UIFriendList(aiList: List<String>, aiModelList: List<String>, friendList: Li
                         .background(MaterialTheme.colorScheme.surface),
                     contentAlignment = Alignment.Center
                 ) {
-                    UIFriendInfo(it.logo, it.nickname, it.aiBrand, it.model, it.company)
+                    UIFriendInfo(it.logo, it.nickname, it.aiBrand, it.model, it.aiData?.company ?: "")
                 }
             }
             item {
@@ -46,14 +52,13 @@ fun UIFriendList(aiList: List<String>, aiModelList: List<String>, friendList: Li
                         .background(MaterialTheme.colorScheme.surface),
                     contentAlignment = Alignment.Center
                 ) {
-                    UICreateFriend(aiList, aiModelList,onBrandListSelected) { brand, model, nickname ->
+                    UICreateFriend(aiList, aiModelList, onBrandListSelected) { brand, model, nickname ->
                         onAddListener.invoke(
                             UIFriendListData(
                                 nickname = nickname,
                                 aiBrand = brand,
                                 logo = "chatgpt",
                                 model = model,
-                                company = "OpenAI"
                             )
                         )
                     }
@@ -73,7 +78,6 @@ private fun UIFriendListP() {
             aiBrand = "DeepSeek-V3",
             logo = "deepseek",
             model = "DeepSeek-V3",
-            company = "深度求索"
         )
     )
     list.add(
@@ -82,7 +86,6 @@ private fun UIFriendListP() {
             aiBrand = "ChatGPT",
             logo = "chatgpt",
             model = "GPT-4o",
-            company = "OpenAI"
         )
     )
     list.add(
@@ -91,7 +94,6 @@ private fun UIFriendListP() {
             aiBrand = "Claude",
             logo = "claude",
             model = "Claude 3.5 Sonnet",
-            company = "Anthropic"
         )
     )
     list.add(
@@ -100,7 +102,6 @@ private fun UIFriendListP() {
             aiBrand = "Gemini",
             logo = "gemini",
             model = "Gemini 1.5 Pro",
-            company = "Google"
         )
     )
     list.add(
@@ -109,7 +110,6 @@ private fun UIFriendListP() {
             aiBrand = "通义千问",
             logo = "qwen",
             model = "Qwen-2.5-Max",
-            company = "阿里云"
         )
     )
     list.add(
@@ -118,7 +118,6 @@ private fun UIFriendListP() {
             aiBrand = "文心一言",
             logo = "ernie",
             model = "ERNIE-4.0",
-            company = "百度"
         )
     )
     list.add(
@@ -127,7 +126,6 @@ private fun UIFriendListP() {
             aiBrand = "豆包",
             logo = "doubao",
             model = "Doubao-pro-128k",
-            company = "字节跳动"
         )
     )
     list.add(
@@ -136,7 +134,6 @@ private fun UIFriendListP() {
             aiBrand = "Kimi 助手",
             logo = "kimi",
             model = "Moonshot-v1",
-            company = "月之暗面"
         )
     )
     list.add(
@@ -145,7 +142,6 @@ private fun UIFriendListP() {
             aiBrand = "智清言 (智谱清言)",
             logo = "zhipu",
             model = "GLM-4-Plus",
-            company = "智谱 AI"
         )
     )
     list.add(
@@ -154,7 +150,6 @@ private fun UIFriendListP() {
             aiBrand = "阶跃星辰",
             logo = "stepfun",
             model = "Step-2",
-            company = "阶跃星辰"
         )
     )
     list.add(
@@ -163,8 +158,7 @@ private fun UIFriendListP() {
             aiBrand = "百川大模型",
             logo = "baichuan",
             model = "Baichuan 4",
-            company = "百川智能"
         )
     )
-    UIFriendList(mutableListOf(), mutableListOf(), mutableListOf(),{}) {}
+    UIFriendList(mutableListOf(), mutableListOf(), list, {}) {}
 }

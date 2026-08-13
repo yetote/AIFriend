@@ -5,6 +5,8 @@ interface IAI {
 
     var modelSet: MutableSet<String>
 
+    var brandName: String
+    var company: String
     //todo request model
     suspend fun chat(message: String, model: String): String
 }

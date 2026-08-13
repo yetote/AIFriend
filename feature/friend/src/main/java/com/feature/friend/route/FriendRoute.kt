@@ -11,7 +11,7 @@ import com.ui.friend.UIFriendList
 fun FriendRoute(viewModel: FriendViewModel = viewModel()) {
 
     val friendList by viewModel.friendList.collectAsStateWithLifecycle()
-    val aiList by viewModel.aiList.collectAsStateWithLifecycle()
+    val aiList by viewModel.aiBrandList.collectAsStateWithLifecycle()
     val modelList by viewModel.aiModelList.collectAsStateWithLifecycle()
 
     UIFriendList(aiList = aiList, friendList = friendList, aiModelList = modelList, onBrandListSelected = { brand ->

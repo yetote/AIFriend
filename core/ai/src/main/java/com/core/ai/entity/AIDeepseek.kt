@@ -6,10 +6,10 @@ import com.core.ai.model.DeepseekModelResponse
 import com.core.common.GlobalErrorHandler.handleCoreError
 import com.core.repository.AIConfigs
 import com.core.repository.WebRepository
-import com.core.common.GlobalUiEvent
-import com.core.common.GlobalUiEventManager
 
 class AIDeepseek : IAI {
+    override var brandName="Deepseek"
+    override var company="深度求索"
     val config = AIConfigs.deepseekConfig()
     override suspend fun chat(message: String, model: String): String {
         val content =

@@ -5,6 +5,8 @@ import com.core.repository.AIConfigs
 import com.core.repository.WebRepository
 
 class AIGemini : IAI {
+    override var brandName="Gemini"
+    override var company="Google"
     val config = AIConfigs.geminiConfig()
     override suspend fun chat(message: String,model: String): String {
 
