@@ -33,14 +33,14 @@ fun UICreateFriend(
     val context = LocalContext.current
     Box(
         modifier = Modifier
-            .height(120.dp)
+            .height(160.dp)
             .fillMaxWidth()
             .padding(8.dp),
         contentAlignment = Alignment.Center
     ) {
         Box(
             modifier = Modifier
-                .height(100.dp)
+                .height(150.dp)
                 .aspectRatio(1f),
         ) {
             Image(
