@@ -36,13 +36,14 @@ fun UIFriendCreateDialog(
     // 1. 外部传入的 Model / 网络数据源列表
     aiBrandList: List<String>,
     aiModelList: List<String>,
+    onBrandListSelected: (String) -> Unit,
     onSubmit: (Int, String, String) -> Unit,
 ) {
     // 菜单展开/收起的纯 UI 状态
     var isTypeExpanded by remember { mutableStateOf(false) }
     var isNameExpanded by remember { mutableStateOf(false) }
 
-    var aiBrandIndex by remember { mutableStateOf(0) }
+    var aiBrandIndex by remember { mutableStateOf(-1) }
     var aiBrandModel by remember { mutableStateOf("") }
     var aiBrandNickname by remember { mutableStateOf("") }
 
@@ -78,10 +79,10 @@ fun UIFriendCreateDialog(
                     onExpandedChange = { isTypeExpanded = it }
                 ) {
                     OutlinedTextField(
-                        value = aiBrandList[aiBrandIndex],
+                        value = aiBrandList.getOrNull(aiBrandIndex)?:"",
                         onValueChange = {},
                         readOnly = true,
-                        placeholder = { Text("") },
+                        placeholder = { Text("请选择一款AI产品") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isTypeExpanded) },
                         modifier = Modifier
                             .menuAnchor(
@@ -92,13 +93,16 @@ fun UIFriendCreateDialog(
                     )
                     ExposedDropdownMenu(
                         expanded = isTypeExpanded,
-                        onDismissRequest = { isTypeExpanded = false }
+                        onDismissRequest = {
+                            isTypeExpanded = false
+                        }
                     ) {
                         aiBrandList.forEach { item ->
                             DropdownMenuItem(
                                 text = { Text(item) },
                                 onClick = {
                                     aiBrandIndex = aiBrandList.indexOf(item)
+                                    onBrandListSelected(item)
                                     isTypeExpanded = false
                                 }
                             )
@@ -122,7 +126,7 @@ fun UIFriendCreateDialog(
                         value = aiBrandModel,
                         onValueChange = {},
                         readOnly = true,
-                        placeholder = { Text("请选择预设名称") },
+                        placeholder = { Text("请选择模型") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isNameExpanded) },
                         modifier = Modifier
                             .menuAnchor(
@@ -184,6 +188,7 @@ private fun UIFriendCreateDialogP() {
     UIFriendCreateDialog(
         aiBrandList = listOf("Deepseek", "ChatGPT", "Claude"),
         aiModelList = listOf("预设名称 A", "预设名称 B", "预设名称 C"),
+        {},
         onSubmit = { _, _, _ ->
         }
     )
