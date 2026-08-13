@@ -14,6 +14,7 @@ fun UIFriendCreateDialogWrapper(
     onDismissRequest: () -> Unit, // 点击外部或返回键关闭
     aiBrandList: List<String>,
     aiModelList: List<String>,
+    onBrandListSelected: (String) -> Unit,
     onSubmit: (Int, String, String) -> Unit
 ) {
     Dialog(onDismissRequest = onDismissRequest) {
@@ -30,6 +31,7 @@ fun UIFriendCreateDialogWrapper(
             UIFriendCreateDialog(
                 aiBrandList = aiBrandList,
                 aiModelList = aiModelList,
+                onBrandListSelected=onBrandListSelected,
                 onSubmit = { i, s, s2 ->
                     onSubmit(i, s, s2)
                     onDismissRequest() // 点击提交后自动关闭弹窗

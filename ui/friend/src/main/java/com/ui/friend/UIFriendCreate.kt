@@ -23,7 +23,12 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun UICreateFriend(aiBrandList: List<String>, onCreate: (String, String, String) -> Unit) {
+fun UICreateFriend(
+    aiBrandList: List<String>,
+    aiModelList: List<String>,
+    onBrandListSelected: (String) -> Unit,
+    onCreate: (String, String, String) -> Unit
+) {
     var showDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
     Box(
@@ -51,7 +56,8 @@ fun UICreateFriend(aiBrandList: List<String>, onCreate: (String, String, String)
         UIFriendCreateDialogWrapper(
             onDismissRequest = { showDialog = false },
             aiBrandList = aiBrandList,
-            aiModelList = listOf("预设名称 A", "预设名称 B", "预设名称 C"),
+            aiModelList = aiModelList,
+            onBrandListSelected=onBrandListSelected,
             onSubmit = { index, model, name ->
                 val brand = aiBrandList.getOrNull(index)
                 if (brand.isNullOrEmpty()) {
@@ -68,7 +74,7 @@ fun UICreateFriend(aiBrandList: List<String>, onCreate: (String, String, String)
 @Preview
 @Composable
 private fun UICreateFriendP() {
-    UICreateFriend(emptyList()) { _, _, _ ->
+    UICreateFriend(emptyList(), emptyList(),{}) { _, _, _ ->
 
     }
 }

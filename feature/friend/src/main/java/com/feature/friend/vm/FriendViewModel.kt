@@ -14,7 +14,7 @@ import kotlinx.coroutines.launch
 
 class FriendViewModel : BaseViewModel() {
     val aiFactory = AIFactory()
-    var friend: IAI? = null
+    var aiBrand: IAI? = null
     private val _uiState = MutableStateFlow(FriendUiState())
     val uiState: StateFlow<FriendUiState> = _uiState.asStateFlow()
 
@@ -24,34 +24,46 @@ class FriendViewModel : BaseViewModel() {
     private val _aiList = MutableStateFlow<List<String>>(emptyList())
     val aiList: StateFlow<List<String>> = _aiList.asStateFlow()
 
+    private val _aiModelList = MutableStateFlow<List<String>>(emptyList())
+    val aiModelList: StateFlow<List<String>> = _aiModelList.asStateFlow()
+
+
     init {
         getai()
     }
 
     fun createFriend(aiFriend: UIFriendListData) = viewModelScope.launch {
-        val aiClass = AIFactory.getAIClassByName(aiFriend.aiBrand)
-        if (aiClass != null) {
-            friend = aiFactory.createAI(aiClass)
-        }
         _friendList.update { currentList ->
             currentList + aiFriend
         }
     }
 
-    fun requestModel() = viewModelScope.launch {
-        friend?.requestModel()
-        chat("你好呀,你是谁？")
+    fun requestModel(aiName: String) = viewModelScope.launch {
+        if (aiBrand == null) {
+            val aiClass = AIFactory.getAIClassByName(aiName)
+            aiClass?.let {
+                aiBrand = AIFactory().createAI(aiClass)
+            }
+        }
+        if (aiBrand?.modelSet.isNullOrEmpty()) {
+            aiBrand?.requestModel()
+        }
+        aiBrand?.modelSet?.let { models ->
+            _aiModelList.update {
+                models.toList()
+            }
+        }
     }
 
     fun chat(message: String) = viewModelScope.launch {
-        val chatMessage = friend?.chat(message, friend?.modelSet?.first() ?: "") ?: ""
-        _uiState.update { it.copy(chatText = chatMessage) }
+//        val chatMessage = friend?.chat(message, friend?.modelSet?.first() ?: "") ?: ""
+//        _uiState.update { it.copy(chatText = chatMessage) }
 
     }
 
     fun getai() {
         _aiList.update { list ->
-            list + listOf("Deepseek", "Gemini", "ChatGPT")
+            list + listOf("Deepseek","ChatGPT","Gemini")
         }
     }
 }

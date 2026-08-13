@@ -19,7 +19,7 @@ import androidx.compose.ui.unit.dp
 import com.ui.friend.data.UIFriendListData
 
 @Composable
-fun UIFriendList(aiList: List<String>, friendList: List<UIFriendListData>, addListener: (UIFriendListData) -> Unit) {
+fun UIFriendList(aiList: List<String>, aiModelList: List<String>, friendList: List<UIFriendListData>, onBrandListSelected: (String) -> Unit, onAddListener: (UIFriendListData) -> Unit) {
     Column(modifier = Modifier.fillMaxSize()) {
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),
@@ -46,8 +46,8 @@ fun UIFriendList(aiList: List<String>, friendList: List<UIFriendListData>, addLi
                         .background(MaterialTheme.colorScheme.surface),
                     contentAlignment = Alignment.Center
                 ) {
-                    UICreateFriend(aiList) { brand, model, nickname ->
-                        addListener.invoke(
+                    UICreateFriend(aiList, aiModelList,onBrandListSelected) { brand, model, nickname ->
+                        onAddListener.invoke(
                             UIFriendListData(
                                 nickname = nickname,
                                 aiBrand = brand,
@@ -166,5 +166,5 @@ private fun UIFriendListP() {
             company = "百川智能"
         )
     )
-    UIFriendList(mutableListOf(),mutableListOf()) {}
+    UIFriendList(mutableListOf(), mutableListOf(), mutableListOf(),{}) {}
 }
