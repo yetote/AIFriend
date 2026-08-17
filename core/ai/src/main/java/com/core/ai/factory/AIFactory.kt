@@ -3,6 +3,7 @@ package com.core.ai.factory
 import com.core.ai.entity.AIDeepseek
 import com.core.ai.entity.AIDoubao
 import com.core.ai.entity.AIGemini
+import com.core.ai.entity.AIKimi
 import com.core.ai.entity.AIZhipu
 import com.core.ai.entity.IAI
 
@@ -17,6 +18,7 @@ class AIFactory : IFactory {
             "Deepseek" to AIDeepseek::class.java,
             "豆包" to AIDoubao::class.java,
             "智谱清言" to AIZhipu::class.java,
+            "Kimi" to AIKimi::class.java,
         )
 
         fun getAIClassByName(name: String): Class<out IAI>? {
