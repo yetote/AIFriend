@@ -7,7 +7,7 @@ import com.core.repository.AIConfigs
 import com.core.repository.WebRepository
 
 class AIDoubao : IAI {
-    override var brandName = "Doubao"
+    override var brandName = "豆包"
     override var company = "字节跳动"
     val config = AIConfigs.doubaoConfig()
     override suspend fun chat(message: String, model: String): String {
