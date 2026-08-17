@@ -6,6 +6,8 @@ import com.core.network.GEMINI_KEY
 import com.core.network.URL_DEEPSEEK
 import com.core.network.URL_DOUBAO
 import com.core.network.URL_GEMINI
+import com.core.network.URL_ZHIPU
+import com.core.network.ZHIPU_KEY
 import io.ktor.http.ContentType
 
 data class ApiConfig(
@@ -35,5 +37,11 @@ object AIConfigs{
         chatUrl = "$URL_DOUBAO/responses",
         apiKey = DOUBAO_KEY,
         headers = mapOf("Authorization" to "Bearer $DOUBAO_KEY")
+    )
+    fun zhipuConfig() = ApiConfig(
+        baseUrl = URL_ZHIPU,
+        chatUrl = "$URL_ZHIPU/responses",
+        apiKey = ZHIPU_KEY,
+        headers = mapOf("Authorization" to "Bearer $ZHIPU_KEY")
     )
 }
