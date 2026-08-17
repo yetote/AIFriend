@@ -78,7 +78,7 @@ class FriendViewModel : BaseViewModel() {
 
     fun getai() {
         _aiBrandList.update { list ->
-            list + listOf("Deepseek", "豆包", "智谱清言","Kimi", "Gemini")
+            list + listOf("Deepseek", "豆包", "智谱清言","Kimi","通义千问","Gemini")
         }
     }
 }

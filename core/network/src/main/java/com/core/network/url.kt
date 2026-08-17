@@ -6,6 +6,7 @@ const val URL_DEEPSEEK="https://api.deepseek.com"
 const val URL_DOUBAO="https://ark.cn-beijing.volces.com/api/v3"
 const val URL_ZHIPU="https://open.bigmodel.cn/api/paas/v4"
 const val URL_KIMI="https://api.moonshot.cn/v1"
+const val URL_QIANWEN="https://dashscope.aliyuncs.com/compatible-mode/v1"
 
 
 

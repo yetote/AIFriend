@@ -4,10 +4,12 @@ import com.core.network.DEEPSEEK_KEY
 import com.core.network.DOUBAO_KEY
 import com.core.network.GEMINI_KEY
 import com.core.network.KIMI_KEY
+import com.core.network.QIANWEN_KEY
 import com.core.network.URL_DEEPSEEK
 import com.core.network.URL_DOUBAO
 import com.core.network.URL_GEMINI
 import com.core.network.URL_KIMI
+import com.core.network.URL_QIANWEN
 import com.core.network.URL_ZHIPU
 import com.core.network.ZHIPU_KEY
 import io.ktor.http.ContentType
@@ -51,5 +53,11 @@ object AIConfigs{
         chatUrl = "$URL_KIMI/responses",
         apiKey = KIMI_KEY,
         headers = mapOf("Authorization" to "Bearer $KIMI_KEY")
+    )
+    fun qianwenConfig() = ApiConfig(
+        baseUrl = URL_QIANWEN,
+        chatUrl = "$URL_QIANWEN/responses",
+        apiKey = QIANWEN_KEY,
+        headers = mapOf("Authorization" to "Bearer $QIANWEN_KEY")
     )
 }
