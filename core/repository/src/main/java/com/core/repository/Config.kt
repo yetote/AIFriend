@@ -1,8 +1,10 @@
 package com.core.repository
 
 import com.core.network.DEEPSEEK_KEY
+import com.core.network.DOUBAO_KEY
 import com.core.network.GEMINI_KEY
 import com.core.network.URL_DEEPSEEK
+import com.core.network.URL_DOUBAO
 import com.core.network.URL_GEMINI
 import io.ktor.http.ContentType
 
@@ -27,5 +29,11 @@ object AIConfigs{
         chatUrl = "$URL_DEEPSEEK/responses",
         apiKey = DEEPSEEK_KEY,
         headers = mapOf("Authorization" to "Bearer $DEEPSEEK_KEY")
+    )
+    fun doubaoConfig() = ApiConfig(
+        baseUrl = URL_DOUBAO,
+        chatUrl = "$URL_DOUBAO/responses",
+        apiKey = DOUBAO_KEY,
+        headers = mapOf("Authorization" to "Bearer $DOUBAO_KEY")
     )
 }

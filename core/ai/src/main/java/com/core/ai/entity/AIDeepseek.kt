@@ -31,7 +31,7 @@ class AIDeepseek : IAI {
             .fold(
                 onSuccess = { response ->
                     modelSet.clear()
-                    modelSet.addAll(response.data.map { it.id })
+                    modelSet.addAll(response.deepseekModelList.map { it.id })
                 },
                 onFailure = { error ->
                     handleCoreError(error)
