@@ -5,11 +5,13 @@ import com.core.network.DOUBAO_KEY
 import com.core.network.GEMINI_KEY
 import com.core.network.KIMI_KEY
 import com.core.network.QIANWEN_KEY
+import com.core.network.SPARK_KEY
 import com.core.network.URL_DEEPSEEK
 import com.core.network.URL_DOUBAO
 import com.core.network.URL_GEMINI
 import com.core.network.URL_KIMI
 import com.core.network.URL_QIANWEN
+import com.core.network.URL_SPARK
 import com.core.network.URL_ZHIPU
 import com.core.network.ZHIPU_KEY
 import io.ktor.http.ContentType
@@ -59,5 +61,11 @@ object AIConfigs{
         chatUrl = "$URL_QIANWEN/responses",
         apiKey = QIANWEN_KEY,
         headers = mapOf("Authorization" to "Bearer $QIANWEN_KEY")
+    )
+    fun sparkConfig() = ApiConfig(
+        baseUrl = URL_SPARK,
+        chatUrl = "$URL_SPARK/responses",
+        apiKey = SPARK_KEY,
+        headers = mapOf("Authorization" to "Bearer $SPARK_KEY")
     )
 }

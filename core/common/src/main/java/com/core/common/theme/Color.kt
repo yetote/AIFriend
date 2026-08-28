@@ -1,4 +1,4 @@
-package com.yetote.aifriend.ui.theme
+package com.core.common.theme
 
 import androidx.compose.ui.graphics.Color
 

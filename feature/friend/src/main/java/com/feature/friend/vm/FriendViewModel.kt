@@ -35,10 +35,10 @@ class FriendViewModel : BaseViewModel() {
 
     fun createFriend(aiFriend: UIFriendListData) = viewModelScope.launch {
         var ai = aiList.find {
-            it.brandName == aiFriend.aiBrand
+            it.brandName == aiFriend.source
         }
         if (ai == null) {
-            AIFactory.getAIClassByName(aiFriend.aiBrand)?.let {
+            AIFactory.getAIClassByName(aiFriend.source)?.let {
                 AIFactory().createAI(it).let { _ai ->
                     aiList.add(_ai)
                     ai = _ai
