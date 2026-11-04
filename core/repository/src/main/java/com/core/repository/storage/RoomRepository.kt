@@ -42,6 +42,24 @@ class RoomRepository(context: Context) {
         dao.deleteMessagesBySender(friendId)
     }
 
+    /** 清空房间消息，同时把成员 joinSeq 重置为 0，整体一个事务。 */
+    suspend fun clearMessages(room: StoredRoom) {
+        db.withTransaction {
+            dao.deleteMessagesForRoom(room.id)
+            dao.upsertRoom(room.toEntity())
+            dao.clearMembers(room.id)
+            dao.upsertMembers(
+                room.memberIds.map { friendId ->
+                    RoomMemberEntity(
+                        roomId = room.id,
+                        friendId = friendId,
+                        joinSeq = room.memberJoinSeq[friendId] ?: 0L
+                    )
+                }
+            )
+        }
+    }
+
     /** 删除好友时，把它从所有房间成员里移除。 */
     suspend fun removeMemberEverywhere(friendId: String) {
         dao.removeMemberEverywhere(friendId)

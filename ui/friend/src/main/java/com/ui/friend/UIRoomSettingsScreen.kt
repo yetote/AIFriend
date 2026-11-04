@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.sp
 import com.ui.friend.data.UIRoomMember
 import com.ui.friend.theme.UIFriendBarGray
 import com.ui.friend.theme.UIFriendBarItemMetaColor
+import com.ui.friend.theme.UIFriendBarRed
 import com.ui.friend.theme.UIFriendBarSubtitleColor
 import com.ui.friend.theme.UIFriendBarTagTextBlue
 import com.ui.friend.theme.UIFriendBarTitleColor
@@ -54,6 +55,7 @@ fun UIRoomSettingsScreen(
     discussionEnabled: Boolean,
     discussionWindow: Int,
     sequentialSpeaking: Boolean,
+    messageCount: Int,
     onSave: (
         name: String,
         prompt: String,
@@ -62,6 +64,7 @@ fun UIRoomSettingsScreen(
         sequentialSpeaking: Boolean
     ) -> Unit,
     onToggleMember: (String) -> Unit,
+    onClearMessages: () -> Unit,
     onBack: () -> Unit
 ) {
     var name by rememberSaveable(roomName) { mutableStateOf(roomName) }
@@ -72,6 +75,7 @@ fun UIRoomSettingsScreen(
     var showMembers by remember { mutableStateOf(false) }
     var pendingWindow by remember { mutableStateOf<Int?>(null) }
     var pendingDiscussion by remember { mutableStateOf(false) }
+    var showClearConfirm by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -263,6 +267,28 @@ fun UIRoomSettingsScreen(
                     )
                 }
             }
+
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = "危险操作",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                color = UIFriendBarRed
+            )
+            Text(
+                text = "删除本房间的全部消息，房间、成员和设置保留，不可恢复。",
+                fontSize = 12.sp,
+                color = UIFriendBarSubtitleColor
+            )
+            TextButton(
+                onClick = { showClearConfirm = true },
+                enabled = messageCount > 0
+            ) {
+                Text(
+                    text = "清空聊天记录（$messageCount 条）",
+                    color = if (messageCount > 0) UIFriendBarRed else UIFriendBarItemMetaColor
+                )
+            }
         }
     }
 
@@ -316,6 +342,33 @@ fun UIRoomSettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { pendingWindow = null }) {
+                    Text(text = "取消")
+                }
+            }
+        )
+    }
+
+    if (showClearConfirm) {
+        AlertDialog(
+            onDismissRequest = { showClearConfirm = false },
+            title = { Text(text = "清空聊天记录？") },
+            text = {
+                Text(
+                    text = "会删除本房间的全部 $messageCount 条消息，房间、成员和设置保留。不可恢复。"
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showClearConfirm = false
+                        onClearMessages()
+                    }
+                ) {
+                    Text(text = "清空", color = UIFriendBarRed)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearConfirm = false }) {
                     Text(text = "取消")
                 }
             }

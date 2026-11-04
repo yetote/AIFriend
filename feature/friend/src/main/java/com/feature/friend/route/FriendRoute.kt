@@ -254,6 +254,7 @@ fun FriendRoute(viewModel: FriendViewModel = viewModel()) {
                         discussionEnabled = room.discussionEnabled,
                         discussionWindow = room.discussionWindow,
                         sequentialSpeaking = room.sequentialSpeaking,
+                        messageCount = state.roomMessages.count { it.roomId == room.id },
                         onSave = { name, prompt, discussion, window, sequential ->
                             viewModel.saveRoomSettings(
                                 room.id,
@@ -265,6 +266,7 @@ fun FriendRoute(viewModel: FriendViewModel = viewModel()) {
                             )
                         },
                         onToggleMember = viewModel::toggleRoomMember,
+                        onClearMessages = { viewModel.clearRoomMessages(room.id) },
                         onBack = viewModel::back
                     )
                 }

@@ -73,6 +73,12 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
             val storedMessages = runCatching { roomRepository.loadMessages() }.getOrDefault(emptyList())
             val userAvatar = runCatching { profileRepository.loadAvatarPath() }.getOrNull()
 
+            // seq 只在进程内递增，重启后要从历史最大值继续；否则新 seq 会小于成员的 joinSeq，
+            // 导致新加入的成员看不到重启之后的新消息。
+            val maxMessageSeq = storedMessages.maxOfOrNull { it.seq } ?: 0L
+            val maxJoinSeq = storedRooms.flatMap { it.memberJoinSeq.values }.maxOrNull() ?: 0L
+            seqCounter.set(maxOf(maxMessageSeq, maxJoinSeq))
+
             _uiState.update { state ->
                 state.copy(
                     userAvatarPath = userAvatar ?: state.userAvatarPath,
@@ -626,6 +632,30 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
             )
         }
         persistRoom(roomId)
+    }
+
+    /**
+     * 清空房间消息，保留房间、成员和设置。
+     * 同时把所有人的 joinSeq 重置为 0，避免清空后新消息被旧 joinSeq 过滤掉。
+     */
+    fun clearRoomMessages(roomId: String) {
+        val state = _uiState.value
+        val room = state.rooms.firstOrNull { it.id == roomId } ?: return
+        cancelRoomJobs(roomId)
+        val resetRoom = room.copy(memberJoinSeq = room.memberIds.associateWith { 0L })
+        _uiState.update { current ->
+            current.copy(
+                rooms = current.rooms.map { if (it.id == roomId) resetRoom else it },
+                roomMessages = current.roomMessages.filterNot { it.roomId == roomId },
+                roomPending = emptySet(),
+                roomErrors = emptyMap(),
+                roomInput = "",
+                screen = FriendScreen.RoomChat(roomId)
+            )
+        }
+        viewModelScope.launch {
+            runCatching { roomRepository.clearMessages(resetRoom.toStored()) }
+        }
     }
 
     /**
