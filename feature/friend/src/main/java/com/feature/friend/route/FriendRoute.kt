@@ -1,5 +1,6 @@
 package com.feature.friend.route
 
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -8,6 +9,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -16,6 +20,7 @@ import com.feature.friend.contract.FriendScreen
 import com.feature.friend.model.Friend
 import com.feature.friend.model.RoomSender
 import com.feature.friend.vm.FriendViewModel
+import com.ui.friend.UIAvatarCropDialog
 import com.ui.friend.UIFriendChatPage
 import com.ui.friend.UIFriendCreateScreen
 import com.ui.friend.UIFriendPage
@@ -32,14 +37,27 @@ import com.ui.friend.data.getRandomColor
 fun FriendRoute(viewModel: FriendViewModel = viewModel()) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
+    var userCropUri by remember { mutableStateOf<Uri?>(null) }
     val userAvatarPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia()
     ) { uri ->
-        if (uri != null) viewModel.setUserAvatar(uri)
+        if (uri != null) userCropUri = uri
     }
     val pickUserAvatar: () -> Unit = {
         userAvatarPicker.launch(
             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+        )
+    }
+
+    val pendingUserCrop = userCropUri
+    if (pendingUserCrop != null) {
+        UIAvatarCropDialog(
+            uri = pendingUserCrop,
+            onCancel = { userCropUri = null },
+            onConfirm = { bytes ->
+                userCropUri = null
+                viewModel.setUserAvatar(bytes)
+            }
         )
     }
 
@@ -103,7 +121,7 @@ fun FriendRoute(viewModel: FriendViewModel = viewModel()) {
                         onSend = viewModel::send,
                         onBack = viewModel::back,
                         onRetry = viewModel::retry,
-                        onChangeAvatar = { uri -> viewModel.setFriendAvatar(friend.id, uri) }
+                        onChangeAvatar = { bytes -> viewModel.setFriendAvatar(friend.id, bytes) }
                     )
                 }
             }

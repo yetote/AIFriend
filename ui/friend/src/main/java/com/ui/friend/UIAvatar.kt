@@ -87,12 +87,27 @@ fun rememberAvatarBitmap(path: String?): ImageBitmap? {
 
 /** 创建页选择图片后立即预览用（采样解码，避免大图 OOM）。 */
 @Composable
-fun rememberUriBitmap(uri: Uri?): ImageBitmap? {
+fun rememberUriBitmap(uri: Uri?, maxSize: Int = 512): ImageBitmap? {
     val context = LocalContext.current
-    val bitmap by produceState<ImageBitmap?>(initialValue = null, key1 = uri) {
+    val bitmap by produceState<ImageBitmap?>(initialValue = null, key1 = uri, key2 = maxSize) {
         value = uri?.let { source ->
             withContext(Dispatchers.IO) {
-                runCatching { decodeSampled(context, source) }.getOrNull()
+                runCatching { decodeSampled(context, source, maxSize) }.getOrNull()
+            }
+        }
+    }
+    return bitmap
+}
+
+/** 裁剪结果预览用。 */
+@Composable
+fun rememberBytesBitmap(bytes: ByteArray?): ImageBitmap? {
+    val bitmap by produceState<ImageBitmap?>(initialValue = null, key1 = bytes) {
+        value = bytes?.let { data ->
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    BitmapFactory.decodeByteArray(data, 0, data.size)?.asImageBitmap()
+                }.getOrNull()
             }
         }
     }

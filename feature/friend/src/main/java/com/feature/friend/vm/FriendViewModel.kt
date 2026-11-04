@@ -1,7 +1,6 @@
 package com.feature.friend.vm
 
 import android.app.Application
-import android.net.Uri
 import androidx.lifecycle.viewModelScope
 import com.core.ai.entity.IAI
 import com.core.ai.factory.AIFactory
@@ -169,7 +168,12 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
         }
     }
 
-    fun createFriend(name: String, role: String, prompt: String, avatarUri: Uri? = null) {
+    fun createFriend(
+        name: String,
+        role: String,
+        prompt: String,
+        avatarBytes: ByteArray? = null
+    ) {
         val trimmedName = name.trim()
         if (trimmedName.isEmpty()) return
 
@@ -195,24 +199,24 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
         }
         persistFriends()
 
-        if (avatarUri != null) {
+        if (avatarBytes != null) {
             viewModelScope.launch {
-                val path = avatarStore.save(avatarUri, friend.id) ?: return@launch
+                val path = avatarStore.save(avatarBytes, friend.id) ?: return@launch
                 updateFriendAvatar(friend.id, path)
             }
         }
     }
 
-    fun setFriendAvatar(friendId: String, uri: Uri) {
+    fun setFriendAvatar(friendId: String, bytes: ByteArray) {
         viewModelScope.launch {
-            val path = avatarStore.save(uri, friendId) ?: return@launch
+            val path = avatarStore.save(bytes, friendId) ?: return@launch
             updateFriendAvatar(friendId, path)
         }
     }
 
-    fun setUserAvatar(uri: Uri) {
+    fun setUserAvatar(bytes: ByteArray) {
         viewModelScope.launch {
-            val path = avatarStore.save(uri, USER_AVATAR_ID) ?: return@launch
+            val path = avatarStore.save(bytes, USER_AVATAR_ID) ?: return@launch
             runCatching { profileStore.saveAvatarPath(path) }
             _uiState.update { it.copy(userAvatarPath = path) }
         }
