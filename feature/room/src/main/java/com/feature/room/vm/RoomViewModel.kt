@@ -144,7 +144,7 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
                 roomDraftPrompt = "",
                 roomDraftMemberIds = emptySet(),
                 roomInput = "",
-                roomTargetIds = members.toSet(),
+                roomMentionIds = emptySet(),
                 roomPending = emptySet(),
                 roomErrors = emptyMap()
             )
@@ -165,7 +165,7 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
             it.copy(
                 activeRoomId = roomId,
                 roomInput = "",
-                roomTargetIds = room?.memberIds?.toSet().orEmpty(),
+                roomMentionIds = emptySet(),
                 roomPending = emptySet(),
                 roomErrors = emptyMap()
             )
@@ -244,6 +244,15 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
         val text = state.roomInput.trim()
         if (text.isEmpty()) return@launch
 
+        val targets = state.roomMentionIds.intersect(room.memberIds.toSet())
+        // 只选部分成员时，这一轮只对这些成员可见；全员或未选时按全员处理
+        val visibility = if (targets.isEmpty() || targets.size >= room.memberIds.size) {
+            null
+        } else {
+            targets
+        }
+        val replyTargets = targets.ifEmpty { room.memberIds.toSet() }
+
         appendRoomMessage(
             RoomMessage(
                 id = UUID.randomUUID().toString(),
@@ -251,13 +260,14 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
                 sender = RoomSender.User,
                 content = text,
                 createdAt = System.currentTimeMillis(),
-                seq = seqCounter.incrementAndGet()
+                seq = seqCounter.incrementAndGet(),
+                targetIds = visibility
             )
         )
-        _uiState.update { it.copy(roomInput = "", roomErrors = emptyMap()) }
-        val targets = state.roomTargetIds.intersect(room.memberIds.toSet())
-            .ifEmpty { room.memberIds.toSet() }
-        val ordered = room.memberIds.filter { it in targets }
+        _uiState.update {
+            it.copy(roomInput = "", roomMentionIds = emptySet(), roomErrors = emptyMap())
+        }
+        val ordered = room.memberIds.filter { it in replyTargets }
         if (room.discussionEnabled && room.sequentialSpeaking) {
             var previous: Job? = null
             ordered.forEachIndexed { index, friendId ->
@@ -280,23 +290,32 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
         enqueueRoomReply(room.id, friendId)
     }
 
-    fun toggleRoomTarget(friendId: String) {
+    /** 选择器选中 @ 成员：同步写入输入框，并记录成员 ID 供发送时落库。 */
+    fun selectMentions(friendIds: Set<String>) {
         val state = _uiState.value
         val room = state.activeRoom ?: return
-        if (friendId !in room.memberIds) return
-        val current = state.roomTargetIds.ifEmpty { room.memberIds.toSet() }
-        val next = if (friendId in current) {
-            if (current.size <= 1) return
-            current - friendId
-        } else {
-            current + friendId
-        }
-        _uiState.update { it.copy(roomTargetIds = next) }
-    }
+        val valid = friendIds.intersect(room.memberIds.toSet())
+        val names = room.memberIds.mapNotNull { id ->
+            state.friends.firstOrNull { it.id == id }?.let { id to it.name }
+        }.toMap()
 
-    fun selectAllRoomTargets() {
-        val room = _uiState.value.activeRoom ?: return
-        _uiState.update { it.copy(roomTargetIds = room.memberIds.toSet()) }
+        var text = state.roomInput
+        state.roomMentionIds.forEach { oldId ->
+            names[oldId]?.let { oldName ->
+                text = text.replace("@$oldName ", "").replace("@$oldName", "")
+            }
+        }
+        val prefix = if (valid.isNotEmpty()) {
+            room.memberIds
+                .filter { it in valid }
+                .mapNotNull { names[it] }
+                .joinToString(" ") { "@$it" } + " "
+        } else {
+            ""
+        }
+        _uiState.update {
+            it.copy(roomMentionIds = valid, roomInput = prefix + text)
+        }
     }
 
     fun stopRoomReply(friendId: String) {
@@ -419,7 +438,7 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
                     },
                     roomErrors = it.roomErrors - friendId,
                     roomPending = it.roomPending - friendId,
-                    roomTargetIds = memberIds.toSet()
+                    roomMentionIds = it.roomMentionIds - friendId
                 )
             }
             roomJobs.remove(roomKey(room.id, friendId))?.cancel()
@@ -442,7 +461,7 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
                         }
                     },
                     roomErrors = it.roomErrors - friendId,
-                    roomTargetIds = memberIds.toSet()
+                    roomMentionIds = it.roomMentionIds
                 )
             }
             persistRoom(room.id)
@@ -534,7 +553,9 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
                     friendId = friendId,
                     joinedSeq = room.memberJoinSeq[friendId] ?: 0L,
                     otherWindowRounds = if (discussion) room.discussionWindow else null,
-                    friendNames = state.friends.associate { it.id to it.name }
+                    friendNames = room.memberIds.mapNotNull { id ->
+                        state.friends.firstOrNull { it.id == id }?.let { id to it.name }
+                    }.toMap()
                 )
                 if (roundIndex != null) {
                     context = context + ChatMessage.user(

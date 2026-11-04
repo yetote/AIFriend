@@ -79,7 +79,9 @@ data class RoomMessageEntity(
     val senderId: String?,
     val content: String,
     val createdAt: Long,
-    val seq: Long
+    val seq: Long,
+    /** 逗号分隔的 @ 成员 ID；null 表示全员可见。 */
+    val targetIds: String? = null
 )
 
 @Entity(tableName = "profile")

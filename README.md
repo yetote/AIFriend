@@ -86,7 +86,7 @@ cp core/network/key.example.kt core/network/src/main/java/com/core/network/key.k
 
 房间把多个好友放在一起，用户发一条消息，默认由房间内所有 AI 各自回答。
 
-**本轮成员**：输入框上方有一排「全员 / 成员」chip，可以只勾选本轮要回答的 AI，避免一条消息触发 N 次请求；至少保留一位。
+**定向 @**：输入框左侧的 `@` 按钮打开成员选择器，选中后会把 `@名字` 写进输入框，并把成员 ID 一起存进这条消息。**被 @ 的成员才回答，这一轮对其他成员不可见**；没选 @ 时全员可见。成员改名/删除不会影响历史消息的可见性。
 
 **停止生成**：每个「正在输入…」右侧有「停止」，顶栏在有人生成时也会出现「停止」按钮，用于一次取消全部；取消只丢弃本次请求，不会写入消息。
 
@@ -115,7 +115,7 @@ cp core/network/key.example.kt core/network/src/main/java/com/core/network/key.k
 - Token 估算：设置页显示「本轮约 N 次请求、单个 AI 上下文约 X tokens」，按字符估算，仅作参考
 - 系统消息：创建房间、「X 加入了聊天室」「X 退出了聊天室」会插入灰色居中的系统提示；这些通知会以「（聊天室通知）」前缀作为 user 消息同步给房间内的 AI，保证它们知道人员变化（不用 system 角色是为了兼容只允许首条 system 的厂商，如 Moonshot）
 - 新成员：`Room.memberJoinSeq` 记录每个成员的加入位置，新加入的 AI 只看得到加入之后的消息，不会同步历史；加入时会自动发一条自我介绍式问候（创建房间时不自动打招呼）
-- 持久化：房间、成员、消息都在 Room 的 `rooms` / `room_members` / `room_messages` 表；数据库 `version = 5`，`rooms` 表保存房间设定 `prompt`、讨论开关 `discussionEnabled`、回看窗口 `discussionWindow`、顺序发言 `sequentialSpeaking`、置顶 `pinned`、头像 `avatarPath`（v1 → v2 → v3 → v4 → v5 都有 Migration）
+- 持久化：房间、成员、消息都在 Room 的 `rooms` / `room_members` / `room_messages` 表；数据库 `version = 6`，`rooms` 表保存房间设定 `prompt`、讨论开关 `discussionEnabled`、回看窗口 `discussionWindow`、顺序发言 `sequentialSpeaking`、置顶 `pinned`、头像 `avatarPath`；`room_messages` 保存定向 @ 的成员 `targetIds`（v1 → v2 → v3 → v4 → v5 → v6 都有 Migration）
 - 消息 `seq` 在应用启动时会从历史最大值继续（`seqCounter` 种子），避免重启后新消息的 seq 小于成员 `joinSeq`，导致新成员看不到新消息
 - 已有消息在成员被移除后仍保留，界面上会显示「已移除」
 

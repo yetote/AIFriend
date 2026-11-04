@@ -72,6 +72,39 @@ class RoomMapperTest {
     }
 
     @Test
+    fun `targeted round is hidden from unmentioned members`() {
+        val messages = listOf(
+            RoomMessage("1", "r", RoomSender.User, "只问 A", 1L, 1L, targetIds = setOf("a")),
+            RoomMessage("2", "r", RoomSender.Ai("a"), "A 的回答", 2L, 2L),
+            RoomMessage("3", "r", RoomSender.User, "大家随便聊", 3L, 3L),
+            RoomMessage("4", "r", RoomSender.Ai("b"), "B 的回答", 4L, 4L)
+        )
+        val names = mapOf("a" to "A", "b" to "B")
+
+        val contextB = buildRoomContext(
+            messages = messages,
+            friendId = "b",
+            otherWindowRounds = 1,
+            friendNames = names
+        )
+        assertEquals(
+            listOf("大家随便聊", "B 的回答"),
+            contextB.map { it.content }
+        )
+
+        val contextA = buildRoomContext(
+            messages = messages,
+            friendId = "a",
+            otherWindowRounds = 1,
+            friendNames = names
+        )
+        assertEquals(
+            listOf("只问 A", "A 的回答", "大家随便聊", "（B 的发言）B 的回答"),
+            contextA.map { it.content }
+        )
+    }
+
+    @Test
     fun `markdown export includes header senders and system notices`() {
         val room = Room(
             id = "r",

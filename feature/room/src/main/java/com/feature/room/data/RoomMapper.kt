@@ -110,7 +110,8 @@ fun RoomMessage.toStored(): StoredRoomMessage = StoredRoomMessage(
     senderId = (sender as? RoomSender.Ai)?.friendId,
     content = content,
     createdAt = createdAt,
-    seq = seq
+    seq = seq,
+    targetIds = targetIds
 )
 
 fun StoredRoomMessage.toRoomMessage(): RoomMessage = RoomMessage(
@@ -123,7 +124,8 @@ fun StoredRoomMessage.toRoomMessage(): RoomMessage = RoomMessage(
     },
     content = content,
     createdAt = createdAt,
-    seq = seq
+    seq = seq,
+    targetIds = targetIds
 )
 
 /**
@@ -141,28 +143,42 @@ fun buildRoomContext(
     friendNames: Map<String, String> = emptyMap()
 ): List<ChatMessage> {
     val sorted = messages.sortedWith(compareBy({ it.createdAt }, { it.seq }))
+
+    // 按用户消息划分轮次；用户消息带了 targetIds 时，这一轮只对目标成员可见
+    val roundOf = HashMap<Long, Int>(sorted.size)
+    val roundVisible = HashMap<Int, Boolean>()
+    var round = 0
+    sorted.forEach { message ->
+        if (message.sender == RoomSender.User) {
+            round++
+            val targets = message.targetIds
+            roundVisible[round] = targets == null || friendId in targets
+        }
+        roundOf[message.seq] = round
+    }
+
+    fun visibleToViewer(message: RoomMessage): Boolean {
+        if (message.sender == RoomSender.System) return true
+        return roundVisible[roundOf[message.seq] ?: 0] ?: true
+    }
+
     if (otherWindowRounds == null) {
         return sorted.asSequence()
             .filter { it.seq >= joinedSeq }
-            .filter { message -> isVisible(message, friendId) }
+            .filter { message -> visibleToViewer(message) && isVisible(message, friendId) }
             .map { message -> toChatMessage(message, friendId, friendNames) }
             .toList()
     }
 
-    // 按用户消息划分轮次，其他人的发言只保留最近 N 轮
-    val roundOf = HashMap<Long, Int>(sorted.size)
-    var round = 0
-    sorted.forEach { message ->
-        if (message.sender == RoomSender.User) round++
-        roundOf[message.seq] = round
-    }
+    // 其他人的发言只保留最近 N 轮
     val firstRound = (round - otherWindowRounds + 1).coerceAtLeast(0)
 
     return sorted.asSequence()
         .filter { it.seq >= joinedSeq }
         .filter { message ->
-            isVisible(message, friendId) ||
-                (roundOf[message.seq] ?: 0) >= firstRound
+            visibleToViewer(message) &&
+                (isVisible(message, friendId) ||
+                    (roundOf[message.seq] ?: 0) >= firstRound)
         }
         .map { message -> toChatMessage(message, friendId, friendNames) }
         .toList()

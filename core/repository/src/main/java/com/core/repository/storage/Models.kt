@@ -56,7 +56,8 @@ data class StoredRoomMessage(
     val senderId: String? = null,
     val content: String,
     val createdAt: Long = 0L,
-    val seq: Long = 0L
+    val seq: Long = 0L,
+    val targetIds: Set<String>? = null
 )
 
 internal fun StoredFriend.toEntity(): FriendEntity = FriendEntity(
@@ -124,7 +125,8 @@ internal fun StoredRoomMessage.toEntity(): RoomMessageEntity = RoomMessageEntity
     senderId = senderId,
     content = content,
     createdAt = createdAt,
-    seq = seq
+    seq = seq,
+    targetIds = targetIds?.joinToString(",")
 )
 
 internal fun RoomMessageEntity.toStored(): StoredRoomMessage = StoredRoomMessage(
@@ -134,5 +136,6 @@ internal fun RoomMessageEntity.toStored(): StoredRoomMessage = StoredRoomMessage
     senderId = senderId,
     content = content,
     createdAt = createdAt,
-    seq = seq
+    seq = seq,
+    targetIds = targetIds?.split(",")?.filter { it.isNotBlank() }?.toSet()
 )
