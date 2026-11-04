@@ -9,11 +9,9 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -42,6 +40,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -49,6 +48,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -95,11 +95,7 @@ fun UIRoomChatPage(
         modifier = Modifier
             .fillMaxSize()
             .background(UIFriendBarGray)
-            .windowInsetsPadding(
-                WindowInsets.safeDrawing.only(
-                    WindowInsetsSides.Top + WindowInsetsSides.Horizontal
-                )
-            )
+            .pageInsets()
     ) {
         RoomTopBar(
             roomName = roomName,
@@ -109,16 +105,34 @@ fun UIRoomChatPage(
         )
 
         val listState = rememberLazyListState()
-        val itemCount = messages.size + pendingIds.size + errors.size
-        LaunchedEffect(itemCount) {
-            if (itemCount > 0) listState.animateScrollToItem(itemCount - 1)
+        val totalItems = messages.size + pendingIds.size + errors.size
+        var didInitialScroll by remember { mutableStateOf(false) }
+        var listHeight by remember { mutableIntStateOf(0) }
+
+        LaunchedEffect(messages.size, pendingIds.size, errors.size) {
+            if (totalItems <= 0) return@LaunchedEffect
+            val target = totalItems - 1
+            if (!didInitialScroll) {
+                listState.scrollToItem(target)
+                didInitialScroll = true
+            } else {
+                listState.animateScrollToItem(target)
+            }
+        }
+
+        // 键盘弹出/收起会连续改变列表高度：直接跟随，避免每帧重启动画
+        LaunchedEffect(listHeight) {
+            if (listHeight > 0 && totalItems > 0) {
+                listState.scrollToItem(totalItems - 1)
+            }
         }
 
         LazyColumn(
             state = listState,
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f),
+                .weight(1f)
+                .onSizeChanged { listHeight = it.height },
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -343,9 +357,6 @@ private fun RoomInputBar(
         modifier = Modifier
             .fillMaxWidth()
             .background(Color.White)
-            .windowInsetsPadding(
-                WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom)
-            )
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.Bottom
     ) {

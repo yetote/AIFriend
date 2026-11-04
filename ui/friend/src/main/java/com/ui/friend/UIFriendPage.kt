@@ -78,16 +78,10 @@ fun UIFriendPage(
         modifier = Modifier
             .fillMaxSize()
             .background(color = UIFriendBarGray)
-            .windowInsetsPadding(
-                WindowInsets.safeDrawing.only(
-                    WindowInsetsSides.Top + WindowInsetsSides.Horizontal
-                )
-            )
+            .pageInsetsTop()
             .verticalScroll(rememberScrollState())
             // 底部安全区作为滚动内容的一部分，键盘弹出时只增加一次底部空间
-            .windowInsetsPadding(
-                WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom)
-            )
+            .pageInsetsBottom()
     ) {
         UIFriendBar(
             isNotification = true,
