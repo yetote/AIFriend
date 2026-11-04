@@ -35,11 +35,11 @@ import com.ui.friend.theme.UIFriendBarHeaderTagGreenColor
 
 @Composable
 fun UIFriendCrewStatusCard(
-    onlineCount: Int = 15,
-    title: Int = 6,
-    todayCount: Int = 48,
-    monthCount: Int = 12800,
-    mostActive: String = "Echo"
+    onlineCount: Int = 0,
+    title: Int = 0,
+    activeCount: Int = 0,
+    messageCount: Int = 0,
+    mostActive: String = "-"
 ) {
     Card(
         modifier = Modifier
@@ -113,8 +113,8 @@ fun UIFriendCrewStatusCard(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.Start
                 ) {
-                    StatItem(value = todayCount.toKString(), label = "今日对话", modifier = Modifier.weight(1f))
-                    StatItem(value = monthCount.toKString(), label = "本月消息", modifier = Modifier.weight(1f))
+                    StatItem(value = activeCount.toKString(), label = "活跃好友", modifier = Modifier.weight(1f))
+                    StatItem(value = messageCount.toKString(), label = "消息总数", modifier = Modifier.weight(1f))
                     StatItem(value = mostActive, label = "最活跃", modifier = Modifier.weight(1f))
                 }
             }

@@ -6,7 +6,11 @@ import io.ktor.client.call.body
 import io.ktor.client.engine.android.Android
 import io.ktor.client.network.sockets.ConnectTimeoutException
 import io.ktor.client.plugins.ClientRequestException
+import io.ktor.client.plugins.HttpRequestTimeoutException
 import io.ktor.client.plugins.HttpResponseValidator
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.RedirectResponseException
+import io.ktor.client.plugins.ServerResponseException
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logger
@@ -16,15 +20,11 @@ import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
-import io.ktor.http.Headers
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
-import io.ktor.http.headers
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 import java.net.SocketTimeoutException
-import kotlin.collections.component1
-import kotlin.collections.component2
 
 class KtorClient {
     val client = HttpClient(Android) {
@@ -38,18 +38,24 @@ class KtorClient {
                 prettyPrint = true
             })
         }
+        install(HttpTimeout) {
+            connectTimeoutMillis = 15_000
+            requestTimeoutMillis = 120_000
+            socketTimeoutMillis = 120_000
+        }
         install(Logging) {
             logger = object : Logger {
                 override fun log(message: String) {
                     Log.d("KtorNetwork", message)
                 }
             }
-            level = LogLevel.ALL
+            // 不要用 LogLevel.ALL：它会把 Authorization 请求头原样打进 logcat
+            level = LogLevel.INFO
         }
         HttpResponseValidator {
             handleResponseExceptionWithRequest { cause, _ ->
-                if (cause is ClientRequestException) {
-                    when (cause.response.status) {
+                when (cause) {
+                    is ClientRequestException -> when (cause.response.status) {
                         HttpStatusCode.Forbidden, HttpStatusCode.Unauthorized ->
                             throw DomainException.UnauthorizedException
 
@@ -59,8 +65,19 @@ class KtorClient {
                         else ->
                             throw DomainException.ServerException(cause.response.status.value)
                     }
-                } else if (cause is ConnectTimeoutException || cause is SocketTimeoutException) {
-                    throw DomainException.NetworkException(cause)
+
+                    is ServerResponseException ->
+                        throw DomainException.ServerException(cause.response.status.value)
+
+                    is RedirectResponseException ->
+                        throw DomainException.ServerException(cause.response.status.value)
+
+                    is ConnectTimeoutException,
+                    is SocketTimeoutException,
+                    is HttpRequestTimeoutException ->
+                        throw DomainException.NetworkException(cause)
+
+                    else -> Unit
                 }
             }
         }

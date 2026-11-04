@@ -1,28 +1,122 @@
 package com.ui.friend
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.ui.friend.data.UIFriendListData
+import com.ui.friend.theme.UIFriendBarCreateButtonBg
+import com.ui.friend.theme.UIFriendBarCreateButtonText
 import com.ui.friend.theme.UIFriendBarGray
+import com.ui.friend.theme.UIFriendBarSubtitleColor
+import com.ui.friend.theme.UIFriendBarTitleColor2
 
 @Composable
-fun UIFriendPage(list: List<UIFriendListData>) {
-    Column(Modifier.background(color = UIFriendBarGray)) {
+fun UIFriendPage(
+    list: List<UIFriendListData>,
+    createdCount: Int = list.size,
+    messageCount: Int = 0,
+    activeCount: Int = 0,
+    mostActive: String = "-",
+    searchText: String = "",
+    onSearchTextChange: (String) -> Unit = {},
+    onCreateClick: () -> Unit = {},
+    onFriendClick: (UIFriendListData) -> Unit = {}
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(color = UIFriendBarGray)
+            .safeDrawingPadding()
+            .verticalScroll(rememberScrollState())
+    ) {
         UIFriendBar(true)
         Spacer(Modifier.height(16.dp))
-        UIFriendCrewStatusCard()
+        UIFriendCrewStatusCard(
+            onlineCount = createdCount,
+            title = createdCount,
+            activeCount = activeCount,
+            messageCount = messageCount,
+            mostActive = mostActive
+        )
         Spacer(Modifier.height(16.dp))
-        UIFriendCreate()
-        Spacer(Modifier.height(16.dp))
-        UIFriendCrewList(list)
+        UIFriendCreate(
+            createdCount = createdCount,
+            searchText = searchText,
+            onSearchTextChange = onSearchTextChange,
+            onCreateClick = onCreateClick
+        )
+        Spacer(Modifier.height(8.dp))
+        if (list.isEmpty()) {
+            EmptyFriends(hasSearch = searchText.isNotBlank(), onCreateClick = onCreateClick)
+        } else {
+            UIFriendCrewList(list, onItemClick = onFriendClick)
+        }
+        Spacer(Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun EmptyFriends(hasSearch: Boolean, onCreateClick: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(
+            text = if (hasSearch) "没有找到匹配的智能体" else "还没有 AI 好友",
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            color = UIFriendBarTitleColor2
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = if (hasSearch) {
+                "换个关键词试试"
+            } else {
+                "创建一个好友，给它一个名字、一个角色，选一个模型，然后开始聊天"
+            },
+            fontSize = 13.sp,
+            color = UIFriendBarSubtitleColor,
+            textAlign = TextAlign.Center
+        )
+        if (!hasSearch) {
+            Spacer(Modifier.height(20.dp))
+            Text(
+                text = "+ 创建 AI 好友",
+                modifier = Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(UIFriendBarCreateButtonBg)
+                    .clickable { onCreateClick() }
+                    .padding(horizontal = 20.dp, vertical = 10.dp),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                color = UIFriendBarCreateButtonText
+            )
+        }
     }
 }
 

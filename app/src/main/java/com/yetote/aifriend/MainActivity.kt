@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import com.core.common.theme.AIFriendTheme
 import com.feature.friend.route.FriendRoute
 
 class MainActivity : ComponentActivity() {
@@ -11,8 +12,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            GlobalUiEventObserver()
-            FriendRoute()
+            AIFriendTheme {
+                GlobalUiEventObserver()
+                FriendRoute()
+            }
         }
     }
 }

@@ -13,6 +13,11 @@ class AIFactory : IFactory {
         return aiClass.getDeclaredConstructor().newInstance()
     }
 
+    /**
+     * 按品牌名创建实例，品牌名以 [companion] 中的 aiMap 为唯一来源。
+     */
+    fun createAI(brandName: String): IAI? = aiMap[brandName]?.let { createAI(it) }
+
     companion object {
         val aiMap = mutableMapOf(
             "Gemini" to AIGemini::class.java,

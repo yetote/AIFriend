@@ -12,4 +12,5 @@ dependencies {
     implementation(project(":core:common"))
     implementation(libs.androidx.datastore)
     implementation(libs.ktor.serialization.json)
+    testImplementation(libs.junit)
 }

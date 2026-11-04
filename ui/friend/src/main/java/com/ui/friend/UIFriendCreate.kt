@@ -43,7 +43,7 @@ import com.ui.friend.theme.UIFriendBarTitleColor2
 @Composable
 fun UIFriendCreate(
     modifier: Modifier = Modifier,
-    createdCount: Int = 6,
+    createdCount: Int = 0,
     searchText: String = "",
     onSearchTextChange: (String) -> Unit = {},
     onCreateClick: () -> Unit = {}
