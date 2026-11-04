@@ -6,12 +6,12 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class DeepseekModelResponse(
     @SerialName("data")
-    val deepseekModelList: List<DeepseekModel>,
-    val `object`: String
+    val deepseekModelList: List<DeepseekModel> = emptyList(),
+    val `object`: String = ""
 )
 @Serializable
 data class DeepseekModel(
-    val id: String,
-    val `object`: String,
-    val owned_by: String
+    val id: String = "",
+    val `object`: String = "",
+    val owned_by: String = ""
 )

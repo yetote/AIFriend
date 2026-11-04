@@ -51,7 +51,10 @@ import com.ui.friend.theme.UIFriendBarTagTextBlue
 
 
 @Composable
-fun UIFriendCrewList(data: List<UIFriendListData>) {
+fun UIFriendCrewList(
+    data: List<UIFriendListData>,
+    onItemClick: (UIFriendListData) -> Unit = {}
+) {
 
     var selectedTabIndex by remember { mutableIntStateOf(0) }
 
@@ -63,6 +66,7 @@ fun UIFriendCrewList(data: List<UIFriendListData>) {
     ) {
         // --- 1. 顶部 Tab 切换组件 ---
         AgentTabRow(
+            data = data,
             selectedIndex = selectedTabIndex,
             onTabSelected = { selectedTabIndex = it }
         )
@@ -75,10 +79,15 @@ fun UIFriendCrewList(data: List<UIFriendListData>) {
             elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
         ) {
             Column {
-                data.forEachIndexed { index, agent ->
-                    AgentListItem(data = agent)
+                val visible = when (selectedTabIndex) {
+                    1 -> data.filter { it.isOnline }
+                    2 -> data.filter { !it.isOnline }
+                    else -> data
+                }
+                visible.forEachIndexed { index, agent ->
+                    AgentListItem(data = agent, onClick = { onItemClick(agent) })
                     // 如果不是最后一项，添加分割线
-                    if (index < data.size - 1) {
+                    if (index < visible.size - 1) {
                         HorizontalDivider(
                             thickness = 1.dp,
                             color = UIFriendBarDividerColor,
@@ -94,10 +103,15 @@ fun UIFriendCrewList(data: List<UIFriendListData>) {
 // 顶部 Tab 栏
 @Composable
 private fun AgentTabRow(
+    data: List<UIFriendListData>,
     selectedIndex: Int,
     onTabSelected: (Int) -> Unit
 ) {
-    val tabs = listOf("全部 6", "启用中 5", "草稿 1")
+    val tabs = listOf(
+        "全部 ${data.size}",
+        "启用中 ${data.count { it.isOnline }}",
+        "草稿 ${data.count { !it.isOnline }}"
+    )
 
     Row(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -131,12 +145,13 @@ private fun AgentTabRow(
 @Composable
 private fun AgentListItem(
     data: UIFriendListData,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clickable { /* 点击列表项事件 */ }
+            .clickable { onClick() }
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

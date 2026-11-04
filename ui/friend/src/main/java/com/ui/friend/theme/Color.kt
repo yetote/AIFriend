@@ -28,3 +28,10 @@ val UIFriendBarOnlineGreen = Color(0xFF10B981)          // 在线绿点颜色
 val UIFriendBarTagBgBlue = Color(0xFFEFF6FF)            // 模型 Tag 浅蓝背景
 val UIFriendBarTagTextBlue = Color(0xFF2563EB)          // 模型 Tag 蓝色文字
 val UIFriendBarDividerColor = Color(0xFFF3F4F6)         // 分割线浅灰颜色
+
+// 对话页
+val UIChatUserBubble = Color(0xFF2B6BFF)                // 用户消息气泡
+val UIChatAssistantBubble = Color(0xFFFFFFFF)           // AI 消息气泡
+val UIChatInputBg = Color(0xFFF2F4F7)                   // 输入框背景
+val UIChatErrorBg = Color(0xFFFFF2F2)                   // 错误提示背景
+val UIChatSendDisabled = Color(0xFFBFC5CC)              // 发送按钮禁用态

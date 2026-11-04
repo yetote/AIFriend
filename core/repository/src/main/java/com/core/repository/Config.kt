@@ -34,7 +34,7 @@ object AIConfigs{
 
     fun deepseekConfig() = ApiConfig(
         baseUrl = URL_DEEPSEEK,
-        chatUrl = "$URL_DEEPSEEK/responses",
+        chatUrl = "$URL_DEEPSEEK/chat/completions",
         apiKey = DEEPSEEK_KEY,
         headers = mapOf("Authorization" to "Bearer $DEEPSEEK_KEY")
     )
