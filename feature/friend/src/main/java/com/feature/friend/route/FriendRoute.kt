@@ -251,8 +251,18 @@ fun FriendRoute(viewModel: FriendViewModel = viewModel()) {
                         allFriends = state.friends.map {
                             UIRoomMember(id = it.id, name = it.name, avatarPath = it.avatarPath)
                         },
-                        onSave = { name, prompt ->
-                            viewModel.saveRoomSettings(room.id, name, prompt)
+                        discussionEnabled = room.discussionEnabled,
+                        discussionWindow = room.discussionWindow,
+                        sequentialSpeaking = room.sequentialSpeaking,
+                        onSave = { name, prompt, discussion, window, sequential ->
+                            viewModel.saveRoomSettings(
+                                room.id,
+                                name,
+                                prompt,
+                                discussion,
+                                window,
+                                sequential
+                            )
                         },
                         onToggleMember = viewModel::toggleRoomMember,
                         onBack = viewModel::back

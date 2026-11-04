@@ -534,7 +534,16 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
         // 只问本轮选中的成员；空集合表示全员
         val targets = state.roomTargetIds.intersect(room.memberIds.toSet())
             .ifEmpty { room.memberIds.toSet() }
-        targets.forEach { friendId -> enqueueRoomReply(room.id, friendId) }
+        val ordered = room.memberIds.filter { it in targets }
+        if (room.discussionEnabled && room.sequentialSpeaking) {
+            // 依次发言：后一位等前一位结束，能看到本轮前面的回复
+            var previous: Job? = null
+            ordered.forEach { friendId ->
+                previous = enqueueRoomReply(room.id, friendId, waitFor = previous)
+            }
+        } else {
+            ordered.forEach { friendId -> enqueueRoomReply(room.id, friendId) }
+        }
     }
 
     fun retryRoomReply(friendId: String) {
@@ -587,7 +596,14 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
         _uiState.update { it.copy(screen = FriendScreen.RoomSettings(roomId)) }
     }
 
-    fun saveRoomSettings(roomId: String, name: String, prompt: String) {
+    fun saveRoomSettings(
+        roomId: String,
+        name: String,
+        prompt: String,
+        discussionEnabled: Boolean,
+        discussionWindow: Int,
+        sequentialSpeaking: Boolean
+    ) {
         val trimmedName = name.trim()
         if (trimmedName.isEmpty()) return
         if (_uiState.value.rooms.none { it.id == roomId }) return
@@ -595,7 +611,13 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
             state.copy(
                 rooms = state.rooms.map { room ->
                     if (room.id == roomId) {
-                        room.copy(name = trimmedName, prompt = prompt.trim())
+                        room.copy(
+                            name = trimmedName,
+                            prompt = prompt.trim(),
+                            discussionEnabled = discussionEnabled,
+                            discussionWindow = discussionWindow.coerceIn(1, 5),
+                            sequentialSpeaking = sequentialSpeaking
+                        )
                     } else {
                         room
                     }
@@ -724,20 +746,29 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
         }
     }
 
-    private fun enqueueRoomReply(roomId: String, friendId: String) {
+    private fun enqueueRoomReply(
+        roomId: String,
+        friendId: String,
+        waitFor: Job? = null
+    ): Job {
         val lock = roomLocks.getOrPut(roomKey(roomId, friendId)) { Mutex() }
-        launchRoomRequest(roomId, friendId) {
+        return launchRoomRequest(roomId, friendId) {
+            // 顺序发言：等前一位说完，本轮前面的回复已经写进 roomMessages
+            waitFor?.join()
             lock.withLock {
                 val state = _uiState.value
                 val room = state.rooms.firstOrNull { it.id == roomId } ?: return@withLock
                 if (friendId !in room.memberIds) return@withLock
                 val friend = state.friends.firstOrNull { it.id == friendId } ?: return@withLock
 
+                val discussion = room.discussionEnabled
                 val context = buildRoomContext(
                     messages = state.roomMessages.filter { it.roomId == roomId },
                     friendId = friendId,
-                    joinedSeq = room.memberJoinSeq[friendId] ?: 0L
-                ).trimToBudget()
+                    joinedSeq = room.memberJoinSeq[friendId] ?: 0L,
+                    otherWindowRounds = if (discussion) room.discussionWindow else null,
+                    friendNames = state.friends.associate { it.id to it.name }
+                ).trimToBudget(if (discussion) 4000 else 6000)
                 if (context.isEmpty()) return@withLock
 
                 if (isRoomActive(roomId)) {
@@ -858,12 +889,17 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
      * 把房间请求登记成可取消的 Job，停止生成时直接 cancel。
      * 同一个 key 重复发起时先取消上一次，避免两个请求同时写同一条上下文。
      */
-    private fun launchRoomRequest(roomId: String, friendId: String, block: suspend () -> Unit) {
+    private fun launchRoomRequest(
+        roomId: String,
+        friendId: String,
+        block: suspend () -> Unit
+    ): Job {
         val key = roomKey(roomId, friendId)
         roomJobs.remove(key)?.cancel()
         val job = viewModelScope.launch { block() }
         roomJobs[key] = job
         job.invokeOnCompletion { roomJobs.remove(key, job) }
+        return job
     }
 
     private fun cancelRoomJobs(roomId: String) {
