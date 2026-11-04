@@ -101,11 +101,7 @@ fun UIFriendCreateScreen(
             .fillMaxSize()
             .background(UIFriendBarGray)
             // 底部 inset 由底部按钮栏处理，避免与窗口 adjustResize 叠加
-            .windowInsetsPadding(
-                WindowInsets.safeDrawing.only(
-                    WindowInsetsSides.Top + WindowInsetsSides.Horizontal
-                )
-            )
+            .pageInsetsTop()
     ) {
         Row(
             modifier = Modifier
@@ -322,9 +318,7 @@ fun UIFriendCreateScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(Color.White)
-                .windowInsetsPadding(
-                    WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom)
-                )
+                .pageInsetsBottom()
                 .padding(16.dp)
         ) {
             Button(

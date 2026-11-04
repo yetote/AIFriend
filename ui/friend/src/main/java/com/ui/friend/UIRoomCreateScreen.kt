@@ -62,11 +62,7 @@ fun UIRoomCreateScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(UIFriendBarGray)
-            .windowInsetsPadding(
-                WindowInsets.safeDrawing.only(
-                    WindowInsetsSides.Top + WindowInsetsSides.Horizontal
-                )
-            )
+            .pageInsetsTop()
     ) {
         Row(
             modifier = Modifier
@@ -163,9 +159,7 @@ fun UIRoomCreateScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(Color.White)
-                .windowInsetsPadding(
-                    WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom)
-                )
+                .pageInsetsBottom()
                 .padding(16.dp)
         ) {
             Button(
