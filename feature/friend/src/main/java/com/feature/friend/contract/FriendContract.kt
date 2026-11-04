@@ -2,6 +2,8 @@ package com.feature.friend.contract
 
 import com.feature.friend.model.Friend
 import com.feature.friend.model.Provider
+import com.feature.friend.model.Room
+import com.feature.friend.model.RoomMessage
 
 /**
  * 当前已接入对话链路的厂商。未迁移到多轮协议的厂商不列出来，避免用户创建出不能聊的好友。
@@ -53,11 +55,13 @@ val DEFAULT_PROVIDERS = listOf(
     )
 )
 
-/** 单 Activity 内的三个页面，先用状态机切换，后续再换 TheRouter/Navigation。 */
+/** 单 Activity 内的页面，先用状态机切换，后续再换 TheRouter/Navigation。 */
 sealed interface FriendScreen {
     data object List : FriendScreen
     data object Create : FriendScreen
     data class Chat(val friendId: String) : FriendScreen
+    data object RoomCreate : FriendScreen
+    data class RoomChat(val roomId: String) : FriendScreen
 }
 
 data class FriendUiState(
@@ -73,7 +77,18 @@ data class FriendUiState(
     val selectedModel: String = DEFAULT_PROVIDERS.first().defaultModel,
     val isLoadingModels: Boolean = false,
     /** 默认关闭深度思考：响应更快、token 更省；GLM-5 系列只能降档。 */
-    val thinkingEnabled: Boolean = false
+    val thinkingEnabled: Boolean = false,
+
+    // 聊天室
+    val rooms: List<Room> = emptyList(),
+    val roomMessages: List<RoomMessage> = emptyList(),
+    val roomInput: String = "",
+    /** 正在回答的 AI（friendId） */
+    val roomPending: Set<String> = emptySet(),
+    /** 回答失败的 AI -> 错误信息 */
+    val roomErrors: Map<String, String> = emptyMap(),
+    val roomDraftName: String = "",
+    val roomDraftMemberIds: Set<String> = emptySet()
 ) {
     val activeFriend: Friend?
         get() = (screen as? FriendScreen.Chat)
@@ -100,4 +115,14 @@ data class FriendUiState(
         get() = friends.maxByOrNull { it.messages.size }
             ?.takeIf { it.messages.isNotEmpty() }
             ?.name ?: "-"
+
+    val activeRoom: Room?
+        get() = (screen as? FriendScreen.RoomChat)
+            ?.let { roomScreen -> rooms.firstOrNull { it.id == roomScreen.roomId } }
+
+    val activeRoomMessages: List<RoomMessage>
+        get() = activeRoom?.let { room ->
+            roomMessages.filter { it.roomId == room.id }
+                .sortedWith(compareBy({ it.createdAt }, { it.seq }))
+        }.orEmpty()
 }

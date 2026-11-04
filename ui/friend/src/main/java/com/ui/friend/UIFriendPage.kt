@@ -2,8 +2,10 @@ package com.ui.friend
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -30,6 +32,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ui.friend.data.UIFriendListData
+import com.ui.friend.data.UIRoomData
 import com.ui.friend.theme.UIFriendBarCreateButtonBg
 import com.ui.friend.theme.UIFriendBarCreateButtonText
 import com.ui.friend.theme.UIFriendBarGray
@@ -43,10 +46,13 @@ fun UIFriendPage(
     messageCount: Int = 0,
     activeCount: Int = 0,
     mostActive: String = "-",
+    rooms: List<UIRoomData> = emptyList(),
     searchText: String = "",
     onSearchTextChange: (String) -> Unit = {},
     onCreateClick: () -> Unit = {},
-    onFriendClick: (UIFriendListData) -> Unit = {}
+    onFriendClick: (UIFriendListData) -> Unit = {},
+    onCreateRoom: () -> Unit = {},
+    onRoomClick: (UIRoomData) -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -73,6 +79,12 @@ fun UIFriendPage(
             mostActive = mostActive
         )
         Spacer(Modifier.height(16.dp))
+        RoomSection(
+            rooms = rooms,
+            onCreateRoom = onCreateRoom,
+            onRoomClick = onRoomClick
+        )
+        Spacer(Modifier.height(16.dp))
         UIFriendCreate(
             createdCount = createdCount,
             searchText = searchText,
@@ -86,6 +98,79 @@ fun UIFriendPage(
             UIFriendCrewList(list, onItemClick = onFriendClick)
         }
         Spacer(Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun RoomSection(
+    rooms: List<UIRoomData>,
+    onCreateRoom: () -> Unit,
+    onRoomClick: (UIRoomData) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "聊天室",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = UIFriendBarTitleColor2
+            )
+            Text(
+                text = "+ 新建",
+                modifier = Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(UIFriendBarCreateButtonBg)
+                    .clickable { onCreateRoom() }
+                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = UIFriendBarCreateButtonText
+            )
+        }
+        if (rooms.isEmpty()) {
+            Text(
+                text = "把多个好友拉进同一个房间，一次提问、各自回答",
+                fontSize = 13.sp,
+                color = UIFriendBarSubtitleColor
+            )
+        } else {
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                rooms.forEach { room ->
+                    Column(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(Color.White)
+                            .clickable { onRoomClick(room) }
+                            .padding(horizontal = 14.dp, vertical = 12.dp)
+                    ) {
+                        Text(
+                            text = room.name,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = UIFriendBarTitleColor2
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "${room.memberCount} 位好友",
+                            fontSize = 11.sp,
+                            color = UIFriendBarSubtitleColor
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 

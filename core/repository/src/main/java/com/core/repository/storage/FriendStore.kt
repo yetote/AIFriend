@@ -1,11 +1,8 @@
 package com.core.repository.storage
 
 import android.content.Context
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
@@ -35,10 +32,8 @@ data class StoredFriend(
     val messages: List<StoredMessage> = emptyList()
 )
 
-private val Context.friendDataStore: DataStore<Preferences> by preferencesDataStore(name = "aifriend")
-
 /**
- * 好友 + 聊天记录的本地存储。
+ * 好友 + 1:1 聊天记录的本地存储。
  * 当前数据量小，采用「整份 JSON 快照」写入 Preferences DataStore；
  * 等消息量大了再换成 Room（按 friendId 建表 + 分页）。
  */
@@ -50,7 +45,7 @@ class FriendStore(private val context: Context) {
     }
 
     suspend fun load(): List<StoredFriend> {
-        val preferences = context.friendDataStore.data.first()
+        val preferences = context.appPreferences.data.first()
         val raw = preferences[FRIENDS_KEY] ?: return emptyList()
         return runCatching {
             json.decodeFromString<List<StoredFriend>>(raw)
@@ -59,7 +54,7 @@ class FriendStore(private val context: Context) {
 
     suspend fun save(friends: List<StoredFriend>) {
         val raw = json.encodeToString(friends)
-        context.friendDataStore.edit { preferences ->
+        context.appPreferences.edit { preferences ->
             preferences[FRIENDS_KEY] = raw
         }
     }
