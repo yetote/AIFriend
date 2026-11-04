@@ -13,6 +13,7 @@ android {
 dependencies {
     implementation(project(":core:ai"))
     implementation(project(":core:common"))
+    implementation(project(":core:repository"))
     implementation(project(":ui:friend"))
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)

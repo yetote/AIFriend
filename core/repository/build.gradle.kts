@@ -10,4 +10,5 @@ android {
 dependencies {
     implementation(project(":core:network"))
     implementation(libs.ktor.serialization.json)
+    implementation(libs.androidx.datastore)
 }
