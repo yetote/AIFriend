@@ -90,7 +90,8 @@ cp core/network/key.example.kt core/network/src/main/java/com/core/network/key.k
 
 - 入口：创建好友页选择头像；创建完成后在 1:1 对话页点头像可更换；首页右上角头像用于设置用户自己的头像
 - 选图：系统 Photo Picker（`ActivityResultContracts.PickVisualMedia`），不需要存储权限
-- 处理：`AvatarStore` 把图片采样解码、居中裁成正方形、缩放到 256×256 JPEG，存到 `files/avatars/<id>_<时间戳>.jpg`，并清理同 id 的旧文件
+- 裁剪：选图后进入 `UIAvatarCropDialog`，双指缩放、拖动选择范围，带三分线辅助构图，确认后才输出正方形 JPEG
+- 处理：`AvatarStore` 把裁剪结果缩放到 256×256 存到 `files/avatars/<id>_<时间戳>.jpg`，并清理同 id 的旧文件
 - 展示：`UIAvatar` 统一组件，有图片显示图片，没有就显示名字首字 + 按名字稳定的配色
 - 持久化：好友头像路径存在 `StoredFriend.avatarPath`，用户头像路径存在 `user_avatar_v1`
 
@@ -107,7 +108,7 @@ cp core/network/key.example.kt core/network/src/main/java/com/core/network/key.k
 
 - `core/network/src/main/java/com/core/network/key.kt` 是本地密钥文件，已被 `.gitignore` 忽略（模板见 `core/network/key.example.kt`）；但它仍会被编译进 APK，正式发布前必须轮换并改为用户自带 Key 或后端代理
 - 好友与对话历史已持久化，但暂不支持删除/重命名好友、清空会话，也没有导出功能
-- 头像目前只做居中裁切，没有手动调整裁剪框；相机照片的 EXIF 旋转尚未处理
+- 头像裁剪暂不支持旋转/翻转手势；相机照片的 EXIF 旋转也还没处理
 - 聊天室目前是 P0：没有停止生成、@ 指定某个 AI、分栏对比、主持人总结和「共享全文」模式
 - 聊天记录无上限，长期使用后 JSON 快照会变大，届时需要迁移 Room 或做分页裁剪
 - 豆包模型选择列表包含账号未开通的模型，选中后会提示 404，后续可在控制台开通或按账号能力过滤

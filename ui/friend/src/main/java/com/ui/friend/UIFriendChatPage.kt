@@ -41,7 +41,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -82,10 +85,11 @@ fun UIFriendChatPage(
     onSend: () -> Unit,
     onBack: () -> Unit,
     onRetry: () -> Unit,
-    onChangeAvatar: (Uri) -> Unit
+    onChangeAvatar: (ByteArray) -> Unit
 ) {
+    var cropUri by remember { mutableStateOf<Uri?>(null) }
     val avatarPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) onChangeAvatar(uri)
+        if (uri != null) cropUri = uri
     }
 
     Column(
@@ -161,6 +165,18 @@ fun UIFriendChatPage(
             isSending = isSending,
             onInputChange = onInputChange,
             onSend = onSend
+        )
+    }
+
+    val pendingCrop = cropUri
+    if (pendingCrop != null) {
+        UIAvatarCropDialog(
+            uri = pendingCrop,
+            onCancel = { cropUri = null },
+            onConfirm = { bytes ->
+                cropUri = null
+                onChangeAvatar(bytes)
+            }
         )
     }
 }

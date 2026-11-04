@@ -73,15 +73,16 @@ fun UIFriendCreateScreen(
     thinkingEnabled: Boolean,
     onThinkingChange: (Boolean) -> Unit,
     onCancel: () -> Unit,
-    onCreate: (name: String, role: String, prompt: String, avatarUri: Uri?) -> Unit
+    onCreate: (name: String, role: String, prompt: String, avatarBytes: ByteArray?) -> Unit
 ) {
     var name by rememberSaveable { mutableStateOf("") }
     var role by rememberSaveable { mutableStateOf("") }
     var prompt by rememberSaveable { mutableStateOf("") }
-    var avatarUri by remember { mutableStateOf<Uri?>(null) }
-    val avatarBitmap = rememberUriBitmap(avatarUri)
+    var cropUri by remember { mutableStateOf<Uri?>(null) }
+    var avatarBytes by remember { mutableStateOf<ByteArray?>(null) }
+    val avatarBitmap = rememberBytesBitmap(avatarBytes)
     val avatarPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) avatarUri = uri
+        if (uri != null) cropUri = uri
     }
     val canCreate = name.isNotBlank() && selectedModel.isNotBlank()
     val selectedProvider = providers.firstOrNull { it.brand == selectedBrand }
@@ -144,7 +145,7 @@ fun UIFriendCreateScreen(
                 Spacer(Modifier.width(16.dp))
                 Column {
                     Text(
-                        text = if (avatarUri == null) "选择头像" else "更换头像",
+                        text = if (avatarBytes == null) "选择头像" else "更换头像",
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
                         color = UIFriendBarCreateButtonText,
@@ -295,7 +296,7 @@ fun UIFriendCreateScreen(
                 .padding(16.dp)
         ) {
             Button(
-                onClick = { onCreate(name, role, prompt, avatarUri) },
+                onClick = { onCreate(name, role, prompt, avatarBytes) },
                 enabled = canCreate,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -308,6 +309,18 @@ fun UIFriendCreateScreen(
                 Text(text = "创建并开始聊天", fontSize = 15.sp, fontWeight = FontWeight.Bold)
             }
         }
+    }
+
+    val pendingCrop = cropUri
+    if (pendingCrop != null) {
+        UIAvatarCropDialog(
+            uri = pendingCrop,
+            onCancel = { cropUri = null },
+            onConfirm = { bytes ->
+                avatarBytes = bytes
+                cropUri = null
+            }
+        )
     }
 }
 
