@@ -1,12 +1,15 @@
 package com.feature.friend.vm
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.viewModelScope
 import com.core.ai.entity.IAI
 import com.core.ai.factory.AIFactory
 import com.core.ai.model.ChatMessage
 import com.core.common.BaseViewModel
+import com.core.repository.storage.AvatarStore
 import com.core.repository.storage.FriendStore
+import com.core.repository.storage.ProfileStore
 import com.core.repository.storage.RoomStore
 import com.core.repository.storage.StoredFriend
 import com.core.repository.storage.StoredRoom
@@ -37,6 +40,8 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
 
     private val friendStore = FriendStore(application)
     private val roomStore = RoomStore(application)
+    private val avatarStore = AvatarStore(application)
+    private val profileStore = ProfileStore(application)
 
     /**
      * 写盘队列：CONFLATED 只保留最新快照，唯一消费者串行写入，
@@ -81,9 +86,11 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
             val storedFriends = runCatching { friendStore.load() }.getOrDefault(emptyList())
             val storedRooms = runCatching { roomStore.loadRooms() }.getOrDefault(emptyList())
             val storedMessages = runCatching { roomStore.loadMessages() }.getOrDefault(emptyList())
+            val userAvatar = runCatching { profileStore.loadAvatarPath() }.getOrNull()
 
             _uiState.update { state ->
                 state.copy(
+                    userAvatarPath = userAvatar ?: state.userAvatarPath,
                     friends = if (state.friends.isEmpty()) {
                         storedFriends.map { it.toFriend() }
                     } else {
@@ -162,7 +169,7 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
         }
     }
 
-    fun createFriend(name: String, role: String, prompt: String) {
+    fun createFriend(name: String, role: String, prompt: String, avatarUri: Uri? = null) {
         val trimmedName = name.trim()
         if (trimmedName.isEmpty()) return
 
@@ -184,6 +191,39 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
                 screen = FriendScreen.Chat(friend.id),
                 error = null,
                 input = ""
+            )
+        }
+        persistFriends()
+
+        if (avatarUri != null) {
+            viewModelScope.launch {
+                val path = avatarStore.save(avatarUri, friend.id) ?: return@launch
+                updateFriendAvatar(friend.id, path)
+            }
+        }
+    }
+
+    fun setFriendAvatar(friendId: String, uri: Uri) {
+        viewModelScope.launch {
+            val path = avatarStore.save(uri, friendId) ?: return@launch
+            updateFriendAvatar(friendId, path)
+        }
+    }
+
+    fun setUserAvatar(uri: Uri) {
+        viewModelScope.launch {
+            val path = avatarStore.save(uri, USER_AVATAR_ID) ?: return@launch
+            runCatching { profileStore.saveAvatarPath(path) }
+            _uiState.update { it.copy(userAvatarPath = path) }
+        }
+    }
+
+    private fun updateFriendAvatar(friendId: String, path: String) {
+        _uiState.update { state ->
+            state.copy(
+                friends = state.friends.map { friend ->
+                    if (friend.id == friendId) friend.copy(avatarPath = path) else friend
+                }
             )
         }
         persistFriends()
@@ -500,5 +540,9 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
         var message = ""
         handleError { message = it }
         return message.ifBlank { "发生未知错误，请重试" }
+    }
+
+    private companion object {
+        const val USER_AVATAR_ID = "user"
     }
 }

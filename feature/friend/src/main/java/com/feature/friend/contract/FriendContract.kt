@@ -79,6 +79,9 @@ data class FriendUiState(
     /** 默认关闭深度思考：响应更快、token 更省；GLM-5 系列只能降档。 */
     val thinkingEnabled: Boolean = false,
 
+    /** 用户自己的头像（本地文件路径），房间和 1:1 对话里显示 */
+    val userAvatarPath: String? = null,
+
     // 聊天室
     val rooms: List<Room> = emptyList(),
     val roomMessages: List<RoomMessage> = emptyList(),

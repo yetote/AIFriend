@@ -1,5 +1,9 @@
 package com.ui.friend
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -19,6 +23,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -37,6 +42,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -67,11 +73,16 @@ fun UIFriendCreateScreen(
     thinkingEnabled: Boolean,
     onThinkingChange: (Boolean) -> Unit,
     onCancel: () -> Unit,
-    onCreate: (name: String, role: String, prompt: String) -> Unit
+    onCreate: (name: String, role: String, prompt: String, avatarUri: Uri?) -> Unit
 ) {
     var name by rememberSaveable { mutableStateOf("") }
     var role by rememberSaveable { mutableStateOf("") }
     var prompt by rememberSaveable { mutableStateOf("") }
+    var avatarUri by remember { mutableStateOf<Uri?>(null) }
+    val avatarBitmap = rememberUriBitmap(avatarUri)
+    val avatarPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) avatarUri = uri
+    }
     val canCreate = name.isNotBlank() && selectedModel.isNotBlank()
     val selectedProvider = providers.firstOrNull { it.brand == selectedBrand }
 
@@ -117,6 +128,41 @@ fun UIFriendCreateScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                UIAvatar(
+                    name = name.ifBlank { "新" },
+                    avatarPath = null,
+                    size = 72.dp,
+                    shape = CircleShape,
+                    imageBitmap = avatarBitmap,
+                    modifier = Modifier.clickable {
+                        avatarPicker.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    }
+                )
+                Spacer(Modifier.width(16.dp))
+                Column {
+                    Text(
+                        text = if (avatarUri == null) "选择头像" else "更换头像",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = UIFriendBarCreateButtonText,
+                        modifier = Modifier.clickable {
+                            avatarPicker.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        }
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "可选，之后在对话页点头像也能换",
+                        fontSize = 12.sp,
+                        color = UIFriendBarItemSubtitleColor
+                    )
+                }
+            }
+
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
@@ -249,7 +295,7 @@ fun UIFriendCreateScreen(
                 .padding(16.dp)
         ) {
             Button(
-                onClick = { onCreate(name, role, prompt) },
+                onClick = { onCreate(name, role, prompt, avatarUri) },
                 enabled = canCreate,
                 modifier = Modifier
                     .fillMaxWidth()

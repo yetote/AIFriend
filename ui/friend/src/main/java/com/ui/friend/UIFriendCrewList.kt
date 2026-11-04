@@ -160,23 +160,12 @@ private fun AgentListItem(
             modifier = Modifier.size(48.dp),
             contentAlignment = Alignment.TopStart
         ) {
-            // 头像主体
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(data.avatarBgColor),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = data.name.first().toString(),
-                    style = TextStyle(
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = data.avatarTextColor
-                    )
-                )
-            }
+            UIAvatar(
+                name = data.name,
+                avatarPath = data.avatarPath,
+                size = 44.dp,
+                fallbackColor = data.avatarBgColor
+            )
 
             // 右下角在线状态绿点
             if (data.isOnline) {

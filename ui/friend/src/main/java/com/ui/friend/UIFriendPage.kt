@@ -47,12 +47,14 @@ fun UIFriendPage(
     activeCount: Int = 0,
     mostActive: String = "-",
     rooms: List<UIRoomData> = emptyList(),
+    userAvatarPath: String? = null,
     searchText: String = "",
     onSearchTextChange: (String) -> Unit = {},
     onCreateClick: () -> Unit = {},
     onFriendClick: (UIFriendListData) -> Unit = {},
     onCreateRoom: () -> Unit = {},
-    onRoomClick: (UIRoomData) -> Unit = {}
+    onRoomClick: (UIRoomData) -> Unit = {},
+    onPickUserAvatar: () -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -69,7 +71,11 @@ fun UIFriendPage(
                 WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom)
             )
     ) {
-        UIFriendBar(true)
+        UIFriendBar(
+            isNotification = true,
+            userAvatarPath = userAvatarPath,
+            onAvatarClick = onPickUserAvatar
+        )
         Spacer(Modifier.height(16.dp))
         UIFriendCrewStatusCard(
             onlineCount = createdCount,

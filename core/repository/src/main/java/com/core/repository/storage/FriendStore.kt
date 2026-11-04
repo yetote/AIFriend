@@ -29,6 +29,7 @@ data class StoredFriend(
     val company: String,
     val model: String,
     val thinkingEnabled: Boolean = false,
+    val avatarPath: String? = null,
     val messages: List<StoredMessage> = emptyList()
 )
 

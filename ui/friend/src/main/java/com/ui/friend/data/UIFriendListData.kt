@@ -11,5 +11,6 @@ data class UIFriendListData(
     val avatarBgColor: Color,
     val avatarTextColor: Color,
     val isOnline: Boolean = true,
-    val id: String = ""
+    val id: String = "",
+    val avatarPath: String? = null
 )

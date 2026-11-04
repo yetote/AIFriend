@@ -10,7 +10,8 @@ data class UIRoomData(
 /** 房间成员（创建页 / 成员弹窗 / 消息署名共用） */
 data class UIRoomMember(
     val id: String,
-    val name: String
+    val name: String,
+    val avatarPath: String? = null
 )
 
 /** 房间消息的展示模型 */
@@ -19,5 +20,6 @@ data class UIRoomMessage(
     val isUser: Boolean,
     val senderId: String? = null,
     val senderName: String? = null,
+    val avatarPath: String? = null,
     val content: String
 )
