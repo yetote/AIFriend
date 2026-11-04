@@ -44,7 +44,10 @@ data class RoomEntity(
     @PrimaryKey val id: String,
     val name: String,
     val createdAt: Long,
-    val prompt: String = ""
+    val prompt: String = "",
+    val discussionEnabled: Boolean = false,
+    val discussionWindow: Int = 1,
+    val sequentialSpeaking: Boolean = false
 )
 
 @Entity(

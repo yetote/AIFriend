@@ -40,6 +40,9 @@ data class StoredRoom(
     val memberIds: List<String> = emptyList(),
     val createdAt: Long = 0L,
     val prompt: String = "",
+    val discussionEnabled: Boolean = false,
+    val discussionWindow: Int = 1,
+    val sequentialSpeaking: Boolean = false,
     val memberJoinSeq: Map<String, Long> = emptyMap()
 )
 
@@ -89,7 +92,10 @@ internal fun StoredRoom.toEntity(): RoomEntity = RoomEntity(
     id = id,
     name = name,
     createdAt = createdAt,
-    prompt = prompt
+    prompt = prompt,
+    discussionEnabled = discussionEnabled,
+    discussionWindow = discussionWindow,
+    sequentialSpeaking = sequentialSpeaking
 )
 
 internal fun RoomWithMembers.toStored(): StoredRoom = StoredRoom(
@@ -99,6 +105,9 @@ internal fun RoomWithMembers.toStored(): StoredRoom = StoredRoom(
         .map { it.friendId },
     createdAt = room.createdAt,
     prompt = room.prompt,
+    discussionEnabled = room.discussionEnabled,
+    discussionWindow = room.discussionWindow,
+    sequentialSpeaking = room.sequentialSpeaking,
     memberJoinSeq = members.associate { it.friendId to it.joinSeq }
 )
 

@@ -13,6 +13,12 @@ data class Room(
      * 例如「你们是一个评审团，各自给结论，不要互相重复」。
      */
     val prompt: String = "",
+    /** 开启后每个 AI 能看到其他成员最近 [discussionWindow] 轮的发言。 */
+    val discussionEnabled: Boolean = false,
+    /** 其他人的发言只保留最近几轮（1..5）。 */
+    val discussionWindow: Int = 1,
+    /** 讨论模式下是否按成员顺序依次发言（后说的能看到本轮前面的回复）。 */
+    val sequentialSpeaking: Boolean = false,
     /**
      * 成员加入时的消息 seq（0 表示房间创建时就已加入）。
      * 新加入的 AI 只看得到这个位置之后的内容，之前的用户历史不会同步给它。

@@ -46,6 +46,9 @@ class StorageMappingTest {
             memberIds = listOf("a", "b"),
             createdAt = 100L,
             prompt = "你们是评审团，各自给结论",
+            discussionEnabled = true,
+            discussionWindow = 2,
+            sequentialSpeaking = true,
             memberJoinSeq = mapOf("a" to 0L, "b" to 5L)
         )
 

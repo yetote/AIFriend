@@ -16,7 +16,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         RoomMessageEntity::class,
         ProfileEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -35,6 +35,15 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v3：讨论模式（窗口互见 + 顺序发言）。 */
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE rooms ADD COLUMN discussionEnabled INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE rooms ADD COLUMN discussionWindow INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE rooms ADD COLUMN sequentialSpeaking INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         @Volatile
         private var instance: AppDatabase? = null
 
@@ -45,7 +54,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     DB_NAME
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .build()
                     .also { instance = it }
             }
