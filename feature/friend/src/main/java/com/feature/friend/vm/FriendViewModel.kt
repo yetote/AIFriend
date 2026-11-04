@@ -15,6 +15,7 @@ import com.core.repository.storage.StoredMessage
 import com.feature.friend.contract.FriendScreen
 import com.feature.friend.contract.FriendUiState
 import com.feature.friend.data.buildRoomContext
+import com.feature.friend.data.buildRoomSystemPrompt
 import com.feature.friend.data.toFriend
 import com.feature.friend.data.toRoom
 import com.feature.friend.data.toRoomMessage
@@ -24,6 +25,8 @@ import com.feature.friend.model.Friend
 import com.feature.friend.model.Room
 import com.feature.friend.model.RoomMessage
 import com.feature.friend.model.RoomSender
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -32,6 +35,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
 class FriendViewModel(application: Application) : BaseViewModel(application) {
@@ -49,6 +53,9 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
 
     /** 每个「房间 + AI」一把锁：用户连发消息时，保证同一个 AI 的请求串行，上下文不乱。 */
     private val roomLocks = mutableMapOf<String, Mutex>()
+
+    /** 房间 + AI -> 正在进行的请求，用于「停止生成」。key = "roomId:friendId" */
+    private val roomJobs = ConcurrentHashMap<String, Job>()
 
     /** 消息顺序号，解决同一毫秒内多条消息的稳定排序。 */
     private val seqCounter = AtomicLong(0)
@@ -183,14 +190,21 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
     }
 
     fun back() {
+        val screen = _uiState.value.screen
+        val target = when (screen) {
+            is FriendScreen.RoomSettings -> FriendScreen.RoomChat(screen.roomId)
+            else -> FriendScreen.List
+        }
+        // 从设置页回房间时保留正在生成的请求状态
+        val keepRoomState = target is FriendScreen.RoomChat
         _uiState.update {
             it.copy(
-                screen = FriendScreen.List,
+                screen = target,
                 error = null,
                 input = "",
                 roomInput = "",
-                roomPending = emptySet(),
-                roomErrors = emptyMap()
+                roomPending = if (keepRoomState) it.roomPending else emptySet(),
+                roomErrors = if (keepRoomState) it.roomErrors else emptyMap()
             )
         }
     }
@@ -300,9 +314,11 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
                 },
                 input = "",
                 roomPending = current.roomPending - friendId,
-                roomErrors = current.roomErrors - friendId
+                roomErrors = current.roomErrors - friendId,
+                roomTargetIds = current.roomTargetIds - friendId
             )
         }
+        cancelFriendJobs(friendId)
 
         viewModelScope.launch {
             runCatching { friendRepository.delete(friendId) }
@@ -444,6 +460,7 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
                 roomDraftName = "",
                 roomDraftMemberIds = emptySet(),
                 roomInput = "",
+                roomTargetIds = members.toSet(),
                 roomPending = emptySet(),
                 roomErrors = emptyMap()
             )
@@ -457,10 +474,12 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
     }
 
     fun openRoom(roomId: String) {
+        val room = _uiState.value.rooms.firstOrNull { it.id == roomId }
         _uiState.update {
             it.copy(
                 screen = FriendScreen.RoomChat(roomId),
                 roomInput = "",
+                roomTargetIds = room?.memberIds?.toSet().orEmpty(),
                 roomPending = emptySet(),
                 roomErrors = emptyMap(),
                 error = null
@@ -488,6 +507,7 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
         viewModelScope.launch {
             runCatching { roomRepository.delete(room.id) }
         }
+        cancelRoomJobs(room.id)
     }
 
     fun updateRoomInput(text: String) {
@@ -511,13 +531,79 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
             )
         )
         _uiState.update { it.copy(roomInput = "", roomErrors = emptyMap()) }
-        room.memberIds.forEach { friendId -> enqueueRoomReply(room.id, friendId) }
+        // 只问本轮选中的成员；空集合表示全员
+        val targets = state.roomTargetIds.intersect(room.memberIds.toSet())
+            .ifEmpty { room.memberIds.toSet() }
+        targets.forEach { friendId -> enqueueRoomReply(room.id, friendId) }
     }
 
     fun retryRoomReply(friendId: String) {
         val room = _uiState.value.activeRoom ?: return
         _uiState.update { it.copy(roomErrors = it.roomErrors - friendId) }
         enqueueRoomReply(room.id, friendId)
+    }
+
+    /** 本轮只让选中的成员回答；再点一次取消选择。 */
+    fun toggleRoomTarget(friendId: String) {
+        val state = _uiState.value
+        val room = state.activeRoom ?: return
+        if (friendId !in room.memberIds) return
+        val current = state.roomTargetIds.ifEmpty { room.memberIds.toSet() }
+        val next = if (friendId in current) {
+            if (current.size <= 1) return
+            current - friendId
+        } else {
+            current + friendId
+        }
+        _uiState.update { it.copy(roomTargetIds = next) }
+    }
+
+    fun selectAllRoomTargets() {
+        val room = _uiState.value.activeRoom ?: return
+        _uiState.update { it.copy(roomTargetIds = room.memberIds.toSet()) }
+    }
+
+    fun stopRoomReply(friendId: String) {
+        val room = _uiState.value.activeRoom ?: return
+        roomJobs.remove(roomKey(room.id, friendId))?.cancel()
+        _uiState.update {
+            it.copy(
+                roomPending = it.roomPending - friendId,
+                roomErrors = it.roomErrors - friendId
+            )
+        }
+    }
+
+    fun stopAllRoomReplies() {
+        val room = _uiState.value.activeRoom ?: return
+        room.memberIds.forEach { friendId ->
+            roomJobs.remove(roomKey(room.id, friendId))?.cancel()
+        }
+        _uiState.update { it.copy(roomPending = emptySet(), roomErrors = emptyMap()) }
+    }
+
+    fun openRoomSettings(roomId: String) {
+        if (_uiState.value.rooms.none { it.id == roomId }) return
+        _uiState.update { it.copy(screen = FriendScreen.RoomSettings(roomId)) }
+    }
+
+    fun saveRoomSettings(roomId: String, name: String, prompt: String) {
+        val trimmedName = name.trim()
+        if (trimmedName.isEmpty()) return
+        if (_uiState.value.rooms.none { it.id == roomId }) return
+        _uiState.update { state ->
+            state.copy(
+                rooms = state.rooms.map { room ->
+                    if (room.id == roomId) {
+                        room.copy(name = trimmedName, prompt = prompt.trim())
+                    } else {
+                        room
+                    }
+                },
+                screen = FriendScreen.RoomChat(roomId)
+            )
+        }
+        persistRoom(roomId)
     }
 
     /**
@@ -544,26 +630,31 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
                             current
                         }
                     },
-                    roomErrors = it.roomErrors - friendId
+                    roomErrors = it.roomErrors - friendId,
+                    roomPending = it.roomPending - friendId,
+                    roomTargetIds = memberIds.toSet()
                 )
             }
+            roomJobs.remove(roomKey(room.id, friendId))?.cancel()
             persistRoom(room.id)
             appendSystemMessage(room.id, "$friendName 退出了聊天室")
         } else {
             val joinSeq = seqCounter.incrementAndGet()
+            val memberIds = room.memberIds + friendId
             _uiState.update {
                 it.copy(
                     rooms = it.rooms.map { current ->
                         if (current.id == room.id) {
                             current.copy(
-                                memberIds = current.memberIds + friendId,
+                                memberIds = memberIds,
                                 memberJoinSeq = current.memberJoinSeq + (friendId to joinSeq)
                             )
                         } else {
                             current
                         }
                     },
-                    roomErrors = it.roomErrors - friendId
+                    roomErrors = it.roomErrors - friendId,
+                    roomTargetIds = memberIds.toSet()
                 )
             }
             persistRoom(room.id)
@@ -576,8 +667,8 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
      * 新加入的 AI 不带上任何用户历史，只让它打个招呼。
      */
     private fun enqueueRoomGreeting(roomId: String, friendId: String) {
-        val lock = roomLocks.getOrPut("$roomId:$friendId") { Mutex() }
-        viewModelScope.launch {
+        val lock = roomLocks.getOrPut(roomKey(roomId, friendId)) { Mutex() }
+        launchRoomRequest(roomId, friendId) {
             lock.withLock {
                 val state = _uiState.value
                 val room = state.rooms.firstOrNull { it.id == roomId } ?: return@withLock
@@ -598,7 +689,7 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
                             )
                         ),
                         model = friend.model,
-                        systemPrompt = friend.systemPrompt,
+                        systemPrompt = buildRoomSystemPrompt(room.prompt, friend.systemPrompt),
                         enableThinking = friend.thinkingEnabled
                     )
                     if (isFriendActiveInRoom(roomId, friendId)) {
@@ -616,6 +707,8 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
                     if (isRoomActive(roomId)) {
                         _uiState.update { it.copy(roomErrors = it.roomErrors - friendId) }
                     }
+                } catch (t: CancellationException) {
+                    throw t
                 } catch (t: Throwable) {
                     if (isRoomActive(roomId)) {
                         _uiState.update {
@@ -632,8 +725,8 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
     }
 
     private fun enqueueRoomReply(roomId: String, friendId: String) {
-        val lock = roomLocks.getOrPut("$roomId:$friendId") { Mutex() }
-        viewModelScope.launch {
+        val lock = roomLocks.getOrPut(roomKey(roomId, friendId)) { Mutex() }
+        launchRoomRequest(roomId, friendId) {
             lock.withLock {
                 val state = _uiState.value
                 val room = state.rooms.firstOrNull { it.id == roomId } ?: return@withLock
@@ -656,7 +749,7 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
                     val reply = ai.chat(
                         messages = context,
                         model = friend.model,
-                        systemPrompt = friend.systemPrompt,
+                        systemPrompt = buildRoomSystemPrompt(room.prompt, friend.systemPrompt),
                         enableThinking = friend.thinkingEnabled
                     )
                     if (isFriendActiveInRoom(roomId, friendId)) {
@@ -674,6 +767,8 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
                     if (isRoomActive(roomId)) {
                         _uiState.update { it.copy(roomErrors = it.roomErrors - friendId) }
                     }
+                } catch (t: CancellationException) {
+                    throw t
                 } catch (t: Throwable) {
                     if (isRoomActive(roomId)) {
                         _uiState.update {
@@ -755,6 +850,33 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
                 )
             }
         }
+    }
+
+    private fun roomKey(roomId: String, friendId: String): String = "$roomId:$friendId"
+
+    /**
+     * 把房间请求登记成可取消的 Job，停止生成时直接 cancel。
+     * 同一个 key 重复发起时先取消上一次，避免两个请求同时写同一条上下文。
+     */
+    private fun launchRoomRequest(roomId: String, friendId: String, block: suspend () -> Unit) {
+        val key = roomKey(roomId, friendId)
+        roomJobs.remove(key)?.cancel()
+        val job = viewModelScope.launch { block() }
+        roomJobs[key] = job
+        job.invokeOnCompletion { roomJobs.remove(key, job) }
+    }
+
+    private fun cancelRoomJobs(roomId: String) {
+        roomJobs.keys
+            .filter { it.startsWith("$roomId:") }
+            .forEach { roomJobs.remove(it)?.cancel() }
+    }
+
+    /** 删除好友时，把它在所有房间里的进行中请求一起取消。 */
+    private fun cancelFriendJobs(friendId: String) {
+        roomJobs.keys
+            .filter { it.endsWith(":$friendId") }
+            .forEach { roomJobs.remove(it)?.cancel() }
     }
 
     private fun persistRoom(roomId: String) {

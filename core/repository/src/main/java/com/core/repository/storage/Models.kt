@@ -39,6 +39,7 @@ data class StoredRoom(
     val name: String,
     val memberIds: List<String> = emptyList(),
     val createdAt: Long = 0L,
+    val prompt: String = "",
     val memberJoinSeq: Map<String, Long> = emptyMap()
 )
 
@@ -87,7 +88,8 @@ internal fun FriendWithMessages.toStored(): StoredFriend = StoredFriend(
 internal fun StoredRoom.toEntity(): RoomEntity = RoomEntity(
     id = id,
     name = name,
-    createdAt = createdAt
+    createdAt = createdAt,
+    prompt = prompt
 )
 
 internal fun RoomWithMembers.toStored(): StoredRoom = StoredRoom(
@@ -96,6 +98,7 @@ internal fun RoomWithMembers.toStored(): StoredRoom = StoredRoom(
     memberIds = members.sortedWith(compareBy({ it.joinSeq }, { it.friendId }))
         .map { it.friendId },
     createdAt = room.createdAt,
+    prompt = room.prompt,
     memberJoinSeq = members.associate { it.friendId to it.joinSeq }
 )
 
