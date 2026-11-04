@@ -44,11 +44,25 @@ fun StoredRoom.toRoom(): Room = Room(
 
 /**
  * 房间设定优先，其次才是好友自身的人格设定。
- * 房间设定用来约定「你们在一个群里、各自发言」这类共同规则。
+ * 末尾统一追加群聊规则，减少复读、抢话和换说法重复。
  */
+private val ROOM_CHAT_RULES = """
+群聊规则：
+1. 你是房间成员之一，先理解前面成员已经说了什么，再补充新的信息、角度或理由。
+2. 不要复读自己或别人上一轮的句式、结论和数字，也不要用换一种说法重复同一件事。
+3. 如果确实没有新内容，直接表示同意，并补充一个新的理由，不要为了凑字数复述。
+""".trim()
+
 fun buildRoomSystemPrompt(roomPrompt: String, friendPrompt: String): String {
     val room = roomPrompt.trim()
-    return if (room.isBlank()) friendPrompt else "$room\n\n$friendPrompt"
+    return buildString {
+        if (room.isNotBlank()) {
+            append(room).append("\n\n")
+        }
+        append(friendPrompt)
+        append("\n\n")
+        append(ROOM_CHAT_RULES)
+    }
 }
 
 /** 把整屋消息导出成 Markdown，供系统分享使用。 */
