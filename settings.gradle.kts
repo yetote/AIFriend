@@ -1,4 +1,4 @@
-pluginManagement {
+﻿pluginManagement {
     includeBuild("build-logic")
     repositories {
         maven { url = uri("https://mirrors.cloud.tencent.com/nexus/repository/maven-public/") }
@@ -31,6 +31,11 @@ include(":feature:werewolf")
 include(":ui:werewolf")
 include(":core:repository")
 include(":core:network")
-include(":feature:friend")
+include(":feature:home")
 include(":core:common")
-include(":ui:friend")
+include(":ui:common")
+include(":ui:agent")
+include(":ui:room")
+include(":ui:home")
+include(":feature:agent")
+include(":feature:room")

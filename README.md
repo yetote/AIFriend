@@ -9,8 +9,10 @@ Android 端「AI 好友 / AI 智能体团队」应用：用户创建带角色设
 - ✅ 创建页支持切换模型提供方，模型列表按厂商分别拉取并缓存
 - ✅ 统一走 OpenAI 兼容的 Chat Completions 协议，角色 system prompt + 多轮历史
 - ✅ **关闭深度思考**：创建好友时可切换（默认关闭），按厂商发送 `thinking` / `enable_thinking` / `reasoning_effort`
-- ✅ **本地持久化**：好友、绑定模型、思考开关、完整聊天记录（DataStore + JSON 快照），重启后恢复
+- ✅ **本地持久化**：好友、绑定模型、思考开关、完整聊天记录（Room / SQLite），重启后恢复
 - ✅ **聊天室 P0**：多好友房间、@ 指定本轮成员、单个/全部停止生成、房间设置（改名 + 房间设定）、讨论模式（窗口互见 + 顺序发言）、清空房间消息、每个 AI 独立上下文与并发回答、单 AI 重试、成员增删、房间与消息持久化
+- ✅ **聊天室 P1**：消息时间戳与日期分割、长按消息复制 / 引用、消息分页加载、成员上限与角色/模型展示、移除确认、创建时搜索、房间置顶与排序
+- ✅ **聊天室 P2**：房间名搜索、房间消息搜索、Markdown 导出与系统分享、房间头像、房间模板、Token / 请求数估算
 - ✅ **自定义头像**：好友和用户都支持从相册选头像，列表 / 1:1 对话 / 聊天室全部显示真实头像，没设置时用首字 + 稳定配色兜底
 - ✅ **删除智能体**：清空它的会话历史、房间成员关系与房间消息、头像文件，之后不会再把这些内容发给模型
 - ✅ **编辑智能体**：长按列表项修改昵称、角色、设定、头像、思考开关
@@ -21,9 +23,14 @@ Android 端「AI 好友 / AI 智能体团队」应用：用户创建带角色设
 
 | 模块 | 职责 |
 |---|---|
-| `app` | 单 Activity 入口，挂载 `FriendRoute` |
-| `feature:friend` | 好友列表 / 创建 / 对话的状态机与 ViewModel |
-| `ui:friend` | 首页、创建页、对话页等 Compose 组件 |
+| `app` | 单 Activity 入口，挂载 `HomeRoute` |
+| `feature:home` | 首页状态、搜索、统计、删除/置顶、导航 |
+| `feature:agent` | 智能体创建/编辑、1:1 会话、`AgentViewModel` / `AgentRoute` |
+| `feature:room` | 聊天室创建/设置、消息与成员、`RoomViewModel` / `RoomRoute` |
+| `ui:common` | 头像、裁剪、PageInsets、主题 |
+| `ui:agent` | 1:1 对话、创建/编辑、好友列表组件 |
+| `ui:room` | 房间对话、创建、设置 |
+| `ui:home` | 首页 Compose 组件 |
 | `core:ai` | `IAI` 抽象、各厂商实现、对话与模型 DTO |
 | `core:repository` | `WebRepository`、各厂商 `ApiConfig`、Room 数据库与 Repository |
 | `core:network` | Ktor 客户端、超时、错误映射 |
@@ -96,12 +103,19 @@ cp core/network/key.example.kt core/network/src/main/java/com/core/network/key.k
 **上下文策略（方案 B）**：每个 AI 只看到「房间内所有用户消息 + 它自己的历史回复」，看不到其他 AI 的回复，避免互相污染。实现是 `buildRoomContext(messages, friendId)` 一次过滤，以后要升级成「共享全文（方案 C）」只需改这一处。
 
 - 发送：用户消息先落库并显示，然后对每个成员并发 `chat()`，谁先回谁先显示
+- 分页：打开房间只加载最近 50 条，滚到顶部自动补更早的 50 条；分页不影响 AI 上下文，上下文仍按 token 预算截断
 - 并发：每个「房间 + AI」一把 `Mutex`，用户连发消息时同一 AI 的请求串行执行，上下文不会串
 - 状态：每个 AI 独立的「正在输入」和错误提示，失败只影响它自己，可单独重试
-- UI：单列时间流，用户消息右对齐、AI 回复左对齐并署名；顶部「成员」弹窗可随时增删成员（至少保留 1 位）
+- UI：单列时间流，用户消息右对齐、AI 回复左对齐并署名；每条消息带 HH:mm，跨天自动插入「今天 / 昨天 / 日期」分割；长按气泡可复制或引用（引用会把「发送者 + 摘录」插到输入框开头）；顶部「成员」弹窗显示角色/模型、移除需二次确认、最多 6 位
+- 房间列表：置顶优先，其余按创建时间；首页长按房间可置顶/取消置顶/删除；创建房间支持按昵称 / 角色 / 模型搜索
+- 搜索：首页搜索框同时过滤聊天室名；房间顶栏放大镜搜索已加载消息，点结果跳到对应消息
+- 导出：房间设置页「导出聊天记录」会读取整屋消息生成 Markdown，通过系统分享面板发送
+- 房间头像：设置页点头像选图并裁剪，首页房间卡片和房间顶栏都会显示
+- 房间模板：新建房间提供「评审团 / 头脑风暴 / 角色扮演」，点一下填入房间设定
+- Token 估算：设置页显示「本轮约 N 次请求、单个 AI 上下文约 X tokens」，按字符估算，仅作参考
 - 系统消息：创建房间、「X 加入了聊天室」「X 退出了聊天室」会插入灰色居中的系统提示；这些通知会以「（聊天室通知）」前缀作为 user 消息同步给房间内的 AI，保证它们知道人员变化（不用 system 角色是为了兼容只允许首条 system 的厂商，如 Moonshot）
 - 新成员：`Room.memberJoinSeq` 记录每个成员的加入位置，新加入的 AI 只看得到加入之后的消息，不会同步历史；加入时会自动发一条自我介绍式问候（创建房间时不自动打招呼）
-- 持久化：房间、成员、消息都在 Room 的 `rooms` / `room_members` / `room_messages` 表；数据库 `version = 3`，`rooms` 表保存房间设定 `prompt`、讨论开关 `discussionEnabled`、回看窗口 `discussionWindow`、顺序发言 `sequentialSpeaking`（v1 → v2 → v3 都有 Migration）
+- 持久化：房间、成员、消息都在 Room 的 `rooms` / `room_members` / `room_messages` 表；数据库 `version = 5`，`rooms` 表保存房间设定 `prompt`、讨论开关 `discussionEnabled`、回看窗口 `discussionWindow`、顺序发言 `sequentialSpeaking`、置顶 `pinned`、头像 `avatarPath`（v1 → v2 → v3 → v4 → v5 都有 Migration）
 - 消息 `seq` 在应用启动时会从历史最大值继续（`seqCounter` 种子），避免重启后新消息的 seq 小于成员 `joinSeq`，导致新成员看不到新消息
 - 已有消息在成员被移除后仍保留，界面上会显示「已移除」
 
@@ -149,7 +163,7 @@ cp core/network/key.example.kt core/network/src/main/java/com/core/network/key.k
 
 ## 上下文预算
 
-每次请求前会用 `trimToBudget()` 截断发给模型的历史（`core` 之外，位于 `feature/friend/data/ContextBudget.kt`）：
+每次请求前会用 `trimToBudget()` 截断发给模型的历史（`core` 之外，位于 `feature/agent/data/ContextBudget.kt`）：
 
 - 从最新消息往回保留，默认预算 **6000 估算 token**，至少保留 **6 条**，保证最后一轮完整
 - 只影响请求内容，本地展示和持久化的历史不受影响
@@ -183,8 +197,8 @@ cp core/network/key.example.kt core/network/src/main/java/com/core/network/key.k
 - Room 当前是 `version = 1`，加字段时要写 Migration；消息表目前全量加载，没有分页
 - 头像裁剪暂不支持旋转/翻转手势；相机照片的 EXIF 旋转也还没处理
 - 上下文目前用「滑动窗口 + 字符估算」控制，早期内容会直接丢弃；需要长期记忆时应改成摘要压缩或向量检索
-- 聊天室下一步：滚动摘要（共享纪要）、消息时间戳、分页与搜索
-- 聊天记录无上限，长期使用后 JSON 快照会变大，届时需要迁移 Room 或做分页裁剪
+- 聊天室下一步：滚动摘要（共享纪要）、单条消息删除、Markdown 渲染
+- 聊天记录已改成 Room 分页读取，长期使用后单房间消息量变大时，重点在滚动性能和索引，而不是整包快照
 - 豆包模型选择列表包含账号未开通的模型，选中后会提示 404，后续可在控制台开通或按账号能力过滤
 - Gemini 需要能访问 Google（本机需走代理），且测试账号返回 `402 预付款额度耗尽`，代码链路已通但无法实际对话
 - 讯飞星火只确认了 `x1` 可用，且没有模型列表接口；后续需要按官方文档补齐其它模型

@@ -49,6 +49,8 @@ class StorageMappingTest {
             discussionEnabled = true,
             discussionWindow = 2,
             sequentialSpeaking = true,
+            pinned = true,
+            avatarPath = "/avatars/r1_1.jpg",
             memberJoinSeq = mapOf("a" to 0L, "b" to 5L)
         )
 

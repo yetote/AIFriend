@@ -8,6 +8,8 @@ import com.core.repository.storage.db.AppDatabase
 import com.core.repository.storage.db.ProfileEntity
 import com.core.repository.storage.db.RoomMemberEntity
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 
@@ -27,7 +29,16 @@ object LegacyMigration {
     private val ROOM_MESSAGES_KEY = stringPreferencesKey("room_messages_v1")
     private val USER_AVATAR_KEY = stringPreferencesKey("user_avatar_v1")
 
+    /** HomeViewModel 和 AgentViewModel 可能同时触发迁移，串行化避免重复导入。 */
+    private val mutex = Mutex()
+
     suspend fun migrateIfNeeded(context: Context) {
+        mutex.withLock {
+            migrateIfNeededLocked(context)
+        }
+    }
+
+    private suspend fun migrateIfNeededLocked(context: Context) {
         val db = AppDatabase.get(context)
         if (db.friendDao().count() > 0 || db.roomDao().count() > 0) return
 

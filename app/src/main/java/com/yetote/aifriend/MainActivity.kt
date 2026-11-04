@@ -6,7 +6,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import com.core.common.theme.AIFriendTheme
-import com.feature.friend.route.FriendRoute
+import com.feature.home.route.HomeRoute
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -19,7 +19,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             AIFriendTheme {
                 GlobalUiEventObserver()
-                FriendRoute()
+                HomeRoute()
             }
         }
     }
