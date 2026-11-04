@@ -41,6 +41,16 @@ class AvatarStore(private val context: Context) {
         }.getOrNull()
     }
 
+    /** 删除某个 id 的所有头像文件（删除好友时调用）。 */
+    suspend fun delete(id: String) = withContext(Dispatchers.IO) {
+        val dir = File(context.filesDir, AVATAR_DIR)
+        dir.listFiles()?.forEach { file ->
+            if (file.name == "$id.jpg" || file.name.startsWith("${id}_")) {
+                file.delete()
+            }
+        }
+    }
+
     private companion object {
         const val AVATAR_DIR = "avatars"
         const val AVATAR_SIZE = 256
