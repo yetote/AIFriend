@@ -25,6 +25,7 @@ class FriendStoreSerializationTest {
                 company = "深度求索",
                 model = "deepseek-flash",
                 thinkingEnabled = true,
+                avatarPath = "/data/user/0/com.yetote.aifriend/files/avatars/1_1.jpg",
                 messages = listOf(
                     StoredMessage(role = "user", content = "你好"),
                     StoredMessage(role = "assistant", content = "你好呀")

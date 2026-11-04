@@ -79,6 +79,7 @@ fun UIRoomChatPage(
     allFriends: List<UIRoomMember>,
     messages: List<UIRoomMessage>,
     input: String,
+    userAvatarPath: String?,
     pendingIds: Set<String>,
     errors: Map<String, String>,
     onInputChange: (String) -> Unit,
@@ -135,7 +136,7 @@ fun UIRoomChatPage(
                 }
             }
             items(messages) { message ->
-                RoomMessageBubble(message)
+                RoomMessageBubble(message = message, userAvatarPath = userAvatarPath)
             }
             pendingIds.forEach { friendId ->
                 item {
@@ -214,11 +215,20 @@ private fun RoomTopBar(
 }
 
 @Composable
-private fun RoomMessageBubble(message: UIRoomMessage) {
+private fun RoomMessageBubble(message: UIRoomMessage, userAvatarPath: String?) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = if (message.isUser) Arrangement.End else Arrangement.Start
+        horizontalArrangement = if (message.isUser) Arrangement.End else Arrangement.Start,
+        verticalAlignment = Alignment.Top
     ) {
+        if (!message.isUser) {
+            UIAvatar(
+                name = message.senderName ?: "AI",
+                avatarPath = message.avatarPath,
+                size = 32.dp
+            )
+            Spacer(Modifier.width(8.dp))
+        }
         Column(
             horizontalAlignment = if (message.isUser) Alignment.End else Alignment.Start
         ) {
@@ -232,7 +242,7 @@ private fun RoomMessageBubble(message: UIRoomMessage) {
             }
             Box(
                 modifier = Modifier
-                    .widthIn(max = 300.dp)
+                    .widthIn(max = 260.dp)
                     .clip(
                         RoundedCornerShape(
                             topStart = 16.dp,
@@ -251,6 +261,15 @@ private fun RoomMessageBubble(message: UIRoomMessage) {
                     color = if (message.isUser) Color.White else UIFriendBarTitleColor
                 )
             }
+        }
+        if (message.isUser) {
+            Spacer(Modifier.width(8.dp))
+            UIAvatar(
+                name = "我",
+                avatarPath = userAvatarPath,
+                size = 32.dp,
+                shape = CircleShape
+            )
         }
     }
 }
@@ -385,6 +404,12 @@ private fun RoomMembersDialog(
                             onCheckedChange = { onToggle(friend.id) }
                         )
                         Spacer(Modifier.width(4.dp))
+                        UIAvatar(
+                            name = friend.name,
+                            avatarPath = friend.avatarPath,
+                            size = 28.dp
+                        )
+                        Spacer(Modifier.width(8.dp))
                         Text(
                             text = friend.name,
                             fontSize = 14.sp,

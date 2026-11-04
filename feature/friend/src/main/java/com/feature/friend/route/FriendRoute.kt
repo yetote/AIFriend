@@ -1,6 +1,9 @@
 package com.feature.friend.route
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -29,6 +32,17 @@ import com.ui.friend.data.getRandomColor
 fun FriendRoute(viewModel: FriendViewModel = viewModel()) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
+    val userAvatarPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) viewModel.setUserAvatar(uri)
+    }
+    val pickUserAvatar: () -> Unit = {
+        userAvatarPicker.launch(
+            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+        )
+    }
+
     BackHandler(enabled = state.screen != FriendScreen.List) {
         viewModel.back()
     }
@@ -42,12 +56,14 @@ fun FriendRoute(viewModel: FriendViewModel = viewModel()) {
                 activeCount = state.activeCount,
                 mostActive = state.mostActive,
                 rooms = state.rooms.map { UIRoomData(id = it.id, name = it.name, memberCount = it.memberIds.size) },
+                userAvatarPath = state.userAvatarPath,
                 searchText = state.search,
                 onSearchTextChange = viewModel::updateSearch,
                 onCreateClick = viewModel::openCreate,
                 onFriendClick = { viewModel.openChat(it.id) },
                 onCreateRoom = viewModel::openRoomCreate,
-                onRoomClick = { viewModel.openRoom(it.id) }
+                onRoomClick = { viewModel.openRoom(it.id) },
+                onPickUserAvatar = pickUserAvatar
             )
 
             FriendScreen.Create -> UIFriendCreateScreen(
@@ -77,6 +93,8 @@ fun FriendRoute(viewModel: FriendViewModel = viewModel()) {
                         friendName = friend.name,
                         role = friend.role,
                         model = friend.model,
+                        avatarPath = friend.avatarPath,
+                        userAvatarPath = state.userAvatarPath,
                         messages = friend.messages,
                         input = state.input,
                         isSending = state.isSending,
@@ -84,14 +102,17 @@ fun FriendRoute(viewModel: FriendViewModel = viewModel()) {
                         onInputChange = viewModel::updateInput,
                         onSend = viewModel::send,
                         onBack = viewModel::back,
-                        onRetry = viewModel::retry
+                        onRetry = viewModel::retry,
+                        onChangeAvatar = { uri -> viewModel.setFriendAvatar(friend.id, uri) }
                     )
                 }
             }
 
             FriendScreen.RoomCreate -> UIRoomCreateScreen(
                 name = state.roomDraftName,
-                friends = state.friends.map { UIRoomMember(id = it.id, name = it.name) },
+                friends = state.friends.map {
+                    UIRoomMember(id = it.id, name = it.name, avatarPath = it.avatarPath)
+                },
                 selectedIds = state.roomDraftMemberIds,
                 onNameChange = viewModel::updateRoomDraftName,
                 onToggleFriend = viewModel::toggleRoomDraftMember,
@@ -104,12 +125,20 @@ fun FriendRoute(viewModel: FriendViewModel = viewModel()) {
                 if (room != null) {
                     val members = room.memberIds.mapNotNull { memberId ->
                         state.friends.firstOrNull { it.id == memberId }
-                            ?.let { UIRoomMember(id = it.id, name = it.name) }
+                            ?.let {
+                                UIRoomMember(
+                                    id = it.id,
+                                    name = it.name,
+                                    avatarPath = it.avatarPath
+                                )
+                            }
                     }
                     UIRoomChatPage(
                         roomName = room.name,
                         members = members,
-                        allFriends = state.friends.map { UIRoomMember(id = it.id, name = it.name) },
+                        allFriends = state.friends.map {
+                            UIRoomMember(id = it.id, name = it.name, avatarPath = it.avatarPath)
+                        },
                         messages = state.activeRoomMessages.map { message ->
                             val aiId = (message.sender as? RoomSender.Ai)?.friendId
                             UIRoomMessage(
@@ -119,10 +148,14 @@ fun FriendRoute(viewModel: FriendViewModel = viewModel()) {
                                 senderName = aiId?.let { id ->
                                     state.friends.firstOrNull { it.id == id }?.name ?: "已移除"
                                 },
+                                avatarPath = aiId?.let { id ->
+                                    state.friends.firstOrNull { it.id == id }?.avatarPath
+                                },
                                 content = message.content
                             )
                         },
                         input = state.roomInput,
+                        userAvatarPath = state.userAvatarPath,
                         pendingIds = state.roomPending,
                         errors = state.roomErrors,
                         onInputChange = viewModel::updateRoomInput,
@@ -146,5 +179,6 @@ private fun Friend.toUiModel(): UIFriendListData = UIFriendListData(
     usageCount = if (messages.isEmpty()) "尚未开始对话" else "${messages.size} 条消息",
     avatarBgColor = getRandomColor(name),
     avatarTextColor = Color(0xFF374151),
-    isOnline = true
+    isOnline = true,
+    avatarPath = avatarPath
 )

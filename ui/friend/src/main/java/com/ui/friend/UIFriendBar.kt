@@ -2,6 +2,7 @@ package com.ui.friend
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -30,7 +31,11 @@ import com.ui.friend.theme.UIFriendBarTitle2Color
 import com.ui.friend.theme.UIFriendBarTitleColor
 
 @Composable
-fun UIFriendBar(isNotification: Boolean) {
+fun UIFriendBar(
+    isNotification: Boolean,
+    userAvatarPath: String? = null,
+    onAvatarClick: () -> Unit = {}
+) {
     Row(
         Modifier
             .background(Color.White)
@@ -81,6 +86,13 @@ fun UIFriendBar(isNotification: Boolean) {
                     .padding(8.dp)
                     .clip(CircleShape),
                 contentDescription = "add",
+            )
+            UIAvatar(
+                name = "我",
+                avatarPath = userAvatarPath,
+                size = 36.dp,
+                shape = CircleShape,
+                modifier = Modifier.clickable { onAvatarClick() }
             )
         }
     }

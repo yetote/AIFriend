@@ -1,5 +1,9 @@
 package com.ui.friend
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -68,6 +72,8 @@ fun UIFriendChatPage(
     friendName: String,
     role: String,
     model: String,
+    avatarPath: String?,
+    userAvatarPath: String?,
     messages: List<ChatMessage>,
     input: String,
     isSending: Boolean,
@@ -75,8 +81,13 @@ fun UIFriendChatPage(
     onInputChange: (String) -> Unit,
     onSend: () -> Unit,
     onBack: () -> Unit,
-    onRetry: () -> Unit
+    onRetry: () -> Unit,
+    onChangeAvatar: (Uri) -> Unit
 ) {
+    val avatarPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) onChangeAvatar(uri)
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -89,7 +100,18 @@ fun UIFriendChatPage(
                 )
             )
     ) {
-        ChatTopBar(friendName = friendName, role = role, model = model, onBack = onBack)
+        ChatTopBar(
+            friendName = friendName,
+            role = role,
+            model = model,
+            avatarPath = avatarPath,
+            onBack = onBack,
+            onAvatarClick = {
+                avatarPicker.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                )
+            }
+        )
 
         val listState = rememberLazyListState()
         val itemCount = messages.size + (if (isSending) 1 else 0) + (if (error != null) 1 else 0)
@@ -119,7 +141,12 @@ fun UIFriendChatPage(
                 }
             }
             items(messages) { message ->
-                MessageBubble(message)
+                MessageBubble(
+                    message = message,
+                    friendName = friendName,
+                    avatarPath = avatarPath,
+                    userAvatarPath = userAvatarPath
+                )
             }
             if (isSending) {
                 item { TypingIndicator(friendName) }
@@ -143,7 +170,9 @@ private fun ChatTopBar(
     friendName: String,
     role: String,
     model: String,
-    onBack: () -> Unit
+    avatarPath: String?,
+    onBack: () -> Unit,
+    onAvatarClick: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -159,7 +188,13 @@ private fun ChatTopBar(
                 tint = UIFriendBarTitleColor
             )
         }
-        Spacer(Modifier.width(4.dp))
+        UIAvatar(
+            name = friendName,
+            avatarPath = avatarPath,
+            size = 36.dp,
+            modifier = Modifier.clickable { onAvatarClick() }
+        )
+        Spacer(Modifier.width(8.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = friendName,
@@ -187,15 +222,25 @@ private fun ChatTopBar(
 }
 
 @Composable
-private fun MessageBubble(message: ChatMessage) {
+private fun MessageBubble(
+    message: ChatMessage,
+    friendName: String,
+    avatarPath: String?,
+    userAvatarPath: String?
+) {
     val isUser = message.role == ChatMessage.USER
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
+        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
+        verticalAlignment = Alignment.Top
     ) {
+        if (!isUser) {
+            UIAvatar(name = friendName, avatarPath = avatarPath, size = 32.dp)
+            Spacer(Modifier.width(8.dp))
+        }
         Box(
             modifier = Modifier
-                .widthIn(max = 300.dp)
+                .widthIn(max = 260.dp)
                 .clip(
                     RoundedCornerShape(
                         topStart = 16.dp,
@@ -212,6 +257,15 @@ private fun MessageBubble(message: ChatMessage) {
                 fontSize = 15.sp,
                 lineHeight = 22.sp,
                 color = if (isUser) Color.White else UIFriendBarTitleColor
+            )
+        }
+        if (isUser) {
+            Spacer(Modifier.width(8.dp))
+            UIAvatar(
+                name = "我",
+                avatarPath = userAvatarPath,
+                size = 32.dp,
+                shape = CircleShape
             )
         }
     }
