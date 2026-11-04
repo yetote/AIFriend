@@ -16,6 +16,7 @@ fun Room.toStored(): StoredRoom = StoredRoom(
     name = name,
     memberIds = memberIds,
     createdAt = createdAt,
+    prompt = prompt,
     memberJoinSeq = memberJoinSeq
 )
 
@@ -24,8 +25,18 @@ fun StoredRoom.toRoom(): Room = Room(
     name = name,
     memberIds = memberIds,
     createdAt = createdAt,
+    prompt = prompt,
     memberJoinSeq = memberJoinSeq
 )
+
+/**
+ * 房间设定优先，其次才是好友自身的人格设定。
+ * 房间设定用来约定「你们在一个群里、各自发言」这类共同规则。
+ */
+fun buildRoomSystemPrompt(roomPrompt: String, friendPrompt: String): String {
+    val room = roomPrompt.trim()
+    return if (room.isBlank()) friendPrompt else "$room\n\n$friendPrompt"
+}
 
 fun RoomMessage.toStored(): StoredRoomMessage = StoredRoomMessage(
     id = id,

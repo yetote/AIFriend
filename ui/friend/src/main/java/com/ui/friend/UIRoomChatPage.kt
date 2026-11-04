@@ -2,6 +2,7 @@ package com.ui.friend
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,6 +32,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
@@ -82,14 +84,23 @@ fun UIRoomChatPage(
     userAvatarPath: String?,
     pendingIds: Set<String>,
     errors: Map<String, String>,
+    targetIds: Set<String>,
     onInputChange: (String) -> Unit,
     onSend: () -> Unit,
     onBack: () -> Unit,
     onRetry: (String) -> Unit,
-    onToggleMember: (String) -> Unit
+    onToggleMember: (String) -> Unit,
+    onToggleTarget: (String) -> Unit,
+    onSelectAllTargets: () -> Unit,
+    onStopReply: (String) -> Unit,
+    onStopAll: () -> Unit,
+    onOpenSettings: () -> Unit
 ) {
     var showMembers by remember { mutableStateOf(false) }
     val memberNames = remember(members) { members.associate { it.id to it.name } }
+    val effectiveTargets = remember(members, targetIds) {
+        targetIds.takeIf { it.isNotEmpty() } ?: members.map { it.id }.toSet()
+    }
 
     Column(
         modifier = Modifier
@@ -101,7 +112,10 @@ fun UIRoomChatPage(
             roomName = roomName,
             memberCount = members.size,
             onBack = onBack,
-            onManageMembers = { showMembers = true }
+            onManageMembers = { showMembers = true },
+            onOpenSettings = onOpenSettings,
+            showStop = pendingIds.isNotEmpty(),
+            onStopAll = onStopAll
         )
 
         val listState = rememberLazyListState()
@@ -139,7 +153,7 @@ fun UIRoomChatPage(
             if (messages.isEmpty()) {
                 item {
                     Text(
-                        text = "向房间里的 ${members.size} 位好友同时提问，每人都只看到你的消息和自己的回答",
+                        text = "向房间里的 ${members.size} 位好友提问；上方可以只选本轮要回答的人",
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(top = 40.dp, start = 24.dp, end = 24.dp),
@@ -158,7 +172,10 @@ fun UIRoomChatPage(
             }
             pendingIds.forEach { friendId ->
                 item {
-                    TypingRow(name = memberNames[friendId] ?: "好友")
+                    TypingRow(
+                        name = memberNames[friendId] ?: "好友",
+                        onStop = { onStopReply(friendId) }
+                    )
                 }
             }
             errors.forEach { (friendId, message) ->
@@ -171,6 +188,13 @@ fun UIRoomChatPage(
                 }
             }
         }
+
+        RoomTargetBar(
+            members = members,
+            targetIds = effectiveTargets,
+            onSelectAll = onSelectAllTargets,
+            onToggle = onToggleTarget
+        )
 
         RoomInputBar(
             input = input,
@@ -194,7 +218,10 @@ private fun RoomTopBar(
     roomName: String,
     memberCount: Int,
     onBack: () -> Unit,
-    onManageMembers: () -> Unit
+    onManageMembers: () -> Unit,
+    onOpenSettings: () -> Unit,
+    showStop: Boolean,
+    onStopAll: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -226,8 +253,20 @@ private fun RoomTopBar(
                 color = UIFriendBarSubtitleColor
             )
         }
+        if (showStop) {
+            TextButton(onClick = onStopAll) {
+                Text(text = "停止", fontSize = 13.sp, color = UIFriendBarRed)
+            }
+        }
         TextButton(onClick = onManageMembers) {
             Text(text = "成员", fontSize = 13.sp, color = UIFriendBarTagTextBlue)
+        }
+        IconButton(onClick = onOpenSettings) {
+            Icon(
+                imageVector = Icons.Filled.Settings,
+                contentDescription = "房间设置",
+                tint = UIFriendBarSubtitleColor
+            )
         }
     }
 }
@@ -309,17 +348,22 @@ private fun RoomMessageBubble(message: UIRoomMessage, userAvatarPath: String?) {
 }
 
 @Composable
-private fun TypingRow(name: String) {
+private fun TypingRow(name: String, onStop: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.Start
+        horizontalArrangement = Arrangement.Start,
+        verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
             text = "$name 正在输入…",
+            modifier = Modifier.weight(1f),
             fontSize = 13.sp,
             fontStyle = FontStyle.Italic,
             color = UIFriendBarItemMetaColor
         )
+        TextButton(onClick = onStop) {
+            Text(text = "停止", fontSize = 12.sp, color = UIFriendBarRed)
+        }
     }
 }
 
@@ -342,6 +386,59 @@ private fun RoomErrorRow(name: String, message: String, onRetry: () -> Unit) {
         TextButton(onClick = onRetry) {
             Text(text = "重试", fontSize = 13.sp, color = UIFriendBarRed)
         }
+    }
+}
+
+@Composable
+private fun RoomTargetBar(
+    members: List<UIRoomMember>,
+    targetIds: Set<String>,
+    onSelectAll: () -> Unit,
+    onToggle: (String) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.White)
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "本轮",
+            fontSize = 12.sp,
+            color = UIFriendBarItemMetaColor
+        )
+        TargetChip(
+            text = "全员",
+            selected = targetIds.size >= members.size,
+            onClick = onSelectAll
+        )
+        members.forEach { member ->
+            TargetChip(
+                text = member.name,
+                selected = member.id in targetIds,
+                onClick = { onToggle(member.id) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun TargetChip(text: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (selected) UIFriendBarTagBgBlue else UIChatInputBg)
+            .clickable { onClick() }
+            .padding(horizontal = 10.dp, vertical = 4.dp)
+    ) {
+        Text(
+            text = text,
+            fontSize = 12.sp,
+            color = if (selected) UIFriendBarTagTextBlue else UIFriendBarSubtitleColor
+        )
     }
 }
 
@@ -369,7 +466,7 @@ private fun RoomInputBar(
         ) {
             if (input.isEmpty()) {
                 Text(
-                    text = "对所有人说点什么…",
+                    text = "说点什么…",
                     fontSize = 15.sp,
                     color = UIFriendBarItemMetaColor
                 )
@@ -404,7 +501,7 @@ private fun RoomInputBar(
 }
 
 @Composable
-private fun RoomMembersDialog(
+fun RoomMembersDialog(
     allFriends: List<UIRoomMember>,
     memberIds: Set<String>,
     onToggle: (String) -> Unit,

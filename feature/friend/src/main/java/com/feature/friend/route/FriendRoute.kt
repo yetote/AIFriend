@@ -26,6 +26,7 @@ import com.ui.friend.UIFriendCreateScreen
 import com.ui.friend.UIFriendPage
 import com.ui.friend.UIRoomChatPage
 import com.ui.friend.UIRoomCreateScreen
+import com.ui.friend.UIRoomSettingsScreen
 import com.ui.friend.data.UIFriendListData
 import com.ui.friend.data.UIProvider
 import com.ui.friend.data.UIRoomData
@@ -219,7 +220,42 @@ fun FriendRoute(viewModel: FriendViewModel = viewModel()) {
                         onSend = viewModel::sendRoomMessage,
                         onBack = viewModel::back,
                         onRetry = viewModel::retryRoomReply,
-                        onToggleMember = viewModel::toggleRoomMember
+                        onToggleMember = viewModel::toggleRoomMember,
+                        targetIds = state.roomTargetIds,
+                        onToggleTarget = viewModel::toggleRoomTarget,
+                        onSelectAllTargets = viewModel::selectAllRoomTargets,
+                        onStopReply = viewModel::stopRoomReply,
+                        onStopAll = viewModel::stopAllRoomReplies,
+                        onOpenSettings = { viewModel.openRoomSettings(room.id) }
+                    )
+                }
+            }
+
+            is FriendScreen.RoomSettings -> {
+                val settingsId = (state.screen as FriendScreen.RoomSettings).roomId
+                val room = state.rooms.firstOrNull { it.id == settingsId }
+                if (room != null) {
+                    UIRoomSettingsScreen(
+                        roomName = room.name,
+                        roomPrompt = room.prompt,
+                        members = room.memberIds.mapNotNull { memberId ->
+                            state.friends.firstOrNull { it.id == memberId }
+                                ?.let {
+                                    UIRoomMember(
+                                        id = it.id,
+                                        name = it.name,
+                                        avatarPath = it.avatarPath
+                                    )
+                                }
+                        },
+                        allFriends = state.friends.map {
+                            UIRoomMember(id = it.id, name = it.name, avatarPath = it.avatarPath)
+                        },
+                        onSave = { name, prompt ->
+                            viewModel.saveRoomSettings(room.id, name, prompt)
+                        },
+                        onToggleMember = viewModel::toggleRoomMember,
+                        onBack = viewModel::back
                     )
                 }
             }

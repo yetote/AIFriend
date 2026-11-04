@@ -63,6 +63,7 @@ sealed interface FriendScreen {
     data class EditFriend(val friendId: String) : FriendScreen
     data object RoomCreate : FriendScreen
     data class RoomChat(val roomId: String) : FriendScreen
+    data class RoomSettings(val roomId: String) : FriendScreen
 }
 
 data class FriendUiState(
@@ -92,7 +93,9 @@ data class FriendUiState(
     /** 回答失败的 AI -> 错误信息 */
     val roomErrors: Map<String, String> = emptyMap(),
     val roomDraftName: String = "",
-    val roomDraftMemberIds: Set<String> = emptySet()
+    val roomDraftMemberIds: Set<String> = emptySet(),
+    /** 本轮要回答的成员；空集合表示全员。 */
+    val roomTargetIds: Set<String> = emptySet()
 ) {
     val activeFriend: Friend?
         get() = (screen as? FriendScreen.Chat)
@@ -121,8 +124,11 @@ data class FriendUiState(
             ?.name ?: "-"
 
     val activeRoom: Room?
-        get() = (screen as? FriendScreen.RoomChat)
-            ?.let { roomScreen -> rooms.firstOrNull { it.id == roomScreen.roomId } }
+        get() = when (val current = screen) {
+            is FriendScreen.RoomChat -> rooms.firstOrNull { it.id == current.roomId }
+            is FriendScreen.RoomSettings -> rooms.firstOrNull { it.id == current.roomId }
+            else -> null
+        }
 
     val activeRoomMessages: List<RoomMessage>
         get() = activeRoom?.let { room ->

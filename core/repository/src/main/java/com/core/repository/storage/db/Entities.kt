@@ -43,7 +43,8 @@ data class FriendMessageEntity(
 data class RoomEntity(
     @PrimaryKey val id: String,
     val name: String,
-    val createdAt: Long
+    val createdAt: Long,
+    val prompt: String = ""
 )
 
 @Entity(
