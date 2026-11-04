@@ -26,8 +26,9 @@ render.experimental.xml
 # Keystore files
 *.jks
 *.keystore
-*.bat
-*.jar
+
+# 本地密钥文件：从 core/network/key.example.kt 复制到 src 后填写真实 Key，不要提交
+**/core/network/src/main/java/com/core/network/key.kt
 
 # Google Services (e.g. APIs or Firebase)
 google-services.json

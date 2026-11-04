@@ -1,26 +1,24 @@
 package com.core.ai.entity
 
-import com.core.ai.model.AIRequestBody
+import com.core.ai.model.GeminiModelResponse
+import com.core.ai.model.toChatModelIds
+import com.core.common.GlobalErrorHandler.handleCoreError
 import com.core.repository.AIConfigs
 import com.core.repository.WebRepository
 
-class AIGemini : IAI {
-    override var brandName="Gemini"
-    override var company="Google"
-    val config = AIConfigs.geminiConfig()
-    override suspend fun chat(message: String,model: String): String {
-
-        val content = WebRepository.instance.chat<AIRequestBody>(
-            config,
-            AIRequestBody(model, message),
-        )
-        return "Gemini AI response to: $content"
-    }
-
+class AIGemini : OpenAICompatibleAI(
+    brandName = "Gemini",
+    company = "Google",
+    config = AIConfigs.geminiConfig()
+) {
     override suspend fun requestModel() {
-        TODO("Not yet implemented")
+        val response = WebRepository.instance
+            .getModel<GeminiModelResponse>(config)
+            .getOrElse {
+                handleCoreError(it)
+                return
+            }
+        modelSet.clear()
+        modelSet.addAll(response.geminiModelList.toChatModelIds())
     }
-
-    override var modelSet: MutableSet<String> = mutableSetOf()
-
 }

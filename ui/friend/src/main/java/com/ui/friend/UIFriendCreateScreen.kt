@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -31,6 +32,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -43,9 +45,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ui.friend.data.UIProvider
 import com.ui.friend.theme.UIFriendBarCreateButtonText
 import com.ui.friend.theme.UIFriendBarGray
 import com.ui.friend.theme.UIFriendBarItemSubtitleColor
@@ -55,10 +57,15 @@ import com.ui.friend.theme.UIFriendBarTitleColor
 
 @Composable
 fun UIFriendCreateScreen(
+    providers: List<UIProvider>,
+    selectedBrand: String,
+    onBrandSelect: (String) -> Unit,
     models: List<String>,
     selectedModel: String,
     isLoadingModels: Boolean,
     onModelSelect: (String) -> Unit,
+    thinkingEnabled: Boolean,
+    onThinkingChange: (Boolean) -> Unit,
     onCancel: () -> Unit,
     onCreate: (name: String, role: String, prompt: String) -> Unit
 ) {
@@ -66,6 +73,7 @@ fun UIFriendCreateScreen(
     var role by rememberSaveable { mutableStateOf("") }
     var prompt by rememberSaveable { mutableStateOf("") }
     val canCreate = name.isNotBlank() && selectedModel.isNotBlank()
+    val selectedProvider = providers.firstOrNull { it.brand == selectedBrand }
 
     Column(
         modifier = Modifier
@@ -144,6 +152,56 @@ fun UIFriendCreateScreen(
 
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
+                    text = "模型提供方",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = UIFriendBarTitleColor
+                )
+                providers.chunked(2).forEach { rowProviders ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        rowProviders.forEach { provider ->
+                            ProviderChip(
+                                provider = provider,
+                                selected = provider.brand == selectedBrand,
+                                onClick = { onBrandSelect(provider.brand) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        if (rowProviders.size == 1) {
+                            Spacer(Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+
+            if (selectedProvider?.thinkingSwitchable == true) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "深度思考",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = UIFriendBarTitleColor
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            text = "关闭后响应更快、更省 token；GLM-5 系列只能降档",
+                            fontSize = 12.sp,
+                            color = UIFriendBarItemSubtitleColor
+                        )
+                    }
+                    Switch(
+                        checked = thinkingEnabled,
+                        onCheckedChange = onThinkingChange
+                    )
+                }
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
                     text = "模型",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
@@ -174,7 +232,7 @@ fun UIFriendCreateScreen(
                     )
                 }
                 Text(
-                    text = "由 DeepSeek 提供支持（深度求索）",
+                    text = "由 ${selectedProvider?.company ?: selectedBrand} 提供支持",
                     fontSize = 12.sp,
                     color = UIFriendBarItemSubtitleColor
                 )
@@ -204,6 +262,35 @@ fun UIFriendCreateScreen(
                 Text(text = "创建并开始聊天", fontSize = 15.sp, fontWeight = FontWeight.Bold)
             }
         }
+    }
+}
+
+@Composable
+private fun ProviderChip(
+    provider: UIProvider,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (selected) UIFriendBarTagBgBlue else Color.White)
+            .clickable { onClick() }
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+    ) {
+        Text(
+            text = provider.brand,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold,
+            color = if (selected) UIFriendBarCreateButtonText else UIFriendBarTitleColor
+        )
+        Spacer(Modifier.height(2.dp))
+        Text(
+            text = provider.company,
+            fontSize = 11.sp,
+            color = UIFriendBarItemSubtitleColor
+        )
     }
 }
 

@@ -5,6 +5,7 @@ import com.core.ai.entity.AIDoubao
 import com.core.ai.entity.AIGemini
 import com.core.ai.entity.AIKimi
 import com.core.ai.entity.AIQianwen
+import com.core.ai.entity.AISpark
 import com.core.ai.entity.AIZhipu
 import com.core.ai.entity.IAI
 
@@ -26,6 +27,7 @@ class AIFactory : IFactory {
             "智谱清言" to AIZhipu::class.java,
             "Kimi" to AIKimi::class.java,
             "通义千问" to AIQianwen::class.java,
+            "星火" to AISpark::class.java,
         )
 
         fun getAIClassByName(name: String): Class<out IAI>? {

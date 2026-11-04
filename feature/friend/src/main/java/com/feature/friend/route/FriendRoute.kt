@@ -16,6 +16,7 @@ import com.ui.friend.UIFriendChatPage
 import com.ui.friend.UIFriendCreateScreen
 import com.ui.friend.UIFriendPage
 import com.ui.friend.data.UIFriendListData
+import com.ui.friend.data.UIProvider
 import com.ui.friend.data.getRandomColor
 
 @Composable
@@ -41,10 +42,21 @@ fun FriendRoute(viewModel: FriendViewModel = viewModel()) {
             )
 
             FriendScreen.Create -> UIFriendCreateScreen(
+                providers = state.providers.map {
+                    UIProvider(
+                        brand = it.brand,
+                        company = it.company,
+                        thinkingSwitchable = it.thinkingSwitchable
+                    )
+                },
+                selectedBrand = state.selectedBrand,
+                onBrandSelect = viewModel::selectBrand,
                 models = state.models,
                 selectedModel = state.selectedModel,
                 isLoadingModels = state.isLoadingModels,
                 onModelSelect = viewModel::selectModel,
+                thinkingEnabled = state.thinkingEnabled,
+                onThinkingChange = viewModel::setThinkingEnabled,
                 onCancel = viewModel::back,
                 onCreate = viewModel::createFriend
             )
@@ -76,7 +88,7 @@ private fun Friend.toUiModel(): UIFriendListData = UIFriendListData(
     name = name,
     modelTag = model,
     role = role.ifBlank { "AI 好友" },
-    source = brand,
+    source = company.ifBlank { brand },
     usageCount = if (messages.isEmpty()) "尚未开始对话" else "${messages.size} 条消息",
     avatarBgColor = getRandomColor(name),
     avatarTextColor = Color(0xFF374151),
