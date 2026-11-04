@@ -1,36 +1,31 @@
 package com.core.ai.entity
 
-import com.core.ai.model.AIRequestBody
+import com.core.ai.model.ChatCompletionRequest
 import com.core.ai.model.DoubaoModelResponse
+import com.core.ai.model.ThinkingConfig
+import com.core.ai.model.toChatModelIds
 import com.core.common.GlobalErrorHandler.handleCoreError
 import com.core.repository.AIConfigs
 import com.core.repository.WebRepository
 
-class AIDoubao : IAI {
-    override var brandName = "豆包"
-    override var company = "字节跳动"
-    val config = AIConfigs.doubaoConfig()
-    override suspend fun chat(message: String, model: String): String {
-
-        val content = WebRepository.instance.chat<AIRequestBody>(
-            config,
-            AIRequestBody(model, message),
-        )
-        return "Gemini AI response to: $content"
-    }
-
+class AIDoubao : OpenAICompatibleAI(
+    brandName = "豆包",
+    company = "字节跳动",
+    config = AIConfigs.doubaoConfig()
+) {
     override suspend fun requestModel() {
-        WebRepository.instance.getModel<DoubaoModelResponse>(config)
-            .fold(
-                onSuccess = { response ->
-                    modelSet.clear()
-                    modelSet.addAll(response.doubaoModelList.map { it.id ?: "" })
-                },
-                onFailure = { error ->
-                    handleCoreError(error)
-                }
-            )
+        val response = WebRepository.instance
+            .getModel<DoubaoModelResponse>(config)
+            .getOrElse {
+                handleCoreError(it)
+                return
+            }
+        modelSet.clear()
+        modelSet.addAll(response.doubaoModelList.toChatModelIds())
     }
 
-    override var modelSet: MutableSet<String> = mutableSetOf()
+    override fun ChatCompletionRequest.applyThinking(
+        enableThinking: Boolean
+    ): ChatCompletionRequest =
+        if (enableThinking) this else copy(thinking = ThinkingConfig("disabled"))
 }

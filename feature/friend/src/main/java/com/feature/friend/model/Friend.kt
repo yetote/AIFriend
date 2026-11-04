@@ -3,7 +3,7 @@ package com.feature.friend.model
 import com.core.ai.model.ChatMessage
 
 /**
- * 一个 AI 好友：展示信息 + 角色设定 + 绑定模型 + 本地会话历史。
+ * 一个 AI 好友：展示信息 + 角色设定 + 绑定的厂商/模型 + 本地会话历史。
  * 目前只保存在内存里，进程被杀后会丢失（后续接 DataStore/Room）。
  */
 data class Friend(
@@ -12,7 +12,9 @@ data class Friend(
     val role: String,
     val prompt: String,
     val brand: String,
+    val company: String,
     val model: String,
+    val thinkingEnabled: Boolean = false,
     val messages: List<ChatMessage> = emptyList()
 ) {
     /**

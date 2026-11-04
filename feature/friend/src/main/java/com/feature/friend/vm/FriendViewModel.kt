@@ -1,12 +1,10 @@
 package com.feature.friend.vm
 
 import androidx.lifecycle.viewModelScope
-import com.core.ai.entity.AIDeepseek
 import com.core.ai.entity.IAI
 import com.core.ai.factory.AIFactory
 import com.core.ai.model.ChatMessage
 import com.core.common.BaseViewModel
-import com.feature.friend.contract.DEFAULT_MODEL
 import com.feature.friend.contract.FriendScreen
 import com.feature.friend.contract.FriendUiState
 import com.feature.friend.model.Friend
@@ -19,31 +17,45 @@ import java.util.UUID
 
 class FriendViewModel : BaseViewModel() {
 
-    /** 当前只开放 DeepSeek，其它厂商实现还没迁移到多轮对话协议。 */
-    private val ai: IAI = AIFactory().createAI("Deepseek") ?: AIDeepseek()
+    /** 每家厂商一个实例，第一次用到时创建，之后复用（模型列表也缓存在实例里）。 */
+    private val ais = mutableMapOf<String, IAI>()
+
+    /** 厂商 -> 模型列表，切换厂商时避免重复请求。 */
+    private val modelCache = mutableMapOf<String, List<String>>()
 
     private val _uiState = MutableStateFlow(FriendUiState())
     val uiState: StateFlow<FriendUiState> = _uiState.asStateFlow()
 
     init {
-        loadModels()
+        loadModelsFor(_uiState.value.selectedBrand)
     }
 
-    fun loadModels() = viewModelScope.launch {
-        _uiState.update { it.copy(isLoadingModels = true) }
-        ai.requestModel()
-        val available = ai.modelSet.toList().ifEmpty { FALLBACK_MODELS }
-        _uiState.update { state ->
-            state.copy(
-                isLoadingModels = false,
-                models = available,
-                selectedModel = state.selectedModel.takeIf { it in available } ?: available.first()
+    fun selectBrand(brand: String) {
+        val state = _uiState.value
+        if (brand == state.selectedBrand) return
+        val provider = state.providers.firstOrNull { it.brand == brand } ?: return
+
+        val cached = modelCache[brand]
+        _uiState.update {
+            it.copy(
+                selectedBrand = brand,
+                models = cached.orEmpty(),
+                selectedModel = provider.defaultModel,
+                isLoadingModels = cached.isNullOrEmpty(),
+                error = null
             )
+        }
+        if (cached.isNullOrEmpty()) {
+            loadModelsFor(brand)
         }
     }
 
     fun selectModel(model: String) {
         _uiState.update { it.copy(selectedModel = model) }
+    }
+
+    fun setThinkingEnabled(enabled: Boolean) {
+        _uiState.update { it.copy(thinkingEnabled = enabled) }
     }
 
     fun updateSearch(text: String) {
@@ -68,13 +80,17 @@ class FriendViewModel : BaseViewModel() {
         val trimmedName = name.trim()
         if (trimmedName.isEmpty()) return
 
+        val state = _uiState.value
+        val provider = state.selectedProvider
         val friend = Friend(
             id = UUID.randomUUID().toString(),
             name = trimmedName,
             role = role.trim(),
             prompt = prompt.trim(),
-            brand = ai.brandName,
-            model = _uiState.value.selectedModel.ifBlank { DEFAULT_MODEL }
+            brand = state.selectedBrand,
+            company = provider?.company.orEmpty(),
+            model = state.selectedModel.ifBlank { provider?.defaultModel.orEmpty() },
+            thinkingEnabled = state.thinkingEnabled
         )
         _uiState.update {
             it.copy(
@@ -111,12 +127,48 @@ class FriendViewModel : BaseViewModel() {
         requestReply(friend.id, friend, friend.messages)
     }
 
-    private suspend fun requestReply(friendId: String, friend: Friend, history: List<ChatMessage>) {
+    private fun loadModelsFor(brand: String) = viewModelScope.launch {
+        val provider = _uiState.value.providers.firstOrNull { it.brand == brand } ?: return@launch
+        val ai = aiFor(brand) ?: run {
+            _uiState.update { it.copy(isLoadingModels = false) }
+            return@launch
+        }
+
+        _uiState.update { it.copy(isLoadingModels = true) }
+        ai.requestModel()
+
+        val available = ai.modelSet.toList().ifEmpty { provider.fallbackModels }
+        modelCache[brand] = available
+
+        _uiState.update { state ->
+            if (state.selectedBrand != brand) {
+                state
+            } else {
+                state.copy(
+                    isLoadingModels = false,
+                    models = available,
+                    selectedModel = state.selectedModel
+                        .takeIf { it in available }
+                        ?: provider.defaultModel.takeIf { it in available }
+                        ?: available.first()
+                )
+            }
+        }
+    }
+
+    private suspend fun requestReply(
+        friendId: String,
+        friend: Friend,
+        history: List<ChatMessage>
+    ) {
         try {
+            val ai = aiFor(friend.brand)
+                ?: throw IllegalStateException("暂不支持的厂商：${friend.brand}")
             val reply = ai.chat(
                 messages = history,
                 model = friend.model,
-                systemPrompt = friend.systemPrompt
+                systemPrompt = friend.systemPrompt,
+                enableThinking = friend.thinkingEnabled
             )
             appendMessage(friendId, ChatMessage.assistant(reply))
         } catch (t: Throwable) {
@@ -124,6 +176,13 @@ class FriendViewModel : BaseViewModel() {
         } finally {
             _uiState.update { it.copy(isSending = false) }
         }
+    }
+
+    private fun aiFor(brand: String): IAI? {
+        ais[brand]?.let { return it }
+        val created = AIFactory().createAI(brand) ?: return null
+        ais[brand] = created
+        return created
     }
 
     private fun updateMessages(friendId: String, messages: List<ChatMessage>) {
@@ -150,9 +209,5 @@ class FriendViewModel : BaseViewModel() {
         var message = ""
         handleError { message = it }
         return message.ifBlank { "发生未知错误，请重试" }
-    }
-
-    private companion object {
-        val FALLBACK_MODELS = listOf(DEFAULT_MODEL, "deepseek-v4-pro")
     }
 }

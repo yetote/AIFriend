@@ -27,9 +27,9 @@ data class ApiConfig(
 object AIConfigs{
     fun geminiConfig() = ApiConfig(
         baseUrl = URL_GEMINI,
-        chatUrl=URL_GEMINI,
+        chatUrl = "$URL_GEMINI/chat/completions",
         apiKey = GEMINI_KEY,
-        headers = mapOf("x-goog-api-key" to GEMINI_KEY)
+        headers = mapOf("Authorization" to "Bearer $GEMINI_KEY")
     )
 
     fun deepseekConfig() = ApiConfig(
@@ -40,31 +40,31 @@ object AIConfigs{
     )
     fun doubaoConfig() = ApiConfig(
         baseUrl = URL_DOUBAO,
-        chatUrl = "$URL_DOUBAO/responses",
+        chatUrl = "$URL_DOUBAO/chat/completions",
         apiKey = DOUBAO_KEY,
         headers = mapOf("Authorization" to "Bearer $DOUBAO_KEY")
     )
     fun zhipuConfig() = ApiConfig(
         baseUrl = URL_ZHIPU,
-        chatUrl = "$URL_ZHIPU/responses",
+        chatUrl = "$URL_ZHIPU/chat/completions",
         apiKey = ZHIPU_KEY,
         headers = mapOf("Authorization" to "Bearer $ZHIPU_KEY")
     )
     fun kimiConfig() = ApiConfig(
         baseUrl = URL_KIMI,
-        chatUrl = "$URL_KIMI/responses",
+        chatUrl = "$URL_KIMI/chat/completions",
         apiKey = KIMI_KEY,
         headers = mapOf("Authorization" to "Bearer $KIMI_KEY")
     )
     fun qianwenConfig() = ApiConfig(
         baseUrl = URL_QIANWEN,
-        chatUrl = "$URL_QIANWEN/responses",
+        chatUrl = "$URL_QIANWEN/chat/completions",
         apiKey = QIANWEN_KEY,
         headers = mapOf("Authorization" to "Bearer $QIANWEN_KEY")
     )
     fun sparkConfig() = ApiConfig(
         baseUrl = URL_SPARK,
-        chatUrl = "$URL_SPARK/responses",
+        chatUrl = "$URL_SPARK/chat/completions",
         apiKey = SPARK_KEY,
         headers = mapOf("Authorization" to "Bearer $SPARK_KEY")
     )

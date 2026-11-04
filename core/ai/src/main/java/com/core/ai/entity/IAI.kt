@@ -12,14 +12,16 @@ interface IAI {
 
     /**
      * 多轮对话：传入完整历史（不含 system），由实现方按厂商协议补 system 并转换为请求体。
+     * [enableThinking] 为 false 时尽量关闭深度思考（部分厂商只能降档或忽略）。
      * 未接入的厂商默认抛出异常，避免静默返回错误内容。
      */
     suspend fun chat(
         messages: List<ChatMessage>,
         model: String,
-        systemPrompt: String? = null
-    ): String = throw UnsupportedOperationException("「$brandName」暂未接入对话，请先选择 DeepSeek")
+        systemPrompt: String? = null,
+        enableThinking: Boolean = true
+    ): String = throw UnsupportedOperationException("「$brandName」暂未接入对话")
 
-    @Deprecated("改用 chat(messages, model, systemPrompt)")
+    @Deprecated("改用 chat(messages, model, systemPrompt, enableThinking)")
     suspend fun chat(message: String, model: String): String
 }

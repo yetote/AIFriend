@@ -15,6 +15,8 @@ data class DoubaoModelResponse(
 data class DoubaoModel(
     @SerialName("created")
     val created: Long? = null, // 时间戳建议使用 Long，防止超出 Int 范围
+    @SerialName("api_supported")
+    val apiSupported: Map<String, Boolean> = emptyMap(),
     @SerialName("domain")
     val domain: String? = null,
     @SerialName("features")
@@ -98,3 +100,20 @@ data class DoubaoTools(
     @SerialName("function_calling")
     val functionCalling: Boolean? = null
 )
+
+/**
+ * 方舟的 /models 会返回图片、视频、向量模型以及第三方模型（Kimi / DeepSeek / 通义 等），
+ * 直接全塞进选择列表会让人无从下手。这里只保留：
+ * 1. 支持 chat/completions 的模型；
+ * 2. 仍在服务中的模型（过滤 Retiring）；
+ * 3. 豆包自有系列（id 以 doubao- 开头）。
+ * 按发布时间倒序，方便把新模型排在前面。
+ */
+fun List<DoubaoModel>.toChatModelIds(): List<String> = asSequence()
+    .filter { it.apiSupported["chat/completions"] == true }
+    .filter { it.status != "Retiring" }
+    .filter { it.id?.startsWith("doubao-") == true }
+    .sortedByDescending { it.created ?: 0L }
+    .mapNotNull { it.id?.takeIf { id -> id.isNotBlank() } }
+    .distinct()
+    .toList()

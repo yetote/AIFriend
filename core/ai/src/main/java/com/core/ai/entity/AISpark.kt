@@ -1,42 +1,21 @@
 package com.core.ai.entity
 
-import com.core.ai.model.AIRequestBody
-import com.core.ai.model.DeepseekChatResponse
-import com.core.common.GlobalErrorHandler.handleCoreError
 import com.core.repository.AIConfigs
-import com.core.repository.WebRepository
 
-class AISpark: IAI {
-    override var brandName="星火"
-    override var company="科大讯飞"
-    val config = AIConfigs.sparkConfig()
-    override suspend fun chat(message: String, model: String): String {
-        val content =
-            WebRepository.instance.chat<DeepseekChatResponse>(config, AIRequestBody(model, message)).fold(
-                onSuccess = { response ->
-                    response.output.find {
-                        it.type == "message"
-                    }?.deepseekContent?.first()?.text ?: "No message found in response"
-                },
-                onFailure = { error ->
-                    handleCoreError(error)
-                }
-            )
-        return "Deepseek AI response to: $content"
-    }
-
+class AISpark : OpenAICompatibleAI(
+    brandName = "星火",
+    company = "科大讯飞",
+    config = AIConfigs.sparkConfig()
+) {
+    /**
+     * 讯飞没有开放 /models 接口（实测 404），目前确认可用的对话模型是 x1，先固定下来。
+     */
     override suspend fun requestModel() {
-//        WebRepository.instance.getModel<SparkModelResponse>(config)
-//            .fold(
-//                onSuccess = { response ->
-//                    modelSet.clear()
-//                    modelSet.addAll(response.sparkModelList.map { it.id })
-//                },
-//                onFailure = { error ->
-//                    handleCoreError(error)
-//                }
-//            )
+        modelSet.clear()
+        modelSet.addAll(SPARK_MODELS)
     }
 
-    override var modelSet: MutableSet<String> = mutableSetOf()
+    private companion object {
+        val SPARK_MODELS = listOf("x1")
+    }
 }
