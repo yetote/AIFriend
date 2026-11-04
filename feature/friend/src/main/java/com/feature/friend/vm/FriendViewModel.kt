@@ -1,13 +1,19 @@
 package com.feature.friend.vm
 
+import android.app.Application
 import androidx.lifecycle.viewModelScope
 import com.core.ai.entity.IAI
 import com.core.ai.factory.AIFactory
 import com.core.ai.model.ChatMessage
 import com.core.common.BaseViewModel
+import com.core.repository.storage.FriendStore
+import com.core.repository.storage.StoredFriend
 import com.feature.friend.contract.FriendScreen
 import com.feature.friend.contract.FriendUiState
+import com.feature.friend.data.toFriend
+import com.feature.friend.data.toStored
 import com.feature.friend.model.Friend
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -15,7 +21,16 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.UUID
 
-class FriendViewModel : BaseViewModel() {
+class FriendViewModel(application: Application) : BaseViewModel(application) {
+
+    /** 好友与聊天记录的本地存储（DataStore + JSON 快照）。 */
+    private val store = FriendStore(application)
+
+    /**
+     * 写盘队列：CONFLATED 只保留最新快照，唯一的消费者串行写入，
+     * 避免一次对话里「用户消息 / AI 回复」两次持久化并发写乱序。
+     */
+    private val persistQueue = Channel<List<StoredFriend>>(Channel.CONFLATED)
 
     /** 每家厂商一个实例，第一次用到时创建，之后复用（模型列表也缓存在实例里）。 */
     private val ais = mutableMapOf<String, IAI>()
@@ -27,7 +42,25 @@ class FriendViewModel : BaseViewModel() {
     val uiState: StateFlow<FriendUiState> = _uiState.asStateFlow()
 
     init {
-        loadModelsFor(_uiState.value.selectedBrand)
+        viewModelScope.launch {
+            for (snapshot in persistQueue) {
+                runCatching { store.save(snapshot) }
+            }
+        }
+        viewModelScope.launch {
+            val stored = runCatching { store.load() }.getOrDefault(emptyList())
+            if (stored.isNotEmpty()) {
+                _uiState.update { state ->
+                    // 避免覆盖用户在加载完成前刚创建的好友
+                    if (state.friends.isEmpty()) {
+                        state.copy(friends = stored.map { it.toFriend() })
+                    } else {
+                        state
+                    }
+                }
+            }
+            loadModelsFor(_uiState.value.selectedBrand)
+        }
     }
 
     fun selectBrand(brand: String) {
@@ -100,6 +133,7 @@ class FriendViewModel : BaseViewModel() {
                 input = ""
             )
         }
+        persist()
     }
 
     fun updateInput(text: String) {
@@ -191,6 +225,7 @@ class FriendViewModel : BaseViewModel() {
                 if (friend.id == friendId) friend.copy(messages = messages) else friend
             })
         }
+        persist()
     }
 
     private fun appendMessage(friendId: String, message: ChatMessage) {
@@ -203,6 +238,15 @@ class FriendViewModel : BaseViewModel() {
                 }
             })
         }
+        persist()
+    }
+
+    /**
+     * 把当前好友列表整体写回 DataStore。数据量小，直接覆盖写；
+     * 连续操作时 viewModelScope 按提交顺序执行，最后一次写入即最新状态。
+     */
+    private fun persist() {
+        persistQueue.trySend(_uiState.value.friends.map { it.toStored() })
     }
 
     private fun Throwable.readableMessage(): String {

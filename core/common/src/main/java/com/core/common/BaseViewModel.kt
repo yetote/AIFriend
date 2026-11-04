@@ -1,10 +1,12 @@
 package com.core.common
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import com.core.network.getReadableMessage
 
 open class BaseViewModel(
-) : ViewModel() {
+    application: Application
+) : AndroidViewModel(application) {
     protected fun Throwable.handleError(onShowError: (String) -> Unit) {
         val message = getReadableMessage(this)
         onShowError(message)

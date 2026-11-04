@@ -9,7 +9,7 @@ Android 端「AI 好友 / AI 智能体团队」应用：用户创建带角色设
 - ✅ 创建页支持切换模型提供方，模型列表按厂商分别拉取并缓存
 - ✅ 统一走 OpenAI 兼容的 Chat Completions 协议，角色 system prompt + 多轮历史
 - ✅ **关闭深度思考**：创建好友时可切换（默认关闭），按厂商发送 `thinking` / `enable_thinking` / `reasoning_effort`
-- ⏳ 会话与好友持久化（当前只在内存，重启丢失）
+- ✅ **本地持久化**：好友、绑定模型、思考开关、完整聊天记录（DataStore + JSON 快照），重启后恢复
 - ⏳ 流式输出、思考过程展示
 - ⏳ `feature:werewolf` / `ui:werewolf` 仍是空模块（AI 狼人杀，规划中）
 
@@ -21,7 +21,7 @@ Android 端「AI 好友 / AI 智能体团队」应用：用户创建带角色设
 | `feature:friend` | 好友列表 / 创建 / 对话的状态机与 ViewModel |
 | `ui:friend` | 首页、创建页、对话页等 Compose 组件 |
 | `core:ai` | `IAI` 抽象、各厂商实现、对话与模型 DTO |
-| `core:repository` | `WebRepository` 与各厂商 `ApiConfig` |
+| `core:repository` | `WebRepository`、各厂商 `ApiConfig`、`FriendStore` 本地存储 |
 | `core:network` | Ktor 客户端、超时、错误映射 |
 | `core:common` | 全局 Toast 事件、BaseViewModel、主题工具 |
 
@@ -71,10 +71,19 @@ cp core/network/key.example.kt core/network/src/main/java/com/core/network/key.k
 
 > 方舟账号需要先在控制台「开通」具体模型，未开通的模型即便出现在 `/models` 里，调用也会返回 `404 ModelNotOpen`。当前测试账号只开通了 `doubao-seed-evolving`，因此它被设为豆包默认模型。
 
+## 数据持久化
+
+- 存储实现：`core/repository/.../storage/FriendStore.kt`，DataStore(Preferences) + 一份 JSON 快照，文件在 `files/datastore/aifriend.preferences_pb`
+- 存储模型：`StoredFriend` / `StoredMessage`，与业务模型 `Friend` 通过 `FriendMapper` 互转，避免 UI 字段变化直接污染存储结构
+- 写入时机：创建好友、发送消息、收到回复后；写入走 `Channel(CONFLATED)` 单消费者串行落盘，避免一轮对话两次写并发乱序
+- 读取时机：ViewModel 初始化时加载，随后再拉模型列表；加载完成前用户已创建的好友不会被覆盖
+- 为什么先不用 Room：当前数据量小、只有「整列表」一种访问方式；等消息量变大需要分页/搜索/按会话查询时，再替换为 Room（`StoredFriend` 结构可平移）
+
 ## 已知待办
 
 - `core/network/src/main/java/com/core/network/key.kt` 是本地密钥文件，已被 `.gitignore` 忽略（模板见 `core/network/key.example.kt`）；但它仍会被编译进 APK，正式发布前必须轮换并改为用户自带 Key 或后端代理
-- 好友与对话历史尚未持久化（DataStore / Room 依赖已就绪但未使用）
+- 好友与对话历史已持久化，但暂不支持删除/重命名好友、清空会话，也没有导出功能
+- 聊天记录无上限，长期使用后 JSON 快照会变大，届时需要迁移 Room 或做分页裁剪
 - 豆包模型选择列表包含账号未开通的模型，选中后会提示 404，后续可在控制台开通或按账号能力过滤
 - Gemini 需要能访问 Google（本机需走代理），且测试账号返回 `402 预付款额度耗尽`，代码链路已通但无法实际对话
 - 讯飞星火只确认了 `x1` 可用，且没有模型列表接口；后续需要按官方文档补齐其它模型
