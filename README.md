@@ -100,7 +100,7 @@ cp core/network/key.example.kt core/network/src/main/java/com/core/network/key.k
 
 ## 删除智能体
 
-入口：1:1 对话页右上角垃圾桶图标，二次确认后执行。
+入口：首页好友列表**长按好友** → 二次确认（对话页右上角原来的垃圾桶已移除）。
 
 一次删除会清理：
 
@@ -110,6 +110,12 @@ cp core/network/key.example.kt core/network/src/main/java/com/core/network/key.k
 - 头像文件 `files/avatars/<id>_*.jpg`
 - 正在进行的请求结果会被丢弃（返回时校验好友是否还存在）
 - 如果它在某个房间，会追加一条系统提示「X 已被删除并移出聊天室」
+
+## 删除聊天室
+
+入口：首页「聊天室」卡片**长按** → 二次确认。
+
+删除会同时清掉 Room 里的 `rooms` / `room_members`（外键级联）/ `room_messages`，不可恢复。
 
 > 关于「模型侧的上下文」：本项目的调用是**无状态**的——每次请求都把历史消息随请求发送，没有使用厂商的 thread / session / `previous_response_id`。因此删除本地历史后，这些内容不会再发给模型；厂商是否保留请求日志由各厂商政策决定，chat completions 接口没有提供删除接口。
 
@@ -144,7 +150,7 @@ cp core/network/key.example.kt core/network/src/main/java/com/core/network/key.k
 ## 已知待办
 
 - `core/network/src/main/java/com/core/network/key.kt` 是本地密钥文件，已被 `.gitignore` 忽略（模板见 `core/network/key.example.kt`）；但它仍会被编译进 APK，正式发布前必须轮换并改为用户自带 Key 或后端代理
-- 好友与对话历史已持久化；已支持删除好友，但暂不支持重命名好友、清空单个会话、批量删除和导出功能
+- 好友与对话历史已持久化；支持长按删除好友和聊天室，但暂不支持重命名、清空单个会话、批量删除和导出功能
 - Room 当前是 `version = 1`，加字段时要写 Migration；消息表目前全量加载，没有分页
 - 头像裁剪暂不支持旋转/翻转手势；相机照片的 EXIF 旋转也还没处理
 - 上下文目前用「滑动窗口 + 字符估算」控制，早期内容会直接丢弃；需要长期记忆时应改成摘要压缩或向量检索

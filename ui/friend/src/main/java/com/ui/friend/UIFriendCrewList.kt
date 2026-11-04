@@ -1,8 +1,12 @@
+@file:OptIn(ExperimentalFoundationApi::class)
+
 package com.ui.friend
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -53,7 +57,8 @@ import com.ui.friend.theme.UIFriendBarTagTextBlue
 @Composable
 fun UIFriendCrewList(
     data: List<UIFriendListData>,
-    onItemClick: (UIFriendListData) -> Unit = {}
+    onItemClick: (UIFriendListData) -> Unit = {},
+    onItemLongClick: (UIFriendListData) -> Unit = {}
 ) {
 
     var selectedTabIndex by remember { mutableIntStateOf(0) }
@@ -85,7 +90,11 @@ fun UIFriendCrewList(
                     else -> data
                 }
                 visible.forEachIndexed { index, agent ->
-                    AgentListItem(data = agent, onClick = { onItemClick(agent) })
+                    AgentListItem(
+                        data = agent,
+                        onClick = { onItemClick(agent) },
+                        onLongClick = { onItemLongClick(agent) }
+                    )
                     // 如果不是最后一项，添加分割线
                     if (index < visible.size - 1) {
                         HorizontalDivider(
@@ -146,12 +155,13 @@ private fun AgentTabRow(
 private fun AgentListItem(
     data: UIFriendListData,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clickable { onClick() }
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

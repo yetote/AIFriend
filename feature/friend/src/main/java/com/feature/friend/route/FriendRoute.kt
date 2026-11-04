@@ -81,6 +81,8 @@ fun FriendRoute(viewModel: FriendViewModel = viewModel()) {
                 onFriendClick = { viewModel.openChat(it.id) },
                 onCreateRoom = viewModel::openRoomCreate,
                 onRoomClick = { viewModel.openRoom(it.id) },
+                onDeleteFriend = { viewModel.deleteFriend(it) },
+                onDeleteRoom = { viewModel.deleteRoom(it) },
                 onPickUserAvatar = pickUserAvatar
             )
 
@@ -121,8 +123,7 @@ fun FriendRoute(viewModel: FriendViewModel = viewModel()) {
                         onSend = viewModel::send,
                         onBack = viewModel::back,
                         onRetry = viewModel::retry,
-                        onChangeAvatar = { bytes -> viewModel.setFriendAvatar(friend.id, bytes) },
-                        onDeleteFriend = { viewModel.deleteFriend(friend.id) }
+                        onChangeAvatar = { bytes -> viewModel.setFriendAvatar(friend.id, bytes) }
                     )
                 }
             }
