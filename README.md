@@ -24,7 +24,7 @@ Android 端「AI 好友 / AI 智能体团队」应用：用户创建带角色设
 | `feature:friend` | 好友列表 / 创建 / 对话的状态机与 ViewModel |
 | `ui:friend` | 首页、创建页、对话页等 Compose 组件 |
 | `core:ai` | `IAI` 抽象、各厂商实现、对话与模型 DTO |
-| `core:repository` | `WebRepository`、各厂商 `ApiConfig`、`FriendStore` 本地存储 |
+| `core:repository` | `WebRepository`、各厂商 `ApiConfig`、Room 数据库与 Repository |
 | `core:network` | Ktor 客户端、超时、错误映射 |
 | `core:common` | 全局 Toast 事件、BaseViewModel、主题工具 |
 
@@ -125,17 +125,27 @@ cp core/network/key.example.kt core/network/src/main/java/com/core/network/key.k
 
 ## 数据持久化
 
-- 存储实现：`core/repository/.../storage/FriendStore.kt`（好友）、`RoomStore.kt`（聊天室），共用同一个 DataStore(Preferences) 文件，按 key 分区，文件在 `files/datastore/aifriend.preferences_pb`
-- 存储模型：`StoredFriend` / `StoredMessage`、`StoredRoom` / `StoredRoomMessage`，与业务模型通过 Mapper 互转，避免 UI 字段变化直接污染存储结构
-- 写入时机：创建好友、发送消息、收到回复后；写入走 `Channel(CONFLATED)` 单消费者串行落盘，避免一轮对话两次写并发乱序
-- 读取时机：ViewModel 初始化时加载，随后再拉模型列表；加载完成前用户已创建的好友不会被覆盖
-- 为什么先不用 Room：当前数据量小、只有「整列表」一种访问方式；等消息量变大需要分页/搜索/按会话查询时，再替换为 Room（`StoredFriend` / `StoredRoomMessage` 结构可平移）
-- 聊天室的写盘同样走 `Channel(CONFLATED)` 单消费者队列，房间与消息分别持久化
+存储已从 DataStore 迁移到 **Room（SQLite）**，数据库文件 `aifriend.db`。
+
+- 实现位置：`core/repository/.../storage/db/`
+  - `friends` / `friend_messages`（外键级联删除）
+  - `rooms` / `room_members`（联合主键，记录 `joinSeq`）/ `room_messages`
+  - `profile`（用户头像路径）
+- 写入：增量写，不再是整包 JSON 快照
+  - 加好友 / 改头像：`upsert` 或单字段更新
+  - 消息：逐条 `insert`（自增 id 保证顺序）
+  - 删除好友：级联删除会话消息，同时清理房间成员和它在房间里的消息
+- 读取：ViewModel 初始化时通过 `FriendRepository` / `RoomRepository` 加载
+- 迁移：首次启动 `LegacyMigration` 会把旧 DataStore 的 `friends_v1` / `rooms_v1` / `room_messages_v1` / `user_avatar_v1` 一次性导入 Room，成功后清掉旧 key；DataStore 现在只用于这次迁移
+- 版本：数据库 `version = 1`，后续加字段需要补 Room `Migration`
+
+> 构建用 KSP 做 Room 注解处理（`ksp = 2.3.6`，匹配 AGP 9 内置 Kotlin）。AGP 9 默认禁止 KSP 通过 `kotlin.sourceSets` 注入生成目录，`gradle.properties` 里用 `android.disallowKotlinSourceSets=false` 放行。
 
 ## 已知待办
 
 - `core/network/src/main/java/com/core/network/key.kt` 是本地密钥文件，已被 `.gitignore` 忽略（模板见 `core/network/key.example.kt`）；但它仍会被编译进 APK，正式发布前必须轮换并改为用户自带 Key 或后端代理
 - 好友与对话历史已持久化；已支持删除好友，但暂不支持重命名好友、清空单个会话、批量删除和导出功能
+- Room 当前是 `version = 1`，加字段时要写 Migration；消息表目前全量加载，没有分页
 - 头像裁剪暂不支持旋转/翻转手势；相机照片的 EXIF 旋转也还没处理
 - 上下文目前用「滑动窗口 + 字符估算」控制，早期内容会直接丢弃；需要长期记忆时应改成摘要压缩或向量检索
 - 聊天室目前是 P0：没有停止生成、@ 指定某个 AI、分栏对比、主持人总结和「共享全文」模式

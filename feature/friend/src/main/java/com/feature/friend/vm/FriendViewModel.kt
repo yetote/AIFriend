@@ -7,12 +7,11 @@ import com.core.ai.factory.AIFactory
 import com.core.ai.model.ChatMessage
 import com.core.common.BaseViewModel
 import com.core.repository.storage.AvatarStore
-import com.core.repository.storage.FriendStore
-import com.core.repository.storage.ProfileStore
-import com.core.repository.storage.RoomStore
-import com.core.repository.storage.StoredFriend
-import com.core.repository.storage.StoredRoom
-import com.core.repository.storage.StoredRoomMessage
+import com.core.repository.storage.FriendRepository
+import com.core.repository.storage.LegacyMigration
+import com.core.repository.storage.ProfileRepository
+import com.core.repository.storage.RoomRepository
+import com.core.repository.storage.StoredMessage
 import com.feature.friend.contract.FriendScreen
 import com.feature.friend.contract.FriendUiState
 import com.feature.friend.data.buildRoomContext
@@ -25,7 +24,6 @@ import com.feature.friend.model.Friend
 import com.feature.friend.model.Room
 import com.feature.friend.model.RoomMessage
 import com.feature.friend.model.RoomSender
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -38,18 +36,10 @@ import java.util.concurrent.atomic.AtomicLong
 
 class FriendViewModel(application: Application) : BaseViewModel(application) {
 
-    private val friendStore = FriendStore(application)
-    private val roomStore = RoomStore(application)
+    private val friendRepository = FriendRepository(application)
+    private val roomRepository = RoomRepository(application)
+    private val profileRepository = ProfileRepository(application)
     private val avatarStore = AvatarStore(application)
-    private val profileStore = ProfileStore(application)
-
-    /**
-     * 写盘队列：CONFLATED 只保留最新快照，唯一消费者串行写入，
-     * 避免一轮对话里多次持久化并发写乱序。
-     */
-    private val friendPersistQueue = Channel<List<StoredFriend>>(Channel.CONFLATED)
-    private val roomPersistQueue = Channel<List<StoredRoom>>(Channel.CONFLATED)
-    private val roomMessagePersistQueue = Channel<List<StoredRoomMessage>>(Channel.CONFLATED)
 
     /** 每家厂商一个实例，第一次用到时创建，之后复用（模型列表也缓存在实例里）。 */
     private val ais = mutableMapOf<String, IAI>()
@@ -68,25 +58,13 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
 
     init {
         viewModelScope.launch {
-            for (snapshot in friendPersistQueue) {
-                runCatching { friendStore.save(snapshot) }
-            }
-        }
-        viewModelScope.launch {
-            for (rooms in roomPersistQueue) {
-                runCatching { roomStore.saveRooms(rooms) }
-            }
-        }
-        viewModelScope.launch {
-            for (messages in roomMessagePersistQueue) {
-                runCatching { roomStore.saveMessages(messages) }
-            }
-        }
-        viewModelScope.launch {
-            val storedFriends = runCatching { friendStore.load() }.getOrDefault(emptyList())
-            val storedRooms = runCatching { roomStore.loadRooms() }.getOrDefault(emptyList())
-            val storedMessages = runCatching { roomStore.loadMessages() }.getOrDefault(emptyList())
-            val userAvatar = runCatching { profileStore.loadAvatarPath() }.getOrNull()
+            // 旧版 DataStore 数据一次性迁移到 Room
+            runCatching { LegacyMigration.migrateIfNeeded(application) }
+
+            val storedFriends = runCatching { friendRepository.load() }.getOrDefault(emptyList())
+            val storedRooms = runCatching { roomRepository.loadRooms() }.getOrDefault(emptyList())
+            val storedMessages = runCatching { roomRepository.loadMessages() }.getOrDefault(emptyList())
+            val userAvatar = runCatching { profileRepository.loadAvatarPath() }.getOrNull()
 
             _uiState.update { state ->
                 state.copy(
@@ -198,7 +176,9 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
                 input = ""
             )
         }
-        persistFriends()
+        viewModelScope.launch {
+            runCatching { friendRepository.upsert(friend.toStored()) }
+        }
 
         if (avatarBytes != null) {
             viewModelScope.launch {
@@ -218,7 +198,7 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
     fun setUserAvatar(bytes: ByteArray) {
         viewModelScope.launch {
             val path = avatarStore.save(bytes, USER_AVATAR_ID) ?: return@launch
-            runCatching { profileStore.saveAvatarPath(path) }
+            runCatching { profileRepository.saveAvatarPath(path) }
             _uiState.update { it.copy(userAvatarPath = path) }
         }
     }
@@ -231,7 +211,9 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
                 }
             )
         }
-        persistFriends()
+        viewModelScope.launch {
+            runCatching { friendRepository.updateAvatar(friendId, path) }
+        }
     }
 
     /**
@@ -273,9 +255,11 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
             )
         }
 
-        persistFriends()
-        persistRooms()
-        persistRoomMessages()
+        viewModelScope.launch {
+            runCatching { friendRepository.delete(friendId) }
+            runCatching { roomRepository.removeMemberEverywhere(friendId) }
+            runCatching { roomRepository.deleteMessagesBySender(friendId) }
+        }
         viewModelScope.launch { avatarStore.delete(friendId) }
 
         affectedRooms.forEach { room ->
@@ -294,7 +278,7 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
         if (text.isEmpty() || state.isSending) return@launch
 
         val history = friend.messages + ChatMessage.user(text)
-        updateMessages(friend.id, history)
+        appendMessage(friend.id, ChatMessage.user(text))
         _uiState.update { it.copy(input = "", isSending = true, error = null) }
         requestReply(friend.id, friend, history)
     }
@@ -415,7 +399,7 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
                 roomErrors = emptyMap()
             )
         }
-        persistRooms()
+        persistRoom(room.id)
 
         appendSystemMessage(
             roomId = room.id,
@@ -492,7 +476,7 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
                     roomErrors = it.roomErrors - friendId
                 )
             }
-            persistRooms()
+            persistRoom(room.id)
             appendSystemMessage(room.id, "$friendName 退出了聊天室")
         } else {
             val joinSeq = seqCounter.incrementAndGet()
@@ -511,7 +495,7 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
                     roomErrors = it.roomErrors - friendId
                 )
             }
-            persistRooms()
+            persistRoom(room.id)
             appendSystemMessage(room.id, "$friendName 加入了聊天室", joinSeq)
             enqueueRoomGreeting(room.id, friendId)
         }
@@ -641,7 +625,9 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
                     .sortedWith(compareBy({ it.createdAt }, { it.seq }))
             )
         }
-        persistRoomMessages()
+        viewModelScope.launch {
+            runCatching { roomRepository.appendMessage(message.toStored()) }
+        }
     }
 
     private fun appendSystemMessage(
@@ -680,15 +666,6 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
         return created
     }
 
-    private fun updateMessages(friendId: String, messages: List<ChatMessage>) {
-        _uiState.update { state ->
-            state.copy(friends = state.friends.map { friend ->
-                if (friend.id == friendId) friend.copy(messages = messages) else friend
-            })
-        }
-        persistFriends()
-    }
-
     private fun appendMessage(friendId: String, message: ChatMessage) {
         _uiState.update { state ->
             state.copy(friends = state.friends.map { friend ->
@@ -699,19 +676,21 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
                 }
             })
         }
-        persistFriends()
+        viewModelScope.launch {
+            runCatching {
+                friendRepository.appendMessage(
+                    friendId = friendId,
+                    message = StoredMessage(role = message.role, content = message.content)
+                )
+            }
+        }
     }
 
-    private fun persistFriends() {
-        friendPersistQueue.trySend(_uiState.value.friends.map { it.toStored() })
-    }
-
-    private fun persistRooms() {
-        roomPersistQueue.trySend(_uiState.value.rooms.map { it.toStored() })
-    }
-
-    private fun persistRoomMessages() {
-        roomMessagePersistQueue.trySend(_uiState.value.roomMessages.map { it.toStored() })
+    private fun persistRoom(roomId: String) {
+        val room = _uiState.value.rooms.firstOrNull { it.id == roomId } ?: return
+        viewModelScope.launch {
+            runCatching { roomRepository.upsert(room.toStored()) }
+        }
     }
 
     private fun Throwable.readableMessage(): String {
