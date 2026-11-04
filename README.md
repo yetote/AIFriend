@@ -12,6 +12,7 @@ Android 端「AI 好友 / AI 智能体团队」应用：用户创建带角色设
 - ✅ **本地持久化**：好友、绑定模型、思考开关、完整聊天记录（DataStore + JSON 快照），重启后恢复
 - ✅ **聊天室 P0**：多好友房间、用户消息广播给全体、每个 AI 独立上下文与并发回答、单 AI 重试、成员增删、房间与消息持久化
 - ✅ **自定义头像**：好友和用户都支持从相册选头像，列表 / 1:1 对话 / 聊天室全部显示真实头像，没设置时用首字 + 稳定配色兜底
+- ✅ **删除智能体**：清空它的会话历史、房间成员关系与房间消息、头像文件，之后不会再把这些内容发给模型
 - ⏳ 流式输出、思考过程展示
 - ⏳ `feature:werewolf` / `ui:werewolf` 仍是空模块（AI 狼人杀，规划中）
 
@@ -97,6 +98,31 @@ cp core/network/key.example.kt core/network/src/main/java/com/core/network/key.k
 - 展示：`UIAvatar` 统一组件，有图片显示图片，没有就显示名字首字 + 按名字稳定的配色
 - 持久化：好友头像路径存在 `StoredFriend.avatarPath`，用户头像路径存在 `user_avatar_v1`
 
+## 删除智能体
+
+入口：1:1 对话页右上角垃圾桶图标，二次确认后执行。
+
+一次删除会清理：
+
+- 好友本身和它的完整会话历史（`Friend.messages`），之后不会再作为上下文发送给模型
+- 所有聊天室里的成员关系与 `memberJoinSeq`
+- 它在聊天室发过的所有消息（避免残留内容和上下文）
+- 头像文件 `files/avatars/<id>_*.jpg`
+- 正在进行的请求结果会被丢弃（返回时校验好友是否还存在）
+- 如果它在某个房间，会追加一条系统提示「X 已被删除并移出聊天室」
+
+> 关于「模型侧的上下文」：本项目的调用是**无状态**的——每次请求都把历史消息随请求发送，没有使用厂商的 thread / session / `previous_response_id`。因此删除本地历史后，这些内容不会再发给模型；厂商是否保留请求日志由各厂商政策决定，chat completions 接口没有提供删除接口。
+
+## 上下文预算
+
+每次请求前会用 `trimToBudget()` 截断发给模型的历史（`core` 之外，位于 `feature/friend/data/ContextBudget.kt`）：
+
+- 从最新消息往回保留，默认预算 **6000 估算 token**，至少保留 **6 条**，保证最后一轮完整
+- 只影响请求内容，本地展示和持久化的历史不受影响
+- 估算规则：CJK 字符按 1 字符 ≈ 1 token，其它字符按 4 字符 ≈ 1 token（不引入各厂商 tokenizer）
+- 聊天室先按「加入位置 + 方案 B」构建上下文，再统一截断
+- 这样单轮输入成本有上界，不会随对话长度无限增长
+
 ## 数据持久化
 
 - 存储实现：`core/repository/.../storage/FriendStore.kt`（好友）、`RoomStore.kt`（聊天室），共用同一个 DataStore(Preferences) 文件，按 key 分区，文件在 `files/datastore/aifriend.preferences_pb`
@@ -109,8 +135,9 @@ cp core/network/key.example.kt core/network/src/main/java/com/core/network/key.k
 ## 已知待办
 
 - `core/network/src/main/java/com/core/network/key.kt` 是本地密钥文件，已被 `.gitignore` 忽略（模板见 `core/network/key.example.kt`）；但它仍会被编译进 APK，正式发布前必须轮换并改为用户自带 Key 或后端代理
-- 好友与对话历史已持久化，但暂不支持删除/重命名好友、清空会话，也没有导出功能
+- 好友与对话历史已持久化；已支持删除好友，但暂不支持重命名好友、清空单个会话、批量删除和导出功能
 - 头像裁剪暂不支持旋转/翻转手势；相机照片的 EXIF 旋转也还没处理
+- 上下文目前用「滑动窗口 + 字符估算」控制，早期内容会直接丢弃；需要长期记忆时应改成摘要压缩或向量检索
 - 聊天室目前是 P0：没有停止生成、@ 指定某个 AI、分栏对比、主持人总结和「共享全文」模式
 - 聊天记录无上限，长期使用后 JSON 快照会变大，届时需要迁移 Room 或做分页裁剪
 - 豆包模型选择列表包含账号未开通的模型，选中后会提示 404，后续可在控制台开通或按账号能力过滤

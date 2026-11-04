@@ -20,6 +20,7 @@ import com.feature.friend.data.toFriend
 import com.feature.friend.data.toRoom
 import com.feature.friend.data.toRoomMessage
 import com.feature.friend.data.toStored
+import com.feature.friend.data.trimToBudget
 import com.feature.friend.model.Friend
 import com.feature.friend.model.Room
 import com.feature.friend.model.RoomMessage
@@ -233,6 +234,55 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
         persistFriends()
     }
 
+    /**
+     * 删除智能体：
+     * 1. 从好友列表移除（本地会话历史随 Friend 一起删除，之后不会再发给模型）；
+     * 2. 从所有聊天室移除成员关系；
+     * 3. 删除它在聊天室里发过的消息，避免残留上下文和内容；
+     * 4. 删除头像文件。
+     */
+    fun deleteFriend(friendId: String) {
+        val state = _uiState.value
+        val friend = state.friends.firstOrNull { it.id == friendId } ?: return
+        val affectedRooms = state.rooms.filter { friendId in it.memberIds }
+
+        _uiState.update { current ->
+            current.copy(
+                friends = current.friends.filterNot { it.id == friendId },
+                rooms = current.rooms.map { room ->
+                    if (friendId in room.memberIds) {
+                        room.copy(
+                            memberIds = room.memberIds - friendId,
+                            memberJoinSeq = room.memberJoinSeq - friendId
+                        )
+                    } else {
+                        room
+                    }
+                },
+                roomMessages = current.roomMessages.filterNot { message ->
+                    (message.sender as? RoomSender.Ai)?.friendId == friendId
+                },
+                screen = if ((current.screen as? FriendScreen.Chat)?.friendId == friendId) {
+                    FriendScreen.List
+                } else {
+                    current.screen
+                },
+                input = "",
+                roomPending = current.roomPending - friendId,
+                roomErrors = current.roomErrors - friendId
+            )
+        }
+
+        persistFriends()
+        persistRooms()
+        persistRoomMessages()
+        viewModelScope.launch { avatarStore.delete(friendId) }
+
+        affectedRooms.forEach { room ->
+            appendSystemMessage(room.id, "${friend.name} 已被删除并移出聊天室")
+        }
+    }
+
     fun updateInput(text: String) {
         _uiState.update { it.copy(input = text) }
     }
@@ -296,12 +346,15 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
             val ai = aiFor(friend.brand)
                 ?: throw IllegalStateException("暂不支持的厂商：${friend.brand}")
             val reply = ai.chat(
-                messages = history,
+                messages = history.trimToBudget(),
                 model = friend.model,
                 systemPrompt = friend.systemPrompt,
                 enableThinking = friend.thinkingEnabled
             )
-            appendMessage(friendId, ChatMessage.assistant(reply))
+            // 请求期间好友可能已被删除，避免删除后又冒出回复
+            if (_uiState.value.friends.any { it.id == friendId }) {
+                appendMessage(friendId, ChatMessage.assistant(reply))
+            }
         } catch (t: Throwable) {
             _uiState.update { it.copy(error = t.readableMessage()) }
         } finally {
@@ -493,16 +546,18 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
                         systemPrompt = friend.systemPrompt,
                         enableThinking = friend.thinkingEnabled
                     )
-                    appendRoomMessage(
-                        RoomMessage(
-                            id = UUID.randomUUID().toString(),
-                            roomId = roomId,
-                            sender = RoomSender.Ai(friendId),
-                            content = greeting,
-                            createdAt = System.currentTimeMillis(),
-                            seq = seqCounter.incrementAndGet()
+                    if (isFriendActiveInRoom(roomId, friendId)) {
+                        appendRoomMessage(
+                            RoomMessage(
+                                id = UUID.randomUUID().toString(),
+                                roomId = roomId,
+                                sender = RoomSender.Ai(friendId),
+                                content = greeting,
+                                createdAt = System.currentTimeMillis(),
+                                seq = seqCounter.incrementAndGet()
+                            )
                         )
-                    )
+                    }
                     if (isRoomActive(roomId)) {
                         _uiState.update { it.copy(roomErrors = it.roomErrors - friendId) }
                     }
@@ -534,7 +589,7 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
                     messages = state.roomMessages.filter { it.roomId == roomId },
                     friendId = friendId,
                     joinedSeq = room.memberJoinSeq[friendId] ?: 0L
-                )
+                ).trimToBudget()
                 if (context.isEmpty()) return@withLock
 
                 if (isRoomActive(roomId)) {
@@ -549,16 +604,18 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
                         systemPrompt = friend.systemPrompt,
                         enableThinking = friend.thinkingEnabled
                     )
-                    appendRoomMessage(
-                        RoomMessage(
-                            id = UUID.randomUUID().toString(),
-                            roomId = roomId,
-                            sender = RoomSender.Ai(friendId),
-                            content = reply,
-                            createdAt = System.currentTimeMillis(),
-                            seq = seqCounter.incrementAndGet()
+                    if (isFriendActiveInRoom(roomId, friendId)) {
+                        appendRoomMessage(
+                            RoomMessage(
+                                id = UUID.randomUUID().toString(),
+                                roomId = roomId,
+                                sender = RoomSender.Ai(friendId),
+                                content = reply,
+                                createdAt = System.currentTimeMillis(),
+                                seq = seqCounter.incrementAndGet()
+                            )
                         )
-                    )
+                    }
                     if (isRoomActive(roomId)) {
                         _uiState.update { it.copy(roomErrors = it.roomErrors - friendId) }
                     }
@@ -605,6 +662,14 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
     }
 
     private fun isRoomActive(roomId: String): Boolean = _uiState.value.activeRoom?.id == roomId
+
+    /** 回复返回时，好友可能已被删除或移出房间，此时丢弃这次结果。 */
+    private fun isFriendActiveInRoom(roomId: String, friendId: String): Boolean {
+        val state = _uiState.value
+        val stillMember = state.rooms.firstOrNull { it.id == roomId }
+            ?.memberIds?.contains(friendId) == true
+        return stillMember && state.friends.any { it.id == friendId }
+    }
 
     // ---------------- 公共 ----------------
 

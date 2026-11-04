@@ -35,6 +35,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -85,9 +87,11 @@ fun UIFriendChatPage(
     onSend: () -> Unit,
     onBack: () -> Unit,
     onRetry: () -> Unit,
-    onChangeAvatar: (ByteArray) -> Unit
+    onChangeAvatar: (ByteArray) -> Unit,
+    onDeleteFriend: () -> Unit
 ) {
     var cropUri by remember { mutableStateOf<Uri?>(null) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
     val avatarPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) cropUri = uri
     }
@@ -110,6 +114,7 @@ fun UIFriendChatPage(
             model = model,
             avatarPath = avatarPath,
             onBack = onBack,
+            onDeleteClick = { showDeleteConfirm = true },
             onAvatarClick = {
                 avatarPicker.launch(
                     PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
@@ -179,6 +184,34 @@ fun UIFriendChatPage(
             }
         )
     }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text(text = "删除好友") },
+            text = {
+                Text(
+                    text = "删除后会清空这个好友的对话历史、聊天室成员关系和它的房间消息，" +
+                        "之后也不会再把这些内容发送给模型。该操作不可恢复。"
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteConfirm = false
+                        onDeleteFriend()
+                    }
+                ) {
+                    Text(text = "删除", color = UIFriendBarRed)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) {
+                    Text(text = "取消")
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -188,6 +221,7 @@ private fun ChatTopBar(
     model: String,
     avatarPath: String?,
     onBack: () -> Unit,
+    onDeleteClick: () -> Unit,
     onAvatarClick: () -> Unit
 ) {
     Row(
@@ -233,6 +267,13 @@ private fun ChatTopBar(
                 .padding(horizontal = 8.dp, vertical = 4.dp)
         ) {
             Text(text = model, fontSize = 11.sp, color = UIFriendBarTagTextBlue)
+        }
+        IconButton(onClick = onDeleteClick) {
+            Icon(
+                imageVector = Icons.Filled.Delete,
+                contentDescription = "删除好友",
+                tint = UIFriendBarRed
+            )
         }
     }
 }

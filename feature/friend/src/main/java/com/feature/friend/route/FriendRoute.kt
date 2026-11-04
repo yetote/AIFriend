@@ -121,7 +121,8 @@ fun FriendRoute(viewModel: FriendViewModel = viewModel()) {
                         onSend = viewModel::send,
                         onBack = viewModel::back,
                         onRetry = viewModel::retry,
-                        onChangeAvatar = { bytes -> viewModel.setFriendAvatar(friend.id, bytes) }
+                        onChangeAvatar = { bytes -> viewModel.setFriendAvatar(friend.id, bytes) },
+                        onDeleteFriend = { viewModel.deleteFriend(friend.id) }
                     )
                 }
             }

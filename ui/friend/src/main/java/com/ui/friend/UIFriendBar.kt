@@ -78,15 +78,6 @@ fun UIFriendBar(
                     contentDescription = "add",
                 )
             }
-            Image(
-                painterResource(R.drawable.ui_friend_add),
-                modifier = Modifier
-                    .size(38.dp)
-                    .background(UIFriendBarGray, shape = CircleShape)
-                    .padding(8.dp)
-                    .clip(CircleShape),
-                contentDescription = "add",
-            )
             UIAvatar(
                 name = "我",
                 avatarPath = userAvatarPath,
