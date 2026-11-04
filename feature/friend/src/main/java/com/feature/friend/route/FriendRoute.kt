@@ -162,6 +162,7 @@ fun FriendRoute(viewModel: FriendViewModel = viewModel()) {
                             UIRoomMessage(
                                 id = message.id,
                                 isUser = message.sender == RoomSender.User,
+                                isSystem = message.sender == RoomSender.System,
                                 senderId = aiId,
                                 senderName = aiId?.let { id ->
                                     state.friends.firstOrNull { it.id == id }?.name ?: "已移除"

@@ -9,25 +9,32 @@ import com.feature.friend.model.RoomSender
 
 private const val SENDER_USER = "user"
 private const val SENDER_AI = "ai"
+private const val SENDER_SYSTEM = "system"
 
 fun Room.toStored(): StoredRoom = StoredRoom(
     id = id,
     name = name,
     memberIds = memberIds,
-    createdAt = createdAt
+    createdAt = createdAt,
+    memberJoinSeq = memberJoinSeq
 )
 
 fun StoredRoom.toRoom(): Room = Room(
     id = id,
     name = name,
     memberIds = memberIds,
-    createdAt = createdAt
+    createdAt = createdAt,
+    memberJoinSeq = memberJoinSeq
 )
 
 fun RoomMessage.toStored(): StoredRoomMessage = StoredRoomMessage(
     id = id,
     roomId = roomId,
-    senderType = if (sender == RoomSender.User) SENDER_USER else SENDER_AI,
+    senderType = when (sender) {
+        RoomSender.User -> SENDER_USER
+        RoomSender.System -> SENDER_SYSTEM
+        is RoomSender.Ai -> SENDER_AI
+    },
     senderId = (sender as? RoomSender.Ai)?.friendId,
     content = content,
     createdAt = createdAt,
@@ -37,10 +44,10 @@ fun RoomMessage.toStored(): StoredRoomMessage = StoredRoomMessage(
 fun StoredRoomMessage.toRoomMessage(): RoomMessage = RoomMessage(
     id = id,
     roomId = roomId,
-    sender = if (senderType == SENDER_USER) {
-        RoomSender.User
-    } else {
-        RoomSender.Ai(senderId.orEmpty())
+    sender = when (senderType) {
+        SENDER_USER -> RoomSender.User
+        SENDER_SYSTEM -> RoomSender.System
+        else -> RoomSender.Ai(senderId.orEmpty())
     },
     content = content,
     createdAt = createdAt,
@@ -48,21 +55,29 @@ fun StoredRoomMessage.toRoomMessage(): RoomMessage = RoomMessage(
 )
 
 /**
- * 方案 B：某个 AI 在房间里的上下文 = 所有用户消息 + 它自己的回复，按时间排序。
- * 其他 AI 的回复被过滤掉，避免互相污染。
+ * 某个 AI 在房间里的上下文（方案 B + 加入位置过滤）：
+ * 1. 只取加入位置之后的消息，新成员看不到加入前的用户历史；
+ * 2. 保留所有用户消息、系统通知，以及它自己的回复，过滤其他 AI 的回复；
+ * 3. 系统通知以 user 角色注入并加「（聊天室通知）」前缀，兼容所有厂商。
  */
-fun buildRoomContext(messages: List<RoomMessage>, friendId: String): List<ChatMessage> =
+fun buildRoomContext(
+    messages: List<RoomMessage>,
+    friendId: String,
+    joinedSeq: Long = 0L
+): List<ChatMessage> =
     messages.asSequence()
         .sortedWith(compareBy({ it.createdAt }, { it.seq }))
+        .filter { it.seq >= joinedSeq }
         .filter { message ->
             message.sender == RoomSender.User ||
+                message.sender == RoomSender.System ||
                 (message.sender as? RoomSender.Ai)?.friendId == friendId
         }
         .map { message ->
-            if (message.sender == RoomSender.User) {
-                ChatMessage.user(message.content)
-            } else {
-                ChatMessage.assistant(message.content)
+            when (message.sender) {
+                RoomSender.User -> ChatMessage.user(message.content)
+                RoomSender.System -> ChatMessage.user("（聊天室通知）${message.content}")
+                is RoomSender.Ai -> ChatMessage.assistant(message.content)
             }
         }
         .toList()

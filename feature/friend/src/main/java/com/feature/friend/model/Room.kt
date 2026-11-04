@@ -7,11 +7,20 @@ data class Room(
     val id: String,
     val name: String,
     val memberIds: List<String>,
-    val createdAt: Long
+    val createdAt: Long,
+    /**
+     * 成员加入时的消息 seq（0 表示房间创建时就已加入）。
+     * 新加入的 AI 只看得到这个位置之后的内容，之前的用户历史不会同步给它。
+     */
+    val memberJoinSeq: Map<String, Long> = emptyMap()
 )
 
 sealed interface RoomSender {
     data object User : RoomSender
+
+    /** 系统提示，例如「你邀请 A 加入了聊天室」，只用于展示，不进入任何 AI 的上下文。 */
+    data object System : RoomSender
+
     data class Ai(val friendId: String) : RoomSender
 }
 
