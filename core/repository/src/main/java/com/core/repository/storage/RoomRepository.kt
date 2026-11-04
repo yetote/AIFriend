@@ -14,6 +14,31 @@ class RoomRepository(context: Context) {
 
     suspend fun loadMessages(): List<StoredRoomMessage> = dao.loadMessages().map { it.toStored() }
 
+    /** 整屋消息，按时间正序，供导出使用。 */
+    suspend fun loadAllMessages(roomId: String): List<StoredRoomMessage> =
+        dao.loadAllMessages(roomId).map { it.toStored() }
+
+    /** 最近 [limit] 条消息，按时间正序返回。 */
+    suspend fun loadRecentMessages(roomId: String, limit: Int): List<StoredRoomMessage> =
+        dao.loadRecentMessages(roomId, limit)
+            .map { it.toStored() }
+            .sortedWith(compareBy({ it.createdAt }, { it.seq }))
+
+    /** 早于指定消息的 [limit] 条，按时间正序返回。 */
+    suspend fun loadMessagesBefore(
+        roomId: String,
+        beforeCreatedAt: Long,
+        beforeSeq: Long,
+        limit: Int
+    ): List<StoredRoomMessage> =
+        dao.loadMessagesBefore(roomId, beforeCreatedAt, beforeSeq, limit)
+            .map { it.toStored() }
+            .sortedWith(compareBy({ it.createdAt }, { it.seq }))
+
+    suspend fun maxMessageSeq(): Long = dao.maxSeq() ?: 0L
+
+    suspend fun countMessages(roomId: String): Int = dao.countMessages(roomId)
+
     /**
      * 房间元信息 + 成员关系一起覆盖写入。
      */

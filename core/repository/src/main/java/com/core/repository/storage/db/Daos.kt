@@ -51,6 +51,36 @@ interface RoomDao {
     @Query("SELECT * FROM room_messages")
     suspend fun loadMessages(): List<RoomMessageEntity>
 
+    @Query(
+        "SELECT * FROM room_messages WHERE roomId = :roomId " +
+            "ORDER BY createdAt ASC, seq ASC"
+    )
+    suspend fun loadAllMessages(roomId: String): List<RoomMessageEntity>
+
+    @Query(
+        "SELECT * FROM room_messages WHERE roomId = :roomId " +
+            "ORDER BY createdAt DESC, seq DESC LIMIT :limit"
+    )
+    suspend fun loadRecentMessages(roomId: String, limit: Int): List<RoomMessageEntity>
+
+    @Query(
+        "SELECT * FROM room_messages WHERE roomId = :roomId " +
+            "AND (createdAt < :beforeCreatedAt OR (createdAt = :beforeCreatedAt AND seq < :beforeSeq)) " +
+            "ORDER BY createdAt DESC, seq DESC LIMIT :limit"
+    )
+    suspend fun loadMessagesBefore(
+        roomId: String,
+        beforeCreatedAt: Long,
+        beforeSeq: Long,
+        limit: Int
+    ): List<RoomMessageEntity>
+
+    @Query("SELECT MAX(seq) FROM room_messages")
+    suspend fun maxSeq(): Long?
+
+    @Query("SELECT COUNT(*) FROM room_messages WHERE roomId = :roomId")
+    suspend fun countMessages(roomId: String): Int
+
     @Query("DELETE FROM room_messages WHERE senderType = 'ai' AND senderId = :friendId")
     suspend fun deleteMessagesBySender(friendId: String)
 

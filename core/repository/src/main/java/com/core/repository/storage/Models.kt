@@ -43,6 +43,8 @@ data class StoredRoom(
     val discussionEnabled: Boolean = false,
     val discussionWindow: Int = 1,
     val sequentialSpeaking: Boolean = false,
+    val pinned: Boolean = false,
+    val avatarPath: String? = null,
     val memberJoinSeq: Map<String, Long> = emptyMap()
 )
 
@@ -95,7 +97,9 @@ internal fun StoredRoom.toEntity(): RoomEntity = RoomEntity(
     prompt = prompt,
     discussionEnabled = discussionEnabled,
     discussionWindow = discussionWindow,
-    sequentialSpeaking = sequentialSpeaking
+    sequentialSpeaking = sequentialSpeaking,
+    pinned = pinned,
+    avatarPath = avatarPath
 )
 
 internal fun RoomWithMembers.toStored(): StoredRoom = StoredRoom(
@@ -108,6 +112,8 @@ internal fun RoomWithMembers.toStored(): StoredRoom = StoredRoom(
     discussionEnabled = room.discussionEnabled,
     discussionWindow = room.discussionWindow,
     sequentialSpeaking = room.sequentialSpeaking,
+    pinned = room.pinned,
+    avatarPath = room.avatarPath,
     memberJoinSeq = members.associate { it.friendId to it.joinSeq }
 )
 

@@ -47,7 +47,9 @@ data class RoomEntity(
     val prompt: String = "",
     val discussionEnabled: Boolean = false,
     val discussionWindow: Int = 1,
-    val sequentialSpeaking: Boolean = false
+    val sequentialSpeaking: Boolean = false,
+    val pinned: Boolean = false,
+    val avatarPath: String? = null
 )
 
 @Entity(
