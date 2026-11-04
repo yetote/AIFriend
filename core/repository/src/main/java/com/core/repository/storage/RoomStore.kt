@@ -14,7 +14,8 @@ data class StoredRoom(
     val id: String,
     val name: String,
     val memberIds: List<String> = emptyList(),
-    val createdAt: Long = 0L
+    val createdAt: Long = 0L,
+    val memberJoinSeq: Map<String, Long> = emptyMap()
 )
 
 /**

@@ -348,7 +348,8 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
             id = UUID.randomUUID().toString(),
             name = name,
             memberIds = members,
-            createdAt = System.currentTimeMillis()
+            createdAt = System.currentTimeMillis(),
+            memberJoinSeq = members.associateWith { 0L }
         )
         _uiState.update {
             it.copy(
@@ -362,6 +363,11 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
             )
         }
         persistRooms()
+
+        appendSystemMessage(
+            roomId = room.id,
+            text = "${memberNames.joinToString("、")} 加入了聊天室"
+        )
     }
 
     fun openRoom(roomId: String) {
@@ -408,26 +414,111 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
 
     /**
      * 房间内增删成员。至少保留一位，避免房间变成空壳。
+     * 新成员会记录加入位置：只看得到加入之后的内容，并自动打招呼。
      */
     fun toggleRoomMember(friendId: String) {
         val state = _uiState.value
         val room = state.activeRoom ?: return
-        val memberIds = if (friendId in room.memberIds) {
-            room.memberIds - friendId
-        } else {
-            room.memberIds + friendId
-        }
-        if (memberIds.isEmpty()) return
+        val friendName = state.friends.firstOrNull { it.id == friendId }?.name ?: "好友"
 
-        _uiState.update {
-            it.copy(
-                rooms = it.rooms.map { current ->
-                    if (current.id == room.id) current.copy(memberIds = memberIds) else current
-                },
-                roomErrors = it.roomErrors - friendId
-            )
+        if (friendId in room.memberIds) {
+            val memberIds = room.memberIds - friendId
+            if (memberIds.isEmpty()) return
+            _uiState.update {
+                it.copy(
+                    rooms = it.rooms.map { current ->
+                        if (current.id == room.id) {
+                            current.copy(
+                                memberIds = memberIds,
+                                memberJoinSeq = current.memberJoinSeq - friendId
+                            )
+                        } else {
+                            current
+                        }
+                    },
+                    roomErrors = it.roomErrors - friendId
+                )
+            }
+            persistRooms()
+            appendSystemMessage(room.id, "$friendName 退出了聊天室")
+        } else {
+            val joinSeq = seqCounter.incrementAndGet()
+            _uiState.update {
+                it.copy(
+                    rooms = it.rooms.map { current ->
+                        if (current.id == room.id) {
+                            current.copy(
+                                memberIds = current.memberIds + friendId,
+                                memberJoinSeq = current.memberJoinSeq + (friendId to joinSeq)
+                            )
+                        } else {
+                            current
+                        }
+                    },
+                    roomErrors = it.roomErrors - friendId
+                )
+            }
+            persistRooms()
+            appendSystemMessage(room.id, "$friendName 加入了聊天室", joinSeq)
+            enqueueRoomGreeting(room.id, friendId)
         }
-        persistRooms()
+    }
+
+    /**
+     * 新加入的 AI 不带上任何用户历史，只让它打个招呼。
+     */
+    private fun enqueueRoomGreeting(roomId: String, friendId: String) {
+        val lock = roomLocks.getOrPut("$roomId:$friendId") { Mutex() }
+        viewModelScope.launch {
+            lock.withLock {
+                val state = _uiState.value
+                val room = state.rooms.firstOrNull { it.id == roomId } ?: return@withLock
+                if (friendId !in room.memberIds) return@withLock
+                val friend = state.friends.firstOrNull { it.id == friendId } ?: return@withLock
+
+                if (isRoomActive(roomId)) {
+                    _uiState.update { it.copy(roomPending = it.roomPending + friendId) }
+                }
+                try {
+                    val ai = aiFor(friend.brand)
+                        ?: throw IllegalStateException("暂不支持的厂商：${friend.brand}")
+                    val greeting = ai.chat(
+                        messages = listOf(
+                            ChatMessage.user(
+                                "你刚加入这个聊天室。请用一句简短的话向大家打个招呼，" +
+                                    "介绍你的名字和角色，不要提及其他内容。"
+                            )
+                        ),
+                        model = friend.model,
+                        systemPrompt = friend.systemPrompt,
+                        enableThinking = friend.thinkingEnabled
+                    )
+                    appendRoomMessage(
+                        RoomMessage(
+                            id = UUID.randomUUID().toString(),
+                            roomId = roomId,
+                            sender = RoomSender.Ai(friendId),
+                            content = greeting,
+                            createdAt = System.currentTimeMillis(),
+                            seq = seqCounter.incrementAndGet()
+                        )
+                    )
+                    if (isRoomActive(roomId)) {
+                        _uiState.update { it.copy(roomErrors = it.roomErrors - friendId) }
+                    }
+                } catch (t: Throwable) {
+                    if (isRoomActive(roomId)) {
+                        _uiState.update {
+                            it.copy(roomErrors = it.roomErrors + (friendId to t.readableMessage()))
+                        }
+                    }
+                } finally {
+                    if (isRoomActive(roomId)) {
+                        _uiState.update { it.copy(roomPending = it.roomPending - friendId) }
+                    }
+                }
+            }
+        }
     }
 
     private fun enqueueRoomReply(roomId: String, friendId: String) {
@@ -441,7 +532,8 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
 
                 val context = buildRoomContext(
                     messages = state.roomMessages.filter { it.roomId == roomId },
-                    friendId = friendId
+                    friendId = friendId,
+                    joinedSeq = room.memberJoinSeq[friendId] ?: 0L
                 )
                 if (context.isEmpty()) return@withLock
 
@@ -493,6 +585,23 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
             )
         }
         persistRoomMessages()
+    }
+
+    private fun appendSystemMessage(
+        roomId: String,
+        text: String,
+        seq: Long = seqCounter.incrementAndGet()
+    ) {
+        appendRoomMessage(
+            RoomMessage(
+                id = UUID.randomUUID().toString(),
+                roomId = roomId,
+                sender = RoomSender.System,
+                content = text,
+                createdAt = System.currentTimeMillis(),
+                seq = seq
+            )
+        )
     }
 
     private fun isRoomActive(roomId: String): Boolean = _uiState.value.activeRoom?.id == roomId

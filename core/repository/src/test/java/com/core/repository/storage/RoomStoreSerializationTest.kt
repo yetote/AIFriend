@@ -16,7 +16,13 @@ class RoomStoreSerializationTest {
     @Test
     fun `rooms and messages survive json round trip`() {
         val rooms = listOf(
-            StoredRoom(id = "r1", name = "产品评审团", memberIds = listOf("a", "b"), createdAt = 100L)
+            StoredRoom(
+                id = "r1",
+                name = "产品评审团",
+                memberIds = listOf("a", "b"),
+                createdAt = 100L,
+                memberJoinSeq = mapOf("a" to 0L, "b" to 42L)
+            )
         )
         val messages = listOf(
             StoredRoomMessage(

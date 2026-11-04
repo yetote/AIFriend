@@ -58,8 +58,49 @@ class RoomContextTest {
     }
 
     @Test
+    fun `system messages become room notifications in context`() {
+        val system = message("s1", RoomSender.System, "A 加入了聊天室", 1, 1)
+        val user = message("1", RoomSender.User, "大家好", 2, 2)
+
+        assertEquals(system, system.toStored().toRoomMessage())
+        assertEquals(
+            listOf(
+                ChatMessage.user("（聊天室通知）A 加入了聊天室"),
+                ChatMessage.user("大家好")
+            ),
+            buildRoomContext(listOf(system, user), "a")
+        )
+    }
+
+    @Test
+    fun `new member only sees messages after joining`() {
+        val messages = listOf(
+            message("1", RoomSender.User, "旧消息", 1, 1),
+            message("2", RoomSender.Ai("b"), "B 的回答", 2, 2),
+            message("3", RoomSender.System, "A 加入了聊天室", 3, 3),
+            message("4", RoomSender.User, "新消息", 4, 4)
+        )
+
+        val context = buildRoomContext(messages, friendId = "a", joinedSeq = 3)
+
+        assertEquals(
+            listOf(
+                ChatMessage.user("（聊天室通知）A 加入了聊天室"),
+                ChatMessage.user("新消息")
+            ),
+            context
+        )
+    }
+
+    @Test
     fun `room and message mapping round trip`() {
-        val room = Room(id = "r1", name = "评审团", memberIds = listOf("a", "b"), createdAt = 100L)
+        val room = Room(
+            id = "r1",
+            name = "评审团",
+            memberIds = listOf("a", "b"),
+            createdAt = 100L,
+            memberJoinSeq = mapOf("a" to 0L, "b" to 7L)
+        )
         assertEquals(room, room.toStored().toRoom())
 
         val message = message("m1", RoomSender.Ai("a"), "hi", 5, 1)

@@ -18,6 +18,7 @@ data class UIRoomMember(
 data class UIRoomMessage(
     val id: String,
     val isUser: Boolean,
+    val isSystem: Boolean = false,
     val senderId: String? = null,
     val senderName: String? = null,
     val avatarPath: String? = null,

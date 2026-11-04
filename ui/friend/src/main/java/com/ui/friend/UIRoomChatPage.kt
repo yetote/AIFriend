@@ -136,7 +136,11 @@ fun UIRoomChatPage(
                 }
             }
             items(messages) { message ->
-                RoomMessageBubble(message = message, userAvatarPath = userAvatarPath)
+                if (message.isSystem) {
+                    RoomSystemMessage(text = message.content)
+                } else {
+                    RoomMessageBubble(message = message, userAvatarPath = userAvatarPath)
+                }
             }
             pendingIds.forEach { friendId ->
                 item {
@@ -211,6 +215,22 @@ private fun RoomTopBar(
         TextButton(onClick = onManageMembers) {
             Text(text = "成员", fontSize = 13.sp, color = UIFriendBarTagTextBlue)
         }
+    }
+}
+
+@Composable
+private fun RoomSystemMessage(text: String) {
+    Box(
+        modifier = Modifier.fillMaxWidth(),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            fontSize = 12.sp,
+            color = UIFriendBarItemMetaColor,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 24.dp, vertical = 2.dp)
+        )
     }
 }
 
