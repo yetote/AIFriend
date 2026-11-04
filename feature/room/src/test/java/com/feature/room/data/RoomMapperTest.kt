@@ -10,13 +10,15 @@ class RoomMapperTest {
 
     @Test
     fun `room prompt is prepended to friend prompt`() {
-        assertEquals("群规\n\n人格", buildRoomSystemPrompt(" 群规 ", "人格"))
+        val prompt = buildRoomSystemPrompt(" 群规 ", "人格")
+        assertTrue(prompt.startsWith("群规\n\n人格"))
+        assertTrue(prompt.contains("群聊规则"))
     }
 
     @Test
     fun `blank room prompt keeps friend prompt`() {
-        assertEquals("人格", buildRoomSystemPrompt("", "人格"))
-        assertEquals("人格", buildRoomSystemPrompt("   ", "人格"))
+        assertTrue(buildRoomSystemPrompt("", "人格").startsWith("人格"))
+        assertTrue(buildRoomSystemPrompt("   ", "人格").startsWith("人格"))
     }
 
     @Test

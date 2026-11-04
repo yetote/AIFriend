@@ -260,8 +260,14 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
         val ordered = room.memberIds.filter { it in targets }
         if (room.discussionEnabled && room.sequentialSpeaking) {
             var previous: Job? = null
-            ordered.forEach { friendId ->
-                previous = enqueueRoomReply(room.id, friendId, waitFor = previous)
+            ordered.forEachIndexed { index, friendId ->
+                previous = enqueueRoomReply(
+                    roomId = room.id,
+                    friendId = friendId,
+                    waitFor = previous,
+                    roundIndex = index,
+                    roundSize = ordered.size
+                )
             }
         } else {
             ordered.forEach { friendId -> enqueueRoomReply(room.id, friendId) }
@@ -508,7 +514,9 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
     private fun enqueueRoomReply(
         roomId: String,
         friendId: String,
-        waitFor: Job? = null
+        waitFor: Job? = null,
+        roundIndex: Int? = null,
+        roundSize: Int? = null
     ): Job {
         val lock = roomLocks.getOrPut(roomKey(roomId, friendId)) { Mutex() }
         return launchRoomRequest(roomId, friendId) {
@@ -520,13 +528,21 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
                 val friend = state.friends.firstOrNull { it.id == friendId } ?: return@withLock
 
                 val discussion = room.discussionEnabled
-                val context = buildRoomContext(
+                val maxTokens = if (discussion) 4000 else 6000
+                var context = buildRoomContext(
                     messages = state.roomMessages.filter { it.roomId == roomId },
                     friendId = friendId,
                     joinedSeq = room.memberJoinSeq[friendId] ?: 0L,
                     otherWindowRounds = if (discussion) room.discussionWindow else null,
                     friendNames = state.friends.associate { it.id to it.name }
-                ).trimToBudget(if (discussion) 4000 else 6000)
+                )
+                if (roundIndex != null) {
+                    context = context + ChatMessage.user(
+                        "（本轮你是第 ${roundIndex + 1} 位发言，前面已经有 $roundIndex 位成员发言。" +
+                            "请基于前面的内容补充新的观点；不要复读别人或自己之前的句式、数字和结论。）"
+                    )
+                }
+                context = context.trimToBudget(maxTokens)
                 if (context.isEmpty()) return@withLock
 
                 if (isRoomActive(roomId)) {
