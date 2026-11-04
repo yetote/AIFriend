@@ -419,6 +419,28 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
         }
     }
 
+    /** 删除整个聊天室及其消息。 */
+    fun deleteRoom(roomId: String) {
+        val room = _uiState.value.rooms.firstOrNull { it.id == roomId } ?: return
+        _uiState.update { current ->
+            current.copy(
+                rooms = current.rooms.filterNot { it.id == room.id },
+                roomMessages = current.roomMessages.filterNot { it.roomId == room.id },
+                screen = if ((current.screen as? FriendScreen.RoomChat)?.roomId == room.id) {
+                    FriendScreen.List
+                } else {
+                    current.screen
+                },
+                roomInput = "",
+                roomPending = emptySet(),
+                roomErrors = emptyMap()
+            )
+        }
+        viewModelScope.launch {
+            runCatching { roomRepository.delete(room.id) }
+        }
+    }
+
     fun updateRoomInput(text: String) {
         _uiState.update { it.copy(roomInput = text) }
     }

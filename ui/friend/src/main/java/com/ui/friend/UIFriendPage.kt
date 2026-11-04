@@ -1,7 +1,11 @@
+@file:OptIn(ExperimentalFoundationApi::class)
+
 package com.ui.friend
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -19,9 +23,14 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -36,6 +45,7 @@ import com.ui.friend.data.UIRoomData
 import com.ui.friend.theme.UIFriendBarCreateButtonBg
 import com.ui.friend.theme.UIFriendBarCreateButtonText
 import com.ui.friend.theme.UIFriendBarGray
+import com.ui.friend.theme.UIFriendBarRed
 import com.ui.friend.theme.UIFriendBarSubtitleColor
 import com.ui.friend.theme.UIFriendBarTitleColor2
 
@@ -54,8 +64,13 @@ fun UIFriendPage(
     onFriendClick: (UIFriendListData) -> Unit = {},
     onCreateRoom: () -> Unit = {},
     onRoomClick: (UIRoomData) -> Unit = {},
+    onDeleteFriend: (String) -> Unit = {},
+    onDeleteRoom: (String) -> Unit = {},
     onPickUserAvatar: () -> Unit = {}
 ) {
+    var pendingFriendDelete by remember { mutableStateOf<UIFriendListData?>(null) }
+    var pendingRoomDelete by remember { mutableStateOf<UIRoomData?>(null) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -88,7 +103,8 @@ fun UIFriendPage(
         RoomSection(
             rooms = rooms,
             onCreateRoom = onCreateRoom,
-            onRoomClick = onRoomClick
+            onRoomClick = onRoomClick,
+            onRoomLongClick = { pendingRoomDelete = it }
         )
         Spacer(Modifier.height(16.dp))
         UIFriendCreate(
@@ -101,9 +117,74 @@ fun UIFriendPage(
         if (list.isEmpty()) {
             EmptyFriends(hasSearch = searchText.isNotBlank(), onCreateClick = onCreateClick)
         } else {
-            UIFriendCrewList(list, onItemClick = onFriendClick)
+            UIFriendCrewList(
+                data = list,
+                onItemClick = onFriendClick,
+                onItemLongClick = { pendingFriendDelete = it }
+            )
         }
+        Spacer(Modifier.height(12.dp))
+        Text(
+            text = "长按好友或聊天室可以删除",
+            modifier = Modifier.fillMaxWidth(),
+            textAlign = TextAlign.Center,
+            fontSize = 12.sp,
+            color = UIFriendBarSubtitleColor
+        )
         Spacer(Modifier.height(24.dp))
+    }
+
+    pendingFriendDelete?.let { friend ->
+        AlertDialog(
+            onDismissRequest = { pendingFriendDelete = null },
+            title = { Text(text = "删除好友") },
+            text = {
+                Text(
+                    text = "删除后会清空「${friend.name}」的对话历史、房间成员关系和它在房间里的消息，" +
+                        "之后不会再发给模型。该操作不可恢复。"
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingFriendDelete = null
+                        onDeleteFriend(friend.id)
+                    }
+                ) {
+                    Text(text = "删除", color = UIFriendBarRed)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingFriendDelete = null }) {
+                    Text(text = "取消")
+                }
+            }
+        )
+    }
+
+    pendingRoomDelete?.let { room ->
+        AlertDialog(
+            onDismissRequest = { pendingRoomDelete = null },
+            title = { Text(text = "删除聊天室") },
+            text = {
+                Text(text = "会删除「${room.name}」以及里面的全部消息，该操作不可恢复。")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingRoomDelete = null
+                        onDeleteRoom(room.id)
+                    }
+                ) {
+                    Text(text = "删除", color = UIFriendBarRed)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingRoomDelete = null }) {
+                    Text(text = "取消")
+                }
+            }
+        )
     }
 }
 
@@ -111,7 +192,8 @@ fun UIFriendPage(
 private fun RoomSection(
     rooms: List<UIRoomData>,
     onCreateRoom: () -> Unit,
-    onRoomClick: (UIRoomData) -> Unit
+    onRoomClick: (UIRoomData) -> Unit,
+    onRoomLongClick: (UIRoomData) -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -158,7 +240,10 @@ private fun RoomSection(
                         modifier = Modifier
                             .clip(RoundedCornerShape(14.dp))
                             .background(Color.White)
-                            .clickable { onRoomClick(room) }
+                            .combinedClickable(
+                                onClick = { onRoomClick(room) },
+                                onLongClick = { onRoomLongClick(room) }
+                            )
                             .padding(horizontal = 14.dp, vertical = 12.dp)
                     ) {
                         Text(

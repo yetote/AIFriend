@@ -46,4 +46,12 @@ class RoomRepository(context: Context) {
     suspend fun removeMemberEverywhere(friendId: String) {
         dao.removeMemberEverywhere(friendId)
     }
+
+    /** 删除房间及其全部消息（成员表通过外键级联删除）。 */
+    suspend fun delete(roomId: String) {
+        db.withTransaction {
+            dao.deleteMessagesForRoom(roomId)
+            dao.deleteRoom(roomId)
+        }
+    }
 }
