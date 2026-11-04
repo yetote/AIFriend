@@ -116,8 +116,56 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
         _uiState.update { it.copy(selectedModel = model) }
     }
 
-    fun setThinkingEnabled(enabled: Boolean) {
-        _uiState.update { it.copy(thinkingEnabled = enabled) }
+    fun startEditFriend(friendId: String) {
+        if (_uiState.value.friends.none { it.id == friendId }) return
+        _uiState.update { it.copy(screen = FriendScreen.EditFriend(friendId), error = null) }
+    }
+
+    /**
+     * 保存好友资料的编辑：昵称、角色、设定、头像、思考开关。
+     * 会话历史、绑定的厂商和模型保持不变。
+     */
+    fun saveFriendEdits(
+        friendId: String,
+        name: String,
+        role: String,
+        prompt: String,
+        avatarBytes: ByteArray?,
+        thinkingEnabled: Boolean
+    ) {
+        val trimmedName = name.trim()
+        if (trimmedName.isEmpty()) return
+
+        _uiState.update { state ->
+            state.copy(
+                friends = state.friends.map { friend ->
+                    if (friend.id == friendId) {
+                        friend.copy(
+                            name = trimmedName,
+                            role = role.trim(),
+                            prompt = prompt.trim(),
+                            thinkingEnabled = thinkingEnabled
+                        )
+                    } else {
+                        friend
+                    }
+                },
+                screen = FriendScreen.List,
+                error = null
+            )
+        }
+
+        val updated = _uiState.value.friends.firstOrNull { it.id == friendId } ?: return
+        viewModelScope.launch {
+            runCatching { friendRepository.upsert(updated.toStored()) }
+        }
+
+        if (avatarBytes != null) {
+            viewModelScope.launch {
+                val path = avatarStore.save(avatarBytes, friendId) ?: return@launch
+                updateFriendAvatar(friendId, path)
+            }
+        }
     }
 
     fun updateSearch(text: String) {
@@ -151,7 +199,8 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
         name: String,
         role: String,
         prompt: String,
-        avatarBytes: ByteArray? = null
+        avatarBytes: ByteArray? = null,
+        thinkingEnabled: Boolean = false
     ) {
         val trimmedName = name.trim()
         if (trimmedName.isEmpty()) return
@@ -166,7 +215,7 @@ class FriendViewModel(application: Application) : BaseViewModel(application) {
             brand = state.selectedBrand,
             company = provider?.company.orEmpty(),
             model = state.selectedModel.ifBlank { provider?.defaultModel.orEmpty() },
-            thinkingEnabled = state.thinkingEnabled
+            thinkingEnabled = thinkingEnabled
         )
         _uiState.update {
             it.copy(

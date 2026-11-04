@@ -24,6 +24,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -40,6 +41,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import com.ui.friend.data.UIFriendListData
 import com.ui.friend.data.UIRoomData
 import com.ui.friend.theme.UIFriendBarCreateButtonBg
@@ -64,11 +66,12 @@ fun UIFriendPage(
     onFriendClick: (UIFriendListData) -> Unit = {},
     onCreateRoom: () -> Unit = {},
     onRoomClick: (UIRoomData) -> Unit = {},
+    onEditFriend: (String) -> Unit = {},
     onDeleteFriend: (String) -> Unit = {},
     onDeleteRoom: (String) -> Unit = {},
     onPickUserAvatar: () -> Unit = {}
 ) {
-    var pendingFriendDelete by remember { mutableStateOf<UIFriendListData?>(null) }
+    var pendingFriendAction by remember { mutableStateOf<UIFriendListData?>(null) }
     var pendingRoomDelete by remember { mutableStateOf<UIRoomData?>(null) }
 
     Column(
@@ -120,12 +123,12 @@ fun UIFriendPage(
             UIFriendCrewList(
                 data = list,
                 onItemClick = onFriendClick,
-                onItemLongClick = { pendingFriendDelete = it }
+                onItemLongClick = { pendingFriendAction = it }
             )
         }
         Spacer(Modifier.height(12.dp))
         Text(
-            text = "长按好友或聊天室可以删除",
+            text = "长按好友可编辑或删除，长按聊天室可删除",
             modifier = Modifier.fillMaxWidth(),
             textAlign = TextAlign.Center,
             fontSize = 12.sp,
@@ -134,31 +137,18 @@ fun UIFriendPage(
         Spacer(Modifier.height(24.dp))
     }
 
-    pendingFriendDelete?.let { friend ->
-        AlertDialog(
-            onDismissRequest = { pendingFriendDelete = null },
-            title = { Text(text = "删除好友") },
-            text = {
-                Text(
-                    text = "删除后会清空「${friend.name}」的对话历史、房间成员关系和它在房间里的消息，" +
-                        "之后不会再发给模型。该操作不可恢复。"
-                )
+    pendingFriendAction?.let { friend ->
+        FriendActionsDialog(
+            friendName = friend.name,
+            onEdit = {
+                pendingFriendAction = null
+                onEditFriend(friend.id)
             },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        pendingFriendDelete = null
-                        onDeleteFriend(friend.id)
-                    }
-                ) {
-                    Text(text = "删除", color = UIFriendBarRed)
-                }
+            onDelete = {
+                pendingFriendAction = null
+                onDeleteFriend(friend.id)
             },
-            dismissButton = {
-                TextButton(onClick = { pendingFriendDelete = null }) {
-                    Text(text = "取消")
-                }
-            }
+            onDismiss = { pendingFriendAction = null }
         )
     }
 
@@ -259,6 +249,40 @@ private fun RoomSection(
                             color = UIFriendBarSubtitleColor
                         )
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FriendActionsDialog(
+    friendName: String,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = Color.White
+        ) {
+            Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                Text(
+                    text = friendName,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = UIFriendBarTitleColor2
+                )
+                TextButton(onClick = onEdit, modifier = Modifier.fillMaxWidth()) {
+                    Text(text = "编辑资料", color = UIFriendBarTitleColor2)
+                }
+                TextButton(onClick = onDelete, modifier = Modifier.fillMaxWidth()) {
+                    Text(text = "删除好友", color = UIFriendBarRed)
+                }
+                TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
+                    Text(text = "取消", color = UIFriendBarSubtitleColor)
                 }
             }
         }
