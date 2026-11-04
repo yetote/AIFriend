@@ -11,12 +11,18 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.feature.friend.contract.FriendScreen
 import com.feature.friend.model.Friend
+import com.feature.friend.model.RoomSender
 import com.feature.friend.vm.FriendViewModel
 import com.ui.friend.UIFriendChatPage
 import com.ui.friend.UIFriendCreateScreen
 import com.ui.friend.UIFriendPage
+import com.ui.friend.UIRoomChatPage
+import com.ui.friend.UIRoomCreateScreen
 import com.ui.friend.data.UIFriendListData
 import com.ui.friend.data.UIProvider
+import com.ui.friend.data.UIRoomData
+import com.ui.friend.data.UIRoomMember
+import com.ui.friend.data.UIRoomMessage
 import com.ui.friend.data.getRandomColor
 
 @Composable
@@ -35,10 +41,13 @@ fun FriendRoute(viewModel: FriendViewModel = viewModel()) {
                 messageCount = state.messageCount,
                 activeCount = state.activeCount,
                 mostActive = state.mostActive,
+                rooms = state.rooms.map { UIRoomData(id = it.id, name = it.name, memberCount = it.memberIds.size) },
                 searchText = state.search,
                 onSearchTextChange = viewModel::updateSearch,
                 onCreateClick = viewModel::openCreate,
-                onFriendClick = { viewModel.openChat(it.id) }
+                onFriendClick = { viewModel.openChat(it.id) },
+                onCreateRoom = viewModel::openRoomCreate,
+                onRoomClick = { viewModel.openRoom(it.id) }
             )
 
             FriendScreen.Create -> UIFriendCreateScreen(
@@ -76,6 +85,51 @@ fun FriendRoute(viewModel: FriendViewModel = viewModel()) {
                         onSend = viewModel::send,
                         onBack = viewModel::back,
                         onRetry = viewModel::retry
+                    )
+                }
+            }
+
+            FriendScreen.RoomCreate -> UIRoomCreateScreen(
+                name = state.roomDraftName,
+                friends = state.friends.map { UIRoomMember(id = it.id, name = it.name) },
+                selectedIds = state.roomDraftMemberIds,
+                onNameChange = viewModel::updateRoomDraftName,
+                onToggleFriend = viewModel::toggleRoomDraftMember,
+                onCancel = viewModel::back,
+                onCreate = viewModel::createRoom
+            )
+
+            is FriendScreen.RoomChat -> {
+                val room = state.activeRoom
+                if (room != null) {
+                    val members = room.memberIds.mapNotNull { memberId ->
+                        state.friends.firstOrNull { it.id == memberId }
+                            ?.let { UIRoomMember(id = it.id, name = it.name) }
+                    }
+                    UIRoomChatPage(
+                        roomName = room.name,
+                        members = members,
+                        allFriends = state.friends.map { UIRoomMember(id = it.id, name = it.name) },
+                        messages = state.activeRoomMessages.map { message ->
+                            val aiId = (message.sender as? RoomSender.Ai)?.friendId
+                            UIRoomMessage(
+                                id = message.id,
+                                isUser = message.sender == RoomSender.User,
+                                senderId = aiId,
+                                senderName = aiId?.let { id ->
+                                    state.friends.firstOrNull { it.id == id }?.name ?: "已移除"
+                                },
+                                content = message.content
+                            )
+                        },
+                        input = state.roomInput,
+                        pendingIds = state.roomPending,
+                        errors = state.roomErrors,
+                        onInputChange = viewModel::updateRoomInput,
+                        onSend = viewModel::sendRoomMessage,
+                        onBack = viewModel::back,
+                        onRetry = viewModel::retryRoomReply,
+                        onToggleMember = viewModel::toggleRoomMember
                     )
                 }
             }
