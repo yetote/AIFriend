@@ -83,6 +83,7 @@ fun FriendRoute(viewModel: FriendViewModel = viewModel()) {
                 onRoomClick = { viewModel.openRoom(it.id) },
                 onDeleteFriend = { viewModel.deleteFriend(it) },
                 onDeleteRoom = { viewModel.deleteRoom(it) },
+                onEditFriend = { viewModel.startEditFriend(it) },
                 onPickUserAvatar = pickUserAvatar
             )
 
@@ -100,10 +101,9 @@ fun FriendRoute(viewModel: FriendViewModel = viewModel()) {
                 selectedModel = state.selectedModel,
                 isLoadingModels = state.isLoadingModels,
                 onModelSelect = viewModel::selectModel,
-                thinkingEnabled = state.thinkingEnabled,
-                onThinkingChange = viewModel::setThinkingEnabled,
+                initialThinking = state.thinkingEnabled,
                 onCancel = viewModel::back,
-                onCreate = viewModel::createFriend
+                onSubmit = viewModel::createFriend
             )
 
             is FriendScreen.Chat -> {
@@ -128,8 +128,44 @@ fun FriendRoute(viewModel: FriendViewModel = viewModel()) {
                 }
             }
 
-            FriendScreen.RoomCreate -> UIRoomCreateScreen(
-                name = state.roomDraftName,
+            is FriendScreen.EditFriend -> {
+                val editId = (state.screen as FriendScreen.EditFriend).friendId
+                val friend = state.friends.firstOrNull { it.id == editId }
+                if (friend != null) {
+                    val provider = state.providers.firstOrNull { it.brand == friend.brand }
+                    UIFriendCreateScreen(
+                        providers = state.providers.map {
+                            UIProvider(
+                                brand = it.brand,
+                                company = it.company,
+                                thinkingSwitchable = it.thinkingSwitchable
+                            )
+                        },
+                        selectedBrand = friend.brand,
+                        onBrandSelect = {},
+                        models = state.models,
+                        selectedModel = friend.model,
+                        isLoadingModels = state.isLoadingModels,
+                        onModelSelect = {},
+                        onCancel = viewModel::back,
+                        onSubmit = { name, role, prompt, bytes, thinking ->
+                            viewModel.saveFriendEdits(friend.id, name, role, prompt, bytes, thinking)
+                        },
+                        title = "编辑 AI 好友",
+                        submitLabel = "保存",
+                        initialName = friend.name,
+                        initialRole = friend.role,
+                        initialPrompt = friend.prompt,
+                        initialAvatarPath = friend.avatarPath,
+                        initialThinking = friend.thinkingEnabled,
+                        editing = true,
+                        modelLabel = "${friend.brand} · ${friend.model}",
+                        thinkingSwitchable = provider?.thinkingSwitchable ?: true
+                    )
+                }
+            }
+
+            FriendScreen.RoomCreate -> UIRoomCreateScreen(                name = state.roomDraftName,
                 friends = state.friends.map {
                     UIRoomMember(id = it.id, name = it.name, avatarPath = it.avatarPath)
                 },

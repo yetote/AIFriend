@@ -70,21 +70,30 @@ fun UIFriendCreateScreen(
     selectedModel: String,
     isLoadingModels: Boolean,
     onModelSelect: (String) -> Unit,
-    thinkingEnabled: Boolean,
-    onThinkingChange: (Boolean) -> Unit,
     onCancel: () -> Unit,
-    onCreate: (name: String, role: String, prompt: String, avatarBytes: ByteArray?) -> Unit
+    onSubmit: (name: String, role: String, prompt: String, avatarBytes: ByteArray?, thinkingEnabled: Boolean) -> Unit,
+    title: String = "创建 AI 好友",
+    submitLabel: String = "创建并开始聊天",
+    initialName: String = "",
+    initialRole: String = "",
+    initialPrompt: String = "",
+    initialAvatarPath: String? = null,
+    initialThinking: Boolean = false,
+    editing: Boolean = false,
+    modelLabel: String? = null,
+    thinkingSwitchable: Boolean = true
 ) {
-    var name by rememberSaveable { mutableStateOf("") }
-    var role by rememberSaveable { mutableStateOf("") }
-    var prompt by rememberSaveable { mutableStateOf("") }
+    var name by rememberSaveable(initialName) { mutableStateOf(initialName) }
+    var role by rememberSaveable(initialRole) { mutableStateOf(initialRole) }
+    var prompt by rememberSaveable(initialPrompt) { mutableStateOf(initialPrompt) }
+    var thinking by rememberSaveable(initialThinking) { mutableStateOf(initialThinking) }
     var cropUri by remember { mutableStateOf<Uri?>(null) }
     var avatarBytes by remember { mutableStateOf<ByteArray?>(null) }
     val avatarBitmap = rememberBytesBitmap(avatarBytes)
     val avatarPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) cropUri = uri
     }
-    val canCreate = name.isNotBlank() && selectedModel.isNotBlank()
+    val canSubmit = name.isNotBlank() && (editing || selectedModel.isNotBlank())
     val selectedProvider = providers.firstOrNull { it.brand == selectedBrand }
 
     Column(
@@ -114,7 +123,7 @@ fun UIFriendCreateScreen(
             }
             Spacer(Modifier.width(4.dp))
             Text(
-                text = "创建 AI 好友",
+                text = title,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Bold,
                 color = UIFriendBarTitleColor
@@ -132,7 +141,7 @@ fun UIFriendCreateScreen(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 UIAvatar(
                     name = name.ifBlank { "新" },
-                    avatarPath = null,
+                    avatarPath = initialAvatarPath,
                     size = 72.dp,
                     shape = CircleShape,
                     imageBitmap = avatarBitmap,
@@ -145,7 +154,7 @@ fun UIFriendCreateScreen(
                 Spacer(Modifier.width(16.dp))
                 Column {
                     Text(
-                        text = if (avatarBytes == null) "选择头像" else "更换头像",
+                        text = if (avatarBytes == null && initialAvatarPath == null) "选择头像" else "更换头像",
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
                         color = UIFriendBarCreateButtonText,
@@ -197,31 +206,33 @@ fun UIFriendCreateScreen(
                 colors = fieldColors()
             )
 
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = "模型提供方",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = UIFriendBarTitleColor
-                )
-                providers.chunked(2).forEach { rowProviders ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        rowProviders.forEach { provider ->
-                            ProviderChip(
-                                provider = provider,
-                                selected = provider.brand == selectedBrand,
-                                onClick = { onBrandSelect(provider.brand) },
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                        if (rowProviders.size == 1) {
-                            Spacer(Modifier.weight(1f))
+            if (!editing) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "模型提供方",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = UIFriendBarTitleColor
+                    )
+                    providers.chunked(2).forEach { rowProviders ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            rowProviders.forEach { provider ->
+                                ProviderChip(
+                                    provider = provider,
+                                    selected = provider.brand == selectedBrand,
+                                    onClick = { onBrandSelect(provider.brand) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                            if (rowProviders.size == 1) {
+                                Spacer(Modifier.weight(1f))
+                            }
                         }
                     }
                 }
             }
 
-            if (selectedProvider?.thinkingSwitchable == true) {
+            if (thinkingSwitchable) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
@@ -241,48 +252,69 @@ fun UIFriendCreateScreen(
                         )
                     }
                     Switch(
-                        checked = thinkingEnabled,
-                        onCheckedChange = onThinkingChange
+                        checked = thinking,
+                        onCheckedChange = { thinking = it }
                     )
                 }
             }
 
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = "模型",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = UIFriendBarTitleColor
-                )
-                if (isLoadingModels) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp,
-                            color = UIFriendBarCreateButtonText
-                        )
-                        Text(
-                            text = "正在获取模型列表…",
-                            fontSize = 13.sp,
-                            color = UIFriendBarSubtitleColor
-                        )
-                    }
-                }
-                models.forEach { model ->
-                    ModelOption(
-                        model = model,
-                        selected = model == selectedModel,
-                        onClick = { onModelSelect(model) }
+            if (editing) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = "模型",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = UIFriendBarTitleColor
+                    )
+                    Text(
+                        text = modelLabel.orEmpty(),
+                        fontSize = 14.sp,
+                        color = UIFriendBarSubtitleColor
+                    )
+                    Text(
+                        text = "编辑时暂不支持切换厂商 / 模型",
+                        fontSize = 12.sp,
+                        color = UIFriendBarItemSubtitleColor
                     )
                 }
-                Text(
-                    text = "由 ${selectedProvider?.company ?: selectedBrand} 提供支持",
-                    fontSize = 12.sp,
-                    color = UIFriendBarItemSubtitleColor
-                )
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "模型",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = UIFriendBarTitleColor
+                    )
+                    if (isLoadingModels) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = UIFriendBarCreateButtonText
+                            )
+                            Text(
+                                text = "正在获取模型列表…",
+                                fontSize = 13.sp,
+                                color = UIFriendBarSubtitleColor
+                            )
+                        }
+                    }
+                    models.forEach { model ->
+                        ModelOption(
+                            model = model,
+                            selected = model == selectedModel,
+                            onClick = { onModelSelect(model) }
+                        )
+                    }
+                    Text(
+                        text = "由 ${selectedProvider?.company ?: selectedBrand} 提供支持",
+                        fontSize = 12.sp,
+                        color = UIFriendBarItemSubtitleColor
+                    )
+                }
             }
         }
 
@@ -296,8 +328,8 @@ fun UIFriendCreateScreen(
                 .padding(16.dp)
         ) {
             Button(
-                onClick = { onCreate(name, role, prompt, avatarBytes) },
-                enabled = canCreate,
+                onClick = { onSubmit(name, role, prompt, avatarBytes, thinking) },
+                enabled = canSubmit,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(48.dp),
@@ -306,7 +338,7 @@ fun UIFriendCreateScreen(
                     containerColor = UIFriendBarCreateButtonText
                 )
             ) {
-                Text(text = "创建并开始聊天", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                Text(text = submitLabel, fontSize = 15.sp, fontWeight = FontWeight.Bold)
             }
         }
     }

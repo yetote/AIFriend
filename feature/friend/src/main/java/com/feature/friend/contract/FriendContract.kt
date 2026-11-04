@@ -60,6 +60,7 @@ sealed interface FriendScreen {
     data object List : FriendScreen
     data object Create : FriendScreen
     data class Chat(val friendId: String) : FriendScreen
+    data class EditFriend(val friendId: String) : FriendScreen
     data object RoomCreate : FriendScreen
     data class RoomChat(val roomId: String) : FriendScreen
 }
