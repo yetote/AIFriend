@@ -52,5 +52,10 @@ data class RoomMessage(
     val sender: RoomSender,
     val content: String,
     val createdAt: Long,
-    val seq: Long
+    val seq: Long,
+    /**
+     * 这条用户消息 @ 的成员 ID。
+     * null 表示全员可见；非空表示这一轮只对这些成员可见。
+     */
+    val targetIds: Set<String>? = null
 )

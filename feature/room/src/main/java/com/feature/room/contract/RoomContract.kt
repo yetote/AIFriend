@@ -11,7 +11,7 @@ data class RoomUiState(
     val userAvatarPath: String? = null,
     val activeRoomId: String? = null,
     val roomInput: String = "",
-    val roomTargetIds: Set<String> = emptySet(),
+    val roomMentionIds: Set<String> = emptySet(),
     val roomPending: Set<String> = emptySet(),
     val roomErrors: Map<String, String> = emptyMap(),
     val roomHasMore: Set<String> = emptySet(),

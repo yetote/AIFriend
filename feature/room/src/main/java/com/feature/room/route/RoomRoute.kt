@@ -137,7 +137,7 @@ fun RoomRoute(
                     userAvatarPath = state.userAvatarPath,
                     pendingIds = state.roomPending,
                     errors = state.roomErrors,
-                    targetIds = state.roomTargetIds,
+                    mentionIds = state.roomMentionIds,
                     hasMoreMessages = room.id in state.roomHasMore,
                     isLoadingMore = room.id in state.roomLoadingMore,
                     onInputChange = viewModel::updateRoomInput,
@@ -145,8 +145,7 @@ fun RoomRoute(
                     onBack = onExit,
                     onRetry = viewModel::retryRoomReply,
                     onToggleMember = viewModel::toggleRoomMember,
-                    onToggleTarget = viewModel::toggleRoomTarget,
-                    onSelectAllTargets = viewModel::selectAllRoomTargets,
+                    onMentionSelect = viewModel::selectMentions,
                     onStopReply = viewModel::stopRoomReply,
                     onStopAll = viewModel::stopAllRoomReplies,
                     onOpenSettings = { screen = RoomScreen.Settings(room.id) },
@@ -164,7 +163,7 @@ fun RoomRoute(
             } else {
                 val roomMessages = state.roomMessages.filter { it.roomId == room.id }
                 val names = state.friends.associate { it.id to it.name }
-                val estimatedTargets = state.roomTargetIds
+                val estimatedTargets = state.roomMentionIds
                     .intersect(room.memberIds.toSet())
                     .ifEmpty { room.memberIds.toSet() }
                 val estimatedTokens = estimatedTargets.maxOfOrNull { friendId ->

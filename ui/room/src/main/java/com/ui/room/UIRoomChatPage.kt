@@ -8,7 +8,6 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -106,7 +105,7 @@ fun UIRoomChatPage(
     userAvatarPath: String?,
     pendingIds: Set<String>,
     errors: Map<String, String>,
-    targetIds: Set<String>,
+    mentionIds: Set<String>,
     hasMoreMessages: Boolean,
     isLoadingMore: Boolean,
     onInputChange: (String) -> Unit,
@@ -114,8 +113,7 @@ fun UIRoomChatPage(
     onBack: () -> Unit,
     onRetry: (String) -> Unit,
     onToggleMember: (String) -> Unit,
-    onToggleTarget: (String) -> Unit,
-    onSelectAllTargets: () -> Unit,
+    onMentionSelect: (Set<String>) -> Unit,
     onStopReply: (String) -> Unit,
     onStopAll: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -123,14 +121,12 @@ fun UIRoomChatPage(
 ) {
     var showMembers by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
+    var showMentionPicker by remember { mutableStateOf(false) }
     var actionMessage by remember { mutableStateOf<UIRoomMessage?>(null) }
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val memberNames = remember(members) { members.associate { it.id to it.name } }
-    val effectiveTargets = remember(members, targetIds) {
-        targetIds.takeIf { it.isNotEmpty() } ?: members.map { it.id }.toSet()
-    }
     val listState = rememberLazyListState()
     val totalItems = messages.size + pendingIds.size + errors.size
     val topOffset = if (isLoadingMore) 1 else 0
@@ -201,7 +197,7 @@ fun UIRoomChatPage(
             if (messages.isEmpty()) {
                 item {
                     Text(
-                        text = "向房间里的 ${members.size} 位好友提问；上方可以只选本轮要回答的人",
+                        text = "向房间里的 ${members.size} 位好友提问；点输入框左侧 @ 可以只问某位成员",
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(top = 40.dp, start = 24.dp, end = 24.dp),
@@ -267,17 +263,24 @@ fun UIRoomChatPage(
             }
         }
 
-        RoomTargetBar(
-            members = members,
-            targetIds = effectiveTargets,
-            onSelectAll = onSelectAllTargets,
-            onToggle = onToggleTarget
-        )
-
         RoomInputBar(
             input = input,
+            hasMention = mentionIds.isNotEmpty(),
             onInputChange = onInputChange,
-            onSend = onSend
+            onSend = onSend,
+            onMentionClick = { showMentionPicker = true }
+        )
+    }
+
+    if (showMentionPicker) {
+        MentionPickerDialog(
+            members = members,
+            selectedIds = mentionIds,
+            onDismiss = { showMentionPicker = false },
+            onConfirm = { ids ->
+                onMentionSelect(ids)
+                showMentionPicker = false
+            }
         )
     }
 
@@ -587,63 +590,77 @@ private fun RoomErrorRow(name: String, message: String, onRetry: () -> Unit) {
 }
 
 @Composable
-private fun RoomTargetBar(
+private fun MentionPickerDialog(
     members: List<UIRoomMember>,
-    targetIds: Set<String>,
-    onSelectAll: () -> Unit,
-    onToggle: (String) -> Unit
+    selectedIds: Set<String>,
+    onDismiss: () -> Unit,
+    onConfirm: (Set<String>) -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color.White)
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = "本轮",
-            fontSize = 12.sp,
-            color = UIFriendBarItemMetaColor
-        )
-        TargetChip(
-            text = "全员",
-            selected = targetIds.size >= members.size,
-            onClick = onSelectAll
-        )
-        members.forEach { member ->
-            TargetChip(
-                text = member.name,
-                selected = member.id in targetIds,
-                onClick = { onToggle(member.id) }
-            )
-        }
-    }
-}
+    var selected by remember { mutableStateOf(selectedIds) }
 
-@Composable
-private fun TargetChip(text: String, selected: Boolean, onClick: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(14.dp))
-            .background(if (selected) UIFriendBarTagBgBlue else UIChatInputBg)
-            .clickable { onClick() }
-            .padding(horizontal = 10.dp, vertical = 4.dp)
-    ) {
-        Text(
-            text = text,
-            fontSize = 12.sp,
-            color = if (selected) UIFriendBarTagTextBlue else UIFriendBarSubtitleColor
-        )
-    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = "选择 @ 对象") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+            ) {
+                members.forEach { member ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                selected = if (member.id in selected) {
+                                    selected - member.id
+                                } else {
+                                    selected + member.id
+                                }
+                            }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = member.id in selected,
+                            onCheckedChange = { checked ->
+                                selected = if (checked) {
+                                    selected + member.id
+                                } else {
+                                    selected - member.id
+                                }
+                            }
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = member.name,
+                            fontSize = 15.sp,
+                            color = UIFriendBarTitleColor
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(selected) }) {
+                Text(text = "确定")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = "取消")
+            }
+        }
+    )
 }
 
 @Composable
 private fun RoomInputBar(
     input: String,
+    hasMention: Boolean,
     onInputChange: (String) -> Unit,
-    onSend: () -> Unit
+    onSend: () -> Unit,
+    onMentionClick: () -> Unit
 ) {
     val canSend = input.isNotBlank()
 
@@ -679,6 +696,22 @@ private fun RoomInputBar(
             )
         }
         Spacer(Modifier.width(8.dp))
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(if (hasMention) UIFriendBarTagBgBlue else UIChatInputBg)
+                .clickable { onMentionClick() },
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "@",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Medium,
+                color = if (hasMention) UIFriendBarTagTextBlue else UIFriendBarSubtitleColor
+            )
+        }
+        Spacer(Modifier.width(6.dp))
         Box(
             modifier = Modifier
                 .size(44.dp)
