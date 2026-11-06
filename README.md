@@ -17,6 +17,7 @@ Android 端「AI 好友 / AI 智能体团队」应用：用户创建带角色设
 - ✅ **删除智能体**：清空它的会话历史、房间成员关系与房间消息、头像文件，之后不会再把这些内容发给模型
 - ✅ **编辑智能体**：长按列表项修改昵称、角色、设定、头像、思考开关
 - ⏳ 流式输出、思考过程展示
+- ✅ **iOS 风格 UI**：全局浅灰蓝渐变底 + 毛玻璃卡片、大圆角、柔和投影，统一到首页 / 1:1 对话 / 聊天室 / 创建与设置 / 全部弹窗
 - ⏳ `feature:werewolf` / `ui:werewolf` 仍是空模块（AI 狼人杀，规划中）
 
 ## 模块
@@ -185,7 +186,7 @@ cp core/network/key.example.kt core/network/src/main/java/com/core/network/key.k
   - 删除好友：级联删除会话消息，同时清理房间成员和它在房间里的消息
 - 读取：ViewModel 初始化时通过 `FriendRepository` / `RoomRepository` 加载
 - 迁移：首次启动 `LegacyMigration` 会把旧 DataStore 的 `friends_v1` / `rooms_v1` / `room_messages_v1` / `user_avatar_v1` 一次性导入 Room，成功后清掉旧 key；DataStore 现在只用于这次迁移
-- 版本：数据库 `version = 1`，后续加字段需要补 Room `Migration`
+- 版本：数据库 `version = 6`，后续加字段需要补 Room `Migration`
 
 > 构建用 KSP 做 Room 注解处理（`ksp = 2.3.6`，匹配 AGP 9 内置 Kotlin）。AGP 9 默认禁止 KSP 通过 `kotlin.sourceSets` 注入生成目录，`gradle.properties` 里用 `android.disallowKotlinSourceSets=false` 放行。
 

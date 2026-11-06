@@ -14,14 +14,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -31,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
@@ -39,11 +38,9 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ui.agent.data.UIFriendListData
-import com.ui.common.theme.UIFriendBarDividerColor
 import com.ui.common.theme.UIFriendBarItemMetaColor
 import com.ui.common.theme.UIFriendBarItemSubtitleColor
 import com.ui.common.theme.UIFriendBarItemTitleColor
-import com.ui.common.theme.UIFriendBarListCardBg
 import com.ui.common.theme.UIFriendBarOnlineGreen
 import com.ui.common.theme.UIFriendBarTabSelectedBg
 import com.ui.common.theme.UIFriendBarTabSelectedText
@@ -51,6 +48,12 @@ import com.ui.common.theme.UIFriendBarTabUnselectedBg
 import com.ui.common.theme.UIFriendBarTabUnselectedText
 import com.ui.common.theme.UIFriendBarTagBgBlue
 import com.ui.common.theme.UIFriendBarTagTextBlue
+import com.ui.common.theme.UIFriendBarTitleColor
+import com.ui.common.theme.UIGlassSurfaceStrong
+import com.ui.common.theme.UIRadiusCard
+import com.ui.common.theme.UIRadiusTab
+import com.ui.common.theme.UISeparator
+import com.ui.common.theme.uiCard
 
 
 
@@ -78,32 +81,31 @@ fun UIFriendCrewList(
         )
 
         // --- 2. 智能体列表卡片容器 ---
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = UIFriendBarListCardBg),
-            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .uiCard(shape = RoundedCornerShape(UIRadiusCard)),
         ) {
-            Column {
-                val visible = when (selectedTabIndex) {
-                    1 -> data.filter { it.isOnline }
-                    2 -> data.filter { !it.isOnline }
-                    else -> data
-                }
-                visible.forEachIndexed { index, agent ->
-                    AgentListItem(
-                        data = agent,
-                        onClick = { onItemClick(agent) },
-                        onLongClick = { onItemLongClick(agent) }
+            val visible = when (selectedTabIndex) {
+                1 -> data.filter { it.isOnline }
+                2 -> data.filter { !it.isOnline }
+                else -> data
+            }
+            visible.forEachIndexed { index, agent ->
+                AgentListItem(
+                    data = agent,
+                    onClick = { onItemClick(agent) },
+                    onLongClick = { onItemLongClick(agent) }
+                )
+                // 如果不是最后一项，添加分割线
+                if (index < visible.size - 1) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 76.dp, end = 16.dp)
+                            .height(0.5.dp)
+                            .background(UISeparator)
                     )
-                    // 如果不是最后一项，添加分割线
-                    if (index < visible.size - 1) {
-                        HorizontalDivider(
-                            thickness = 1.dp,
-                            color = UIFriendBarDividerColor,
-                            modifier = Modifier.padding(horizontal = 16.dp)
-                        )
-                    }
                 }
             }
         }
@@ -124,25 +126,39 @@ private fun AgentTabRow(
     )
 
     Row(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(UIRadiusTab))
+            .background(UIFriendBarTabUnselectedBg.copy(alpha = 0.6f))
+            .padding(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         tabs.forEachIndexed { index, title ->
             val isSelected = selectedIndex == index
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(if (isSelected) UIFriendBarTabSelectedBg else UIFriendBarTabUnselectedBg)
+                    .weight(1f)
+                    .clip(RoundedCornerShape(UIRadiusTab - 3.dp))
+                    .then(
+                        if (isSelected) {
+                            Modifier
+                                .shadow(3.dp, RoundedCornerShape(UIRadiusTab - 3.dp), clip = false)
+                                .background(UIGlassSurfaceStrong)
+                        } else {
+                            Modifier
+                        }
+                    )
                     .clickable { onTabSelected(index) }
-                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                    .padding(vertical = 8.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
                     text = title,
                     style = TextStyle(
                         fontSize = 13.sp,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                        color = if (isSelected) UIFriendBarTabSelectedText else UIFriendBarTabUnselectedText,
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                        color = if (isSelected) UIFriendBarTitleColor else UIFriendBarTabUnselectedText,
                         platformStyle = PlatformTextStyle(includeFontPadding = false)
                     )
                 )
@@ -215,9 +231,9 @@ private fun AgentListItem(
                 // 模型 Tag (如 GPT-4o)
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
+                        .clip(RoundedCornerShape(50))
                         .background(UIFriendBarTagBgBlue)
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                        .padding(horizontal = 7.dp, vertical = 2.dp)
                 ) {
                     Text(
                         text = data.modelTag,

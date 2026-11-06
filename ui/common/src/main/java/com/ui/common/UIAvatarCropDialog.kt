@@ -4,7 +4,9 @@ import android.graphics.Bitmap
 import android.net.Uri
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -16,10 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -45,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.ui.common.theme.UIActionBrush
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -88,14 +88,23 @@ fun UIAvatarCropDialog(
                 Text(
                     text = "调整头像",
                     color = Color.White,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.SemiBold,
                     modifier = Modifier
                         .weight(1f)
-                        .padding(start = 8.dp)
+                        .padding(start = 12.dp)
                 )
-                TextButton(onClick = onCancel) {
-                    Text(text = "取消", color = Color.White)
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .clickable { onCancel() }
+                        .padding(horizontal = 14.dp, vertical = 8.dp)
+                ) {
+                    Text(
+                        text = "取消",
+                        color = Color.White.copy(alpha = 0.85f),
+                        fontSize = 15.sp
+                    )
                 }
             }
             Text(
@@ -119,7 +128,7 @@ fun UIAvatarCropDialog(
                 Box(
                     modifier = Modifier
                         .size(side)
-                        .clip(RoundedCornerShape(16.dp))
+                        .clip(RoundedCornerShape(24.dp))
                         .onSizeChanged { boxSize = it.width.toFloat() }
                         .pointerInput(image, boxSize) {
                             detectTransformGestures { centroid, pan, zoom, _ ->
@@ -204,24 +213,53 @@ fun UIAvatarCropDialog(
                 initialized = true
             }
 
-            Button(
-                onClick = {
-                    val bitmap = image ?: return@Button
-                    scope.launch {
-                        val bytes = withContext(Dispatchers.Default) {
-                            cropToJpeg(bitmap.asAndroidBitmap(), scale, offset, boxSize)
-                        }
-                        if (bytes != null) onConfirm(bytes)
-                    }
-                },
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp)
-                    .height(48.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2B6BFF))
+                    .padding(horizontal = 16.dp, vertical = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(text = "使用这张", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(50.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(Color.White.copy(alpha = 0.14f))
+                        .clickable { onCancel() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "取消",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color.White
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .weight(1.4f)
+                        .height(50.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(UIActionBrush)
+                        .clickable {
+                            val bitmap = image ?: return@clickable
+                            scope.launch {
+                                val bytes = withContext(Dispatchers.Default) {
+                                    cropToJpeg(bitmap.asAndroidBitmap(), scale, offset, boxSize)
+                                }
+                                if (bytes != null) onConfirm(bytes)
+                            }
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "使用这张",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White
+                    )
+                }
             }
         }
     }

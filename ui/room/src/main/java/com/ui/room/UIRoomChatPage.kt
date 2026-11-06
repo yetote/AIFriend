@@ -6,6 +6,7 @@ import android.text.format.DateUtils
 import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -37,14 +39,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Checkbox
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -59,7 +61,9 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -76,12 +80,23 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ui.room.data.UIRoomMember
 import com.ui.room.data.UIRoomMessage
-import com.ui.common.theme.UIChatAssistantBubble
+import com.ui.common.theme.UIActionBrush
+import com.ui.common.theme.UIBlobBlue
+import com.ui.common.theme.UIBubbleUserBrush
 import com.ui.common.theme.UIChatErrorBg
-import com.ui.common.theme.UIChatInputBg
 import com.ui.common.theme.UIChatSendDisabled
-import com.ui.common.theme.UIChatUserBubble
-import com.ui.common.theme.UIFriendBarGray
+import com.ui.common.theme.UIDialogButtons
+import com.ui.common.theme.UIGlassBar
+import com.ui.common.theme.UIGlassStroke
+import com.ui.common.theme.UIGlassSurface
+import com.ui.common.theme.UIGlassSurfaceStrong
+import com.ui.common.theme.UIGradientBackground
+import com.ui.common.theme.UIIosDialog
+import com.ui.common.theme.UIRadiusBubble
+import com.ui.common.theme.UIRadiusBubbleTail
+import com.ui.common.theme.UIRadiusControl
+import com.ui.common.theme.UIShadowSoft
+import com.ui.common.theme.uiControl
 import com.ui.common.theme.UIFriendBarItemMetaColor
 import com.ui.common.theme.UIFriendBarRed
 import com.ui.common.theme.UIFriendBarSubtitleColor
@@ -135,146 +150,169 @@ fun UIRoomChatPage(
     val topOffset = if (isLoadingMore) 1 else 0
     val lastItemIndex = topOffset + totalItems - 1
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(UIFriendBarGray)
-            .pageInsets()
-    ) {
-        RoomTopBar(
-            roomName = roomName,
-            avatarPath = avatarPath,
-            memberCount = members.size,
-            onBack = onBack,
-            onManageMembers = { showMembers = true },
-            onSearch = { showSearch = true },
-            onOpenSettings = onOpenSettings,
-            showStop = pendingIds.isNotEmpty(),
-            onStopAll = onStopAll
-        )
-
-        var didInitialScroll by remember { mutableStateOf(false) }
-        var listHeight by remember { mutableIntStateOf(0) }
-
-        LaunchedEffect(messages.lastOrNull()?.id, pendingIds.size, errors.size) {
-            if (totalItems <= 0) return@LaunchedEffect
-            if (!didInitialScroll) {
-                listState.scrollToItem(lastItemIndex)
-                didInitialScroll = true
-            } else {
-                listState.animateScrollToItem(lastItemIndex)
-            }
-        }
-
-        // 键盘弹出/收起会连续改变列表高度：只有最后一条仍在可视区时才跟随，
-        // 避免向上翻页加载旧消息时被拉回底部。
-        LaunchedEffect(listHeight) {
-            if (listHeight > 0 && totalItems > 0) {
-                val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index
-                if (lastVisible != null && lastVisible >= lastItemIndex) {
-                    listState.scrollToItem(lastItemIndex)
-                }
-            }
-        }
-
-        LaunchedEffect(listState, hasMoreMessages, isLoadingMore, didInitialScroll) {
-            if (!didInitialScroll) return@LaunchedEffect
-            snapshotFlow { listState.firstVisibleItemIndex }
-                .distinctUntilChanged()
-                .collect { index ->
-                    if (index <= 1 && hasMoreMessages && !isLoadingMore) {
-                        onLoadMore()
-                    }
-                }
-        }
-
-        LazyColumn(
-            state = listState,
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-                .onSizeChanged { listHeight = it.height },
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+    UIGradientBackground(modifier = Modifier.pageInsets()) {
+        Column(
+            modifier = Modifier.fillMaxSize()
         ) {
-            if (messages.isEmpty()) {
-                item {
-                    Text(
-                        text = "向房间里的 ${members.size} 位好友提问；点输入框左侧 @ 可以只问某位成员",
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 40.dp, start = 24.dp, end = 24.dp),
-                        textAlign = TextAlign.Center,
-                        fontSize = 13.sp,
-                        color = UIFriendBarSubtitleColor
-                    )
-                }
-            }
-            if (isLoadingMore) {
-                item(key = "loading_more") {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 8.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp,
-                            color = UIFriendBarTagTextBlue
-                        )
-                    }
-                }
-            }
-            itemsIndexed(
-                items = messages,
-                key = { _, message -> message.id }
-            ) { index, message ->
-                val previous = messages.getOrNull(index - 1)
-                val showDate = previous == null || !isSameDay(previous.createdAt, message.createdAt)
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (showDate) {
-                        RoomDateSeparator(timestamp = message.createdAt)
-                    }
-                    if (message.isSystem) {
-                        RoomSystemMessage(text = message.content)
-                    } else {
-                        RoomMessageBubble(
-                            message = message,
-                            userAvatarPath = userAvatarPath,
-                            onLongPress = { actionMessage = message }
-                        )
-                    }
-                }
-            }
-            pendingIds.forEach { friendId ->
-                item {
-                    TypingRow(
-                        name = memberNames[friendId] ?: "好友",
-                        onStop = { onStopReply(friendId) }
-                    )
-                }
-            }
-            errors.forEach { (friendId, message) ->
-                item {
-                    RoomErrorRow(
-                        name = memberNames[friendId] ?: "好友",
-                        message = message,
-                        onRetry = { onRetry(friendId) }
-                    )
-                }
-            }
-        }
+            RoomTopBar(
+                roomName = roomName,
+                avatarPath = avatarPath,
+                memberCount = members.size,
+                onBack = onBack,
+                onManageMembers = { showMembers = true },
+                onSearch = { showSearch = true },
+                onOpenSettings = onOpenSettings,
+                showStop = pendingIds.isNotEmpty(),
+                onStopAll = onStopAll
+            )
 
-        RoomInputBar(
-            input = input,
-            onInputChange = onInputChange,
-            onSend = onSend,
-            onAtTyped = { index ->
-                mentionTriggerAt = index
-                showMentionPicker = true
+            var didInitialScroll by remember { mutableStateOf(false) }
+            var listHeight by remember { mutableIntStateOf(0) }
+
+            LaunchedEffect(messages.lastOrNull()?.id, pendingIds.size, errors.size) {
+                if (totalItems <= 0) return@LaunchedEffect
+                if (!didInitialScroll) {
+                    listState.scrollToItem(lastItemIndex)
+                    didInitialScroll = true
+                } else {
+                    listState.animateScrollToItem(lastItemIndex)
+                }
             }
-        )
+
+            // 键盘弹出/收起会连续改变列表高度：只有最后一条仍在可视区时才跟随，
+            // 避免向上翻页加载旧消息时被拉回底部。
+            LaunchedEffect(listHeight) {
+                if (listHeight > 0 && totalItems > 0) {
+                    val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index
+                    if (lastVisible != null && lastVisible >= lastItemIndex) {
+                        listState.scrollToItem(lastItemIndex)
+                    }
+                }
+            }
+
+            LaunchedEffect(listState, hasMoreMessages, isLoadingMore, didInitialScroll) {
+                if (!didInitialScroll) return@LaunchedEffect
+                snapshotFlow { listState.firstVisibleItemIndex }
+                    .distinctUntilChanged()
+                    .collect { index ->
+                        if (index <= 1 && hasMoreMessages && !isLoadingMore) {
+                            onLoadMore()
+                        }
+                    }
+            }
+
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .onSizeChanged { listHeight = it.height },
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                if (messages.isEmpty()) {
+                    item {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 56.dp, start = 24.dp, end = 24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .clip(CircleShape)
+                                    .background(UIGlassSurfaceStrong)
+                                    .border(0.5.dp, UIGlassStroke, CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(text = "@", fontSize = 26.sp, color = UIFriendBarTagTextBlue)
+                            }
+                            Spacer(Modifier.height(16.dp))
+                            Text(
+                                text = "开始和 ${members.size} 位好友聊天",
+                                textAlign = TextAlign.Center,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = UIFriendBarTitleColor
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                text = "输入 @ 可以只问某位成员，不 @ 则全员回答",
+                                textAlign = TextAlign.Center,
+                                fontSize = 13.sp,
+                                lineHeight = 19.sp,
+                                color = UIFriendBarItemMetaColor
+                            )
+                        }
+                    }
+                }
+                if (isLoadingMore) {
+                    item(key = "loading_more") {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                                color = UIFriendBarTagTextBlue
+                            )
+                        }
+                    }
+                }
+                itemsIndexed(
+                    items = messages,
+                    key = { _, message -> message.id }
+                ) { index, message ->
+                    val previous = messages.getOrNull(index - 1)
+                    val showDate = previous == null || !isSameDay(previous.createdAt, message.createdAt)
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (showDate) {
+                            RoomDateSeparator(timestamp = message.createdAt)
+                        }
+                        if (message.isSystem) {
+                            RoomSystemMessage(text = message.content)
+                        } else {
+                            RoomMessageBubble(
+                                message = message,
+                                userAvatarPath = userAvatarPath,
+                                onLongPress = { actionMessage = message }
+                            )
+                        }
+                    }
+                }
+                pendingIds.forEach { friendId ->
+                    item {
+                        TypingRow(
+                            name = memberNames[friendId] ?: "好友",
+                            onStop = { onStopReply(friendId) }
+                        )
+                    }
+                }
+                errors.forEach { (friendId, message) ->
+                    item {
+                        RoomErrorRow(
+                            name = memberNames[friendId] ?: "好友",
+                            message = message,
+                            onRetry = { onRetry(friendId) }
+                        )
+                    }
+                }
+            }
+
+            RoomInputBar(
+                input = input,
+                onInputChange = onInputChange,
+                onSend = onSend,
+                onAtTyped = { index ->
+                    mentionTriggerAt = index
+                    showMentionPicker = true
+                }
+            )
+        }
     }
 
     if (showMentionPicker) {
@@ -302,51 +340,51 @@ fun UIRoomChatPage(
     }
 
     actionMessage?.let { target ->
-        AlertDialog(
-            onDismissRequest = { actionMessage = null },
-            title = {
-                Text(text = if (target.isUser) "我" else (target.senderName ?: "已移除"))
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        text = target.content,
-                        fontSize = 14.sp,
-                        color = UIFriendBarTitleColor,
-                        maxLines = 6,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    TextButton(
-                        onClick = {
-                            clipboard.setText(AnnotatedString(target.content))
-                            Toast.makeText(context, "已复制", Toast.LENGTH_SHORT).show()
-                            actionMessage = null
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(text = "复制", color = UIFriendBarTagTextBlue)
-                    }
-                    TextButton(
-                        onClick = {
-                            val name = if (target.isUser) "我" else (target.senderName ?: "已移除")
-                            val excerpt = target.content.take(80).let { text ->
-                                if (target.content.length > 80) "$text…" else text
-                            }
-                            onInputChange("「$name：$excerpt」\n" + input)
-                            actionMessage = null
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(text = "引用", color = UIFriendBarTagTextBlue)
-                    }
+        UIIosDialog(
+            title = if (target.isUser) "我" else (target.senderName ?: "已移除"),
+            subtitle = formatRoomTime(target.createdAt),
+            onDismiss = { actionMessage = null },
+            actions = {
+                UIDialogButtons(
+                    confirmText = "关闭",
+                    onConfirm = { actionMessage = null },
+                    cancelText = null
+                )
+            }
+        ) {
+            Text(
+                text = target.content,
+                fontSize = 14.sp,
+                lineHeight = 20.sp,
+                color = UIFriendBarTitleColor,
+                maxLines = 8,
+                overflow = TextOverflow.Ellipsis
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                DialogPillAction(
+                    text = "复制",
+                    modifier = Modifier.weight(1f)
+                ) {
+                    clipboard.setText(AnnotatedString(target.content))
+                    Toast.makeText(context, "已复制", Toast.LENGTH_SHORT).show()
+                    actionMessage = null
                 }
-            },
-            confirmButton = {
-                TextButton(onClick = { actionMessage = null }) {
-                    Text(text = "取消")
+                DialogPillAction(
+                    text = "引用",
+                    modifier = Modifier.weight(1f)
+                ) {
+                    val name = if (target.isUser) "我" else (target.senderName ?: "已移除")
+                    val excerpt = target.content.take(80).let { text ->
+                        if (target.content.length > 80) "$text…" else text
+                    }
+                    onInputChange("「$name：$excerpt」\n" + input)
+                    actionMessage = null
                 }
             }
-        )
+        }
     }
 
     if (showSearch) {
@@ -389,8 +427,8 @@ private fun RoomTopBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color.White)
-            .padding(horizontal = 8.dp, vertical = 8.dp),
+            .background(UIGlassBar)
+            .padding(horizontal = 6.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         IconButton(onClick = onBack) {
@@ -400,18 +438,17 @@ private fun RoomTopBar(
                 tint = UIFriendBarTitleColor
             )
         }
-        Spacer(Modifier.width(4.dp))
         UIAvatar(
             name = roomName.ifBlank { "房间" },
             avatarPath = avatarPath,
-            size = 36.dp
+            size = 38.dp
         )
         Spacer(Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = roomName,
                 fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.SemiBold,
                 color = UIFriendBarTitleColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -419,29 +456,41 @@ private fun RoomTopBar(
             Text(
                 text = "$memberCount 位好友",
                 fontSize = 12.sp,
-                color = UIFriendBarSubtitleColor
+                color = UIFriendBarItemMetaColor
             )
         }
         if (showStop) {
-            TextButton(onClick = onStopAll) {
-                Text(text = "停止", fontSize = 13.sp, color = UIFriendBarRed)
+            IconButton(onClick = onStopAll) {
+                Icon(
+                    imageVector = Icons.Filled.Stop,
+                    contentDescription = "全部停止",
+                    tint = UIFriendBarRed,
+                    modifier = Modifier.size(20.dp)
+                )
             }
         }
         IconButton(onClick = onSearch) {
             Icon(
                 imageVector = Icons.Filled.Search,
                 contentDescription = "搜索聊天记录",
-                tint = UIFriendBarSubtitleColor
+                tint = UIFriendBarSubtitleColor,
+                modifier = Modifier.size(21.dp)
             )
         }
-        TextButton(onClick = onManageMembers) {
-            Text(text = "成员", fontSize = 13.sp, color = UIFriendBarTagTextBlue)
+        IconButton(onClick = onManageMembers) {
+            Icon(
+                imageVector = Icons.Filled.Group,
+                contentDescription = "房间成员",
+                tint = UIFriendBarSubtitleColor,
+                modifier = Modifier.size(22.dp)
+            )
         }
         IconButton(onClick = onOpenSettings) {
             Icon(
                 imageVector = Icons.Filled.Settings,
                 contentDescription = "房间设置",
-                tint = UIFriendBarSubtitleColor
+                tint = UIFriendBarSubtitleColor,
+                modifier = Modifier.size(21.dp)
             )
         }
     }
@@ -450,7 +499,9 @@ private fun RoomTopBar(
 @Composable
 private fun RoomDateSeparator(timestamp: Long) {
     Box(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
@@ -458,9 +509,9 @@ private fun RoomDateSeparator(timestamp: Long) {
             fontSize = 11.sp,
             color = UIFriendBarItemMetaColor,
             modifier = Modifier
-                .clip(RoundedCornerShape(10.dp))
-                .background(UIChatInputBg)
-                .padding(horizontal = 10.dp, vertical = 3.dp)
+                .clip(RoundedCornerShape(50))
+                .background(UIGlassSurface)
+                .padding(horizontal = 12.dp, vertical = 4.dp)
         )
     }
 }
@@ -476,7 +527,10 @@ private fun RoomSystemMessage(text: String) {
             fontSize = 12.sp,
             color = UIFriendBarItemMetaColor,
             textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 24.dp, vertical = 2.dp)
+            modifier = Modifier
+                .clip(RoundedCornerShape(50))
+                .background(UIGlassSurface)
+                .padding(horizontal = 14.dp, vertical = 6.dp)
         )
     }
 }
@@ -497,7 +551,8 @@ private fun RoomMessageBubble(
             UIAvatar(
                 name = message.senderName ?: "AI",
                 avatarPath = message.avatarPath,
-                size = 32.dp
+                size = 34.dp,
+                shape = CircleShape
             )
             Spacer(Modifier.width(8.dp))
         }
@@ -507,12 +562,13 @@ private fun RoomMessageBubble(
             if (!message.isUser) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
+                    modifier = Modifier.padding(start = 6.dp, bottom = 4.dp)
                 ) {
                     Text(
                         text = message.senderName ?: "已移除",
                         fontSize = 11.sp,
-                        color = UIFriendBarItemMetaColor
+                        fontWeight = FontWeight.Medium,
+                        color = UIFriendBarSubtitleColor
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
@@ -526,22 +582,42 @@ private fun RoomMessageBubble(
                     text = formatRoomTime(message.createdAt),
                     fontSize = 10.sp,
                     color = UIFriendBarItemMetaColor,
-                    modifier = Modifier.padding(end = 4.dp, bottom = 2.dp)
+                    modifier = Modifier.padding(end = 6.dp, bottom = 3.dp)
                 )
             }
             Box(
                 modifier = Modifier
-                    .widthIn(max = 260.dp)
+                    .widthIn(max = 268.dp)
+                    .shadow(
+                        elevation = 6.dp,
+                        shape = RoundedCornerShape(
+                            topStart = UIRadiusBubble,
+                            topEnd = UIRadiusBubble,
+                            bottomEnd = if (message.isUser) UIRadiusBubbleTail else UIRadiusBubble,
+                            bottomStart = if (message.isUser) UIRadiusBubble else UIRadiusBubbleTail
+                        ),
+                        clip = false,
+                        ambientColor = UIShadowSoft,
+                        spotColor = UIShadowSoft
+                    )
                     .clip(
                         RoundedCornerShape(
-                            topStart = 16.dp,
-                            topEnd = 16.dp,
-                            bottomEnd = if (message.isUser) 4.dp else 16.dp,
-                            bottomStart = if (message.isUser) 16.dp else 4.dp
+                            topStart = UIRadiusBubble,
+                            topEnd = UIRadiusBubble,
+                            bottomEnd = if (message.isUser) UIRadiusBubbleTail else UIRadiusBubble,
+                            bottomStart = if (message.isUser) UIRadiusBubble else UIRadiusBubbleTail
                         )
                     )
                     .combinedClickable(onClick = {}, onLongClick = onLongPress)
-                    .background(if (message.isUser) UIChatUserBubble else UIChatAssistantBubble)
+                    .then(
+                        if (message.isUser) {
+                            Modifier.background(UIBubbleUserBrush)
+                        } else {
+                            Modifier
+                                .background(UIGlassSurfaceStrong)
+                                .border(0.5.dp, UIGlassStroke, RoundedCornerShape(UIRadiusBubble))
+                        }
+                    )
                     .padding(horizontal = 14.dp, vertical = 10.dp)
             ) {
                 Text(
@@ -557,7 +633,7 @@ private fun RoomMessageBubble(
             UIAvatar(
                 name = "我",
                 avatarPath = userAvatarPath,
-                size = 32.dp,
+                size = 34.dp,
                 shape = CircleShape
             )
         }
@@ -571,13 +647,27 @@ private fun TypingRow(name: String, onStop: () -> Unit) {
         horizontalArrangement = Arrangement.Start,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            text = "$name 正在输入…",
-            modifier = Modifier.weight(1f),
-            fontSize = 13.sp,
-            fontStyle = FontStyle.Italic,
-            color = UIFriendBarItemMetaColor
-        )
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(50))
+                .background(UIGlassSurfaceStrong)
+                .border(0.5.dp, UIGlassStroke, RoundedCornerShape(50))
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(12.dp),
+                strokeWidth = 1.5.dp,
+                color = UIFriendBarTagTextBlue
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = "$name 正在输入…",
+                fontSize = 13.sp,
+                color = UIFriendBarSubtitleColor
+            )
+        }
+        Spacer(Modifier.weight(1f))
         TextButton(onClick = onStop) {
             Text(text = "停止", fontSize = 12.sp, color = UIFriendBarRed)
         }
@@ -589,9 +679,10 @@ private fun RoomErrorRow(name: String, message: String, onRetry: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(UIRadiusControl))
             .background(UIChatErrorBg)
-            .padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+            .border(0.5.dp, UIFriendBarRed.copy(alpha = 0.12f), RoundedCornerShape(UIRadiusControl))
+            .padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
@@ -615,66 +706,81 @@ private fun MentionPickerDialog(
 ) {
     var selected by remember { mutableStateOf(selectedIds) }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(text = "选择 @ 对象") },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-            ) {
-                members.forEach { member ->
-                    Row(
+    UIIosDialog(
+        title = "选择 @ 对象",
+        subtitle = "只让选中的人回答这一条，其他人看不到它",
+        onDismiss = onDismiss,
+        actions = {
+            UIDialogButtons(
+                confirmText = if (selected.isEmpty()) "全员回答" else "确定（${selected.size}）",
+                onConfirm = { onConfirm(selected) },
+                onCancel = onDismiss
+            )
+        }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 300.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            members.forEach { member ->
+                val checked = member.id in selected
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(UIRadiusControl))
+                        .clickable {
+                            selected = if (checked) {
+                                selected - member.id
+                            } else {
+                                selected + member.id
+                            }
+                        }
+                        .padding(horizontal = 8.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    UIAvatar(
+                        name = member.name,
+                        avatarPath = member.avatarPath,
+                        size = 34.dp,
+                        shape = CircleShape
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        text = member.name,
+                        modifier = Modifier.weight(1f),
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = UIFriendBarTitleColor
+                    )
+                    Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                selected = if (member.id in selected) {
-                                    selected - member.id
+                            .size(22.dp)
+                            .clip(CircleShape)
+                            .then(
+                                if (checked) {
+                                    Modifier.background(UIActionBrush)
                                 } else {
-                                    selected + member.id
+                                    Modifier.border(1.5.dp, UIGlassStroke, CircleShape)
                                 }
-                            }
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            ),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Checkbox(
-                            checked = member.id in selected,
-                            onCheckedChange = { checked ->
-                                selected = if (checked) {
-                                    selected + member.id
-                                } else {
-                                    selected - member.id
-                                }
-                            }
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        UIAvatar(
-                            name = member.name,
-                            avatarPath = member.avatarPath,
-                            size = 32.dp
-                        )
-                        Spacer(Modifier.width(10.dp))
-                        Text(
-                            text = member.name,
-                            fontSize = 15.sp,
-                            color = UIFriendBarTitleColor
-                        )
+                        if (checked) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
                     }
                 }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = { onConfirm(selected) }) {
-                Text(text = "确定")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(text = "取消")
-            }
         }
-    )
+    }
 }
 
 @Composable
@@ -696,16 +802,18 @@ private fun RoomInputBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color.White)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .background(UIGlassBar)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.Bottom
     ) {
         Box(
             modifier = Modifier
                 .weight(1f)
-                .clip(RoundedCornerShape(20.dp))
-                .background(UIChatInputBg)
-                .padding(horizontal = 14.dp, vertical = 10.dp)
+                .uiControl(
+                    shape = RoundedCornerShape(22.dp),
+                    color = Color.White.copy(alpha = 0.92f)
+                )
+                .padding(horizontal = 16.dp, vertical = 11.dp)
         ) {
             if (input.isEmpty()) {
                 Text(
@@ -747,8 +855,21 @@ private fun RoomInputBar(
         Box(
             modifier = Modifier
                 .size(44.dp)
+                .shadow(
+                    elevation = if (canSend) 8.dp else 0.dp,
+                    shape = CircleShape,
+                    clip = false,
+                    ambientColor = UIBlobBlue,
+                    spotColor = UIBlobBlue
+                )
                 .clip(CircleShape)
-                .background(if (canSend) UIChatUserBubble else UIChatSendDisabled)
+                .then(
+                    if (canSend) {
+                        Modifier.background(UIActionBrush)
+                    } else {
+                        Modifier.background(UIChatSendDisabled.copy(alpha = 0.6f))
+                    }
+                )
                 .clickable(enabled = canSend) { onSend() },
             contentAlignment = Alignment.Center
         ) {
@@ -780,81 +901,101 @@ private fun RoomSearchDialog(
         }
     }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(text = "搜索聊天记录") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("输入关键词") },
-                    singleLine = true
-                )
+    UIIosDialog(
+        title = "搜索聊天记录",
+        subtitle = "仅搜索已加载的消息（最近 ${messages.size} 条）",
+        onDismiss = onDismiss,
+        actions = {
+            UIDialogButtons(
+                confirmText = "关闭",
+                onConfirm = onDismiss
+            )
+        }
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(42.dp)
+                .uiControl(shape = RoundedCornerShape(50), color = UIGlassSurface)
+                .padding(horizontal = 14.dp),
+            contentAlignment = Alignment.CenterStart
+        ) {
+            if (query.isEmpty()) {
                 Text(
-                    text = "仅搜索已加载的消息（最近 ${messages.size} 条）",
-                    fontSize = 11.sp,
-                    color = UIFriendBarItemMetaColor
+                    text = "输入关键词",
+                    fontSize = 14.sp,
+                    color = UIFriendBarItemMetaColor.copy(alpha = 0.7f)
                 )
-                Column(
-                    modifier = Modifier
-                        .height(260.dp)
-                        .verticalScroll(rememberScrollState())
-                ) {
-                    when {
-                        query.isBlank() -> Text(
-                            text = "输入关键词开始搜索",
-                            fontSize = 13.sp,
-                            color = UIFriendBarSubtitleColor
-                        )
+            }
+            BasicTextField(
+                value = query,
+                onValueChange = { query = it },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                textStyle = TextStyle(fontSize = 14.sp, color = UIFriendBarTitleColor),
+                cursorBrush = SolidColor(UIFriendBarTagTextBlue)
+            )
+        }
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 280.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            when {
+                query.isBlank() -> Text(
+                    text = "输入关键词开始搜索",
+                    fontSize = 13.sp,
+                    color = UIFriendBarSubtitleColor
+                )
 
-                        results.isEmpty() -> Text(
-                            text = "没有匹配的消息",
-                            fontSize = 13.sp,
-                            color = UIFriendBarSubtitleColor
-                        )
+                results.isEmpty() -> Text(
+                    text = "没有匹配的消息",
+                    fontSize = 13.sp,
+                    color = UIFriendBarSubtitleColor
+                )
 
-                        else -> results.forEach { message ->
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { onSelect(message) }
-                                    .padding(vertical = 6.dp)
-                            ) {
-                                Text(
-                                    text = if (message.isUser) {
-                                        "我"
-                                    } else {
-                                        message.senderName ?: "已移除"
-                                    },
-                                    fontSize = 11.sp,
-                                    color = UIFriendBarItemMetaColor
-                                )
-                                Text(
-                                    text = message.content,
-                                    fontSize = 13.sp,
-                                    color = UIFriendBarTitleColor,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    text = formatRoomTime(message.createdAt),
-                                    fontSize = 10.sp,
-                                    color = UIFriendBarItemMetaColor
-                                )
-                            }
+                else -> results.forEach { message ->
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(UIRadiusControl))
+                            .clickable { onSelect(message) }
+                            .padding(horizontal = 10.dp, vertical = 8.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = if (message.isUser) {
+                                    "我"
+                                } else {
+                                    message.senderName ?: "已移除"
+                                },
+                                modifier = Modifier.weight(1f),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = UIFriendBarTagTextBlue
+                            )
+                            Text(
+                                text = formatRoomTime(message.createdAt),
+                                fontSize = 10.sp,
+                                color = UIFriendBarItemMetaColor
+                            )
                         }
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            text = message.content,
+                            fontSize = 13.sp,
+                            lineHeight = 18.sp,
+                            color = UIFriendBarTitleColor,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
                 }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(text = "关闭")
-            }
         }
-    )
+    }
 }
 
 @Composable
@@ -867,96 +1008,139 @@ fun RoomMembersDialog(
 ) {
     var pendingRemove by remember { mutableStateOf<UIRoomMember?>(null) }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(text = "房间成员（${memberIds.size}/$maxMembers）") },
-        text = {
-            Column(
-                modifier = Modifier
-                    .verticalScroll(rememberScrollState())
-                    .height(320.dp)
-            ) {
-                if (allFriends.isEmpty()) {
-                    Text(text = "还没有创建任何好友", fontSize = 13.sp, color = UIFriendBarSubtitleColor)
-                }
-                allFriends.forEach { friend ->
-                    val checked = friend.id in memberIds
-                    val canToggle = if (checked) memberIds.size > 1 else memberIds.size < maxMembers
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable(enabled = canToggle) {
-                                if (checked) pendingRemove = friend else onToggle(friend.id)
-                            }
-                            .padding(vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Checkbox(
-                            checked = checked,
-                            enabled = canToggle,
-                            onCheckedChange = {
-                                if (checked) pendingRemove = friend else onToggle(friend.id)
-                            }
+    UIIosDialog(
+        title = "房间成员",
+        subtitle = "已选 ${memberIds.size} / $maxMembers 位",
+        onDismiss = onDismiss,
+        actions = {
+            UIDialogButtons(
+                confirmText = "完成",
+                onConfirm = onDismiss,
+                cancelText = null
+            )
+        }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 360.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            if (allFriends.isEmpty()) {
+                Text(
+                    text = "还没有创建任何好友",
+                    fontSize = 13.sp,
+                    color = UIFriendBarSubtitleColor
+                )
+            }
+            allFriends.forEach { friend ->
+                val checked = friend.id in memberIds
+                val canToggle = if (checked) memberIds.size > 1 else memberIds.size < maxMembers
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(UIRadiusControl))
+                        .clickable(enabled = canToggle) {
+                            if (checked) pendingRemove = friend else onToggle(friend.id)
+                        }
+                        .padding(horizontal = 8.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    UIAvatar(
+                        name = friend.name,
+                        avatarPath = friend.avatarPath,
+                        size = 34.dp,
+                        shape = CircleShape
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = friend.name,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = UIFriendBarTitleColor
                         )
-                        Spacer(Modifier.width(4.dp))
-                        UIAvatar(
-                            name = friend.name,
-                            avatarPath = friend.avatarPath,
-                            size = 28.dp
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Column {
+                        val meta = listOf(friend.role, friend.model)
+                            .filter { it.isNotBlank() }
+                            .joinToString(" · ")
+                        if (meta.isNotBlank()) {
                             Text(
-                                text = friend.name,
-                                fontSize = 14.sp,
-                                color = UIFriendBarTitleColor
+                                text = meta,
+                                fontSize = 11.sp,
+                                color = UIFriendBarItemMetaColor,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
-                            val meta = listOf(friend.role, friend.model)
-                                .filter { it.isNotBlank() }
-                                .joinToString(" · ")
-                            if (meta.isNotBlank()) {
-                                Text(
-                                    text = meta,
-                                    fontSize = 11.sp,
-                                    color = UIFriendBarItemMetaColor,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
+                        }
+                    }
+                    Box(
+                        modifier = Modifier
+                            .size(22.dp)
+                            .clip(CircleShape)
+                            .then(
+                                if (checked) {
+                                    Modifier.background(UIActionBrush)
+                                } else {
+                                    Modifier.border(1.5.dp, UIGlassStroke, CircleShape)
+                                }
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (checked) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(14.dp)
+                            )
                         }
                     }
                 }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(text = "完成", color = UIFriendBarTagTextBlue)
-            }
         }
-    )
+    }
 
     pendingRemove?.let { friend ->
-        AlertDialog(
-            onDismissRequest = { pendingRemove = null },
-            title = { Text(text = "移除成员？") },
-            text = {
-                Text(text = "将「${friend.name}」移出房间；它已经发过的消息会保留。")
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
+        UIIosDialog(
+            title = "移除成员？",
+            subtitle = "将「${friend.name}」移出房间；它已经发过的消息会保留。",
+            onDismiss = { pendingRemove = null },
+            actions = {
+                UIDialogButtons(
+                    confirmText = "移除",
+                    confirmColor = UIFriendBarRed,
+                    onConfirm = {
                         pendingRemove = null
                         onToggle(friend.id)
-                    }
-                ) {
-                    Text(text = "移除", color = UIFriendBarRed)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingRemove = null }) {
-                    Text(text = "取消")
-                }
+                    },
+                    onCancel = { pendingRemove = null }
+                )
             }
+        )
+    }
+}
+
+/** 弹窗里的胶囊动作按钮（复制 / 引用）。 */
+@Composable
+private fun DialogPillAction(
+    text: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = modifier
+            .height(38.dp)
+            .clip(RoundedCornerShape(50))
+            .background(UIFriendBarTagBgBlue)
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium,
+            color = UIFriendBarTagTextBlue
         )
     }
 }

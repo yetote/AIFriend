@@ -30,19 +30,18 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -53,18 +52,27 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ui.agent.data.UIProvider
-import com.ui.common.theme.UIFriendBarCreateButtonText
-import com.ui.common.theme.UIFriendBarGray
-import com.ui.common.theme.UIFriendBarItemSubtitleColor
-import com.ui.common.theme.UIFriendBarSubtitleColor
+import com.ui.common.theme.UIActionBrush
+import com.ui.common.theme.UIBlobBlue
+import com.ui.common.theme.UIFriendBarItemMetaColor
 import com.ui.common.theme.UIFriendBarTagBgBlue
+import com.ui.common.theme.UIFriendBarTagTextBlue
 import com.ui.common.theme.UIFriendBarTitleColor
+import com.ui.common.theme.UIGlassBar
+import com.ui.common.theme.UIGradientBackground
+import com.ui.common.theme.UIRadiusCard
+import com.ui.common.theme.UIRadiusControl
+import com.ui.common.theme.uiCard
+import com.ui.common.theme.uiControl
 
 @Composable
 fun UIFriendCreateScreen(
@@ -101,122 +109,109 @@ fun UIFriendCreateScreen(
     val canSubmit = name.isNotBlank() && (editing || selectedModel.isNotBlank())
     val selectedProvider = providers.firstOrNull { it.brand == selectedBrand }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(UIFriendBarGray)
-            // 底部 inset 由底部按钮栏处理，避免与窗口 adjustResize 叠加
-            .pageInsetsTop()
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Color.White)
-                .padding(horizontal = 8.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
+    UIGradientBackground(modifier = Modifier.pageInsetsTop()) {
+        Column(
+            modifier = Modifier.fillMaxSize()
         ) {
-            IconButton(onClick = onCancel) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "返回",
-                    tint = UIFriendBarTitleColor
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(UIGlassBar)
+                    .padding(horizontal = 6.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onCancel) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "返回",
+                        tint = UIFriendBarTitleColor
+                    )
+                }
+                Text(
+                    text = title,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = UIFriendBarTitleColor
                 )
             }
-            Spacer(Modifier.width(4.dp))
-            Text(
-                text = title,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                color = UIFriendBarTitleColor
-            )
-        }
 
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                UIAvatar(
-                    name = name.ifBlank { "新" },
-                    avatarPath = initialAvatarPath,
-                    size = 72.dp,
-                    shape = CircleShape,
-                    imageBitmap = avatarBitmap,
-                    modifier = Modifier.clickable {
-                        avatarPicker.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                        )
-                    }
-                )
-                Spacer(Modifier.width(16.dp))
-                Column {
-                    Text(
-                        text = if (avatarBytes == null && initialAvatarPath == null) "选择头像" else "更换头像",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = UIFriendBarCreateButtonText,
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .uiCard(shape = RoundedCornerShape(UIRadiusCard))
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    UIAvatar(
+                        name = name.ifBlank { "新" },
+                        avatarPath = initialAvatarPath,
+                        size = 68.dp,
+                        shape = CircleShape,
+                        imageBitmap = avatarBitmap,
                         modifier = Modifier.clickable {
                             avatarPicker.launch(
                                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                             )
                         }
                     )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = "可选，之后在对话页点头像也能换",
-                        fontSize = 12.sp,
-                        color = UIFriendBarItemSubtitleColor
-                    )
+                    Spacer(Modifier.width(16.dp))
+                    Column {
+                        Text(
+                            text = if (avatarBytes == null && initialAvatarPath == null) "选择头像" else "更换头像",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = UIFriendBarTagTextBlue,
+                            modifier = Modifier.clickable {
+                                avatarPicker.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            }
+                        )
+                        Spacer(Modifier.height(3.dp))
+                        Text(
+                            text = "可选，之后在对话页点头像也能换",
+                            fontSize = 12.sp,
+                            color = UIFriendBarItemMetaColor
+                        )
+                    }
                 }
-            }
 
-            OutlinedTextField(
-                value = name,
-                onValueChange = { name = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("昵称") },
-                placeholder = { Text("例如：小谋") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                colors = fieldColors()
-            )
+                LabeledInput(
+                    label = "昵称",
+                    value = name,
+                    onValueChange = { name = it },
+                    placeholder = "例如：小谋",
+                    singleLine = true
+                )
 
-            OutlinedTextField(
-                value = role,
-                onValueChange = { role = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("角色") },
-                placeholder = { Text("例如：产品策略顾问") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                colors = fieldColors()
-            )
+                LabeledInput(
+                    label = "角色",
+                    value = role,
+                    onValueChange = { role = it },
+                    placeholder = "例如：产品策略顾问",
+                    singleLine = true
+                )
 
-            OutlinedTextField(
-                value = prompt,
-                onValueChange = { prompt = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("角色设定（可选）") },
-                placeholder = { Text("例如：你有 10 年 B 端产品经验，回答先给结论，再给 2-3 条理由，语气直接。") },
-                minLines = 4,
-                maxLines = 8,
-                colors = fieldColors()
-            )
+                LabeledInput(
+                    label = "角色设定（可选）",
+                    value = prompt,
+                    onValueChange = { prompt = it },
+                    placeholder = "例如：你有 10 年 B 端产品经验，回答先给结论，再给 2-3 条理由，语气直接。",
+                    minLines = 4
+                )
 
-            if (!editing) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = "模型提供方",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = UIFriendBarTitleColor
-                    )
+                if (!editing) {
+                    SectionLabel(text = "模型提供方")
                     providers.chunked(2).forEach { rowProviders ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             rowProviders.forEach { provider ->
                                 ProviderChip(
                                     provider = provider,
@@ -231,75 +226,76 @@ fun UIFriendCreateScreen(
                         }
                     }
                 }
-            }
 
-            if (thinkingSwitchable) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "深度思考",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = UIFriendBarTitleColor
-                        )
-                        Spacer(Modifier.height(2.dp))
-                        Text(
-                            text = "关闭后响应更快、更省 token；GLM-5 系列只能降档",
-                            fontSize = 12.sp,
-                            color = UIFriendBarItemSubtitleColor
+                if (thinkingSwitchable) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .uiCard(shape = RoundedCornerShape(UIRadiusCard), elevation = 6.dp)
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "深度思考",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = UIFriendBarTitleColor
+                            )
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                text = "关闭后响应更快、更省 token；GLM-5 系列只能降档",
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp,
+                                color = UIFriendBarItemMetaColor
+                            )
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Switch(
+                            checked = thinking,
+                            onCheckedChange = { thinking = it },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = UIFriendBarTagTextBlue,
+                                uncheckedThumbColor = Color.White,
+                                uncheckedTrackColor = Color(0xFFD7DCE5),
+                                uncheckedBorderColor = Color.Transparent
+                            )
                         )
                     }
-                    Switch(
-                        checked = thinking,
-                        onCheckedChange = { thinking = it }
-                    )
                 }
-            }
 
-            if (editing) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        text = "模型",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = UIFriendBarTitleColor
-                    )
+                if (editing) {
+                    SectionLabel(text = "模型")
                     Text(
                         text = modelLabel.orEmpty(),
+                        modifier = Modifier.padding(start = 4.dp),
                         fontSize = 14.sp,
-                        color = UIFriendBarSubtitleColor
+                        color = UIFriendBarTitleColor
                     )
                     Text(
                         text = "编辑时暂不支持切换厂商 / 模型",
+                        modifier = Modifier.padding(start = 4.dp),
                         fontSize = 12.sp,
-                        color = UIFriendBarItemSubtitleColor
+                        color = UIFriendBarItemMetaColor
                     )
-                }
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = "模型",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = UIFriendBarTitleColor
-                    )
+                } else {
+                    SectionLabel(text = "模型")
                     if (isLoadingModels) {
                         Row(
+                            modifier = Modifier.padding(start = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
+                                modifier = Modifier.size(14.dp),
                                 strokeWidth = 2.dp,
-                                color = UIFriendBarCreateButtonText
+                                color = UIFriendBarTagTextBlue
                             )
                             Text(
                                 text = "正在获取模型列表…",
                                 fontSize = 13.sp,
-                                color = UIFriendBarSubtitleColor
+                                color = UIFriendBarItemMetaColor
                             )
                         }
                     }
@@ -312,32 +308,51 @@ fun UIFriendCreateScreen(
                     }
                     Text(
                         text = "由 ${selectedProvider?.company ?: selectedBrand} 提供支持",
+                        modifier = Modifier.padding(start = 4.dp),
                         fontSize = 12.sp,
-                        color = UIFriendBarItemSubtitleColor
+                        color = UIFriendBarItemMetaColor
                     )
                 }
             }
-        }
 
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Color.White)
-                .pageInsetsBottom()
-                .padding(16.dp)
-        ) {
-            Button(
-                onClick = { onSubmit(name, role, prompt, avatarBytes, thinking) },
-                enabled = canSubmit,
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = UIFriendBarCreateButtonText
-                )
+                    .background(UIGlassBar)
+                    .pageInsetsBottom()
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
             ) {
-                Text(text = submitLabel, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp)
+                        .shadow(
+                            elevation = if (canSubmit) 10.dp else 0.dp,
+                            shape = RoundedCornerShape(50),
+                            clip = false,
+                            ambientColor = UIBlobBlue,
+                            spotColor = UIBlobBlue
+                        )
+                        .clip(RoundedCornerShape(50))
+                        .then(
+                            if (canSubmit) {
+                                Modifier.background(UIActionBrush)
+                            } else {
+                                Modifier.background(Color(0xFFC3CBD9))
+                            }
+                        )
+                        .clickable(enabled = canSubmit) {
+                            onSubmit(name, role, prompt, avatarBytes, thinking)
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = submitLabel,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White
+                    )
+                }
             }
         }
     }
@@ -364,22 +379,24 @@ private fun ProviderChip(
 ) {
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
-            .background(if (selected) UIFriendBarTagBgBlue else Color.White)
+            .uiControl(
+                shape = RoundedCornerShape(UIRadiusControl),
+                color = if (selected) UIFriendBarTagBgBlue else Color.White.copy(alpha = 0.92f)
+            )
             .clickable { onClick() }
-            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .padding(horizontal = 14.dp, vertical = 11.dp)
     ) {
         Text(
             text = provider.brand,
             fontSize = 14.sp,
-            fontWeight = FontWeight.Bold,
-            color = if (selected) UIFriendBarCreateButtonText else UIFriendBarTitleColor
+            fontWeight = FontWeight.SemiBold,
+            color = if (selected) UIFriendBarTagTextBlue else UIFriendBarTitleColor
         )
         Spacer(Modifier.height(2.dp))
         Text(
             text = provider.company,
             fontSize = 11.sp,
-            color = UIFriendBarItemSubtitleColor
+            color = UIFriendBarItemMetaColor
         )
     }
 }
@@ -389,24 +406,79 @@ private fun ModelOption(model: String, selected: Boolean, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(if (selected) UIFriendBarTagBgBlue else Color.White)
+            .clip(RoundedCornerShape(UIRadiusControl))
+            .background(if (selected) UIFriendBarTagBgBlue else Color.White.copy(alpha = 0.9f))
             .clickable { onClick() }
-            .padding(horizontal = 8.dp, vertical = 4.dp),
+            .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        RadioButton(selected = selected, onClick = onClick)
+        RadioButton(
+            selected = selected,
+            onClick = onClick,
+            colors = RadioButtonDefaults.colors(selectedColor = UIFriendBarTagTextBlue)
+        )
+        Spacer(Modifier.width(4.dp))
         Text(
             text = model,
             fontSize = 14.sp,
+            fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
             color = UIFriendBarTitleColor
         )
     }
 }
 
 @Composable
-private fun fieldColors() = OutlinedTextFieldDefaults.colors(
-    focusedBorderColor = UIFriendBarCreateButtonText,
-    focusedLabelColor = UIFriendBarCreateButtonText,
-    cursorColor = UIFriendBarCreateButtonText
-)
+private fun SectionLabel(text: String) {
+    Text(
+        text = text,
+        modifier = Modifier.padding(start = 4.dp),
+        fontSize = 13.sp,
+        fontWeight = FontWeight.Medium,
+        color = UIFriendBarItemMetaColor
+    )
+}
+
+@Composable
+private fun LabeledInput(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    singleLine: Boolean = false,
+    minLines: Int = 1
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        SectionLabel(text = label)
+        Spacer(Modifier.height(6.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .uiControl(
+                    shape = RoundedCornerShape(if (singleLine) 50.dp else UIRadiusControl),
+                    color = Color.White.copy(alpha = 0.92f)
+                )
+                .padding(horizontal = 16.dp, vertical = 13.dp)
+        ) {
+            if (value.isEmpty()) {
+                Text(
+                    text = placeholder,
+                    fontSize = 15.sp,
+                    color = UIFriendBarItemMetaColor.copy(alpha = 0.75f)
+                )
+            }
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                modifier = Modifier.fillMaxWidth(),
+                textStyle = TextStyle(fontSize = 15.sp, color = UIFriendBarTitleColor),
+                singleLine = singleLine,
+                minLines = minLines,
+                maxLines = if (singleLine) 1 else 8,
+                cursorBrush = SolidColor(UIFriendBarTagTextBlue),
+                keyboardOptions = KeyboardOptions(
+                    imeAction = if (singleLine) ImeAction.Next else ImeAction.Default
+                )
+            )
+        }
+    }
+}

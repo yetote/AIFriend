@@ -10,25 +10,30 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.AlertDialog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -38,15 +43,30 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ui.room.data.UIRoomMember
-import com.ui.common.theme.UIFriendBarGray
+import com.ui.common.theme.UIDialogButtons
+import com.ui.common.theme.UIIosDialog
+import com.ui.common.theme.UIGlassBar
+import com.ui.common.theme.UIGlassSurface
+import com.ui.common.theme.UIGlassSurfaceStrong
+import com.ui.common.theme.UIGradientBackground
+import com.ui.common.theme.UIRadiusCard
+import com.ui.common.theme.UIRadiusControl
+import com.ui.common.theme.UISeparator
+import com.ui.common.theme.uiCard
+import com.ui.common.theme.uiControl
 import com.ui.common.theme.UIFriendBarItemMetaColor
 import com.ui.common.theme.UIFriendBarRed
 import com.ui.common.theme.UIFriendBarSubtitleColor
+import com.ui.common.theme.UIFriendBarTagBgBlue
 import com.ui.common.theme.UIFriendBarTagTextBlue
 import com.ui.common.theme.UIFriendBarTitleColor
 
@@ -97,367 +117,358 @@ fun UIRoomSettingsScreen(
         if (uri != null) cropUri = uri
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(UIFriendBarGray)
-            .pageInsets()
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Color.White)
-                .padding(horizontal = 8.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "返回",
-                    tint = UIFriendBarTitleColor
-                )
-            }
-            Text(
-                text = "聊天室设置",
-                modifier = Modifier.weight(1f),
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                color = UIFriendBarTitleColor
-            )
-            TextButton(
-                onClick = { onSave(name, prompt, discussion, window, sequential) },
-                enabled = name.isNotBlank()
-            ) {
-                Text(text = "保存", color = UIFriendBarTagTextBlue)
-            }
-        }
-
+    UIGradientBackground(modifier = Modifier.pageInsets()) {
         Column(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            modifier = Modifier.fillMaxSize()
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                UIAvatar(
-                    name = name.ifBlank { "房间" },
-                    avatarPath = avatarPath,
-                    size = 64.dp,
-                    modifier = Modifier.clickable {
-                        avatarPicker.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                        )
-                    }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(UIGlassBar)
+                    .padding(horizontal = 6.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "返回",
+                        tint = UIFriendBarTitleColor
+                    )
+                }
+                Text(
+                    text = "聊天室设置",
+                    modifier = Modifier.weight(1f),
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = UIFriendBarTitleColor
                 )
-                Spacer(Modifier.width(16.dp))
-                Column {
-                    Text(
-                        text = "房间头像",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = UIFriendBarTitleColor
-                    )
-                    Text(
-                        text = "点击更换，可选",
-                        fontSize = 12.sp,
-                        color = UIFriendBarSubtitleColor
-                    )
-                }
-            }
-
-            OutlinedTextField(
-                value = name,
-                onValueChange = { name = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("房间名") },
-                singleLine = true
-            )
-
-            OutlinedTextField(
-                value = prompt,
-                onValueChange = { prompt = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("房间设定（可选）") },
-                placeholder = {
-                    Text("例如：你们是一个评审团，先各自给结论，再给两条理由，不要互相重复。")
-                },
-                minLines = 4,
-                maxLines = 8
-            )
-            Text(
-                text = "这段设定会加在每位成员的 system prompt 前面，只影响之后的回答",
-                fontSize = 12.sp,
-                color = UIFriendBarSubtitleColor
-            )
-
-            Spacer(Modifier.height(4.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "讨论模式",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = UIFriendBarTitleColor
-                    )
-                    Text(
-                        text = "开启后每位 AI 能看到其他人最近的发言，token 会明显上涨",
-                        fontSize = 12.sp,
-                        color = UIFriendBarSubtitleColor
-                    )
-                }
-                Switch(
-                    checked = discussion,
-                    onCheckedChange = { checked ->
-                        if (checked) pendingDiscussion = true else discussion = false
-                    }
+                Text(
+                    text = "保存",
+                    modifier = Modifier
+                        .padding(end = 12.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(
+                            if (name.isNotBlank()) UIFriendBarTagTextBlue else UIGlassSurface
+                        )
+                        .clickable(enabled = name.isNotBlank()) {
+                            onSave(name, prompt, discussion, window, sequential)
+                        }
+                        .padding(horizontal = 16.dp, vertical = 7.dp),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White
                 )
             }
 
-            if (discussion) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(modifier = Modifier.weight(1f)) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .uiCard(shape = RoundedCornerShape(UIRadiusCard))
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    UIAvatar(
+                        name = name.ifBlank { "房间" },
+                        avatarPath = avatarPath,
+                        size = 64.dp,
+                        modifier = Modifier.clickable {
+                            avatarPicker.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        }
+                    )
+                    Spacer(Modifier.width(16.dp))
+                    Column {
                         Text(
-                            text = "回看窗口",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
+                            text = "房间头像",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Medium,
                             color = UIFriendBarTitleColor
                         )
+                        Spacer(Modifier.height(2.dp))
                         Text(
-                            text = "其他人的发言只保留最近几轮（1–5）",
+                            text = "点击更换，可选",
                             fontSize = 12.sp,
-                            color = UIFriendBarSubtitleColor
+                            color = UIFriendBarItemMetaColor
                         )
-                    }
-                    TextButton(
-                        onClick = { window = (window - 1).coerceAtLeast(1) },
-                        enabled = window > 1
-                    ) {
-                        Text(text = "−", fontSize = 16.sp)
-                    }
-                    Text(
-                        text = "$window 轮",
-                        fontSize = 14.sp,
-                        color = UIFriendBarTitleColor
-                    )
-                    TextButton(
-                        onClick = { if (window < 5) pendingWindow = window + 1 },
-                        enabled = window < 5
-                    ) {
-                        Text(text = "＋", fontSize = 16.sp)
                     }
                 }
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "依次发言",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = UIFriendBarTitleColor
-                        )
-                        Text(
-                            text = "后一位等前一位说完，能看到本轮前面的回复",
-                            fontSize = 12.sp,
-                            color = UIFriendBarSubtitleColor
+                SettingsField(
+                    label = "房间名",
+                    value = name,
+                    onValueChange = { name = it },
+                    singleLine = true
+                )
+
+                SettingsField(
+                    label = "房间设定（可选）",
+                    value = prompt,
+                    onValueChange = { prompt = it },
+                    placeholder = "例如：你们是一个评审团，先各自给结论，再给两条理由，不要互相重复。",
+                    minLines = 4
+                )
+                Text(
+                    text = "这段设定会加在每位成员的 system prompt 前面，只影响之后的回答",
+                    fontSize = 12.sp,
+                    color = UIFriendBarItemMetaColor,
+                    modifier = Modifier.padding(horizontal = 4.dp)
+                )
+
+                SettingsCard {
+                    SettingSwitchRow(
+                        title = "讨论模式",
+                        subtitle = "开启后每位 AI 能看到其他人最近的发言，token 会明显上涨",
+                        checked = discussion,
+                        onCheckedChange = { checked ->
+                            if (checked) pendingDiscussion = true else discussion = false
+                        }
+                    )
+
+                    if (discussion) {
+                        SettingsDivider()
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "回看窗口",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = UIFriendBarTitleColor
+                                )
+                                Text(
+                                    text = "其他人的发言只保留最近几轮（1–5）",
+                                    fontSize = 12.sp,
+                                    color = UIFriendBarItemMetaColor
+                                )
+                            }
+                            StepperButton(
+                                text = "−",
+                                enabled = window > 1,
+                                onClick = { window = (window - 1).coerceAtLeast(1) }
+                            )
+                            Text(
+                                text = "$window",
+                                modifier = Modifier.padding(horizontal = 12.dp),
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = UIFriendBarTitleColor
+                            )
+                            StepperButton(
+                                text = "＋",
+                                enabled = window < 5,
+                                onClick = { if (window < 5) pendingWindow = window + 1 }
+                            )
+                        }
+
+                        SettingsDivider()
+                        SettingSwitchRow(
+                            title = "依次发言",
+                            subtitle = "后一位等前一位说完，能看到本轮前面的回复",
+                            checked = sequential,
+                            onCheckedChange = { sequential = it }
                         )
                     }
-                    Switch(
-                        checked = sequential,
-                        onCheckedChange = { sequential = it }
-                    )
                 }
 
                 Text(
                     text = "窗口越大，其他人的发言占用的上下文和 token 越多；讨论模式每人上下文上限 4000 token。",
                     fontSize = 12.sp,
-                    color = UIFriendBarSubtitleColor
+                    lineHeight = 17.sp,
+                    color = UIFriendBarItemMetaColor,
+                    modifier = Modifier.padding(horizontal = 4.dp)
                 )
-            }
 
-            Spacer(Modifier.height(4.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = "成员（${members.size}/$maxMembers）",
-                    modifier = Modifier.weight(1f),
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = UIFriendBarTitleColor
-                )
-                TextButton(onClick = { showMembers = true }) {
-                    Text(text = "管理", color = UIFriendBarTagTextBlue)
-                }
-            }
-            if (members.isEmpty()) {
-                Text(
-                    text = "还没有成员",
-                    fontSize = 13.sp,
-                    color = UIFriendBarItemMetaColor
-                )
-            }
-            members.forEach { member ->
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    UIAvatar(
-                        name = member.name,
-                        avatarPath = member.avatarPath,
-                        size = 32.dp
+                    Text(
+                        text = "成员（${members.size}/$maxMembers）",
+                        modifier = Modifier.weight(1f),
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = UIFriendBarTitleColor
                     )
-                    Spacer(Modifier.width(10.dp))
-                    Column {
-                        Text(
-                            text = member.name,
-                            fontSize = 14.sp,
-                            color = UIFriendBarTitleColor
-                        )
-                        val meta = listOf(member.role, member.model)
-                            .filter { it.isNotBlank() }
-                            .joinToString(" · ")
-                        if (meta.isNotBlank()) {
-                            Text(
-                                text = meta,
-                                fontSize = 11.sp,
-                                color = UIFriendBarItemMetaColor
-                            )
+                    Text(
+                        text = "管理",
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(UIFriendBarTagBgBlue)
+                            .clickable { showMembers = true }
+                            .padding(horizontal = 14.dp, vertical = 6.dp),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = UIFriendBarTagTextBlue
+                    )
+                }
+
+                if (members.isEmpty()) {
+                    Text(
+                        text = "还没有成员",
+                        fontSize = 13.sp,
+                        color = UIFriendBarItemMetaColor
+                    )
+                } else {
+                    SettingsCard {
+                        members.forEachIndexed { index, member ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                UIAvatar(
+                                    name = member.name,
+                                    avatarPath = member.avatarPath,
+                                    size = 36.dp,
+                                    shape = CircleShape
+                                )
+                                Spacer(Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = member.name,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = UIFriendBarTitleColor
+                                    )
+                                    val meta = listOf(member.role, member.model)
+                                        .filter { it.isNotBlank() }
+                                        .joinToString(" · ")
+                                    if (meta.isNotBlank()) {
+                                        Text(
+                                            text = meta,
+                                            fontSize = 11.sp,
+                                            color = UIFriendBarItemMetaColor,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                            }
+                            if (index < members.size - 1) SettingsDivider()
                         }
                     }
                 }
-            }
 
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = "本轮约 $estimatedRequestCount 次请求；单个 AI 上下文约 $estimatedContextTokens tokens",
-                fontSize = 12.sp,
-                color = UIFriendBarTitleColor
-            )
-            Text(
-                text = "按字符估算，仅作参考，不等同于实际账单",
-                fontSize = 11.sp,
-                color = UIFriendBarSubtitleColor
-            )
+                SettingsCard {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 14.dp)
+                    ) {
+                        Text(
+                            text = "本轮约 $estimatedRequestCount 次请求",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = UIFriendBarTitleColor
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            text = "单个 AI 上下文约 $estimatedContextTokens tokens",
+                            fontSize = 12.sp,
+                            color = UIFriendBarItemMetaColor
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "按字符估算，仅作参考，不等同于实际账单",
+                            fontSize = 11.sp,
+                            color = UIFriendBarItemMetaColor.copy(alpha = 0.8f)
+                        )
+                    }
+                }
 
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = "导出",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                color = UIFriendBarTitleColor
-            )
-            Text(
-                text = "把整屋聊天记录生成 Markdown，通过系统分享发送",
-                fontSize = 12.sp,
-                color = UIFriendBarSubtitleColor
-            )
-            TextButton(onClick = onExport) {
-                Text(text = "导出聊天记录", color = UIFriendBarTagTextBlue)
-            }
+                SettingsCard {
+                    SettingsActionRow(
+                        title = "导出聊天记录",
+                        subtitle = "把整屋聊天记录生成 Markdown，通过系统分享发送",
+                        actionText = "导出",
+                        actionColor = UIFriendBarTagTextBlue,
+                        onClick = onExport
+                    )
+                }
 
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = "危险操作",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                color = UIFriendBarRed
-            )
-            Text(
-                text = "删除本房间的全部消息，房间、成员和设置保留，不可恢复。",
-                fontSize = 12.sp,
-                color = UIFriendBarSubtitleColor
-            )
-            TextButton(
-                onClick = { showClearConfirm = true },
-                enabled = messageCount > 0
-            ) {
-                Text(
-                    text = "清空聊天记录（$messageCount 条）",
-                    color = if (messageCount > 0) UIFriendBarRed else UIFriendBarItemMetaColor
-                )
+                SettingsCard {
+                    SettingsActionRow(
+                        title = "清空聊天记录",
+                        subtitle = "删除本房间全部消息，房间、成员和设置保留，不可恢复",
+                        actionText = if (messageCount > 0) "清空（$messageCount）" else "清空",
+                        actionColor = if (messageCount > 0) UIFriendBarRed else UIFriendBarItemMetaColor,
+                        enabled = messageCount > 0,
+                        onClick = { showClearConfirm = true }
+                    )
+                }
+
+                Spacer(Modifier.height(8.dp))
             }
         }
     }
 
     if (pendingDiscussion) {
-        AlertDialog(
-            onDismissRequest = { pendingDiscussion = false },
-            title = { Text(text = "开启讨论模式？") },
-            text = {
-                Text(
-                    text = "开启后每位 AI 会额外看到其他人最近 $window 轮的发言，" +
-                        "每一位的输入 token 都会上涨。"
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
+        UIIosDialog(
+            title = "开启讨论模式？",
+            subtitle = "开启后每位 AI 会额外看到其他人最近 $window 轮的发言，每一位的输入 token 都会上涨。",
+            onDismiss = { pendingDiscussion = false },
+            actions = {
+                UIDialogButtons(
+                    confirmText = "开启",
+                    onConfirm = {
                         discussion = true
                         pendingDiscussion = false
-                    }
-                ) {
-                    Text(text = "开启", color = UIFriendBarTagTextBlue)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingDiscussion = false }) {
-                    Text(text = "取消")
-                }
+                    },
+                    onCancel = { pendingDiscussion = false }
+                )
             }
         )
     }
 
     pendingWindow?.let { target ->
-        AlertDialog(
-            onDismissRequest = { pendingWindow = null },
-            title = { Text(text = "调大回看窗口？") },
-            text = {
-                Text(
-                    text = "从 $window 轮调到 $target 轮后，每位 AI 会多看到其他人的发言，" +
-                        "token 会同步上涨。"
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
+        UIIosDialog(
+            title = "调大回看窗口？",
+            subtitle = "从 $window 轮调到 $target 轮后，每位 AI 会多看到其他人的发言，token 会同步上涨。",
+            onDismiss = { pendingWindow = null },
+            actions = {
+                UIDialogButtons(
+                    confirmText = "继续",
+                    onConfirm = {
                         window = target
                         pendingWindow = null
-                    }
-                ) {
-                    Text(text = "继续", color = UIFriendBarTagTextBlue)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingWindow = null }) {
-                    Text(text = "取消")
-                }
+                    },
+                    onCancel = { pendingWindow = null }
+                )
             }
         )
     }
 
     if (showClearConfirm) {
-        AlertDialog(
-            onDismissRequest = { showClearConfirm = false },
-            title = { Text(text = "清空聊天记录？") },
-            text = {
-                Text(
-                    text = "会删除本房间的全部 $messageCount 条消息，房间、成员和设置保留。不可恢复。"
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
+        UIIosDialog(
+            title = "清空聊天记录？",
+            subtitle = "会删除本房间的全部 $messageCount 条消息，房间、成员和设置保留。不可恢复。",
+            onDismiss = { showClearConfirm = false },
+            actions = {
+                UIDialogButtons(
+                    confirmText = "清空",
+                    confirmColor = UIFriendBarRed,
+                    onConfirm = {
                         showClearConfirm = false
                         onClearMessages()
-                    }
-                ) {
-                    Text(text = "清空", color = UIFriendBarRed)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showClearConfirm = false }) {
-                    Text(text = "取消")
-                }
+                    },
+                    onCancel = { showClearConfirm = false }
+                )
             }
         )
     }
@@ -481,5 +492,184 @@ fun UIRoomSettingsScreen(
             onToggle = onToggleMember,
             onDismiss = { showMembers = false }
         )
+    }
+}
+
+/** iOS 分组卡片容器。 */
+@Composable
+private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .uiCard(shape = RoundedCornerShape(UIRadiusCard)),
+        content = content
+    )
+}
+
+@Composable
+private fun SettingsDivider() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp)
+            .height(0.5.dp)
+            .background(UISeparator)
+    )
+}
+
+@Composable
+private fun SettingSwitchRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Medium,
+                color = UIFriendBarTitleColor
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = subtitle,
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+                color = UIFriendBarItemMetaColor
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.White,
+                checkedTrackColor = UIFriendBarTagTextBlue,
+                uncheckedThumbColor = Color.White,
+                uncheckedTrackColor = Color(0xFFD7DCE5),
+                uncheckedBorderColor = Color.Transparent
+            )
+        )
+    }
+}
+
+@Composable
+private fun StepperButton(text: String, enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(30.dp)
+            .clip(CircleShape)
+            .background(if (enabled) UIFriendBarTagBgBlue else UIGlassSurface)
+            .clickable(enabled = enabled) { onClick() },
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Medium,
+            color = if (enabled) UIFriendBarTagTextBlue else UIFriendBarItemMetaColor
+        )
+    }
+}
+
+@Composable
+private fun SettingsActionRow(
+    title: String,
+    subtitle: String,
+    actionText: String,
+    actionColor: Color,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Medium,
+                color = UIFriendBarTitleColor
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = subtitle,
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+                color = UIFriendBarItemMetaColor
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Text(
+            text = actionText,
+            modifier = Modifier
+                .clip(RoundedCornerShape(50))
+                .background(actionColor.copy(alpha = if (enabled) 0.10f else 0.05f))
+                .clickable(enabled = enabled) { onClick() }
+                .padding(horizontal = 14.dp, vertical = 7.dp),
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = if (enabled) actionColor else actionColor.copy(alpha = 0.5f)
+        )
+    }
+}
+
+@Composable
+private fun SettingsField(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String? = null,
+    singleLine: Boolean = false,
+    minLines: Int = 1
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = label,
+            fontSize = 12.sp,
+            color = UIFriendBarItemMetaColor,
+            modifier = Modifier.padding(horizontal = 4.dp)
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .uiControl(
+                    shape = RoundedCornerShape(if (singleLine) 50.dp else UIRadiusControl),
+                    color = UIGlassSurfaceStrong
+                )
+                .padding(horizontal = 16.dp, vertical = if (singleLine) 13.dp else 12.dp)
+        ) {
+            if (value.isEmpty() && placeholder != null) {
+                Text(
+                    text = placeholder,
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
+                    color = UIFriendBarItemMetaColor.copy(alpha = 0.7f)
+                )
+            }
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                modifier = Modifier.fillMaxWidth(),
+                textStyle = TextStyle(
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
+                    color = UIFriendBarTitleColor
+                ),
+                singleLine = singleLine,
+                minLines = minLines,
+                cursorBrush = SolidColor(UIFriendBarTagTextBlue)
+            )
+        }
     }
 }
