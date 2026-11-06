@@ -11,10 +11,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -25,7 +27,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -33,10 +37,12 @@ import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.ui.common.theme.UIFriendBarCreateButtonBg
-import com.ui.common.theme.UIFriendBarCreateButtonText
-import com.ui.common.theme.UIFriendBarSearchInputBg
-import com.ui.common.theme.UIFriendBarSubtitleColor
+import com.ui.common.theme.UIActionBrush
+import com.ui.common.theme.UIBlobBlue
+import com.ui.common.theme.UIGlassSurfaceStrong
+import com.ui.common.theme.uiControl
+import com.ui.common.theme.UIFriendBarItemMetaColor
+import com.ui.common.theme.UIFriendBarTagTextBlue
 import com.ui.common.theme.UIFriendBarTitleColor2
 
 
@@ -65,9 +71,9 @@ fun UIFriendCreate(
                 Text(
                     text = "全部智能体",
                     style = TextStyle(
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = UIFriendBarSubtitleColor,
+                        fontSize = 19.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = UIFriendBarTitleColor2,
                         platformStyle = PlatformTextStyle(includeFontPadding = false),
                         lineHeightStyle = LineHeightStyle(
                             alignment = LineHeightStyle.Alignment.Center,
@@ -82,7 +88,7 @@ fun UIFriendCreate(
                     text = "$createdCount 个已创建",
                     style = TextStyle(
                         fontSize = 13.sp,
-                        color = UIFriendBarSubtitleColor,
+                        color = UIFriendBarItemMetaColor,
                         platformStyle = PlatformTextStyle(includeFontPadding = false),
                         lineHeightStyle = LineHeightStyle(
                             alignment = LineHeightStyle.Alignment.Center,
@@ -95,25 +101,26 @@ fun UIFriendCreate(
             // 右侧：“+ 创建”按钮
             Row(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(UIFriendBarCreateButtonBg)
+                    .shadow(8.dp, RoundedCornerShape(50), clip = false, ambientColor = UIBlobBlue, spotColor = UIBlobBlue)
+                    .clip(RoundedCornerShape(50))
+                    .background(UIActionBrush)
                     .clickable { onCreateClick() }
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                    .padding(horizontal = 18.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                horizontalArrangement = Arrangement.spacedBy(5.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.Add,
                     contentDescription = "创建",
-                    tint = UIFriendBarCreateButtonText,
+                    tint = Color.White,
                     modifier = Modifier.size(16.dp)
                 )
                 Text(
                     text = "创建",
                     style = TextStyle(
                         fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = UIFriendBarCreateButtonText,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White,
                         platformStyle = PlatformTextStyle(includeFontPadding = false)
                     )
                 )
@@ -137,36 +144,49 @@ private fun CustomSearchBar(
     placeholder: String,
     modifier: Modifier = Modifier
 ) {
-    Box(
+    Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(44.dp)
-            .background(UIFriendBarSearchInputBg, shape = RoundedCornerShape(12.dp))
+            .height(46.dp)
+            .uiControl(shape = RoundedCornerShape(50), color = UIGlassSurfaceStrong)
             .padding(horizontal = 16.dp),
-        contentAlignment = Alignment.CenterStart
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        if (value.isEmpty()) {
-            Text(
-                text = placeholder,
-                style = TextStyle(
-                    fontSize = 14.sp,
-                    color = UIFriendBarSubtitleColor,
-                    platformStyle = PlatformTextStyle(includeFontPadding = false)
+        Icon(
+            imageVector = Icons.Default.Search,
+            contentDescription = null,
+            tint = UIFriendBarItemMetaColor,
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(Modifier.width(8.dp))
+        Box(
+            modifier = Modifier.weight(1f),
+            contentAlignment = Alignment.CenterStart
+        ) {
+            if (value.isEmpty()) {
+                Text(
+                    text = placeholder,
+                    style = TextStyle(
+                        fontSize = 14.sp,
+                        color = UIFriendBarItemMetaColor.copy(alpha = 0.75f),
+                        platformStyle = PlatformTextStyle(includeFontPadding = false)
+                    )
                 )
+            }
+
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                singleLine = true,
+                textStyle = TextStyle(
+                    fontSize = 14.sp,
+                    color = UIFriendBarTitleColor2,
+                    platformStyle = PlatformTextStyle(includeFontPadding = false)
+                ),
+                cursorBrush = SolidColor(UIFriendBarTagTextBlue),
+                modifier = Modifier.fillMaxWidth()
             )
         }
-
-        BasicTextField(
-            value = value,
-            onValueChange = onValueChange,
-            singleLine = true,
-            textStyle = TextStyle(
-                fontSize = 14.sp,
-                color = UIFriendBarTitleColor2,
-                platformStyle = PlatformTextStyle(includeFontPadding = false)
-            ),
-            modifier = Modifier.fillMaxWidth()
-        )
     }
 }
 

@@ -31,10 +31,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -43,21 +40,33 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import com.ui.agent.data.UIFriendListData
 import com.ui.room.data.UIRoomData
+import com.ui.common.theme.UIActionBrush
+import com.ui.common.theme.UIBlobBlue
+import com.ui.common.theme.UIActionSheet
+import com.ui.common.theme.UIActionSheetItem
+import com.ui.common.theme.UIDialogButtons
+import com.ui.common.theme.UIIosDialog
+import com.ui.common.theme.UIGradientBackground
+import com.ui.common.theme.UIRadiusControl
+import com.ui.common.theme.uiCard
 import com.ui.common.theme.UIFriendBarCreateButtonBg
 import com.ui.common.theme.UIFriendBarCreateButtonText
-import com.ui.common.theme.UIFriendBarGray
+import com.ui.common.theme.UIFriendBarItemMetaColor
 import com.ui.common.theme.UIFriendBarRed
 import com.ui.common.theme.UIFriendBarSubtitleColor
+import com.ui.common.theme.UIFriendBarTitleColor
 import com.ui.common.theme.UIFriendBarTitleColor2
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
 
 @Composable
 fun UIFriendPage(
@@ -84,62 +93,62 @@ fun UIFriendPage(
     var pendingRoomAction by remember { mutableStateOf<UIRoomData?>(null) }
     var pendingRoomDelete by remember { mutableStateOf<UIRoomData?>(null) }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(color = UIFriendBarGray)
-            .pageInsetsTop()
-            .verticalScroll(rememberScrollState())
-            // 底部安全区作为滚动内容的一部分，键盘弹出时只增加一次底部空间
-            .pageInsetsBottom()
-    ) {
-        UIFriendBar(
-            isNotification = true,
-            userAvatarPath = userAvatarPath,
-            onAvatarClick = onPickUserAvatar
-        )
-        Spacer(Modifier.height(16.dp))
-        UIFriendCrewStatusCard(
-            onlineCount = createdCount,
-            title = createdCount,
-            activeCount = activeCount,
-            messageCount = messageCount,
-            mostActive = mostActive
-        )
-        Spacer(Modifier.height(16.dp))
-        RoomSection(
-            rooms = rooms,
-            hasSearch = searchText.isNotBlank(),
-            onCreateRoom = onCreateRoom,
-            onRoomClick = onRoomClick,
-            onRoomLongClick = { pendingRoomAction = it }
-        )
-        Spacer(Modifier.height(16.dp))
-        UIFriendCreate(
-            createdCount = createdCount,
-            searchText = searchText,
-            onSearchTextChange = onSearchTextChange,
-            onCreateClick = onCreateClick
-        )
-        Spacer(Modifier.height(8.dp))
-        if (list.isEmpty()) {
-            EmptyFriends(hasSearch = searchText.isNotBlank(), onCreateClick = onCreateClick)
-        } else {
-            UIFriendCrewList(
-                data = list,
-                onItemClick = onFriendClick,
-                onItemLongClick = { pendingFriendAction = it }
+    UIGradientBackground(modifier = Modifier.pageInsetsTop()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                // 底部安全区作为滚动内容的一部分，键盘弹出时只增加一次底部空间
+                .pageInsetsBottom()
+        ) {
+            UIFriendBar(
+                isNotification = true,
+                userAvatarPath = userAvatarPath,
+                onAvatarClick = onPickUserAvatar
             )
+            Spacer(Modifier.height(16.dp))
+            UIFriendCrewStatusCard(
+                onlineCount = createdCount,
+                title = createdCount,
+                activeCount = activeCount,
+                messageCount = messageCount,
+                mostActive = mostActive
+            )
+            Spacer(Modifier.height(18.dp))
+            RoomSection(
+                rooms = rooms,
+                hasSearch = searchText.isNotBlank(),
+                onCreateRoom = onCreateRoom,
+                onRoomClick = onRoomClick,
+                onRoomLongClick = { pendingRoomAction = it }
+            )
+            Spacer(Modifier.height(18.dp))
+            UIFriendCreate(
+                createdCount = createdCount,
+                searchText = searchText,
+                onSearchTextChange = onSearchTextChange,
+                onCreateClick = onCreateClick
+            )
+            Spacer(Modifier.height(8.dp))
+            if (list.isEmpty()) {
+                EmptyFriends(hasSearch = searchText.isNotBlank(), onCreateClick = onCreateClick)
+            } else {
+                UIFriendCrewList(
+                    data = list,
+                    onItemClick = onFriendClick,
+                    onItemLongClick = { pendingFriendAction = it }
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            Text(
+                text = "长按好友可编辑或删除，长按聊天室可删除",
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center,
+                fontSize = 12.sp,
+                color = UIFriendBarItemMetaColor
+            )
+            Spacer(Modifier.height(24.dp))
         }
-        Spacer(Modifier.height(12.dp))
-        Text(
-            text = "长按好友可编辑或删除，长按聊天室可删除",
-            modifier = Modifier.fillMaxWidth(),
-            textAlign = TextAlign.Center,
-            fontSize = 12.sp,
-            color = UIFriendBarSubtitleColor
-        )
-        Spacer(Modifier.height(24.dp))
     }
 
     pendingFriendAction?.let { friend ->
@@ -174,26 +183,20 @@ fun UIFriendPage(
     }
 
     pendingRoomDelete?.let { room ->
-        AlertDialog(
-            onDismissRequest = { pendingRoomDelete = null },
-            title = { Text(text = "删除聊天室") },
-            text = {
-                Text(text = "会删除「${room.name}」以及里面的全部消息，该操作不可恢复。")
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
+        UIIosDialog(
+            title = "删除聊天室",
+            subtitle = "会删除「${room.name}」以及里面的全部消息，该操作不可恢复。",
+            onDismiss = { pendingRoomDelete = null },
+            actions = {
+                UIDialogButtons(
+                    confirmText = "删除",
+                    confirmColor = UIFriendBarRed,
+                    onConfirm = {
                         pendingRoomDelete = null
                         onDeleteRoom(room.id)
-                    }
-                ) {
-                    Text(text = "删除", color = UIFriendBarRed)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingRoomDelete = null }) {
-                    Text(text = "取消")
-                }
+                    },
+                    onCancel = { pendingRoomDelete = null }
+                )
             }
         )
     }
@@ -221,18 +224,18 @@ private fun RoomSection(
             Text(
                 text = "聊天室",
                 fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.SemiBold,
                 color = UIFriendBarTitleColor2
             )
             Text(
                 text = "+ 新建",
                 modifier = Modifier
-                    .clip(RoundedCornerShape(20.dp))
+                    .clip(RoundedCornerShape(50))
                     .background(UIFriendBarCreateButtonBg)
                     .clickable { onCreateRoom() }
-                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                    .padding(horizontal = 14.dp, vertical = 7.dp),
                 fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.SemiBold,
                 color = UIFriendBarCreateButtonText
             )
         }
@@ -244,18 +247,20 @@ private fun RoomSection(
                     "把多个好友拉进同一个房间，一次提问、各自回答"
                 },
                 fontSize = 13.sp,
-                color = UIFriendBarSubtitleColor
+                color = UIFriendBarItemMetaColor
             )
         } else {
             Row(
                 modifier = Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 rooms.forEach { room ->
                     Column(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(Color.White)
+                            .uiCard(
+                                shape = RoundedCornerShape(UIRadiusControl),
+                                elevation = 6.dp
+                            )
                             .combinedClickable(
                                 onClick = { onRoomClick(room) },
                                 onLongClick = { onRoomLongClick(room) }
@@ -266,17 +271,18 @@ private fun RoomSection(
                             UIAvatar(
                                 name = room.name,
                                 avatarPath = room.avatarPath,
-                                size = 28.dp
+                                size = 30.dp,
+                                shape = CircleShape
                             )
-                            Spacer(Modifier.width(8.dp))
+                            Spacer(Modifier.width(10.dp))
                             Column {
                                 Text(
                                     text = room.name,
                                     fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold,
+                                    fontWeight = FontWeight.SemiBold,
                                     color = UIFriendBarTitleColor2
                                 )
-                                Spacer(Modifier.height(4.dp))
+                                Spacer(Modifier.height(3.dp))
                                 Text(
                                     text = if (room.pinned) {
                                         "置顶 · ${room.memberCount} 位好友"
@@ -284,7 +290,7 @@ private fun RoomSection(
                                         "${room.memberCount} 位好友"
                                     },
                                     fontSize = 11.sp,
-                                    color = UIFriendBarSubtitleColor
+                                    color = UIFriendBarItemMetaColor
                                 )
                             }
                         }
@@ -302,31 +308,14 @@ private fun FriendActionsDialog(
     onDelete: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(
-            shape = RoundedCornerShape(16.dp),
-            color = Color.White
-        ) {
-            Column(modifier = Modifier.padding(vertical = 8.dp)) {
-                Text(
-                    text = friendName,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = UIFriendBarTitleColor2
-                )
-                TextButton(onClick = onEdit, modifier = Modifier.fillMaxWidth()) {
-                    Text(text = "编辑资料", color = UIFriendBarTitleColor2)
-                }
-                TextButton(onClick = onDelete, modifier = Modifier.fillMaxWidth()) {
-                    Text(text = "删除好友", color = UIFriendBarRed)
-                }
-                TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
-                    Text(text = "取消", color = UIFriendBarSubtitleColor)
-                }
-            }
-        }
-    }
+    UIActionSheet(
+        title = friendName,
+        onDismiss = onDismiss,
+        items = listOf(
+            UIActionSheetItem(label = "编辑资料", onClick = onEdit),
+            UIActionSheetItem(label = "删除好友", destructive = true, onClick = onDelete)
+        )
+    )
 }
 
 @Composable
@@ -337,34 +326,17 @@ private fun RoomActionsDialog(
     onDelete: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(
-            shape = RoundedCornerShape(16.dp),
-            color = Color.White
-        ) {
-            Column(modifier = Modifier.padding(vertical = 8.dp)) {
-                Text(
-                    text = roomName,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = UIFriendBarTitleColor2
-                )
-                TextButton(onClick = onTogglePin, modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        text = if (pinned) "取消置顶" else "置顶聊天室",
-                        color = UIFriendBarTitleColor2
-                    )
-                }
-                TextButton(onClick = onDelete, modifier = Modifier.fillMaxWidth()) {
-                    Text(text = "删除聊天室", color = UIFriendBarRed)
-                }
-                TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
-                    Text(text = "取消", color = UIFriendBarSubtitleColor)
-                }
-            }
-        }
-    }
+    UIActionSheet(
+        title = roomName,
+        onDismiss = onDismiss,
+        items = listOf(
+            UIActionSheetItem(
+                label = if (pinned) "取消置顶" else "置顶聊天室",
+                onClick = onTogglePin
+            ),
+            UIActionSheetItem(label = "删除聊天室", destructive = true, onClick = onDelete)
+        )
+    )
 }
 
 @Composable
@@ -398,13 +370,14 @@ private fun EmptyFriends(hasSearch: Boolean, onCreateClick: () -> Unit) {
             Text(
                 text = "+ 创建 AI 好友",
                 modifier = Modifier
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(UIFriendBarCreateButtonBg)
+                    .shadow(8.dp, RoundedCornerShape(50), clip = false, ambientColor = UIBlobBlue, spotColor = UIBlobBlue)
+                    .clip(RoundedCornerShape(50))
+                    .background(UIActionBrush)
                     .clickable { onCreateClick() }
-                    .padding(horizontal = 20.dp, vertical = 10.dp),
+                    .padding(horizontal = 22.dp, vertical = 11.dp),
                 fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                color = UIFriendBarCreateButtonText
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White
             )
         }
     }

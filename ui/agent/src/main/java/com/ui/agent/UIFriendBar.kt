@@ -5,10 +5,12 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -22,11 +24,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.core.common.theme.AIFriendTheme
-import com.ui.common.theme.UIFriendBarGray
+import com.ui.common.theme.UIGlassSurfaceStrong
+import com.ui.common.theme.uiControl
 import com.ui.common.theme.UIFriendBarRed
 import com.ui.common.theme.UIFriendBarTitle2Color
 import com.ui.common.theme.UIFriendBarTitleColor
@@ -39,21 +43,24 @@ fun UIFriendBar(
 ) {
     Row(
         Modifier
-            .background(Color.White)
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 20.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column() {
             Text(
                 fontSize = 26.sp,
+                fontWeight = FontWeight.Bold,
                 text = "AI智能体",
                 color = UIFriendBarTitleColor
             )
+            Spacer(Modifier.height(2.dp))
             Text(
-                fontSize = 14.sp,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                letterSpacing = 1.4.sp,
                 text = "MY AGENT",
-                color = UIFriendBarTitle2Color
+                color = UIFriendBarTitle2Color.copy(alpha = 0.75f)
             )
         }
         Spacer(modifier = Modifier.weight(1f))
@@ -69,20 +76,24 @@ fun UIFriendBar(
                 }
             }) {
 
-                Image(
-                    painterResource(R.drawable.ui_friend_notification),
+                Box(
                     modifier = Modifier
                         .size(38.dp)
-                        .background(UIFriendBarGray, shape = CircleShape)
-                        .padding(8.dp)
-                        .clip(CircleShape),
-                    contentDescription = "add",
-                )
+                        .uiControl(shape = CircleShape, color = UIGlassSurfaceStrong)
+                        .clickable { },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Image(
+                        painterResource(R.drawable.ui_friend_notification),
+                        modifier = Modifier.size(18.dp),
+                        contentDescription = "add",
+                    )
+                }
             }
             UIAvatar(
                 name = "我",
                 avatarPath = userAvatarPath,
-                size = 36.dp,
+                size = 38.dp,
                 shape = CircleShape,
                 modifier = Modifier.clickable { onAvatarClick() }
             )

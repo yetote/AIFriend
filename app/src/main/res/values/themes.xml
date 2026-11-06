@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.AIFriend" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- windowBackground 用渐变底色，避免启动和转场时闪白 -->
+    <style name="Theme.AIFriend" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/ui_gradient_top</item>
+        <item name="android:colorBackground">@color/ui_gradient_top</item>
+    </style>
 </resources>
