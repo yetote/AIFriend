@@ -86,17 +86,22 @@ import com.ui.common.theme.UIBubbleUserBrush
 import com.ui.common.theme.UIChatErrorBg
 import com.ui.common.theme.UIChatSendDisabled
 import com.ui.common.theme.UIDialogButtons
+import com.ui.common.theme.UIComposerHeight
+import com.ui.common.theme.UIFieldFill
 import com.ui.common.theme.UIGlassBar
 import com.ui.common.theme.UIGlassStroke
 import com.ui.common.theme.UIGlassSurface
 import com.ui.common.theme.UIGlassSurfaceStrong
 import com.ui.common.theme.UIGradientBackground
 import com.ui.common.theme.UIIosDialog
+import com.ui.common.theme.UIRadiusCard
 import com.ui.common.theme.UIRadiusBubble
 import com.ui.common.theme.UIRadiusBubbleTail
 import com.ui.common.theme.UIRadiusControl
 import com.ui.common.theme.UIShadowSoft
+import com.ui.common.theme.uiCard
 import com.ui.common.theme.uiControl
+import com.ui.common.theme.uiHairlineBottom
 import com.ui.common.theme.UIFriendBarItemMetaColor
 import com.ui.common.theme.UIFriendBarRed
 import com.ui.common.theme.UIFriendBarSubtitleColor
@@ -437,7 +442,10 @@ private fun RoomTopBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(UIGlassBar)
+            // 顶栏不再铺白底：通栏直角白带是整页唯一一块贴边的平面白，
+            // 和圆角卡片体系放在一起必然突兀。这里直接留空、让渐变透上来，
+            // 顶栏就和聊天区连成一片，只靠一条 hairline 交代内容的起点。
+            .uiHairlineBottom()
             .padding(horizontal = 6.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -625,29 +633,26 @@ private fun RoomMessageBubble(
                     modifier = Modifier.padding(end = 6.dp, bottom = 3.dp)
                 )
             }
+            // 气泡形状只在这里算一次。原来 shadow / clip / border 各自手写一遍圆角，
+            // 结果 border 那处漏了「尾巴角」，按四角 20dp 画，裁切却是 6dp，
+            // 于是在气泡内侧左下角多出一条悬空的弧线。收成一个变量就不会再漏。
+            val bubbleShape = RoundedCornerShape(
+                topStart = UIRadiusBubble,
+                topEnd = UIRadiusBubble,
+                bottomEnd = if (message.isUser) UIRadiusBubbleTail else UIRadiusBubble,
+                bottomStart = if (message.isUser) UIRadiusBubble else UIRadiusBubbleTail
+            )
             Box(
                 modifier = Modifier
                     .widthIn(max = 268.dp)
                     .shadow(
                         elevation = 6.dp,
-                        shape = RoundedCornerShape(
-                            topStart = UIRadiusBubble,
-                            topEnd = UIRadiusBubble,
-                            bottomEnd = if (message.isUser) UIRadiusBubbleTail else UIRadiusBubble,
-                            bottomStart = if (message.isUser) UIRadiusBubble else UIRadiusBubbleTail
-                        ),
+                        shape = bubbleShape,
                         clip = false,
                         ambientColor = UIShadowSoft,
                         spotColor = UIShadowSoft
                     )
-                    .clip(
-                        RoundedCornerShape(
-                            topStart = UIRadiusBubble,
-                            topEnd = UIRadiusBubble,
-                            bottomEnd = if (message.isUser) UIRadiusBubbleTail else UIRadiusBubble,
-                            bottomStart = if (message.isUser) UIRadiusBubble else UIRadiusBubbleTail
-                        )
-                    )
+                    .clip(bubbleShape)
                     .combinedClickable(onClick = {}, onLongClick = onLongPress)
                     .then(
                         if (message.isUser) {
@@ -655,7 +660,7 @@ private fun RoomMessageBubble(
                         } else {
                             Modifier
                                 .background(UIGlassSurfaceStrong)
-                                .border(0.5.dp, UIGlassStroke, RoundedCornerShape(UIRadiusBubble))
+                                .border(0.5.dp, UIGlassStroke, bubbleShape)
                         }
                     )
                     .padding(horizontal = 14.dp, vertical = 10.dp)
@@ -840,20 +845,32 @@ private fun RoomInputBar(
     }
 
     Row(
+        // 不再用整条通栏白底：那是一块和聊天气泡、卡片体系无关的直角白墙。
+        // 改成浮在渐变上的圆角玻璃条，和页面里其他卡片用同一套语言（圆角 + 描边 + 柔和投影）。
         modifier = Modifier
             .fillMaxWidth()
-            .background(UIGlassBar)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .uiCard(
+                shape = RoundedCornerShape(UIRadiusCard),
+                color = UIGlassBar,
+                elevation = 12.dp
+            )
+            .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.Bottom
     ) {
         Box(
             modifier = Modifier
                 .weight(1f)
-                .uiControl(
-                    shape = RoundedCornerShape(22.dp),
-                    color = Color.White.copy(alpha = 0.92f)
-                )
-                .padding(horizontal = 16.dp, vertical = 11.dp)
+                // 外层已经是白卡，内层再压一块纯白 + 投影会糊成一片；
+                // 改成浅灰底的凹陷胶囊，输入区才和卡片分得开
+                .clip(RoundedCornerShape(UIRadiusBubble))
+                .background(UIFieldFill)
+                .border(0.5.dp, UIGlassStroke, RoundedCornerShape(UIRadiusBubble))
+                // 和发送按钮共用同一个基准高度：单行时两者严格等高，
+                // 多行时输入框自己长高，按钮仍对齐底部
+                .heightIn(min = UIComposerHeight)
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            contentAlignment = Alignment.CenterStart
         ) {
             if (input.isEmpty()) {
                 Text(
@@ -894,7 +911,8 @@ private fun RoomInputBar(
         Spacer(Modifier.width(8.dp))
         Box(
             modifier = Modifier
-                .size(44.dp)
+                // 与输入框共用基准高度，单行时严格等高
+                .size(UIComposerHeight)
                 .shadow(
                     elevation = if (canSend) 8.dp else 0.dp,
                     shape = CircleShape,
@@ -917,7 +935,7 @@ private fun RoomInputBar(
                 imageVector = Icons.AutoMirrored.Filled.Send,
                 contentDescription = "发送",
                 tint = Color.White,
-                modifier = Modifier.size(20.dp)
+                modifier = Modifier.size(18.dp)
             )
         }
     }

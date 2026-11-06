@@ -14,7 +14,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -35,6 +37,21 @@ val UIGlassSurface = Color(0xB3FFFFFF)
 val UIGlassSurfaceStrong = Color(0xFFFDFDFF)
 val UIGlassStroke = Color(0x14000000)
 val UIGlassHighlight = Color(0x80FFFFFF)
+
+/** 输入框内胆：比卡片底色略深一点点，靠明度差把输入区从白色卡片里分出来。 */
+val UIFieldFill = Color(0x0D000000)
+
+/**
+ * 输入条的基准高度：输入框和发送按钮共用。
+ *
+ * 两边都按内容自然撑开时，输入框会被字号和 padding 撑到 42dp 左右，
+ * 而按钮是写死的另一个值，差一两 dp 就会看起来「差一点对不齐」。
+ * 定一个常量让两边引用，才不会各算各的。
+ *
+ * 40dp 是单行输入条比较收的高度：再大整条输入区就显笨重，
+ * 尤其外面还有卡片内边距和页面留白各一层。
+ */
+val UIComposerHeight = 40.dp
 
 val UIShadowSoft = Color(0x1A1B2B45)
 val UISeparator = Color(0x12000000)
@@ -117,3 +134,19 @@ fun Modifier.uiControl(
     .shadow(4.dp, shape, clip = false, ambientColor = UIShadowSoft, spotColor = UIShadowSoft)
     .background(color, shape)
     .border(0.5.dp, borderColor, shape)
+
+/**
+ * 贴边栏的底部分割线。
+ *
+ * 通栏顶栏如果只是一块白底直接切到内容，边缘看起来像「被裁掉」而不是「到此为止」；
+ * 补一条 0.5dp 极细线，边界就变成有意为之。用 drawBehind 画，不占布局高度。
+ */
+fun Modifier.uiHairlineBottom(color: Color = UIGlassStroke): Modifier = drawBehind {
+    val stroke = 0.5.dp.toPx()
+    drawLine(
+        color = color,
+        start = Offset(0f, size.height - stroke / 2f),
+        end = Offset(size.width, size.height - stroke / 2f),
+        strokeWidth = stroke
+    )
+}
