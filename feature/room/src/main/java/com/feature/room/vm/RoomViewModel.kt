@@ -90,12 +90,15 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
     }
 
     private suspend fun loadFriends() {
-        val storedFriends = runCatching { friendRepository.load() }.getOrDefault(emptyList())
+        val storedFriends = runCatching { friendRepository.load() }.getOrNull()
         val avatar = runCatching { profileRepository.loadAvatarPath() }.getOrNull()
         _uiState.update { state ->
             state.copy(
-                friends = storedFriends.map { it.toFriend() },
-                userAvatarPath = avatar ?: state.userAvatarPath
+                // 读失败就保留原有好友，别把已经解析好的成员清空导致头像跳变
+                friends = storedFriends?.map { it.toFriend() } ?: state.friends,
+                userAvatarPath = avatar ?: state.userAvatarPath,
+                // 只要读过一次就置位；万一读失败也放行渲染，不能一直停在占位
+                friendsLoaded = true
             )
         }
     }
@@ -160,7 +163,9 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
                 roomInput = "",
                 roomMentionIds = emptySet(),
                 roomPending = emptySet(),
-                roomErrors = emptyMap()
+                roomErrors = emptyMap(),
+                // 新房间还没有历史消息，直接视为已读，别卡在占位等待
+                roomMessagesLoaded = it.roomMessagesLoaded + room.id
             )
         }
         persistRoom(room.id)
@@ -174,9 +179,9 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
     // ---------------- 打开房间 / 分页 ----------------
 
     fun openRoom(roomId: String) {
-        val room = _uiState.value.rooms.firstOrNull { it.id == roomId }
         // 离开原来的房间就不要再让那个房间继续自动接话
         autoChatJobs.keys.filter { it != roomId }.forEach { cancelAutoChat(it) }
+        // 已经有好友数据时直接切，避免「activeRoomId 先变、成员后到」的中间帧
         _uiState.update {
             it.copy(
                 activeRoomId = roomId,
@@ -187,7 +192,7 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
             )
         }
         viewModelScope.launch {
-            loadFriends()
+            if (!_uiState.value.friendsLoaded) loadFriends()
             loadRecentRoomMessages(roomId)
         }
     }
@@ -204,6 +209,7 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
                 .sortedWith(compareBy({ it.createdAt }, { it.seq }))
             state.copy(
                 roomMessages = merged,
+                roomMessagesLoaded = state.roomMessagesLoaded + roomId,
                 roomHasMore = if (total > merged.count { it.roomId == roomId }) {
                     state.roomHasMore + roomId
                 } else {

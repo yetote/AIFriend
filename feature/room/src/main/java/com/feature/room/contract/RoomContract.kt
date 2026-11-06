@@ -16,6 +16,8 @@ data class RoomUiState(
     val roomErrors: Map<String, String> = emptyMap(),
     val roomHasMore: Set<String> = emptySet(),
     val roomLoadingMore: Set<String> = emptySet(),
+    /** 已经读过首屏消息的房间（区分「还没读」和「真的没有消息」）。 */
+    val roomMessagesLoaded: Set<String> = emptySet(),
     val roomDraftName: String = "",
     val roomDraftPrompt: String = "",
     val roomDraftMemberIds: Set<String> = emptySet(),
@@ -25,6 +27,8 @@ data class RoomUiState(
     val autoChatCompleted: Int = 0,
     /** 自由对话本次的接话上限。 */
     val autoChatTotal: Int = 0,
+    /** 好友列表是否已经读过一次（区分「还没读」和「真的没有成员」）。 */
+    val friendsLoaded: Boolean = false,
     val loaded: Boolean = false
 ) {
     val activeRoom: Room?

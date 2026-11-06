@@ -25,6 +25,7 @@ import com.feature.home.contract.HomeScreen
 import com.feature.agent.model.Friend
 import com.feature.home.vm.HomeViewModel
 import com.ui.common.UIAvatarCropDialog
+import com.ui.common.UIGroupMember
 import com.ui.home.UIFriendPage
 import com.ui.agent.data.UIFriendListData
 import com.ui.room.data.UIRoomData
@@ -71,13 +72,19 @@ fun HomeRoute(viewModel: HomeViewModel = viewModel()) {
                 messageCount = state.messageCount,
                 activeCount = state.activeCount,
                 mostActive = state.mostActive,
-                rooms = state.visibleRooms.map {
+                rooms = state.visibleRooms.map { room ->
+                    // 按成员 ID 查出好友，拿名字和头像拼群头像；
+                    // 顺序跟着 memberIds 走，成员增删后拼图也跟着变。
+                    val members = room.memberIds.mapNotNull { id ->
+                        state.friends.firstOrNull { it.id == id }
+                    }.map { UIGroupMember(name = it.name, avatarPath = it.avatarPath) }
                     UIRoomData(
-                        id = it.id,
-                        name = it.name,
-                        memberCount = it.memberIds.size,
-                        pinned = it.pinned,
-                        avatarPath = it.avatarPath
+                        id = room.id,
+                        name = room.name,
+                        memberCount = room.memberIds.size,
+                        pinned = room.pinned,
+                        avatarPath = room.avatarPath,
+                        memberAvatars = members
                     )
                 },
                 userAvatarPath = state.userAvatarPath,

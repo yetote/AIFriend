@@ -3,6 +3,8 @@ package com.ui.room
 import com.ui.common.pageInsets
 import com.ui.common.UIAvatarCropDialog
 import com.ui.common.UIAvatar
+import com.ui.common.UIGroupAvatar
+import com.ui.common.UIGroupMember
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -173,16 +175,32 @@ fun UIRoomSettingsScreen(
                         .padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    UIAvatar(
-                        name = name.ifBlank { "房间" },
-                        avatarPath = avatarPath,
-                        size = 64.dp,
-                        modifier = Modifier.clickable {
-                            avatarPicker.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                            )
-                        }
-                    )
+                    // 没设头像时显示成员拼图，和首页 / 聊天页顶栏保持一致，
+                    // 不然这三处同一房间长得不一样。
+                    if (avatarPath != null) {
+                        UIAvatar(
+                            name = name.ifBlank { "房间" },
+                            avatarPath = avatarPath,
+                            size = 64.dp,
+                            modifier = Modifier.clickable {
+                                avatarPicker.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            }
+                        )
+                    } else {
+                        UIGroupAvatar(
+                            members = members.map {
+                                UIGroupMember(name = it.name, avatarPath = it.avatarPath)
+                            },
+                            size = 64.dp,
+                            modifier = Modifier.clickable {
+                                avatarPicker.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            }
+                        )
+                    }
                     Spacer(Modifier.width(16.dp))
                     Column {
                         Text(

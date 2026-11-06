@@ -2,6 +2,7 @@ package com.ui.common
 
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.util.LruCache
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -70,16 +71,26 @@ fun UIAvatar(
     }
 }
 
+/**
+ * 头像解码缓存：同一路径只解码一次。
+ * 否则每次进出页面都要重新解码，界面上就会先显示"单色兜底"再闪成图片。
+ */
+private val avatarBitmapCache = object : LruCache<String, ImageBitmap>(64) {
+    override fun sizeOf(key: String, value: ImageBitmap): Int = 1
+}
+
 /** 从本地文件路径读取头像，切换路径时自动重新加载。 */
 @Composable
 fun rememberAvatarBitmap(path: String?): ImageBitmap? {
+    if (path.isNullOrBlank()) return null
+    // 命中缓存就直接同步返回，避免先渲染兜底色块
+    avatarBitmapCache.get(path)?.let { return it }
+
     val bitmap by produceState<ImageBitmap?>(initialValue = null, key1 = path) {
-        value = if (path.isNullOrBlank()) {
-            null
-        } else {
-            withContext(Dispatchers.IO) {
-                runCatching { BitmapFactory.decodeFile(path)?.asImageBitmap() }.getOrNull()
-            }
+        value = avatarBitmapCache.get(path) ?: withContext(Dispatchers.IO) {
+            runCatching { BitmapFactory.decodeFile(path)?.asImageBitmap() }
+                .getOrNull()
+                ?.also { decoded -> avatarBitmapCache.put(path, decoded) }
         }
     }
     return bitmap
