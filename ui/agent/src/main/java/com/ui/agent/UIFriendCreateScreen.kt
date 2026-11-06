@@ -33,11 +33,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Switch
@@ -68,10 +64,10 @@ import com.ui.common.theme.UIFriendBarItemMetaColor
 import com.ui.common.theme.UIFriendBarTagBgBlue
 import com.ui.common.theme.UIFriendBarTagTextBlue
 import com.ui.common.theme.UIFriendBarTitleColor
-import com.ui.common.theme.UIGlassBar
 import com.ui.common.theme.UIGradientBackground
 import com.ui.common.theme.UIRadiusCard
 import com.ui.common.theme.UIRadiusControl
+import com.ui.common.theme.UITopBar
 import com.ui.common.theme.uiCard
 import com.ui.common.theme.uiControl
 import com.ui.common.theme.UIDialogButtons
@@ -121,27 +117,7 @@ fun UIFriendCreateScreen(
         Column(
             modifier = Modifier.fillMaxSize()
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(UIGlassBar)
-                    .padding(horizontal = 6.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = onCancel) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "返回",
-                        tint = UIFriendBarTitleColor
-                    )
-                }
-                Text(
-                    text = title,
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = UIFriendBarTitleColor
-                )
-            }
+            UITopBar(title = title, onBack = onCancel)
 
             Column(
                 modifier = Modifier
@@ -368,12 +344,15 @@ fun UIFriendCreateScreen(
                 }
             }
 
+            // 底部按钮栏同样不用通栏白条：和页面里其他卡片一样浮起来，
+            // 靠圆角 + 描边 + 投影和内容分开，而不是一条直角白带贴边。
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(UIGlassBar)
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                    .uiCard(shape = RoundedCornerShape(UIRadiusCard), elevation = 12.dp)
                     .pageInsetsBottom()
-                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
             ) {
                 Box(
                     modifier = Modifier

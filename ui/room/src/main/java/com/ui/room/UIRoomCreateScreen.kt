@@ -27,10 +27,8 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -51,7 +49,6 @@ import com.ui.room.data.UIRoomMember
 import com.ui.common.UIAvatar
 import com.ui.common.theme.UIBlobBlue
 import com.ui.common.theme.UIActionBrush
-import com.ui.common.theme.UIGlassBar
 import com.ui.common.theme.UIGlassStroke
 import com.ui.common.theme.UIGlassSurface
 import com.ui.common.theme.UIGlassSurfaceStrong
@@ -59,6 +56,7 @@ import com.ui.common.theme.UIGradientBackground
 import com.ui.common.theme.UIRadiusCard
 import com.ui.common.theme.UIRadiusControl
 import com.ui.common.theme.UIShadowSoft
+import com.ui.common.theme.UITopBar
 import com.ui.common.theme.uiCard
 import com.ui.common.theme.uiControl
 import com.ui.common.theme.UIFriendBarCreateButtonBg
@@ -101,27 +99,7 @@ fun UIRoomCreateScreen(
             modifier = Modifier
                 .fillMaxSize()
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(UIGlassBar)
-                    .padding(horizontal = 6.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = onCancel) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "返回",
-                        tint = UIFriendBarTitleColor
-                    )
-                }
-                Text(
-                    text = "新建聊天室",
-                    modifier = Modifier.weight(1f),
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = UIFriendBarTitleColor
-                )
+            UITopBar(title = "新建聊天室", onBack = onCancel) {
                 Text(
                     text = "已选 ${selectedIds.size}",
                     modifier = Modifier.padding(end = 12.dp),
@@ -307,9 +285,11 @@ fun UIRoomCreateScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(UIGlassBar)
+                    // 底部按钮栏不用通栏白条，改成浮起的圆角卡片
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                    .uiCard(shape = RoundedCornerShape(UIRadiusCard), elevation = 12.dp)
                     .pageInsetsBottom()
-                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
             ) {
                 Box(
                     modifier = Modifier
