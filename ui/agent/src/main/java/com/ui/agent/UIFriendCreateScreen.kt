@@ -60,6 +60,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ui.agent.data.UIPersona
 import com.ui.agent.data.UIProvider
 import com.ui.common.theme.UIActionBrush
 import com.ui.common.theme.UIBlobBlue
@@ -73,6 +74,8 @@ import com.ui.common.theme.UIRadiusCard
 import com.ui.common.theme.UIRadiusControl
 import com.ui.common.theme.uiCard
 import com.ui.common.theme.uiControl
+import com.ui.common.theme.UIDialogButtons
+import com.ui.common.theme.UIIosDialog
 
 @Composable
 fun UIFriendCreateScreen(
@@ -94,12 +97,17 @@ fun UIFriendCreateScreen(
     initialThinking: Boolean = false,
     editing: Boolean = false,
     modelLabel: String? = null,
-    thinkingSwitchable: Boolean = true
+    thinkingSwitchable: Boolean = true,
+    personas: List<UIPersona> = emptyList(),
+    personaToggleLabel: String = "从模板开始"
 ) {
     var name by rememberSaveable(initialName) { mutableStateOf(initialName) }
     var role by rememberSaveable(initialRole) { mutableStateOf(initialRole) }
     var prompt by rememberSaveable(initialPrompt) { mutableStateOf(initialPrompt) }
     var thinking by rememberSaveable(initialThinking) { mutableStateOf(initialThinking) }
+    var pickingPersona by remember { mutableStateOf(false) }
+    var appliedPersonaId by rememberSaveable { mutableStateOf("") }
+    var pendingPersona by remember { mutableStateOf<UIPersona?>(null) }
     var cropUri by remember { mutableStateOf<Uri?>(null) }
     var avatarBytes by remember { mutableStateOf<ByteArray?>(null) }
     val avatarBitmap = rememberBytesBitmap(avatarBytes)
@@ -180,6 +188,51 @@ fun UIFriendCreateScreen(
                             text = "可选，之后在对话页点头像也能换",
                             fontSize = 12.sp,
                             color = UIFriendBarItemMetaColor
+                        )
+                    }
+                }
+
+                if (personas.isNotEmpty()) {
+                    val applied = personas.firstOrNull { it.id == appliedPersonaId }
+                    val modified = applied != null &&
+                        (name != applied.name || role != applied.role || prompt != applied.prompt)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .uiCard(shape = RoundedCornerShape(UIRadiusCard), elevation = 6.dp)
+                            .clickable { pickingPersona = true }
+                            .padding(horizontal = 16.dp, vertical = 13.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = when {
+                                    applied == null -> personaToggleLabel
+                                    modified -> "已基于：${applied.name}"
+                                    else -> "已套用：${applied.name}"
+                                },
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = UIFriendBarTitleColor
+                            )
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                text = when {
+                                    applied == null -> "内置人格与角色，选一个再改，比从空白开始快"
+                                    modified -> "${applied.role} · 已按你的想法改过"
+                                    else -> "${applied.role} · 已填好，可继续修改"
+                                },
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp,
+                                color = UIFriendBarItemMetaColor
+                            )
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            text = if (applied == null) "选择" else "换一个",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = UIFriendBarTagTextBlue
                         )
                     }
                 }
@@ -365,6 +418,48 @@ fun UIFriendCreateScreen(
             onConfirm = { bytes ->
                 avatarBytes = bytes
                 cropUri = null
+            }
+        )
+    }
+
+    if (pickingPersona) {
+        UIPersonaPickerSheet(
+            personas = personas,
+            onDismiss = { pickingPersona = false },
+            onPick = { persona ->
+                pickingPersona = false
+                val unchanged = name == persona.name && role == persona.role && prompt == persona.prompt
+                if (unchanged || (name.isBlank() && role.isBlank() && prompt.isBlank())) {
+                    name = persona.name
+                    role = persona.role
+                    prompt = persona.prompt
+                    appliedPersonaId = persona.id
+                } else {
+                    pendingPersona = persona
+                }
+            }
+        )
+    }
+
+    val replacing = pendingPersona
+    if (replacing != null) {
+        UIIosDialog(
+            title = "替换现在的内容？",
+            subtitle = "套用「${replacing.name}」会覆盖已经填好的昵称、角色和设定。",
+            onDismiss = { pendingPersona = null },
+            actions = {
+                UIDialogButtons(
+                    confirmText = "替换",
+                    onConfirm = {
+                        name = replacing.name
+                        role = replacing.role
+                        prompt = replacing.prompt
+                        appliedPersonaId = replacing.id
+                        pendingPersona = null
+                    },
+                    cancelText = "再想想",
+                    onCancel = { pendingPersona = null }
+                )
             }
         )
     }

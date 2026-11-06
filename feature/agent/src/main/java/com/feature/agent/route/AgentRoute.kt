@@ -55,6 +55,7 @@ fun AgentRoute(
                 onModelSelect = viewModel::selectModel,
                 initialThinking = state.thinkingEnabled,
                 onCancel = onExit,
+                personas = personaPresets,
                 onSubmit = { name, role, prompt, avatarBytes, thinking ->
                     val friend = viewModel.createFriend(
                         name = name,
@@ -139,7 +140,9 @@ fun AgentRoute(
                     initialThinking = friend.thinkingEnabled,
                     editing = true,
                     modelLabel = "${friend.brand} · ${friend.model}",
-                    thinkingSwitchable = provider?.thinkingSwitchable ?: true
+                    thinkingSwitchable = provider?.thinkingSwitchable ?: true,
+                    personas = personaPresets,
+                    personaToggleLabel = "换成内置模板"
                 )
             }
         }
