@@ -47,9 +47,14 @@ data class RoomEntity(
     val prompt: String = "",
     val discussionEnabled: Boolean = false,
     val discussionWindow: Int = 1,
+    /** 旧字段，已废弃（发言顺序改为客户端随机），保留列以兼容历史库。 */
     val sequentialSpeaking: Boolean = false,
     val pinned: Boolean = false,
-    val avatarPath: String? = null
+    val avatarPath: String? = null,
+    /** 用户发言后，是否让成员继续自由对话。 */
+    val autoChatEnabled: Boolean = false,
+    /** 自由对话接话次数上限（一次接话 = 一轮）。 */
+    val autoChatTurns: Int = 3
 )
 
 @Entity(

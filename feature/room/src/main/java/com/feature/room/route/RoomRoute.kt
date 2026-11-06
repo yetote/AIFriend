@@ -140,6 +140,13 @@ fun RoomRoute(
                     mentionIds = state.roomMentionIds,
                     hasMoreMessages = room.id in state.roomHasMore,
                     isLoadingMore = room.id in state.roomLoadingMore,
+                    autoChatActive = state.autoChatRoomId == room.id,
+                    autoChatCompleted = if (state.autoChatRoomId == room.id) {
+                        state.autoChatCompleted
+                    } else {
+                        0
+                    },
+                    autoChatTotal = if (state.autoChatRoomId == room.id) state.autoChatTotal else 0,
                     onInputChange = viewModel::updateRoomInput,
                     onSend = viewModel::sendRoomMessage,
                     onBack = onExit,
@@ -148,6 +155,7 @@ fun RoomRoute(
                     onMentionSelect = viewModel::selectMentions,
                     onStopReply = viewModel::stopRoomReply,
                     onStopAll = viewModel::stopAllRoomReplies,
+                    onStopAutoChat = { viewModel.stopAutoChat(room.id) },
                     onOpenSettings = { screen = RoomScreen.Settings(room.id) },
                     onLoadMore = { viewModel.loadOlderRoomMessages(room.id) }
                 )
@@ -209,18 +217,20 @@ fun RoomRoute(
                     maxMembers = MAX_ROOM_MEMBERS,
                     discussionEnabled = room.discussionEnabled,
                     discussionWindow = room.discussionWindow,
-                    sequentialSpeaking = room.sequentialSpeaking,
+                    autoChatEnabled = room.autoChatEnabled,
+                    autoChatTurns = room.autoChatTurns,
                     messageCount = roomMessages.size,
                     estimatedContextTokens = estimatedTokens,
                     estimatedRequestCount = estimatedTargets.size,
-                    onSave = { name, prompt, discussion, window, sequential ->
+                    onSave = { name, prompt, discussion, window, autoChat, turns ->
                         viewModel.saveRoomSettings(
                             room.id,
                             name,
                             prompt,
                             discussion,
                             window,
-                            sequential
+                            autoChat,
+                            turns
                         )
                         screen = RoomScreen.Chat(room.id)
                     },

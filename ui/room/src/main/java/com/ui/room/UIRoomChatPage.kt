@@ -125,6 +125,9 @@ fun UIRoomChatPage(
     mentionIds: Set<String>,
     hasMoreMessages: Boolean,
     isLoadingMore: Boolean,
+    autoChatActive: Boolean = false,
+    autoChatCompleted: Int = 0,
+    autoChatTotal: Int = 0,
     onInputChange: (String) -> Unit,
     onSend: () -> Unit,
     onBack: () -> Unit,
@@ -133,6 +136,7 @@ fun UIRoomChatPage(
     onMentionSelect: (Set<String>) -> Unit,
     onStopReply: (String) -> Unit,
     onStopAll: () -> Unit,
+    onStopAutoChat: () -> Unit = {},
     onOpenSettings: () -> Unit,
     onLoadMore: () -> Unit
 ) {
@@ -162,8 +166,11 @@ fun UIRoomChatPage(
                 onManageMembers = { showMembers = true },
                 onSearch = { showSearch = true },
                 onOpenSettings = onOpenSettings,
-                showStop = pendingIds.isNotEmpty(),
-                onStopAll = onStopAll
+                showStop = pendingIds.isNotEmpty() || autoChatActive,
+                onStopAll = if (autoChatActive) onStopAutoChat else onStopAll,
+                autoChatActive = autoChatActive,
+                autoChatCompleted = autoChatCompleted,
+                autoChatTotal = autoChatTotal
             )
 
             var didInitialScroll by remember { mutableStateOf(false) }
@@ -422,7 +429,10 @@ private fun RoomTopBar(
     onSearch: () -> Unit,
     onOpenSettings: () -> Unit,
     showStop: Boolean,
-    onStopAll: () -> Unit
+    onStopAll: () -> Unit,
+    autoChatActive: Boolean = false,
+    autoChatCompleted: Int = 0,
+    autoChatTotal: Int = 0
 ) {
     Row(
         modifier = Modifier
@@ -454,12 +464,42 @@ private fun RoomTopBar(
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                text = "$memberCount 位好友",
+                text = if (autoChatActive) {
+                    val total = if (autoChatTotal > 0) "/$autoChatTotal" else ""
+                    "自由对话中 $autoChatCompleted$total"
+                } else {
+                    "$memberCount 位好友"
+                },
                 fontSize = 12.sp,
-                color = UIFriendBarItemMetaColor
+                color = if (autoChatActive) UIFriendBarTagTextBlue else UIFriendBarItemMetaColor
             )
         }
-        if (showStop) {
+        if (autoChatActive) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(UIFriendBarTagBgBlue)
+                    .clickable(onClick = onStopAll)
+                    .padding(horizontal = 10.dp, vertical = 5.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Filled.Stop,
+                        contentDescription = "结束自由对话",
+                        tint = UIFriendBarTagTextBlue,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text = "结束",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = UIFriendBarTagTextBlue
+                    )
+                }
+            }
+        } else if (showStop) {
             IconButton(onClick = onStopAll) {
                 Icon(
                     imageVector = Icons.Filled.Stop,
