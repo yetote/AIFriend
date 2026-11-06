@@ -162,4 +162,50 @@ class AutoChatPolicyTest {
         assertEquals(AutoChatPolicy.TURN_RANGE.last, AutoChatPolicy.sanitizeTurns(999))
         assertEquals(8, AutoChatPolicy.sanitizeTurns(8))
     }
+
+    @Test
+    fun `isFinalTurn closes on the configured turn instead of a fixed round`() {
+        // 设 3 轮：第 3 轮收口，第 2 轮还继续
+        assertFalse(AutoChatPolicy.isFinalTurn(completedTurns = 1, maxTurns = 3))
+        assertTrue(AutoChatPolicy.isFinalTurn(completedTurns = 2, maxTurns = 3))
+
+        // 设 6 轮：同样只在第 6 轮收口，不会在第 2 轮就收
+        assertFalse(AutoChatPolicy.isFinalTurn(completedTurns = 1, maxTurns = 6))
+        assertFalse(AutoChatPolicy.isFinalTurn(completedTurns = 2, maxTurns = 6))
+        assertFalse(AutoChatPolicy.isFinalTurn(completedTurns = 4, maxTurns = 6))
+        assertTrue(AutoChatPolicy.isFinalTurn(completedTurns = 5, maxTurns = 6))
+    }
+
+    @Test
+    fun `isFinalTurn is true from the first turn when only one turn is allowed`() {
+        assertTrue(AutoChatPolicy.isFinalTurn(completedTurns = 0, maxTurns = 1))
+    }
+
+    @Test
+    fun `isFinalTurn sanitizes out-of-range turn limits`() {
+        // 0 会被收敛成 1，所以一开始就是最后一轮
+        assertTrue(AutoChatPolicy.isFinalTurn(completedTurns = 0, maxTurns = 0))
+        // 999 收敛成上限，第 18 轮还继续
+        assertFalse(
+            AutoChatPolicy.isFinalTurn(
+                completedTurns = 17,
+                maxTurns = 999
+            )
+        )
+    }
+
+    @Test
+    fun `isFinalTurn lines up with shouldContinue`() {
+        // 最后一轮之后 shouldContinue 必须为 false，两者不能各说各话
+        val total = 4
+        val lastTurnStart = total - 1
+        assertTrue(AutoChatPolicy.isFinalTurn(lastTurnStart, total))
+        assertFalse(
+            AutoChatPolicy.shouldContinue(
+                completedTurns = lastTurnStart + 1,
+                maxTurns = total,
+                speakerCount = 3
+            )
+        )
+    }
 }

@@ -306,7 +306,7 @@ fun UIRoomSettingsScreen(
                     SettingSwitchRow(
                         title = "自由对话",
                         subtitle = if (discussion) {
-                            "你说完之后，成员会按随机顺序接着聊，直到用完接话次数"
+                            "你说完之后，成员会围绕同一个话题接着聊，直到用完接话次数"
                         } else {
                             "需要先开启讨论模式：成员看不到别人的发言就没法接话"
                         },
@@ -357,7 +357,7 @@ fun UIRoomSettingsScreen(
 
                         if (window < 2) {
                             Text(
-                                text = "回看窗口只有 1 轮，接话容易越聊越散，建议调到 2 以上",
+                                text = "回看窗口只有 1 轮，成员只看得到紧挨着的那句，话题很容易越传越偏；自由对话会自动按 2 轮处理",
                                 fontSize = 12.sp,
                                 lineHeight = 17.sp,
                                 color = UIFriendBarRed,

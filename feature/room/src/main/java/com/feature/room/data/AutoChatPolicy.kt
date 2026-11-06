@@ -117,6 +117,22 @@ object AutoChatPolicy {
     /** 接话次数收敛到合法区间。 */
     fun sanitizeTurns(turns: Int): Int = turns.coerceIn(TURN_RANGE)
 
+    /**
+     * 这一轮是不是自由对话的最后一轮。
+     *
+     * 收口必须发生在**用户设置的接话次数用完的那一刻**，而不是写死的第几轮：
+     * 接话设成 3 就在第 3 轮收口，设成 6 就在第 6 轮收口，
+     * 否则设多了照样在中途被打断，设少了又根本轮不到收口。
+     *
+     * @param completedTurns 已经完成的接话次数（即将开始的这一轮是第 completedTurns + 1 轮）
+     * @param maxTurns 用户设置的接话上限
+     */
+    fun isFinalTurn(completedTurns: Int, maxTurns: Int): Boolean {
+        val total = sanitizeTurns(maxTurns)
+        if (total <= 1) return true
+        return completedTurns >= total - 1
+    }
+
     /** 成员上限，供测试断言用。 */
     val maxMembers: Int = MAX_ROOM_MEMBERS
 }
