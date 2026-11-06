@@ -6,6 +6,8 @@ import com.ui.common.UIGroupAvatar
 import com.ui.common.UIGroupMember
 import android.text.format.DateUtils
 import android.widget.Toast
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -66,6 +68,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -92,9 +95,9 @@ import com.ui.common.theme.UIComposerHeight
 import com.ui.common.theme.UIFieldFill
 import com.ui.common.theme.UIGlassBar
 import com.ui.common.theme.UIGlassStroke
+import com.ui.common.theme.UIGradientBackground
 import com.ui.common.theme.UIGlassSurface
 import com.ui.common.theme.UIGlassSurfaceStrong
-import com.ui.common.theme.UIGradientBackground
 import com.ui.common.theme.UIIosDialog
 import com.ui.common.theme.UIRadiusCard
 import com.ui.common.theme.UIRadiusBubble
@@ -127,6 +130,8 @@ fun UIRoomChatPage(
     messages: List<UIRoomMessage>,
     input: String,
     userAvatarPath: String?,
+    /** 首屏消息还在读：消息区转圈，顶栏和输入框照常显示，避免整页跳变。 */
+    loadingMessages: Boolean = false,
     pendingIds: Set<String>,
     errors: Map<String, String>,
     mentionIds: Set<String>,
@@ -186,8 +191,23 @@ fun UIRoomChatPage(
             var didInitialScroll by remember { mutableStateOf(false) }
             var listHeight by remember { mutableIntStateOf(0) }
 
+            // 首屏定位完成前，用遮罩盖住消息区。遮罩随定位完成淡出，
+            // 用户看到的是内容浮现，而不是「先顶部后底部」的跳动。
+            val coverTarget =
+                if (loadingMessages || (totalItems > 0 && !didInitialScroll)) 1f else 0f
+            val coverAlpha by animateFloatAsState(
+                targetValue = coverTarget,
+                animationSpec = tween(durationMillis = 180),
+                label = "roomMessagesCover"
+            )
+
             LaunchedEffect(messages.lastOrNull()?.id, pendingIds.size, errors.size) {
-                if (totalItems <= 0) return@LaunchedEffect
+                if (totalItems <= 0) {
+                    // 没有可滚动的内容：读完了才算「已定位」，否则遮罩要一直盖着，
+                    // 等消息到了再走正常的一次性底部定位。
+                    if (!loadingMessages) didInitialScroll = true
+                    return@LaunchedEffect
+                }
                 if (!didInitialScroll) {
                     listState.scrollToItem(lastItemIndex)
                     didInitialScroll = true
@@ -218,107 +238,143 @@ fun UIRoomChatPage(
                     }
             }
 
-            LazyColumn(
-                state = listState,
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
-                    .onSizeChanged { listHeight = it.height },
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                if (messages.isEmpty()) {
-                    item {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 56.dp, start = 24.dp, end = 24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .onSizeChanged { listHeight = it.height },
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    if (messages.isEmpty() && !loadingMessages) {
+                        item {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 56.dp, start = 24.dp, end = 24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(64.dp)
+                                        .clip(CircleShape)
+                                        .background(UIGlassSurfaceStrong)
+                                        .border(0.5.dp, UIGlassStroke, CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(text = "@", fontSize = 26.sp, color = UIFriendBarTagTextBlue)
+                                }
+                                Spacer(Modifier.height(16.dp))
+                                Text(
+                                    text = "开始和 ${members.size} 位好友聊天",
+                                    textAlign = TextAlign.Center,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = UIFriendBarTitleColor
+                                )
+                                Spacer(Modifier.height(6.dp))
+                                Text(
+                                    text = "输入 @ 可以只问某位成员，不 @ 则全员回答",
+                                    textAlign = TextAlign.Center,
+                                    fontSize = 13.sp,
+                                    lineHeight = 19.sp,
+                                    color = UIFriendBarItemMetaColor
+                                )
+                            }
+                        }
+                    }
+                    if (isLoadingMore) {
+                        item(key = "loading_more") {
                             Box(
                                 modifier = Modifier
-                                    .size(64.dp)
-                                    .clip(CircleShape)
-                                    .background(UIGlassSurfaceStrong)
-                                    .border(0.5.dp, UIGlassStroke, CircleShape),
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text(text = "@", fontSize = 26.sp, color = UIFriendBarTagTextBlue)
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp,
+                                    color = UIFriendBarTagTextBlue
+                                )
                             }
-                            Spacer(Modifier.height(16.dp))
-                            Text(
-                                text = "开始和 ${members.size} 位好友聊天",
-                                textAlign = TextAlign.Center,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = UIFriendBarTitleColor
-                            )
-                            Spacer(Modifier.height(6.dp))
-                            Text(
-                                text = "输入 @ 可以只问某位成员，不 @ 则全员回答",
-                                textAlign = TextAlign.Center,
-                                fontSize = 13.sp,
-                                lineHeight = 19.sp,
-                                color = UIFriendBarItemMetaColor
+                        }
+                    }
+                    itemsIndexed(
+                        items = messages,
+                        key = { _, message -> message.id }
+                    ) { index, message ->
+                        val previous = messages.getOrNull(index - 1)
+                        val showDate = previous == null || !isSameDay(previous.createdAt, message.createdAt)
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            if (showDate) {
+                                RoomDateSeparator(timestamp = message.createdAt)
+                            }
+                            if (message.isSystem) {
+                                RoomSystemMessage(text = message.content)
+                            } else {
+                                RoomMessageBubble(
+                                    message = message,
+                                    userAvatarPath = userAvatarPath,
+                                    onLongPress = { actionMessage = message }
+                                )
+                            }
+                        }
+                    }
+                    pendingIds.forEach { friendId ->
+                        item {
+                            TypingRow(
+                                name = memberNames[friendId] ?: "好友",
+                                onStop = { onStopReply(friendId) }
                             )
                         }
                     }
-                }
-                if (isLoadingMore) {
-                    item(key = "loading_more") {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 8.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                strokeWidth = 2.dp,
-                                color = UIFriendBarTagTextBlue
-                            )
-                        }
-                    }
-                }
-                itemsIndexed(
-                    items = messages,
-                    key = { _, message -> message.id }
-                ) { index, message ->
-                    val previous = messages.getOrNull(index - 1)
-                    val showDate = previous == null || !isSameDay(previous.createdAt, message.createdAt)
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        if (showDate) {
-                            RoomDateSeparator(timestamp = message.createdAt)
-                        }
-                        if (message.isSystem) {
-                            RoomSystemMessage(text = message.content)
-                        } else {
-                            RoomMessageBubble(
+                    errors.forEach { (friendId, message) ->
+                        item {
+                            RoomErrorRow(
+                                name = memberNames[friendId] ?: "好友",
                                 message = message,
-                                userAvatarPath = userAvatarPath,
-                                onLongPress = { actionMessage = message }
+                                onRetry = { onRetry(friendId) }
                             )
                         }
                     }
                 }
-                pendingIds.forEach { friendId ->
-                    item {
-                        TypingRow(
-                            name = memberNames[friendId] ?: "好友",
-                            onStop = { onStopReply(friendId) }
-                        )
+
+                    // 首屏消息还没读完、或列表刚出现还没定位到底部时，用一层遮罩盖住。
+                    // 这样用户永远看不到「先顶部后底部」的跳动，只会看到内容淡入。
+                    if (coverAlpha > 0f) {
+                        // 用与整页相同的渐变做遮罩，避免露出一块纯色方块。
+                        UIGradientBackground(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer { alpha = coverAlpha }
+                        ) {
+                            // 只有真的在等数据时才转圈；单纯等首帧定位时保持纯底色，
+                            // 否则快速进入已有缓存的房间会闪一下 spinner。
+                            if (loadingMessages) {
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.Center)
+                                        .size(56.dp)
+                                        .clip(CircleShape)
+                                        .background(UIGlassSurfaceStrong)
+                                        .border(0.5.dp, UIGlassStroke, CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(22.dp),
+                                        strokeWidth = 2.dp,
+                                        color = UIFriendBarTagTextBlue
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
-                errors.forEach { (friendId, message) ->
-                    item {
-                        RoomErrorRow(
-                            name = memberNames[friendId] ?: "好友",
-                            message = message,
-                            onRetry = { onRetry(friendId) }
-                        )
-                    }
-                }
-            }
 
             RoomInputBar(
                 input = input,
