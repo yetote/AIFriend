@@ -12,6 +12,7 @@ dependencies {
     implementation(project(":ui:common"))
     implementation(project(":core:ai"))
     implementation(project(":core:common"))
+    implementation(project(":core:persona"))
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)

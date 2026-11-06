@@ -60,7 +60,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.ui.agent.data.UIPersona
+import com.core.persona.Persona
 import com.ui.agent.data.UIProvider
 import com.ui.common.theme.UIActionBrush
 import com.ui.common.theme.UIBlobBlue
@@ -98,7 +98,7 @@ fun UIFriendCreateScreen(
     editing: Boolean = false,
     modelLabel: String? = null,
     thinkingSwitchable: Boolean = true,
-    personas: List<UIPersona> = emptyList(),
+    personas: List<Persona> = emptyList(),
     personaToggleLabel: String = "从模板开始"
 ) {
     var name by rememberSaveable(initialName) { mutableStateOf(initialName) }
@@ -107,7 +107,7 @@ fun UIFriendCreateScreen(
     var thinking by rememberSaveable(initialThinking) { mutableStateOf(initialThinking) }
     var pickingPersona by remember { mutableStateOf(false) }
     var appliedPersonaId by rememberSaveable { mutableStateOf("") }
-    var pendingPersona by remember { mutableStateOf<UIPersona?>(null) }
+    var pendingPersona by remember { mutableStateOf<Persona?>(null) }
     var cropUri by remember { mutableStateOf<Uri?>(null) }
     var avatarBytes by remember { mutableStateOf<ByteArray?>(null) }
     val avatarBitmap = rememberBytesBitmap(avatarBytes)

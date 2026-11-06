@@ -39,7 +39,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.ui.agent.data.UIPersona
+import com.core.persona.Persona
+import com.core.persona.PersonaCategory
 import com.ui.agent.data.filterPersonas
 import com.ui.agent.data.personaCategories
 import com.ui.common.UIAvatar
@@ -61,14 +62,19 @@ import com.ui.common.theme.uiControl
  */
 @Composable
 fun UIPersonaPickerSheet(
-    personas: List<UIPersona>,
+    personas: List<Persona>,
     onDismiss: () -> Unit,
-    onPick: (UIPersona) -> Unit
+    onPick: (Persona) -> Unit
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     var category by rememberSaveable { mutableStateOf<String?>(null) }
     val categories = remember(personas) { personas.personaCategories() }
-    val filtered = remember(personas, category, query) { personas.filterPersonas(category, query) }
+    val selectedCategory = category?.let { key ->
+        PersonaCategory.entries.firstOrNull { it.name == key }
+    }
+    val filtered = remember(personas, selectedCategory, query) {
+        personas.filterPersonas(selectedCategory, query)
+    }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -161,11 +167,11 @@ fun UIPersonaPickerSheet(
                         onClick = { category = null }
                     )
                 }
-                items(categories) { (key, label) ->
+                items(categories) { item ->
                     CategoryChip(
-                        label = label,
-                        selected = category == key,
-                        onClick = { category = if (category == key) null else key }
+                        label = item.label,
+                        selected = category == item.name,
+                        onClick = { category = if (category == item.name) null else item.name }
                     )
                 }
             }
@@ -221,7 +227,7 @@ private fun CategoryChip(label: String, selected: Boolean, onClick: () -> Unit) 
 }
 
 @Composable
-private fun PersonaRow(persona: UIPersona, onClick: () -> Unit) {
+private fun PersonaRow(persona: Persona, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()

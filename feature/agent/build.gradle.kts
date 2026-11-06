@@ -13,6 +13,7 @@ android {
 dependencies {
     implementation(project(":core:ai"))
     implementation(project(":core:common"))
+    implementation(project(":core:persona"))
     implementation(project(":core:repository"))
     implementation(project(":ui:agent"))
     implementation(project(":ui:common"))
