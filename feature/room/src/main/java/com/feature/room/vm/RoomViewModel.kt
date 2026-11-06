@@ -16,6 +16,7 @@ import com.feature.agent.data.trimToBudget
 import com.feature.agent.model.Friend
 import com.feature.room.contract.RoomUiState
 import com.feature.room.data.AutoChatPolicy
+import com.feature.room.data.RoomTopic
 import com.feature.room.data.buildRoomContext
 import com.feature.room.data.buildRoomMarkdown
 import com.feature.room.data.buildRoomSystemPrompt
@@ -425,10 +426,17 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
                         AUTO_CHAT_TURN_GAP_MIN_MS +
                             Random.nextLong(AUTO_CHAT_TURN_GAP_SPREAD_MS)
                     )
+                    // 收口发生在用户设定的接话次数用完的那一刻，不写死第几轮：
+                    // 设 3 就第 3 轮收，设 6 就第 6 轮收，这样「接话次数」才真的说了算。
+                    val closing = AutoChatPolicy.isFinalTurn(
+                        completedTurns = completed,
+                        maxTurns = total
+                    )
                     val replied = runRoomReply(
                         roomId = roomId,
                         friendId = next,
-                        isBurstTurn = true
+                        isBurstTurn = true,
+                        isClosingTurn = closing
                     )
                     lastReply = replied
                     if (replied == null) {
@@ -704,7 +712,8 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
         roomId: String,
         friendId: String,
         roundIndex: Int? = null,
-        isBurstTurn: Boolean = false
+        isBurstTurn: Boolean = false,
+        isClosingTurn: Boolean = false
     ): String? {
         val lock = roomLocks.getOrPut(roomKey(roomId, friendId)) { Mutex() }
         return lock.withLock {
@@ -723,7 +732,14 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
                 messages = state.roomMessages.filter { it.roomId == roomId },
                 friendId = friendId,
                 joinedSeq = room.memberJoinSeq[friendId] ?: 0L,
-                otherWindowRounds = if (discussion) room.discussionWindow else null,
+                // 自由对话里每一条别人的发言都算一轮：窗口只给 1 时，每个人都只看得到
+                // 紧挨着的那一句，话题会像传话游戏一样越传越偏，所以这里兜底到 2 轮。
+                otherWindowRounds = if (discussion) {
+                    if (isBurstTurn) room.discussionWindow.coerceAtLeast(AUTO_CHAT_MIN_WINDOW)
+                    else room.discussionWindow
+                } else {
+                    null
+                },
                 friendNames = room.memberIds.mapNotNull { id ->
                     state.friends.firstOrNull { it.id == id }?.let { id to it.name }
                 }.toMap(),
@@ -735,6 +751,25 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
                     "（本轮你是第 ${roundIndex + 1} 位发言，前面已经有 $roundIndex 位成员发言。" +
                         "请基于前面的内容补充新的观点；不要复读别人或自己之前的句式、数字和结论。）"
                 )
+            }
+            // 自由对话最容易跑偏的地方：上下文一裁，最初那句用户需求就没了，
+            // 成员只能看着上一句猜主题。这里把话题锚点固定追加在最后，
+            // 保证每一轮接话都有一条共同的线；锚点本身不受下面的预算裁剪影响。
+            if (isBurstTurn) {
+                val anchor = RoomTopic.anchorOrRoomPrompt(
+                    messages = state.roomMessages.filter { it.roomId == roomId },
+                    roomPrompt = room.prompt,
+                    friendId = friendId
+                )
+                if (anchor != null) {
+                    context = context + ChatMessage.user(
+                        RoomTopic.hint(
+                            anchor = anchor,
+                            speakerName = friend.name,
+                            closing = isClosingTurn
+                        )
+                    )
+                }
             }
             context = context.trimToBudget(maxTokens)
             if (context.isEmpty()) return@withLock null
@@ -884,6 +919,12 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
 
         /** 自由对话每一轮只保留很近的上下文，避免接话越聊越长把 token 撑爆。 */
         const val AUTO_CHAT_MAX_TOKENS = 2000
+
+        /**
+         * 自由对话时其余成员发言的最少回看轮数。
+         * 只看 1 轮等于只看到紧挨着的那一句，话题会被传话游戏式地越传越偏。
+         */
+        const val AUTO_CHAT_MIN_WINDOW = 2
 
         /** 某位成员失败后，等一小会儿再换下一位，避免连续打满接口。 */
         const val AUTO_CHAT_RETRY_GAP_MS = 600L
