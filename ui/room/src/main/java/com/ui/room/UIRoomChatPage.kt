@@ -64,7 +64,9 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -122,6 +124,7 @@ fun UIRoomChatPage(
     var showMembers by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
     var showMentionPicker by remember { mutableStateOf(false) }
+    var mentionTriggerAt by remember { mutableStateOf<Int?>(null) }
     var actionMessage by remember { mutableStateOf<UIRoomMessage?>(null) }
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
@@ -265,10 +268,12 @@ fun UIRoomChatPage(
 
         RoomInputBar(
             input = input,
-            hasMention = mentionIds.isNotEmpty(),
             onInputChange = onInputChange,
             onSend = onSend,
-            onMentionClick = { showMentionPicker = true }
+            onAtTyped = { index ->
+                mentionTriggerAt = index
+                showMentionPicker = true
+            }
         )
     }
 
@@ -276,9 +281,21 @@ fun UIRoomChatPage(
         MentionPickerDialog(
             members = members,
             selectedIds = mentionIds,
-            onDismiss = { showMentionPicker = false },
+            onDismiss = {
+                showMentionPicker = false
+                mentionTriggerAt = null
+            },
             onConfirm = { ids ->
+                val insertAt = (mentionTriggerAt ?: input.length).coerceIn(0, input.length)
+                val mentionText = members
+                    .filter { it.id in ids }
+                    .joinToString(" ") { "@${it.name}" }
+                    .let { if (it.isBlank()) "" else "$it " }
+                onInputChange(
+                    input.substring(0, insertAt) + mentionText + input.substring(insertAt)
+                )
                 onMentionSelect(ids)
+                mentionTriggerAt = null
                 showMentionPicker = false
             }
         )
@@ -632,6 +649,12 @@ private fun MentionPickerDialog(
                             }
                         )
                         Spacer(Modifier.width(8.dp))
+                        UIAvatar(
+                            name = member.name,
+                            avatarPath = member.avatarPath,
+                            size = 32.dp
+                        )
+                        Spacer(Modifier.width(10.dp))
                         Text(
                             text = member.name,
                             fontSize = 15.sp,
@@ -657,12 +680,18 @@ private fun MentionPickerDialog(
 @Composable
 private fun RoomInputBar(
     input: String,
-    hasMention: Boolean,
     onInputChange: (String) -> Unit,
     onSend: () -> Unit,
-    onMentionClick: () -> Unit
+    onAtTyped: (Int) -> Unit
 ) {
     val canSend = input.isNotBlank()
+    var value by remember { mutableStateOf(TextFieldValue(input)) }
+
+    LaunchedEffect(input) {
+        if (value.text != input) {
+            value = value.copy(text = input, selection = TextRange(input.length))
+        }
+    }
 
     Row(
         modifier = Modifier
@@ -686,8 +715,27 @@ private fun RoomInputBar(
                 )
             }
             BasicTextField(
-                value = input,
-                onValueChange = onInputChange,
+                value = value,
+                onValueChange = { new ->
+                    val addedAt = new.text.length > value.text.length &&
+                        new.text.count { it == '@' } > value.text.count { it == '@' }
+                    if (addedAt) {
+                        val index = (new.selection.start - 1)
+                            .coerceIn(0, new.text.lastIndex.coerceAtLeast(0))
+                        if (new.text.getOrNull(index) == '@') {
+                            val stripped = new.text.removeRange(index, index + 1)
+                            value = new.copy(text = stripped, selection = TextRange(index))
+                            onInputChange(stripped)
+                            onAtTyped(index)
+                        } else {
+                            value = new
+                            onInputChange(new.text)
+                        }
+                    } else {
+                        value = new
+                        onInputChange(new.text)
+                    }
+                },
                 modifier = Modifier.fillMaxWidth(),
                 textStyle = TextStyle(fontSize = 15.sp, color = UIFriendBarTitleColor),
                 maxLines = 4,
@@ -696,22 +744,6 @@ private fun RoomInputBar(
             )
         }
         Spacer(Modifier.width(8.dp))
-        Box(
-            modifier = Modifier
-                .size(36.dp)
-                .clip(CircleShape)
-                .background(if (hasMention) UIFriendBarTagBgBlue else UIChatInputBg)
-                .clickable { onMentionClick() },
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = "@",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Medium,
-                color = if (hasMention) UIFriendBarTagTextBlue else UIFriendBarSubtitleColor
-            )
-        }
-        Spacer(Modifier.width(6.dp))
         Box(
             modifier = Modifier
                 .size(44.dp)

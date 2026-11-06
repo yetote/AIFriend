@@ -48,6 +48,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ui.room.data.UIRoomMember
+import com.ui.common.UIAvatar
 import com.ui.common.theme.UIFriendBarCreateButtonBg
 import com.ui.common.theme.UIFriendBarCreateButtonText
 import com.ui.common.theme.UIFriendBarGray
@@ -231,6 +232,12 @@ fun UIRoomCreateScreen(
                         onCheckedChange = { onToggleFriend(friend.id) }
                     )
                     Spacer(Modifier.width(4.dp))
+                    UIAvatar(
+                        name = friend.name,
+                        avatarPath = friend.avatarPath,
+                        size = 36.dp
+                    )
+                    Spacer(Modifier.width(10.dp))
                     Column {
                         Text(
                             text = friend.name,

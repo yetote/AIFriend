@@ -290,31 +290,11 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
         enqueueRoomReply(room.id, friendId)
     }
 
-    /** 选择器选中 @ 成员：同步写入输入框，并记录成员 ID 供发送时落库。 */
+    /** 记录选择器选中的 @ 成员 ID，输入框里的 @名字 由 UI 负责插入。 */
     fun selectMentions(friendIds: Set<String>) {
-        val state = _uiState.value
-        val room = state.activeRoom ?: return
-        val valid = friendIds.intersect(room.memberIds.toSet())
-        val names = room.memberIds.mapNotNull { id ->
-            state.friends.firstOrNull { it.id == id }?.let { id to it.name }
-        }.toMap()
-
-        var text = state.roomInput
-        state.roomMentionIds.forEach { oldId ->
-            names[oldId]?.let { oldName ->
-                text = text.replace("@$oldName ", "").replace("@$oldName", "")
-            }
-        }
-        val prefix = if (valid.isNotEmpty()) {
-            room.memberIds
-                .filter { it in valid }
-                .mapNotNull { names[it] }
-                .joinToString(" ") { "@$it" } + " "
-        } else {
-            ""
-        }
+        val room = _uiState.value.activeRoom ?: return
         _uiState.update {
-            it.copy(roomMentionIds = valid, roomInput = prefix + text)
+            it.copy(roomMentionIds = friendIds.intersect(room.memberIds.toSet()))
         }
     }
 
