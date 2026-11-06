@@ -8,6 +8,7 @@ import com.ui.agent.UIFriendBar
 import com.ui.common.pageInsetsBottom
 import com.ui.common.pageInsetsTop
 import com.ui.common.UIAvatar
+import com.ui.common.UIGroupAvatar
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -268,12 +269,18 @@ private fun RoomSection(
                             .padding(horizontal = 14.dp, vertical = 12.dp)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            UIAvatar(
-                                name = room.name,
-                                avatarPath = room.avatarPath,
-                                size = 30.dp,
-                                shape = CircleShape
-                            )
+                            // 房间自己设了头像就用头像；否则用成员头像拼成群头像。
+                            // 36dp 是拼图的下限：2x2 时每格约 17dp，再小成员脸就糊成一团了。
+                            if (room.avatarPath != null) {
+                                UIAvatar(
+                                    name = room.name,
+                                    avatarPath = room.avatarPath,
+                                    size = 36.dp,
+                                    shape = CircleShape
+                                )
+                            } else {
+                                UIGroupAvatar(members = room.memberAvatars, size = 36.dp)
+                            }
                             Spacer(Modifier.width(10.dp))
                             Column {
                                 Text(

@@ -2,6 +2,8 @@ package com.ui.room
 
 import com.ui.common.pageInsets
 import com.ui.common.UIAvatar
+import com.ui.common.UIGroupAvatar
+import com.ui.common.UIGroupMember
 import android.text.format.DateUtils
 import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -167,6 +169,9 @@ fun UIRoomChatPage(
                 roomName = roomName,
                 avatarPath = avatarPath,
                 memberCount = members.size,
+                memberAvatars = members.map {
+                    UIGroupMember(name = it.name, avatarPath = it.avatarPath)
+                },
                 onBack = onBack,
                 onManageMembers = { showMembers = true },
                 onSearch = { showSearch = true },
@@ -429,6 +434,7 @@ private fun RoomTopBar(
     roomName: String,
     avatarPath: String?,
     memberCount: Int,
+    memberAvatars: List<UIGroupMember> = emptyList(),
     onBack: () -> Unit,
     onManageMembers: () -> Unit,
     onSearch: () -> Unit,
@@ -456,11 +462,16 @@ private fun RoomTopBar(
                 tint = UIFriendBarTitleColor
             )
         }
-        UIAvatar(
-            name = roomName.ifBlank { "房间" },
-            avatarPath = avatarPath,
-            size = 38.dp
-        )
+        // 和首页卡片用同一套群头像：自己有头像优先，否则拼成员
+        if (avatarPath != null) {
+            UIAvatar(
+                name = roomName.ifBlank { "房间" },
+                avatarPath = avatarPath,
+                size = 38.dp
+            )
+        } else {
+            UIGroupAvatar(members = memberAvatars, size = 38.dp)
+        }
         Spacer(Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(

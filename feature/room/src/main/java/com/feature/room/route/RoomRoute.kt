@@ -18,6 +18,7 @@ import com.feature.room.contract.RoomScreen
 import com.feature.room.data.buildRoomContext
 import com.feature.room.model.MAX_ROOM_MEMBERS
 import com.feature.room.vm.RoomViewModel
+import com.ui.common.theme.UIGradientBackground
 import com.ui.room.UIRoomChatPage
 import com.ui.room.UIRoomCreateScreen
 import com.ui.room.UIRoomSettingsScreen
@@ -84,9 +85,15 @@ fun RoomRoute(
         }
 
         is RoomScreen.Chat -> {
-            val room = state.activeRoom
-            if (!state.loaded) {
-                // 等房间和好友加载完成
+            // 直接按目标 id 取房间，不依赖 openRoom() 是否已经跑过，
+            // 否则第一帧 activeRoom 还是空的，会先白一下再出内容。
+            val room = state.rooms.firstOrNull { it.id == current.roomId }
+            val membersPending =
+                room != null && room.memberIds.isNotEmpty() && !state.friendsLoaded
+            // 首屏消息没读完就渲染会先闪一下空状态页，等读完再画
+            val messagesPending = room != null && room.id !in state.roomMessagesLoaded
+            if (!state.loaded || membersPending || messagesPending) {
+                UIGradientBackground(content = {})
             } else if (room == null) {
                 LaunchedEffect(Unit) { onExit() }
             } else {
@@ -116,7 +123,10 @@ fun RoomRoute(
                         )
                     },
                     maxMembers = MAX_ROOM_MEMBERS,
-                    messages = state.activeRoomMessages.map { message ->
+                    messages = state.roomMessages
+                        .filter { it.roomId == room.id }
+                        .sortedWith(compareBy({ it.createdAt }, { it.seq }))
+                        .map { message ->
                         val aiId = (message.sender as? com.feature.room.model.RoomSender.Ai)?.friendId
                         UIRoomMessage(
                             id = message.id,
@@ -164,8 +174,10 @@ fun RoomRoute(
 
         is RoomScreen.Settings -> {
             val room = state.rooms.firstOrNull { it.id == current.roomId }
-            if (!state.loaded) {
-                // 等数据加载完成
+            val membersPending =
+                room != null && room.memberIds.isNotEmpty() && !state.friendsLoaded
+            if (!state.loaded || membersPending) {
+                UIGradientBackground(content = {})
             } else if (room == null) {
                 LaunchedEffect(Unit) { onExit() }
             } else {
