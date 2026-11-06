@@ -88,11 +88,10 @@ fun RoomRoute(
             // 直接按目标 id 取房间，不依赖 openRoom() 是否已经跑过，
             // 否则第一帧 activeRoom 还是空的，会先白一下再出内容。
             val room = state.rooms.firstOrNull { it.id == current.roomId }
-            val membersPending =
-                room != null && room.memberIds.isNotEmpty() && !state.friendsLoaded
-            // 首屏消息没读完就渲染会先闪一下空状态页，等读完再画
-            val messagesPending = room != null && room.id !in state.roomMessagesLoaded
-            if (!state.loaded || membersPending || messagesPending) {
+            // 只有在「房间表还没读出来」时才没有可信内容可画。一旦拿到 room，
+            // 顶栏和输入框就是确定的了，立刻画出来；消息区单独转圈。
+            // 之前把整页一起挡住，结果变成「空白 → 整页出现」，那才是跳一下的根源。
+            if (!state.loaded) {
                 UIGradientBackground(content = {})
             } else if (room == null) {
                 LaunchedEffect(Unit) { onExit() }
@@ -127,24 +126,26 @@ fun RoomRoute(
                         .filter { it.roomId == room.id }
                         .sortedWith(compareBy({ it.createdAt }, { it.seq }))
                         .map { message ->
-                        val aiId = (message.sender as? com.feature.room.model.RoomSender.Ai)?.friendId
-                        UIRoomMessage(
-                            id = message.id,
-                            isUser = message.sender == com.feature.room.model.RoomSender.User,
-                            isSystem = message.sender == com.feature.room.model.RoomSender.System,
-                            senderId = aiId,
-                            senderName = aiId?.let { id ->
-                                state.friends.firstOrNull { it.id == id }?.name ?: "已移除"
-                            },
-                            avatarPath = aiId?.let { id ->
-                                state.friends.firstOrNull { it.id == id }?.avatarPath
-                            },
-                            content = message.content,
-                            createdAt = message.createdAt
-                        )
-                    },
+                            val aiId = (message.sender as? com.feature.room.model.RoomSender.Ai)?.friendId
+                            UIRoomMessage(
+                                id = message.id,
+                                isUser = message.sender == com.feature.room.model.RoomSender.User,
+                                isSystem = message.sender == com.feature.room.model.RoomSender.System,
+                                senderId = aiId,
+                                senderName = aiId?.let { id ->
+                                    state.friends.firstOrNull { it.id == id }?.name ?: "已移除"
+                                },
+                                avatarPath = aiId?.let { id ->
+                                    state.friends.firstOrNull { it.id == id }?.avatarPath
+                                },
+                                content = message.content,
+                                createdAt = message.createdAt
+                            )
+                        },
                     input = state.roomInput,
                     userAvatarPath = state.userAvatarPath,
+                    // 消息还在读的时候，消息区显示 loading，顶栏/输入框照常可见
+                    loadingMessages = room.id !in state.roomMessagesLoaded,
                     pendingIds = state.roomPending,
                     errors = state.roomErrors,
                     mentionIds = state.roomMentionIds,
@@ -174,9 +175,7 @@ fun RoomRoute(
 
         is RoomScreen.Settings -> {
             val room = state.rooms.firstOrNull { it.id == current.roomId }
-            val membersPending =
-                room != null && room.memberIds.isNotEmpty() && !state.friendsLoaded
-            if (!state.loaded || membersPending) {
+            if (!state.loaded) {
                 UIGradientBackground(content = {})
             } else if (room == null) {
                 LaunchedEffect(Unit) { onExit() }
