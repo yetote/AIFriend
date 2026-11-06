@@ -48,9 +48,10 @@ class StorageMappingTest {
             prompt = "你们是评审团，各自给结论",
             discussionEnabled = true,
             discussionWindow = 2,
-            sequentialSpeaking = true,
             pinned = true,
             avatarPath = "/avatars/r1_1.jpg",
+            autoChatEnabled = true,
+            autoChatTurns = 10,
             memberJoinSeq = mapOf("a" to 0L, "b" to 5L)
         )
 

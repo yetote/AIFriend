@@ -19,6 +19,12 @@ data class RoomUiState(
     val roomDraftName: String = "",
     val roomDraftPrompt: String = "",
     val roomDraftMemberIds: Set<String> = emptySet(),
+    /** 正在自由对话的房间，null 表示没有在跑。 */
+    val autoChatRoomId: String? = null,
+    /** 自由对话已完成的接话次数。 */
+    val autoChatCompleted: Int = 0,
+    /** 自由对话本次的接话上限。 */
+    val autoChatTotal: Int = 0,
     val loaded: Boolean = false
 ) {
     val activeRoom: Room?

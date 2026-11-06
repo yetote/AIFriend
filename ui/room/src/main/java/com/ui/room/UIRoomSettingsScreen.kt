@@ -4,6 +4,7 @@ import com.ui.common.pageInsets
 import com.ui.common.UIAvatarCropDialog
 import com.ui.common.UIAvatar
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -84,7 +85,8 @@ fun UIRoomSettingsScreen(
     maxMembers: Int,
     discussionEnabled: Boolean,
     discussionWindow: Int,
-    sequentialSpeaking: Boolean,
+    autoChatEnabled: Boolean,
+    autoChatTurns: Int,
     messageCount: Int,
     estimatedContextTokens: Int,
     estimatedRequestCount: Int,
@@ -93,7 +95,8 @@ fun UIRoomSettingsScreen(
         prompt: String,
         discussionEnabled: Boolean,
         discussionWindow: Int,
-        sequentialSpeaking: Boolean
+        autoChatEnabled: Boolean,
+        autoChatTurns: Int
     ) -> Unit,
     onToggleMember: (String) -> Unit,
     onClearMessages: () -> Unit,
@@ -105,17 +108,36 @@ fun UIRoomSettingsScreen(
     var prompt by rememberSaveable(roomPrompt) { mutableStateOf(roomPrompt) }
     var discussion by rememberSaveable(discussionEnabled) { mutableStateOf(discussionEnabled) }
     var window by rememberSaveable(discussionWindow) { mutableIntStateOf(discussionWindow.coerceIn(1, 5)) }
-    var sequential by rememberSaveable(sequentialSpeaking) { mutableStateOf(sequentialSpeaking) }
+    var autoChat by rememberSaveable(autoChatEnabled) { mutableStateOf(autoChatEnabled) }
+    var autoTurns by rememberSaveable(autoChatTurns) { mutableIntStateOf(autoChatTurns.coerceIn(1, 20)) }
     var showMembers by remember { mutableStateOf(false) }
     var pendingWindow by remember { mutableStateOf<Int?>(null) }
     var pendingDiscussion by remember { mutableStateOf(false) }
     var showClearConfirm by remember { mutableStateOf(false) }
+    var showDiscardConfirm by remember { mutableStateOf(false) }
     var cropUri by remember { mutableStateOf<Uri?>(null) }
     val avatarPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         if (uri != null) cropUri = uri
     }
+
+    // 有没有还没保存的改动：保存即返回，所以返回前必须先问一句，否则改了半天一按返回全丢
+    val savedWindow = discussionWindow.coerceIn(1, 5)
+    val savedTurns = autoChatTurns.coerceIn(1, 20)
+    val savedAutoChat = autoChatEnabled && discussionEnabled
+    val dirty = name != roomName ||
+        prompt != roomPrompt ||
+        discussion != discussionEnabled ||
+        window != savedWindow ||
+        (autoChat && discussion) != savedAutoChat ||
+        autoTurns != savedTurns
+
+    val requestBack = {
+        if (dirty) showDiscardConfirm = true else onBack()
+    }
+
+    BackHandler(enabled = true) { requestBack() }
 
     UIGradientBackground(modifier = Modifier.pageInsets()) {
         Column(
@@ -128,7 +150,7 @@ fun UIRoomSettingsScreen(
                     .padding(horizontal = 6.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = onBack) {
+                IconButton(onClick = requestBack) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "返回",
@@ -151,7 +173,7 @@ fun UIRoomSettingsScreen(
                             if (name.isNotBlank()) UIFriendBarTagTextBlue else UIGlassSurface
                         )
                         .clickable(enabled = name.isNotBlank()) {
-                            onSave(name, prompt, discussion, window, sequential)
+                            onSave(name, prompt, discussion, window, autoChat, autoTurns)
                         }
                         .padding(horizontal = 16.dp, vertical = 7.dp),
                     fontSize = 14.sp,
@@ -229,7 +251,13 @@ fun UIRoomSettingsScreen(
                         subtitle = "开启后每位 AI 能看到其他人最近的发言，token 会明显上涨",
                         checked = discussion,
                         onCheckedChange = { checked ->
-                            if (checked) pendingDiscussion = true else discussion = false
+                            if (checked) {
+                                pendingDiscussion = true
+                            } else {
+                                discussion = false
+                                // 自由对话依赖讨论模式，关掉讨论就一起关掉，避免留下无效开关
+                                autoChat = false
+                            }
                         }
                     )
 
@@ -272,19 +300,75 @@ fun UIRoomSettingsScreen(
                                 onClick = { if (window < 5) pendingWindow = window + 1 }
                             )
                         }
+                    }
 
+                    SettingsDivider()
+                    SettingSwitchRow(
+                        title = "自由对话",
+                        subtitle = if (discussion) {
+                            "你说完之后，成员会按随机顺序接着聊，直到用完接话次数"
+                        } else {
+                            "需要先开启讨论模式：成员看不到别人的发言就没法接话"
+                        },
+                        checked = autoChat && discussion,
+                        enabled = discussion,
+                        onCheckedChange = { if (discussion) autoChat = it }
+                    )
+
+                    if (discussion && autoChat) {
                         SettingsDivider()
-                        SettingSwitchRow(
-                            title = "依次发言",
-                            subtitle = "后一位等前一位说完，能看到本轮前面的回复",
-                            checked = sequential,
-                            onCheckedChange = { sequential = it }
-                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "接话次数",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = UIFriendBarTitleColor
+                                )
+                                Text(
+                                    text = "一次接话算一轮，用完就停（1–20）",
+                                    fontSize = 12.sp,
+                                    color = UIFriendBarItemMetaColor
+                                )
+                            }
+                            StepperButton(
+                                text = "−",
+                                enabled = autoTurns > 1,
+                                onClick = { autoTurns = (autoTurns - 1).coerceAtLeast(1) }
+                            )
+                            Text(
+                                text = "$autoTurns",
+                                modifier = Modifier.padding(horizontal = 12.dp),
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = UIFriendBarTitleColor
+                            )
+                            StepperButton(
+                                text = "＋",
+                                enabled = autoTurns < 20,
+                                onClick = { autoTurns = (autoTurns + 1).coerceAtMost(20) }
+                            )
+                        }
+
+                        if (window < 2) {
+                            Text(
+                                text = "回看窗口只有 1 轮，接话容易越聊越散，建议调到 2 以上",
+                                fontSize = 12.sp,
+                                lineHeight = 17.sp,
+                                color = UIFriendBarRed,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                            )
+                        }
                     }
                 }
 
                 Text(
-                    text = "窗口越大，其他人的发言占用的上下文和 token 越多；讨论模式每人上下文上限 4000 token。",
+                    text = "窗口越大，其他人的发言占用的上下文和 token 越多；讨论模式每人上下文上限 4000 token，自由对话每一轮 2000 token。",
                     fontSize = 12.sp,
                     lineHeight = 17.sp,
                     color = UIFriendBarItemMetaColor,
@@ -454,6 +538,29 @@ fun UIRoomSettingsScreen(
         )
     }
 
+    if (showDiscardConfirm) {
+        UIIosDialog(
+            title = "还有改动没保存",
+            subtitle = "直接返回会丢掉刚才改的内容。",
+            onDismiss = { showDiscardConfirm = false },
+            actions = {
+                UIDialogButtons(
+                    confirmText = "保存并返回",
+                    confirmEnabled = name.isNotBlank(),
+                    onConfirm = {
+                        showDiscardConfirm = false
+                        onSave(name, prompt, discussion, window, autoChat, autoTurns)
+                    },
+                    cancelText = "放弃修改",
+                    onCancel = {
+                        showDiscardConfirm = false
+                        onBack()
+                    }
+                )
+            }
+        )
+    }
+
     if (showClearConfirm) {
         UIIosDialog(
             title = "清空聊天记录？",
@@ -522,7 +629,8 @@ private fun SettingSwitchRow(
     title: String,
     subtitle: String,
     checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
+    onCheckedChange: (Boolean) -> Unit,
+    enabled: Boolean = true
 ) {
     Row(
         modifier = Modifier
@@ -535,7 +643,7 @@ private fun SettingSwitchRow(
                 text = title,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Medium,
-                color = UIFriendBarTitleColor
+                color = if (enabled) UIFriendBarTitleColor else UIFriendBarItemMetaColor
             )
             Spacer(Modifier.height(2.dp))
             Text(
@@ -549,12 +657,15 @@ private fun SettingSwitchRow(
         Switch(
             checked = checked,
             onCheckedChange = onCheckedChange,
+            enabled = enabled,
             colors = SwitchDefaults.colors(
                 checkedThumbColor = Color.White,
                 checkedTrackColor = UIFriendBarTagTextBlue,
                 uncheckedThumbColor = Color.White,
                 uncheckedTrackColor = Color(0xFFD7DCE5),
-                uncheckedBorderColor = Color.Transparent
+                uncheckedBorderColor = Color.Transparent,
+                disabledCheckedTrackColor = Color(0xFFB9C6DD),
+                disabledUncheckedTrackColor = Color(0xFFE3E7EE)
             )
         )
     }

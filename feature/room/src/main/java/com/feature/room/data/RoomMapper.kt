@@ -22,7 +22,8 @@ fun Room.toStored(): StoredRoom = StoredRoom(
     prompt = prompt,
     discussionEnabled = discussionEnabled,
     discussionWindow = discussionWindow,
-    sequentialSpeaking = sequentialSpeaking,
+    autoChatEnabled = autoChatEnabled,
+    autoChatTurns = autoChatTurns,
     pinned = pinned,
     avatarPath = avatarPath,
     memberJoinSeq = memberJoinSeq
@@ -36,7 +37,8 @@ fun StoredRoom.toRoom(): Room = Room(
     prompt = prompt,
     discussionEnabled = discussionEnabled,
     discussionWindow = discussionWindow,
-    sequentialSpeaking = sequentialSpeaking,
+    autoChatEnabled = autoChatEnabled,
+    autoChatTurns = autoChatTurns,
     pinned = pinned,
     avatarPath = avatarPath,
     memberJoinSeq = memberJoinSeq
@@ -53,7 +55,23 @@ private val ROOM_CHAT_RULES = """
 3. 如果确实没有新内容，直接表示同意，并补充一个新的理由，不要为了凑字数复述。
 """.trim()
 
-fun buildRoomSystemPrompt(roomPrompt: String, friendPrompt: String): String {
+/**
+ * 自由对话的额外规则：这一段只在「成员之间互相接话」时追加，
+ * 让模型知道有人在等它回应，并且用 `@名字` 把话语权交出去。
+ */
+private val AUTO_CHAT_RULES = """
+自由对话规则：
+1. 现在是成员之间在聊天，没有新的用户发言，你是在接上一位成员的话。
+2. 回复保持一到三句，像一个真人在群里随口接话，不要写成小作文或列点总结。
+3. 想接谁的话，就把 `@对方名字` 放在回复里；不想点名就让别人随机接。
+4. 话题聊完了就回「【结束】」，不要硬撑。
+""".trim()
+
+fun buildRoomSystemPrompt(
+    roomPrompt: String,
+    friendPrompt: String,
+    autoChat: Boolean = false
+): String {
     val room = roomPrompt.trim()
     return buildString {
         if (room.isNotBlank()) {
@@ -62,6 +80,10 @@ fun buildRoomSystemPrompt(roomPrompt: String, friendPrompt: String): String {
         append(friendPrompt)
         append("\n\n")
         append(ROOM_CHAT_RULES)
+        if (autoChat) {
+            append("\n\n")
+            append(AUTO_CHAT_RULES)
+        }
     }
 }
 
@@ -133,25 +155,34 @@ fun StoredRoomMessage.toRoomMessage(): RoomMessage = RoomMessage(
  * 1. 只取加入位置之后的消息；
  * 2. 默认（otherWindowRounds = null）方案 B：保留所有用户消息、系统通知和它自己的回复；
  * 3. 讨论模式（otherWindowRounds != null）：额外保留其他成员最近 N 轮的发言，
- *    以「（某成员 的发言）」的 user 消息注入，避免模型混淆身份。
+ *    以「（某成员 的发言）」的 user 消息注入，避免模型混淆身份；
+ * 4. [burstAsRounds] = true 时（自由对话），**每条 AI 发言自己也算一次轮边界**，
+ *    这样窗口 N 就等于「能看到最近 N 条别人的发言」，不会因为一轮里堆了很多条而失效。
  */
 fun buildRoomContext(
     messages: List<RoomMessage>,
     friendId: String,
     joinedSeq: Long = 0L,
     otherWindowRounds: Int? = null,
-    friendNames: Map<String, String> = emptyMap()
+    friendNames: Map<String, String> = emptyMap(),
+    burstAsRounds: Boolean = false
 ): List<ChatMessage> {
     val sorted = messages.sortedWith(compareBy({ it.createdAt }, { it.seq }))
 
-    // 按用户消息划分轮次；用户消息带了 targetIds 时，这一轮只对目标成员可见
+    // 按用户消息划分轮次；用户消息带了 targetIds 时，这一轮只对目标成员可见。
+    // 自由对话模式下，别人的每一条 AI 发言也单独算一轮。
     val roundOf = HashMap<Long, Int>(sorted.size)
     val roundVisible = HashMap<Int, Boolean>()
     var round = 0
     sorted.forEach { message ->
-        if (message.sender == RoomSender.User) {
+        val startsRound = when (message.sender) {
+            RoomSender.User -> true
+            is RoomSender.Ai -> burstAsRounds && message.sender.friendId != friendId
+            RoomSender.System -> false
+        }
+        if (startsRound) {
             round++
-            val targets = message.targetIds
+            val targets = (message.sender as? RoomSender.User)?.let { message.targetIds }
             roundVisible[round] = targets == null || friendId in targets
         }
         roundOf[message.seq] = round

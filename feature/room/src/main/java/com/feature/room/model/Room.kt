@@ -20,8 +20,13 @@ data class Room(
     val discussionEnabled: Boolean = false,
     /** 其他人的发言只保留最近几轮（1..5）。 */
     val discussionWindow: Int = 1,
-    /** 讨论模式下是否按成员顺序依次发言（后说的能看到本轮前面的回复）。 */
-    val sequentialSpeaking: Boolean = false,
+    /**
+     * 用户发言后是否让成员继续自由对话。
+     * 依赖讨论模式：讨论模式关闭时该值无效（保存时会一起关掉）。
+     */
+    val autoChatEnabled: Boolean = false,
+    /** 自由对话接话次数上限（一次接话 = 一轮）。 */
+    val autoChatTurns: Int = 3,
     /** 是否置顶；置顶房间排在列表前面。 */
     val pinned: Boolean = false,
     /** 房间头像的本地文件路径。 */
