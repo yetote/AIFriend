@@ -1,7 +1,6 @@
 package com.ui.agent
 
 import com.ui.common.UIAvatar
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -15,8 +14,11 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -39,7 +41,8 @@ import com.ui.common.theme.UIFriendBarTitleColor
 fun UIFriendBar(
     isNotification: Boolean,
     userAvatarPath: String? = null,
-    onAvatarClick: () -> Unit = {}
+    onAvatarClick: () -> Unit = {},
+    onSettingsClick: () -> Unit = {}
 ) {
     Row(
         Modifier
@@ -65,6 +68,9 @@ fun UIFriendBar(
         }
         Spacer(modifier = Modifier.weight(1f))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            // 这里原本是通知按钮，但一直没有绑定点击，是个死控件。
+            // 现在换成设置入口：模型和 Key 是当前唯一需要用户手动配置的东西，
+            // 放在首页右上角比新开一个 Tab 更省事，也不占主导航的位置。
             BadgedBox(badge = {
                 if (isNotification) {
                     Badge(
@@ -75,18 +81,18 @@ fun UIFriendBar(
                     )
                 }
             }) {
-
                 Box(
                     modifier = Modifier
                         .size(38.dp)
                         .uiControl(shape = CircleShape, color = UIGlassSurfaceStrong)
-                        .clickable { },
+                        .clickable { onSettingsClick() },
                     contentAlignment = Alignment.Center
                 ) {
-                    Image(
-                        painterResource(R.drawable.ui_friend_notification),
-                        modifier = Modifier.size(18.dp),
-                        contentDescription = "add",
+                    Icon(
+                        imageVector = Icons.Filled.Settings,
+                        contentDescription = "模型与密钥设置",
+                        tint = UIFriendBarTitleColor,
+                        modifier = Modifier.size(19.dp)
                     )
                 }
             }

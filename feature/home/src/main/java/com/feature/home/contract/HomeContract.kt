@@ -11,6 +11,9 @@ sealed interface HomeScreen {
     data class EditFriend(val friendId: String) : HomeScreen
     data object RoomCreate : HomeScreen
     data class RoomChat(val roomId: String) : HomeScreen
+
+    /** 模型与密钥设置，从首页右上角齿轮进入。 */
+    data object Settings : HomeScreen
 }
 
 data class HomeUiState(

@@ -1,5 +1,7 @@
 package com.feature.agent.contract
 
+import com.core.ai.model.GatewayModel
+import com.core.ai.model.ModelPrice
 import com.feature.agent.model.Friend
 import com.feature.agent.model.Provider
 
@@ -66,7 +68,29 @@ data class AgentUiState(
     val input: String = "",
     val isSending: Boolean = false,
     val error: String? = null,
-    val loaded: Boolean = false
+    val loaded: Boolean = false,
+    /**
+     * 当前选中的聚合平台模型的明细（带价格）。
+     *
+     * 官方厂商不是聚合平台，这里始终为空，UI 就不显示价格区块 ——
+     * 官方厂商的计费在各自的开放平台后台，APK 里没有可靠价目。
+     */
+    val gatewayModels: List<GatewayModel> = emptyList(),
+
+    /** 当前选中的是不是聚合平台。 */
+    val isGateway: Boolean = false,
+
+    /** 价格标注货币，聚合平台各有各的标价币种。 */
+    val priceCurrency: String = ModelPrice.USD,
+
+    /** 价格是否来自内置快照（而非平台的实时接口）。 */
+    val priceIsSnapshot: Boolean = false,
+
+    /** 快照抓取日期，实时价格时为 null。 */
+    val priceSnapshotDate: String? = null,
+
+    /** 正在手动刷新价格，刷新期间按钮要禁用，免得连点发出多次请求。 */
+    val isRefreshingPrice: Boolean = false
 ) {
     val selectedProvider: Provider?
         get() = providers.firstOrNull { it.brand == selectedBrand }

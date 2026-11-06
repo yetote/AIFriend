@@ -1,6 +1,8 @@
 package com.core.ai.entity
 
 import com.core.ai.model.ChatMessage
+import com.core.ai.model.GatewayModel
+import com.core.ai.model.ModelPrice
 
 interface IAI {
     suspend fun requestModel()
@@ -9,6 +11,23 @@ interface IAI {
 
     var brandName: String
     var company: String
+
+    /**
+     * 带价格的模型列表，聚合平台用。
+     *
+     * 官方厂商（DeepSeek、豆包…）走自家的计费体系，APK 里没有可靠的价目，
+     * 所以默认返回空列表，UI 那边就不显示价格 —— 编一个价格比不显示更糟。
+     */
+    val gatewayModels: List<GatewayModel>
+        get() = emptyList()
+
+    /** 这个服务商是有价格的聚合平台还是官方厂商。 */
+    val isGateway: Boolean
+        get() = false
+
+    /** 价格标注用的货币符号，默认美元。 */
+    val priceCurrency: String
+        get() = ModelPrice.USD
 
     /**
      * 多轮对话：传入完整历史（不含 system），由实现方按厂商协议补 system 并转换为请求体。

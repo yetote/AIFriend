@@ -2,6 +2,7 @@ package com.feature.home.vm
 
 import android.app.Application
 import androidx.lifecycle.viewModelScope
+import com.core.ai.model.ModelPriceRefresher
 import com.core.common.BaseViewModel
 import com.core.repository.storage.AvatarStore
 import com.core.repository.storage.FriendRepository
@@ -33,6 +34,8 @@ class HomeViewModel(application: Application) : BaseViewModel(application) {
     private val profileRepository = ProfileRepository(application)
     private val avatarStore = AvatarStore(application)
 
+    private val priceRefresher = ModelPriceRefresher(application)
+
     private val seqCounter = AtomicLong(0)
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -46,6 +49,22 @@ class HomeViewModel(application: Application) : BaseViewModel(application) {
             val maxJoinSeq = storedRooms.flatMap { it.memberJoinSeq.values }.maxOrNull() ?: 0L
             seqCounter.set(maxOf(maxMessageSeq, maxJoinSeq))
             refresh()
+        }
+        refreshPricesDaily()
+    }
+
+    /**
+     * 每天首次打开时更新一次聚合平台的模型价格。
+     *
+     * 放在首页而不是设置页：首页是必然经过的入口，设置页可能一辈子不进，
+     * 那样价格就永远是内置快照里那份过期的数。
+     *
+     * 不阻塞启动 —— 好友列表先出来，价格在后台抓完再悄悄生效。
+     * 失败了也不提示：这不是用户主动发起的操作，安静地用上次的价即可。
+     */
+    private fun refreshPricesDaily() {
+        viewModelScope.launch {
+            runCatching { priceRefresher.refreshIfNeeded() }
         }
     }
 
@@ -97,6 +116,10 @@ class HomeViewModel(application: Application) : BaseViewModel(application) {
 
     fun openRoom(roomId: String) {
         _uiState.update { it.copy(screen = HomeScreen.RoomChat(roomId)) }
+    }
+
+    fun openSettings() {
+        _uiState.update { it.copy(screen = HomeScreen.Settings) }
     }
 
     fun back() {

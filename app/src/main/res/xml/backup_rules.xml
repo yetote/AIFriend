@@ -1,13 +1,11 @@
-<?xml version="1.0" encoding="utf-8"?><!--
-   Sample backup rules file; uncomment and customize as necessary.
-   See https://developer.android.com/guide/topics/data/autobackup
-   for details.
-   Note: This file is ignored for devices older than API 31
-   See https://developer.android.com/about/versions/12/backup-restore
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  云备份 / 换机迁移的排除规则。
+  datastore 里存着用户自填的 API Key（已用 KeyStore 加密），
+  但密文离开本机后密钥也解不开，备份出去只会增加泄漏面，
+  所以整个 datastore 目录都不参与备份。
+  规则见 https://developer.android.com/guide/topics/data/autobackup
 -->
 <full-backup-content>
-    <!--
-   <include domain="sharedpref" path="."/>
-   <exclude domain="sharedpref" path="device.xml"/>
--->
+    <exclude domain="file" path="datastore" />
 </full-backup-content>

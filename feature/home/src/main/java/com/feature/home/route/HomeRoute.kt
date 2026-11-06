@@ -98,7 +98,8 @@ fun HomeRoute(viewModel: HomeViewModel = viewModel()) {
                 onDeleteRoom = { viewModel.deleteRoom(it) },
                 onTogglePin = { viewModel.toggleRoomPin(it) },
                 onEditFriend = { viewModel.startEditFriend(it) },
-                onPickUserAvatar = pickUserAvatar
+                onPickUserAvatar = pickUserAvatar,
+                onOpenSettings = viewModel::openSettings
             )
 
             HomeScreen.Create -> AgentRoute(
@@ -140,6 +141,8 @@ fun HomeRoute(viewModel: HomeViewModel = viewModel()) {
                     viewModel.refresh()
                 }
             )
+
+            HomeScreen.Settings -> SettingsRoute(onExit = viewModel::back)
         }
     }
 }

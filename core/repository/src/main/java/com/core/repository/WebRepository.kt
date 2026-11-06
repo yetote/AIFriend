@@ -23,4 +23,14 @@ class WebRepository {
     suspend inline fun <reified T> getModel(config: ApiConfig): Result<T> = runCatching {
         httpClient.apiGet<T>("${config.baseUrl}/models", config.headers)
     }
+
+    /**
+     * 抓一个网页的原始文本。
+     *
+     * 走 [KtorClient.getText] 而不是 `apiGet<String>`：后者会经过
+     * ContentNegotiation 把响应体当 JSON 反序列化，页面 HTML 会直接解析失败。
+     */
+    suspend fun getPage(url: String): Result<String> = runCatching {
+        httpClient.getText(url)
+    }
 }

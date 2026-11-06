@@ -14,6 +14,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -27,6 +28,8 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -57,7 +60,10 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.core.persona.Persona
+import com.ui.agent.data.UIModelGroup
+import com.ui.agent.data.UIModelOption
 import com.ui.agent.data.UIProvider
+import com.ui.agent.data.UIPriceTone
 import com.ui.common.theme.UIActionBrush
 import com.ui.common.theme.UIBlobBlue
 import com.ui.common.theme.UIFriendBarItemMetaColor
@@ -95,7 +101,20 @@ fun UIFriendCreateScreen(
     modelLabel: String? = null,
     thinkingSwitchable: Boolean = true,
     personas: List<Persona> = emptyList(),
-    personaToggleLabel: String = "从模板开始"
+    personaToggleLabel: String = "从模板开始",
+    /** 当前厂商是不是聚合平台（决定模型列表要不要分组、标价）。 */
+    isGateway: Boolean = false,
+    /** 聚合平台的模型分组，官方厂商为空。 */
+    modelGroups: List<UIModelGroup> = emptyList(),
+    /** 价格来自内置快照时会加一句「参考价」的注脚。 */
+    priceIsSnapshot: Boolean = false,
+    priceSnapshotDate: String? = null,
+    /** 这个平台能不能手动刷新价格（只有抓得到定价页的聚合平台可以）。 */
+    canRefreshPrice: Boolean = false,
+    /** 刷新进行中，按钮转圈并禁用。 */
+    isRefreshingPrice: Boolean = false,
+    /** 点「刷新价格」。为空表示当前平台不支持刷新。 */
+    onRefreshPrice: () -> Unit = {}
 ) {
     var name by rememberSaveable(initialName) { mutableStateOf(initialName) }
     var role by rememberSaveable(initialRole) { mutableStateOf(initialRole) }
@@ -237,26 +256,16 @@ fun UIFriendCreateScreen(
                     minLines = 4
                 )
 
-                if (!editing) {
-                    SectionLabel(text = "模型提供方")
-                    providers.chunked(2).forEach { rowProviders ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            rowProviders.forEach { provider ->
-                                ProviderChip(
-                                    provider = provider,
-                                    selected = provider.brand == selectedBrand,
-                                    onClick = { onBrandSelect(provider.brand) },
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
-                            if (rowProviders.size == 1) {
-                                Spacer(Modifier.weight(1f))
-                            }
-                        }
-                    }
-                }
-
+                /*
+                 * 深度思考放在选模型之前。
+                 *
+                 * 这是好友级设置，和选哪家厂商无关，但放在模型列表后面会被
+                 * 68 个模型埋掉 —— 滚动几屏才看得到，等于没有。
+                 * 放在这一屏的位置既能一眼看到，也不会像之前那样紧贴
+                 * 「聚合平台」网格而被误读成聚合平台专属。
+                 */
                 if (thinkingSwitchable) {
+                    SectionLabel(text = "对话选项")
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -273,7 +282,7 @@ fun UIFriendCreateScreen(
                             )
                             Spacer(Modifier.height(2.dp))
                             Text(
-                                text = "关闭后响应更快、更省 token；GLM-5 系列只能降档",
+                                text = "对所有厂商的模型都生效，关闭后响应更快、更省 token",
                                 fontSize = 12.sp,
                                 lineHeight = 16.sp,
                                 color = UIFriendBarItemMetaColor
@@ -290,6 +299,44 @@ fun UIFriendCreateScreen(
                                 uncheckedTrackColor = Color(0xFFD7DCE5),
                                 uncheckedBorderColor = Color.Transparent
                             )
+                        )
+                    }
+                }
+
+                if (!editing) {
+                    // 官方厂商和聚合平台分开摆。混在一起的话，用户会把
+                    // 「硅基流动」当成又一个模型厂商，而不是一个能调很多家模型的平台。
+                    val official = providers.filterNot { it.isGateway }
+                    val gateways = providers.filter { it.isGateway }
+
+                    SectionLabel(text = "模型提供方")
+                    ProviderGrid(
+                        providers = official,
+                        selectedBrand = selectedBrand,
+                        onBrandSelect = onBrandSelect
+                    )
+
+                    if (gateways.isNotEmpty()) {
+                        Spacer(Modifier.height(2.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "聚合平台",
+                                modifier = Modifier.padding(start = 4.dp),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = UIFriendBarItemMetaColor
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = "一个 Key 调多家模型",
+                                fontSize = 11.sp,
+                                color = UIFriendBarItemMetaColor.copy(alpha = 0.7f)
+                            )
+                        }
+                        ProviderGrid(
+                            providers = gateways,
+                            selectedBrand = selectedBrand,
+                            onBrandSelect = onBrandSelect
                         )
                     }
                 }
@@ -328,19 +375,44 @@ fun UIFriendCreateScreen(
                             )
                         }
                     }
-                    models.forEach { model ->
-                        ModelOption(
-                            model = model,
-                            selected = model == selectedModel,
-                            onClick = { onModelSelect(model) }
+
+                    if (isGateway && modelGroups.isNotEmpty()) {
+                        // 聚合平台：厂商做成横向标签，选中的那家在下面竖向铺开
+                        ModelGroupBrowser(
+                            groups = modelGroups,
+                            selectedModel = selectedModel,
+                            onModelSelect = onModelSelect,
+                            canRefreshPrice = canRefreshPrice,
+                            isRefreshingPrice = isRefreshingPrice,
+                            onRefreshPrice = onRefreshPrice
+                        )
+                    } else {
+                        // 官方厂商：一个牌子一个列表，不分组也不标价
+                        models.forEach { model ->
+                            ModelOption(
+                                model = UIModelOption(id = model, label = model),
+                                selected = model == selectedModel,
+                                onClick = { onModelSelect(model) }
+                            )
+                        }
+                    }
+
+                    // 只有真的拿到价格时才解释价格；自定义网关可能一个价都查不到，
+                    // 那时候再说「价格按每百万 token 计」就成了空话
+                    val hasAnyPrice = modelGroups.any { group -> group.models.any { it.price != null } }
+                    if (isGateway && hasAnyPrice) {
+                        PriceFootnote(
+                            isSnapshot = priceIsSnapshot,
+                            capturedAt = priceSnapshotDate
+                        )
+                    } else if (!isGateway) {
+                        Text(
+                            text = "由 ${selectedProvider?.company ?: selectedBrand} 提供支持",
+                            modifier = Modifier.padding(start = 4.dp),
+                            fontSize = 12.sp,
+                            color = UIFriendBarItemMetaColor
                         )
                     }
-                    Text(
-                        text = "由 ${selectedProvider?.company ?: selectedBrand} 提供支持",
-                        modifier = Modifier.padding(start = 4.dp),
-                        fontSize = 12.sp,
-                        color = UIFriendBarItemMetaColor
-                    )
                 }
             }
 
@@ -445,6 +517,29 @@ fun UIFriendCreateScreen(
 }
 
 @Composable
+private fun ProviderGrid(
+    providers: List<UIProvider>,
+    selectedBrand: String,
+    onBrandSelect: (String) -> Unit
+) {
+    providers.chunked(2).forEach { rowProviders ->
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            rowProviders.forEach { provider ->
+                ProviderChip(
+                    provider = provider,
+                    selected = provider.brand == selectedBrand,
+                    onClick = { onBrandSelect(provider.brand) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            if (rowProviders.size == 1) {
+                Spacer(Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
 private fun ProviderChip(
     provider: UIProvider,
     selected: Boolean,
@@ -475,8 +570,199 @@ private fun ProviderChip(
     }
 }
 
+/**
+ * 聚合平台的模型浏览区：厂商横向滑动，选中厂商的模型竖向列出。
+ *
+ * 之前是每个厂商一整段竖着堆，硅基流动十几家品牌加起来几十屏，
+ * 想找「Qwen」得一路滑到底。改成标签栏之后，横向翻牌子、竖向看模型，
+ * 两个方向各管一件事，找起来快很多。
+ */
 @Composable
-private fun ModelOption(model: String, selected: Boolean, onClick: () -> Unit) {
+private fun ModelGroupBrowser(
+    groups: List<UIModelGroup>,
+    selectedModel: String,
+    onModelSelect: (String) -> Unit,
+    canRefreshPrice: Boolean = false,
+    isRefreshingPrice: Boolean = false,
+    onRefreshPrice: () -> Unit = {}
+) {
+    // 默认落在第一个分组（也就是「全部」）：不确定选哪家时，先看全局最实用
+    var selectedVendor by rememberSaveable { mutableStateOf(groups.firstOrNull()?.vendor) }
+    // 换厂商后旧的分组可能已经不存在了，回落到第一个；空列表直接不画
+    val current = groups.firstOrNull { it.vendor == selectedVendor } ?: groups.firstOrNull() ?: return
+
+    // 「全部」里可以切换升序 / 降序；切到具体厂商时保留状态，
+    // 但那边本来就只有一种顺序，不显示这个开关
+    var ascending by rememberSaveable { mutableStateOf(true) }
+    val models = remember(current, ascending) {
+        if (current.isAll && !ascending) {
+            current.models.sortedWith(
+                compareBy<UIModelOption> { it.sortWeight == null }
+                    .thenByDescending { it.sortWeight ?: 0.0 }
+                    .thenBy { it.id.lowercase() }
+            )
+        } else {
+            current.models
+        }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(horizontal = 2.dp)
+        ) {
+            items(groups, key = { it.vendor }) { group ->
+                ModelVendorChip(
+                    group = group,
+                    selected = group.vendor == current.vendor,
+                    onClick = { selectedVendor = group.vendor }
+                )
+            }
+        }
+
+        Row(
+            modifier = Modifier.padding(start = 4.dp, top = 2.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "共 ${models.size} 个",
+                fontSize = 11.sp,
+                color = UIFriendBarItemMetaColor.copy(alpha = 0.7f)
+            )
+            val from = current.from
+            if (from != null) {
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    // 「免费」后面再加「起」不通，所以免费时不加
+                    text = if (from == "免费") from else "$from 起",
+                    fontSize = 11.sp,
+                    color = UIFriendBarItemMetaColor
+                )
+            }
+            Spacer(Modifier.weight(1f))
+            if (current.isAll) {
+                PriceOrderToggle(ascending = ascending, onToggle = { ascending = !ascending })
+            }
+            // 只有价目从网页抓的平台才给刷新按钮，OpenRouter 的价格跟着模型列表一起回来
+            if (canRefreshPrice) {
+                Spacer(Modifier.width(8.dp))
+                PriceRefreshButton(
+                    refreshing = isRefreshingPrice,
+                    onClick = onRefreshPrice
+                )
+            }
+        }
+
+        models.forEach { model ->
+            ModelOption(
+                model = model,
+                selected = model.id == selectedModel,
+                onClick = { onModelSelect(model.id) },
+                // 「全部」里混着各家厂商，不标来源就分不清两个同名模型
+                showVendor = current.isAll
+            )
+        }
+    }
+}
+
+/** 厂商标签：名字 + 起价，选中时染成品牌蓝。 */
+@Composable
+private fun ModelVendorChip(
+    group: UIModelGroup,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .uiControl(
+                shape = RoundedCornerShape(50),
+                color = if (selected) UIFriendBarTagBgBlue else Color.White.copy(alpha = 0.9f)
+            )
+            .clickable { onClick() }
+            .padding(horizontal = 12.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = group.vendor,
+            fontSize = 12.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (selected) UIFriendBarTagTextBlue else UIFriendBarTitleColor
+        )
+        Text(
+            text = " ${group.models.size}",
+            fontSize = 10.sp,
+            color = UIFriendBarItemMetaColor.copy(alpha = 0.75f)
+        )
+    }
+}
+
+/** 「价格升序 / 降序」的小开关，只在「全部」里出现。 */
+@Composable
+private fun PriceOrderToggle(ascending: Boolean, onToggle: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .uiControl(
+                shape = RoundedCornerShape(50),
+                color = UIFriendBarTagBgBlue.copy(alpha = 0.7f)
+            )
+            .clickable { onToggle() }
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = if (ascending) "价格从低到高" else "价格从高到低",
+            fontSize = 11.sp,
+            color = UIFriendBarTagTextBlue
+        )
+        Spacer(Modifier.width(3.dp))
+        Text(
+            text = if (ascending) "↑" else "↓",
+            fontSize = 11.sp,
+            color = UIFriendBarTagTextBlue
+        )
+    }
+}
+
+/**
+ * 手动刷新价格的小按钮。
+ *
+ * 聚合平台的价格是从定价页抓的，可能都过去一天了，用户想核实时不用
+ * 专门跑一趟设置页。刷新期间转圈并禁用，避免连点发出多次请求。
+ */
+@Composable
+private fun PriceRefreshButton(refreshing: Boolean, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .uiControl(
+                shape = RoundedCornerShape(50),
+                color = Color.White.copy(alpha = 0.9f)
+            )
+            .clickable(enabled = !refreshing) { onClick() }
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (refreshing) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(10.dp),
+                strokeWidth = 1.5.dp,
+                color = UIFriendBarTagTextBlue
+            )
+            Spacer(Modifier.width(5.dp))
+            Text(text = "刷新中", fontSize = 11.sp, color = UIFriendBarTagTextBlue)
+        } else {
+            Text(text = "刷新价格", fontSize = 11.sp, color = UIFriendBarTagTextBlue)
+        }
+    }
+}
+
+@Composable
+private fun ModelOption(
+    model: UIModelOption,
+    selected: Boolean,
+    onClick: () -> Unit,
+    /** 跨厂商列表里补一行来源厂商。 */
+    showVendor: Boolean = false
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -492,13 +778,91 @@ private fun ModelOption(model: String, selected: Boolean, onClick: () -> Unit) {
             colors = RadioButtonDefaults.colors(selectedColor = UIFriendBarTagTextBlue)
         )
         Spacer(Modifier.width(4.dp))
-        Text(
-            text = model,
-            fontSize = 14.sp,
-            fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
-            color = UIFriendBarTitleColor
-        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = model.label,
+                fontSize = 14.sp,
+                fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+                color = UIFriendBarTitleColor
+            )
+            // 「全部」里同名模型不止一个，跟一行小字说明出处
+            val vendorName = model.vendorName
+            if (showVendor && vendorName != null) {
+                Text(
+                    text = vendorName,
+                    fontSize = 10.sp,
+                    color = UIFriendBarItemMetaColor.copy(alpha = 0.8f)
+                )
+            }
+            val price = model.price
+            if (price != null) {
+                Spacer(Modifier.height(2.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = price,
+                        fontSize = 11.sp,
+                        color = priceToneColor(model.tone)
+                    )
+                    // 分档模型标一句「分段计价」，否则用户会以为这就是全部价格
+                    if (model.bands.isNotEmpty()) {
+                        Spacer(Modifier.width(5.dp))
+                        Text(
+                            text = "分段计价",
+                            fontSize = 10.sp,
+                            color = UIFriendBarItemMetaColor.copy(alpha = 0.8f)
+                        )
+                    }
+                }
+                // 贵的那几档用小字排在下面，不抢主价的视线
+                model.bands.forEach { band ->
+                    Spacer(Modifier.height(1.dp))
+                    Text(
+                        text = band,
+                        fontSize = 10.sp,
+                        lineHeight = 13.sp,
+                        color = UIFriendBarItemMetaColor.copy(alpha = 0.85f)
+                    )
+                }
+            }
+        }
     }
+}
+
+/**
+ * 价格说明。
+ *
+ * 快照价格必须标注来源日期：一句话能避免用户拿三个月前的价去对账单。
+ */
+@Composable
+private fun PriceFootnote(
+    isSnapshot: Boolean,
+    capturedAt: String?
+) {
+    Column(modifier = Modifier.padding(start = 4.dp, top = 2.dp)) {
+        Text(
+            text = "价格按每百万 token 计（输入 / 输出），便宜的排在前面",
+            fontSize = 12.sp,
+            lineHeight = 16.sp,
+            color = UIFriendBarItemMetaColor
+        )
+        if (isSnapshot && capturedAt != null) {
+            Spacer(Modifier.height(3.dp))
+            Text(
+                text = "该平台接口不返回价格，此处取自 $capturedAt 的定价页，实际以平台账单为准",
+                fontSize = 11.sp,
+                lineHeight = 15.sp,
+                color = UIFriendBarItemMetaColor.copy(alpha = 0.75f)
+            )
+        }
+    }
+}
+
+/** 按价格档位给文字上色，不用比数字也能看出便宜还是贵。 */
+private fun priceToneColor(tone: UIPriceTone?): Color = when (tone) {
+    UIPriceTone.CHEAP -> Color(0xFF0F9D58)
+    UIPriceTone.NORMAL -> UIFriendBarItemMetaColor
+    UIPriceTone.EXPENSIVE -> Color(0xFFD97706)
+    null -> UIFriendBarItemMetaColor
 }
 
 @Composable

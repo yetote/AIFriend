@@ -14,7 +14,11 @@ import com.core.repository.WebRepository
 abstract class OpenAICompatibleAI(
     final override var brandName: String,
     final override var company: String,
-    protected val config: ApiConfig
+    /**
+     * open：聚合网关的 Key 是运行时才有的，需要在请求前现取，
+     * 由子类覆盖成动态读取，不能用构造时算出的快照。
+     */
+    protected open val config: ApiConfig
 ) : IAI {
 
     override var modelSet: MutableSet<String> = mutableSetOf()

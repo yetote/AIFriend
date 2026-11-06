@@ -10,7 +10,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.core.persona.PersonaCatalog
+import com.core.ai.model.ModelPrices
+import com.core.repository.settings.AIProviderCatalog
 import com.feature.agent.contract.AgentScreen
+import com.feature.agent.data.toUIModelGroups
 import com.feature.agent.vm.AgentViewModel
 import com.ui.agent.UIFriendChatPage
 import com.ui.agent.UIFriendCreateScreen
@@ -45,7 +48,8 @@ fun AgentRoute(
                     UIProvider(
                         brand = it.brand,
                         company = it.company,
-                        thinkingSwitchable = it.thinkingSwitchable
+                        thinkingSwitchable = it.thinkingSwitchable,
+                        isGateway = it.isGateway
                     )
                 },
                 selectedBrand = state.selectedBrand,
@@ -57,6 +61,18 @@ fun AgentRoute(
                 initialThinking = state.thinkingEnabled,
                 onCancel = onExit,
                 personas = PersonaCatalog.all,
+                isGateway = state.isGateway,
+                modelGroups = state.gatewayModels.toUIModelGroups(state.priceCurrency),
+                priceIsSnapshot = state.priceIsSnapshot,
+                priceSnapshotDate = state.priceSnapshotDate,
+                // 只有能抓定价页的平台才显示刷新按钮（硅基流动），
+                // OpenRouter 的价格跟着模型列表一起回来，没有可刷的东西
+                canRefreshPrice = state.isGateway && state.selectedProvider?.let { provider ->
+                    AIProviderCatalog.all.firstOrNull { it.name == provider.brand }
+                        ?.let { ModelPrices.canRefresh(it.id) } == true
+                } == true,
+                isRefreshingPrice = state.isRefreshingPrice,
+                onRefreshPrice = viewModel::refreshPrice,
                 onSubmit = { name, role, prompt, avatarBytes, thinking ->
                     val friend = viewModel.createFriend(
                         name = name,
@@ -111,7 +127,8 @@ fun AgentRoute(
                         UIProvider(
                             brand = it.brand,
                             company = it.company,
-                            thinkingSwitchable = it.thinkingSwitchable
+                            thinkingSwitchable = it.thinkingSwitchable,
+                            isGateway = it.isGateway
                         )
                     },
                     selectedBrand = friend.brand,
