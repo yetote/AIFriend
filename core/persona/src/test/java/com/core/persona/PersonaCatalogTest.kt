@@ -1,4 +1,4 @@
-package com.feature.agent.data
+package com.core.persona
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull

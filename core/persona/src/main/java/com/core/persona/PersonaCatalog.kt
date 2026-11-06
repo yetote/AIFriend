@@ -1,4 +1,4 @@
-package com.feature.agent.data
+package com.core.persona
 
 /** 模板分类，顺序即界面上的展示顺序。 */
 enum class PersonaCategory(val label: String) {

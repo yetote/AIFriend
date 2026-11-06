@@ -9,6 +9,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.core.persona.PersonaCatalog
 import com.feature.agent.contract.AgentScreen
 import com.feature.agent.vm.AgentViewModel
 import com.ui.agent.UIFriendChatPage
@@ -55,7 +56,7 @@ fun AgentRoute(
                 onModelSelect = viewModel::selectModel,
                 initialThinking = state.thinkingEnabled,
                 onCancel = onExit,
-                personas = personaPresets,
+                personas = PersonaCatalog.all,
                 onSubmit = { name, role, prompt, avatarBytes, thinking ->
                     val friend = viewModel.createFriend(
                         name = name,
@@ -141,7 +142,7 @@ fun AgentRoute(
                     editing = true,
                     modelLabel = "${friend.brand} · ${friend.model}",
                     thinkingSwitchable = provider?.thinkingSwitchable ?: true,
-                    personas = personaPresets,
+                    personas = PersonaCatalog.all,
                     personaToggleLabel = "换成内置模板"
                 )
             }
