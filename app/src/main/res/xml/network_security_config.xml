@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  全局禁止明文 HTTP。
+  自定义服务商允许用户手填地址，若不禁用明文流量，
+  填一个 http:// 的地址就会把 Bearer Key 明文发到网络上。
+  内网自建网关如果需要 http，请让用户走 https 反代。
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

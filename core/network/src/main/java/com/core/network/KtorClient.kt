@@ -4,6 +4,7 @@ import android.util.Log
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.android.Android
+import io.ktor.client.statement.bodyAsText
 import io.ktor.client.network.sockets.ConnectTimeoutException
 import io.ktor.client.plugins.ClientRequestException
 import io.ktor.client.plugins.HttpRequestTimeoutException
@@ -104,5 +105,16 @@ class KtorClient {
                 header(key, value)
             }
         }.body()
+
+    /**
+     * 取原始文本，用于抓网页。
+     *
+     * 不能走 `apiGet<String>`：ContentNegotiation 会按 JSON 解析响应体，
+     * HTML 一进来就抛序列化异常。这里用 `bodyAsText()` 跳过内容协商。
+     *
+     * 请求头刻意留空：硅基流动的定价页对普通 GET 就返回完整数据，
+     * UA 是浏览器还是 Ktor 拿到的结果完全一致，不需要伪装。
+     */
+    suspend fun getText(url: String): String = client.get(url).bodyAsText()
 
 }

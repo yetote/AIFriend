@@ -6,6 +6,7 @@ import com.core.ai.entity.IAI
 import com.core.ai.factory.AIFactory
 import com.core.ai.model.ChatMessage
 import com.core.common.BaseViewModel
+import com.core.repository.storage.AIProviderSettings
 import com.core.repository.storage.AvatarStore
 import com.core.repository.storage.FriendRepository
 import com.core.repository.storage.LegacyMigration
@@ -49,6 +50,7 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
     private val roomRepository = RoomRepository(application)
     private val profileRepository = ProfileRepository(application)
     private val avatarStore = AvatarStore(application)
+    private val settings = AIProviderSettings(application)
 
     private val ais = mutableMapOf<String, IAI>()
     private val roomLocks = mutableMapOf<String, Mutex>()
@@ -70,6 +72,9 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
     init {
         viewModelScope.launch {
             runCatching { LegacyMigration.migrateIfNeeded(application) }
+            // 群聊里可能有用聚合网关的好友，同样需要先把用户填的 Key 读进内存快照，
+            // 否则他们的发言会全部 401，且看不出原因。
+            runCatching { settings.load() }
             loadFriends()
             val storedRooms = runCatching { roomRepository.loadRooms() }.getOrDefault(emptyList())
             val maxMessageSeq = runCatching { roomRepository.maxMessageSeq() }.getOrDefault(0L)
@@ -193,6 +198,9 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
         }
         viewModelScope.launch {
             if (!_uiState.value.friendsLoaded) loadFriends()
+            // 每次进房间都刷一次凭证。ViewModel 是 Activity 级的，
+            // 用户可能刚在设置页改过 Key —— 不刷的话这里还拿着旧的那把。
+            runCatching { settings.load() }
             loadRecentRoomMessages(roomId)
         }
     }

@@ -88,7 +88,8 @@ fun UIFriendPage(
     onDeleteFriend: (String) -> Unit = {},
     onDeleteRoom: (String) -> Unit = {},
     onTogglePin: (String) -> Unit = {},
-    onPickUserAvatar: () -> Unit = {}
+    onPickUserAvatar: () -> Unit = {},
+    onOpenSettings: () -> Unit = {}
 ) {
     var pendingFriendAction by remember { mutableStateOf<UIFriendListData?>(null) }
     var pendingRoomAction by remember { mutableStateOf<UIRoomData?>(null) }
@@ -105,7 +106,8 @@ fun UIFriendPage(
             UIFriendBar(
                 isNotification = true,
                 userAvatarPath = userAvatarPath,
-                onAvatarClick = onPickUserAvatar
+                onAvatarClick = onPickUserAvatar,
+                onSettingsClick = onOpenSettings
             )
             Spacer(Modifier.height(16.dp))
             UIFriendCrewStatusCard(
