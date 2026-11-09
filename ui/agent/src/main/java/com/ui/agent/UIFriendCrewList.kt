@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -34,6 +35,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -167,10 +169,30 @@ private fun AgentTabRow(
     }
 }
 
+/**
+ * 角色名的宽度上限。
+ *
+ * 正常名字（`小咪`、`Echo`）远够不到这个值，它只是防止超长名字
+ * 把模型标签整个顶掉。名字本身仍然用省略号收尾，不会被压变形。
+ */
+private val NAME_MAX_WIDTH = 160.dp
+
+/**
+ * 把模型 id 压成一段能认得出的短标签。
+ *
+ * 官方厂商的 id 本来就短（`deepseek-flash`、`glm-4.6`）；
+ * 聚合平台的常常是 `Pro/deepseek-ai/DeepSeek-V3.2-Exp` 或
+ * `anthropic/claude-sonnet-4.5`，取最后一段才不至于把整行撑满。
+ */
+internal fun shortModelTag(model: String): String {
+    val trimmed = model.trim()
+    if (trimmed.isEmpty()) return ""
+    return trimmed.substringAfterLast('/').ifBlank { trimmed }
+}
+
 // 单个智能体列表项组件
 @Composable
-private fun AgentListItem(
-    data: UIFriendListData,
+private fun AgentListItem(    data: UIFriendListData,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier
@@ -215,11 +237,17 @@ private fun AgentListItem(
         ) {
             // 第一行：名字 + 模型 Tag
             Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     text = data.name,
+                    // 名字先测：不加 weight，Row 会先按内容量它，
+                    // 再把手里的剩余空间分给后面带 weight 的标签。
+                    // 加个上限只是防超长角色名独占整行，正常名字碰不到。
+                    modifier = Modifier.widthIn(max = NAME_MAX_WIDTH),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                     style = TextStyle(
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
@@ -228,22 +256,34 @@ private fun AgentListItem(
                     )
                 )
 
-                // 模型 Tag (如 GPT-4o)
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(50))
-                        .background(UIFriendBarTagBgBlue)
-                        .padding(horizontal = 7.dp, vertical = 2.dp)
-                ) {
-                    Text(
-                        text = data.modelTag,
-                        style = TextStyle(
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = UIFriendBarTagTextBlue,
-                            platformStyle = PlatformTextStyle(includeFontPadding = false)
+                // 模型 Tag：只放最后一段模型名，并吃掉剩下的宽度。
+                // 聚合平台的 id 常常是 Pro/deepseek-ai/DeepSeek-V3.2-Exp 这种，
+                // 原样摆进来会把角色名压没。
+                //
+                // weight(fill = false)：空间够就完整显示、不撑满整行；
+                // 不够才省略。名字已经量完，所以标签再长也挤不动它。
+                val tag = shortModelTag(data.modelTag)
+                if (tag.isNotEmpty()) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Box(
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .clip(RoundedCornerShape(50))
+                            .background(UIFriendBarTagBgBlue)
+                            .padding(horizontal = 7.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = tag,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = TextStyle(
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = UIFriendBarTagTextBlue,
+                                platformStyle = PlatformTextStyle(includeFontPadding = false)
+                            )
                         )
-                    )
+                    }
                 }
             }
 
@@ -272,8 +312,7 @@ private fun AgentListItem(
 
 @Preview
 @Composable
-private fun UIFriendCrewListPreview() {
-    // 假数据列表
+private fun UIFriendCrewListPreview() {    // 假数据列表
     val agentList = remember {
         listOf(
             UIFriendListData(

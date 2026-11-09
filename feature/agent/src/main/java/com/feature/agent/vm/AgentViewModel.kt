@@ -70,18 +70,19 @@ class AgentViewModel(application: Application) : BaseViewModel(application) {
     }
 
     /**
-     * 已配置的网关 id 列表。
+     * 已配置的服务商 id 列表（官方厂商 + 聚合平台）。
      *
-     * 用它判断「用户是否刚在设置页配好了一个新的网关」：
+     * 用它判断「用户是否刚在设置页配好了一个新的服务商」：
      * ViewModel 是 Activity 级的，从设置页返回不会重建，
      * 只有比对出变化才重新拉模型，免得每次返回都白跑一次网络请求。
      */
-    private var configuredGateways: List<String> = emptyList()
+    private var configuredProviders: List<String> = emptyList()
 
     /**
-     * 把「已配置 KEY / 已填地址的聚合网关」并入可选服务商。
+     * 把「已配置 Key 的服务商」并入可选列表。
      *
-     * 没配置的网关不列出来 —— 用户选中之后拉不到模型、也聊不了，
+     * Key 全部由用户自己填，APK 里不带任何一把，所以没配的服务商
+     * 必须藏起来 —— 列出来用户选中之后既拉不到模型也聊不了，
      * 只会让人以为是 App 坏了。想用哪个就先去设置页配好。
      */
     private fun refreshProviders() {
@@ -93,56 +94,58 @@ class AgentViewModel(application: Application) : BaseViewModel(application) {
                 AICredentials.baseUrlOf(provider).isNotBlank()
             }
         }
-        configuredGateways = usable.map { it.id }
+        configuredProviders = usable.map { it.id }
 
-        val gateways = usable.map { provider ->
+        val available = DEFAULT_PROVIDERS.filter { provider ->
+            usable.any { it.name == provider.brand }
+        } + usable.filter { it.isGateway }.map { provider ->
             Provider(
                 brand = provider.name,
                 company = provider.name,
                 defaultModel = provider.fallbackModels.firstOrNull().orEmpty(),
                 fallbackModels = provider.fallbackModels,
+                // 聚合平台的模型未必接受 enable_thinking，一律不发
                 thinkingSwitchable = false,
                 isGateway = true
             )
         }
 
-        val providers = DEFAULT_PROVIDERS + gateways.filter { gateway ->
-            DEFAULT_PROVIDERS.none { it.brand == gateway.brand }
-        }
-
         _uiState.update { state ->
             val brand = state.selectedBrand
-                .takeIf { name -> providers.any { it.brand == name } }
-                ?: DEFAULT_PROVIDERS.first().brand
+                .takeIf { name -> available.any { it.brand == name } }
+                ?: available.firstOrNull()?.brand
+                ?: state.selectedBrand
             val switched = brand != state.selectedBrand
-            val provider = providers.first { it.brand == brand }
+            val provider = available.firstOrNull { it.brand == brand }
             state.copy(
-                providers = providers,
+                providers = available,
                 selectedBrand = brand,
                 selectedModel = if (!switched) {
                     state.selectedModel
                 } else {
-                    provider.defaultModel
+                    provider?.defaultModel.orEmpty()
                 },
+                models = if (switched) emptyList() else state.models,
                 // 换厂商时价格必须跟着换，否则会显示上一个平台的价
-                isGateway = provider.isGateway,
+                isGateway = provider?.isGateway == true,
                 gatewayModels = if (switched) emptyList() else state.gatewayModels,
                 priceIsSnapshot = false,
                 priceSnapshotDate = null
             )
         }
-        loadModelsFor(_uiState.value.selectedBrand)
+        // 一家都没配时不发请求，创建页会显示引导去设置页
+        if (available.isNotEmpty()) loadModelsFor(_uiState.value.selectedBrand)
     }
 
     fun refresh() {
         viewModelScope.launch {
             loadFriends()
-            // 回到创建页时顺手同步一次凭证：用户可能刚在设置页配好了新网关。
+            // 回到创建页时顺手同步一次凭证：用户可能刚在设置页配好了新服务商。
             runCatching { settings.load() }
             val now = AIProviderCatalog.all
                 .filter { it.requiresKey.not() || AICredentials.apiKeyOf(it.id).isNotBlank() }
                 .map { it.id }
-            if (now != configuredGateways) refreshProviders()
+            if (now != configuredProviders) refreshProviders()
         }
     }
 
@@ -428,6 +431,15 @@ class AgentViewModel(application: Application) : BaseViewModel(application) {
         history: List<ChatMessage>
     ) {
         try {
+            // 以前 Key 是编译进 App 的，这里不会缺；现在全由用户自己填，
+            // 老好友或刚换设备时很可能一把 Key 都没有。直接发请求会拿到
+            // 一段 401，用户看不出是「该去填 Key」还是「Key 填错了」。
+            val provider = AIProviderCatalog.byName(friend.brand)
+            if (provider != null && provider.requiresKey &&
+                AICredentials.apiKeyOf(provider.id).isBlank()
+            ) {
+                throw MissingKeyException(provider.name)
+            }
             val ai = aiFor(friend.brand)
                 ?: throw IllegalStateException("暂不支持的厂商：${friend.brand}")
             val reply = ai.chat(
@@ -438,6 +450,10 @@ class AgentViewModel(application: Application) : BaseViewModel(application) {
             )
             if (_uiState.value.friends.any { it.id == friendId }) {
                 appendMessage(friendId, ChatMessage.assistant(reply))
+            }
+        } catch (t: MissingKeyException) {
+            _uiState.update {
+                it.copy(error = "还没有填 ${t.providerName} 的 API Key，去设置页填一把就能继续聊。")
             }
         } catch (t: Throwable) {
             _uiState.update { it.copy(error = t.readableMessage()) }
@@ -485,3 +501,12 @@ class AgentViewModel(application: Application) : BaseViewModel(application) {
         const val USER_AVATAR_ID = "user"
     }
 }
+
+
+/**
+ * 用户还没给这个服务商填 Key。
+ *
+ * 单独一个类型，是因为它的提示和网络错误完全不同 ——
+ * 要告诉用户「去哪里做什么」，而不是把 401 原文丢给他。
+ */
+private class MissingKeyException(val providerName: String) : Exception()

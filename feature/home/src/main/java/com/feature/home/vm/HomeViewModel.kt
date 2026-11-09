@@ -49,8 +49,25 @@ class HomeViewModel(application: Application) : BaseViewModel(application) {
             val maxJoinSeq = storedRooms.flatMap { it.memberJoinSeq.values }.maxOrNull() ?: 0L
             seqCounter.set(maxOf(maxMessageSeq, maxJoinSeq))
             refresh()
+            observeFriends()
         }
         refreshPricesDaily()
+    }
+
+    /**
+     * 好友列表跟着数据库走，而不是靠各条返回路径记得调 refresh()。
+     *
+     * 换头像、编辑资料、发消息都会写库，写完这里就会收到新列表，
+     * 首页不再需要「退出时手动同步」这种容易漏掉的约定。
+     */
+    private fun observeFriends() {
+        viewModelScope.launch {
+            friendRepository.observe().collect { stored ->
+                _uiState.update { state ->
+                    state.copy(friends = stored.map { it.toFriend() })
+                }
+            }
+        }
     }
 
     /**

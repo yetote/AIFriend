@@ -26,8 +26,35 @@ class ModelFilterTest {
 
         val response = json.decodeFromString<QianwenModelResponse>(raw)
 
+        // 自家 Qwen 排前面；百炼代理的第三方对话模型（DeepSeek）也要保留，
+        // 否则用户在控制台看得到、App 里选不到
         assertEquals(
-            listOf("qwen3.8-flash", "qwen3.8-max", "qwen3-vl-plus"),
+            listOf("qwen3.8-flash", "qwen3.8-max", "qwen3-vl-plus", "deepseek-v4.1-flash"),
+            response.qianwenModelList.toChatModelIds()
+        )
+    }
+
+    @Test
+    fun `qianwen drops non chat models that are not qwen`() {
+        val raw = """
+            {
+              "object": "list",
+              "data": [
+                {"id": "qwen3.8-max", "object": "model", "created": 300},
+                {"id": "wan2.7-image-pro", "object": "model", "created": 400},
+                {"id": "Tripo/Tripo-H3.1", "object": "model", "created": 500},
+                {"id": "paraformer-realtime-v2", "object": "model", "created": 600},
+                {"id": "text-embedding-v4", "object": "model", "created": 700},
+                {"id": "kimi/kimi-k3", "object": "model", "created": 200}
+              ]
+            }
+        """.trimIndent()
+
+        val response = json.decodeFromString<QianwenModelResponse>(raw)
+
+        // 图像 / 3D / 语音 / 向量都不该出现，第三方对话模型 kimi 要留着
+        assertEquals(
+            listOf("qwen3.8-max", "kimi/kimi-k3"),
             response.qianwenModelList.toChatModelIds()
         )
     }

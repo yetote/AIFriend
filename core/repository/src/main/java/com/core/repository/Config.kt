@@ -1,21 +1,13 @@
 package com.core.repository
 
-import com.core.network.DEEPSEEK_KEY
-import com.core.network.DOUBAO_KEY
-import com.core.network.GEMINI_KEY
-import com.core.network.KIMI_KEY
-import com.core.network.QIANWEN_KEY
-import com.core.network.SPARK_KEY
-import com.core.network.URL_DEEPSEEK
-import com.core.network.URL_DOUBAO
-import com.core.network.URL_GEMINI
-import com.core.network.URL_KIMI
-import com.core.network.URL_QIANWEN
-import com.core.network.URL_SPARK
-import com.core.network.URL_ZHIPU
-import com.core.network.ZHIPU_KEY
 import io.ktor.http.ContentType
 
+/**
+ * 一次请求要用的连接信息。
+ *
+ * 注意这里带 [apiKey]，所以不要把它打印到日志里，
+ * 也不要塞进任何会被序列化后上报的结构。
+ */
 data class ApiConfig(
     val baseUrl: String,
     val chatUrl: String = "",
@@ -23,49 +15,3 @@ data class ApiConfig(
     val headers: Map<String, String> = emptyMap(),
     val contentType: ContentType = ContentType.Application.Json
 )
-
-object AIConfigs{
-    fun geminiConfig() = ApiConfig(
-        baseUrl = URL_GEMINI,
-        chatUrl = "$URL_GEMINI/chat/completions",
-        apiKey = GEMINI_KEY,
-        headers = mapOf("Authorization" to "Bearer $GEMINI_KEY")
-    )
-
-    fun deepseekConfig() = ApiConfig(
-        baseUrl = URL_DEEPSEEK,
-        chatUrl = "$URL_DEEPSEEK/chat/completions",
-        apiKey = DEEPSEEK_KEY,
-        headers = mapOf("Authorization" to "Bearer $DEEPSEEK_KEY")
-    )
-    fun doubaoConfig() = ApiConfig(
-        baseUrl = URL_DOUBAO,
-        chatUrl = "$URL_DOUBAO/chat/completions",
-        apiKey = DOUBAO_KEY,
-        headers = mapOf("Authorization" to "Bearer $DOUBAO_KEY")
-    )
-    fun zhipuConfig() = ApiConfig(
-        baseUrl = URL_ZHIPU,
-        chatUrl = "$URL_ZHIPU/chat/completions",
-        apiKey = ZHIPU_KEY,
-        headers = mapOf("Authorization" to "Bearer $ZHIPU_KEY")
-    )
-    fun kimiConfig() = ApiConfig(
-        baseUrl = URL_KIMI,
-        chatUrl = "$URL_KIMI/chat/completions",
-        apiKey = KIMI_KEY,
-        headers = mapOf("Authorization" to "Bearer $KIMI_KEY")
-    )
-    fun qianwenConfig() = ApiConfig(
-        baseUrl = URL_QIANWEN,
-        chatUrl = "$URL_QIANWEN/chat/completions",
-        apiKey = QIANWEN_KEY,
-        headers = mapOf("Authorization" to "Bearer $QIANWEN_KEY")
-    )
-    fun sparkConfig() = ApiConfig(
-        baseUrl = URL_SPARK,
-        chatUrl = "$URL_SPARK/chat/completions",
-        apiKey = SPARK_KEY,
-        headers = mapOf("Authorization" to "Bearer $SPARK_KEY")
-    )
-}

@@ -1,12 +1,7 @@
 package com.ui.agent
 
 import com.ui.common.pageInsets
-import com.ui.common.UIAvatarCropDialog
 import com.ui.common.UIAvatar
-import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -89,6 +84,15 @@ import com.ui.common.theme.UIFriendBarTagBgBlue
 import com.ui.common.theme.UIFriendBarTagTextBlue
 import com.ui.common.theme.UIFriendBarTitleColor
 
+/**
+ * 聊天顶栏里模型标签的宽度上限。
+ *
+ * 顶栏比列表项更挤：返回键 + 头像 + 名字 + 角色 + 标签挤在同一行，
+ * 而标签是「补充信息」，名字才是主体。120dp 够放
+ * `DeepSeek-V3.1-Terminus` 这种真实 id 的主要部分，再多就把角色名挤没了。
+ */
+private val CHAT_TAG_MAX_WIDTH = 120.dp
+
 @Composable
 fun UIFriendChatPage(
     friendName: String,
@@ -104,13 +108,8 @@ fun UIFriendChatPage(
     onSend: () -> Unit,
     onBack: () -> Unit,
     onRetry: () -> Unit,
-    onChangeAvatar: (ByteArray) -> Unit
+    onAvatarClick: () -> Unit
 ) {
-    var cropUri by remember { mutableStateOf<Uri?>(null) }
-    val avatarPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) cropUri = uri
-    }
-
     UIGradientBackground(modifier = Modifier.pageInsets()) {
         Column(
             modifier = Modifier.fillMaxSize()
@@ -121,11 +120,8 @@ fun UIFriendChatPage(
                 model = model,
                 avatarPath = avatarPath,
                 onBack = onBack,
-                onAvatarClick = {
-                    avatarPicker.launch(
-                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                    )
-                }
+                // 顶栏头像只负责「打开信息页」，相册留在信息页那一层触发
+                onAvatarClick = onAvatarClick
             )
 
             val listState = rememberLazyListState()
@@ -227,18 +223,6 @@ fun UIFriendChatPage(
             )
         }
     }
-
-    val pendingCrop = cropUri
-    if (pendingCrop != null) {
-        UIAvatarCropDialog(
-            uri = pendingCrop,
-            onCancel = { cropUri = null },
-            onConfirm = { bytes ->
-                cropUri = null
-                onChangeAvatar(bytes)
-            }
-        )
-    }
 }
 
 @Composable
@@ -274,12 +258,17 @@ private fun ChatTopBar(
             modifier = Modifier.clickable { onAvatarClick() }
         )
         Spacer(Modifier.width(10.dp))
+        // 名字 + 角色。weight 表示「标签量完之后剩下的宽度都给你」，
+        // 标签自己有上限，所以这里不会被挤到 0；再加上 maxLines=1 + 省略号，
+        // 长名字是收尾打点，不是被拉变形。
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = friendName,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = UIFriendBarTitleColor
+                color = UIFriendBarTitleColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
             if (role.isNotBlank()) {
                 Text(
@@ -291,19 +280,28 @@ private fun ChatTopBar(
                 )
             }
         }
-        Box(
-            modifier = Modifier
-                .padding(end = 8.dp)
-                .clip(RoundedCornerShape(50))
-                .background(UIFriendBarTagBgBlue)
-                .padding(horizontal = 10.dp, vertical = 5.dp)
-        ) {
-            Text(
-                text = model,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Medium,
-                color = UIFriendBarTagTextBlue
-            )
+        // 模型标签：和列表一样只取最后一段，并限宽。
+        // 顶栏比列表更吃紧（头像 + 返回 + 名字 + 角色），
+        // 聚合平台的 id 原样摆进来会把角色名挤没。
+        val tag = shortModelTag(model)
+        if (tag.isNotEmpty()) {
+            Spacer(Modifier.width(8.dp))
+            Box(
+                modifier = Modifier
+                    .widthIn(max = CHAT_TAG_MAX_WIDTH)
+                    .clip(RoundedCornerShape(50))
+                    .background(UIFriendBarTagBgBlue)
+                    .padding(horizontal = 10.dp, vertical = 5.dp)
+            ) {
+                Text(
+                    text = tag,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = UIFriendBarTagTextBlue,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
     }
 }

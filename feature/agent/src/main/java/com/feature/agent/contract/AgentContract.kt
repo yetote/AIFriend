@@ -2,66 +2,43 @@ package com.feature.agent.contract
 
 import com.core.ai.model.GatewayModel
 import com.core.ai.model.ModelPrice
+import com.core.repository.settings.AIProviderCatalog
 import com.feature.agent.model.Friend
 import com.feature.agent.model.Provider
 
 /**
- * 当前已接入对话链路的厂商。未迁移到多轮协议的厂商不列出来，避免用户创建出不能聊的好友。
+ * 官方厂商的默认形态，直接从服务商目录派生。
+ *
+ * 以前这份列表是手写的第二份模型名，和目录里那份迟早对不上：
+ * 目录是凭证加载的依据，这里只是创建页的初值，两处各写一遍必然漂移。
+ * 现在只保留一处真源 [AIProviderCatalog.official]。
+ *
+ * 注意这只是「初值」：真正可选的厂商由 AgentViewModel 按「用户是否配了 Key」筛。
  */
-val DEFAULT_PROVIDERS = listOf(
+val DEFAULT_PROVIDERS: List<Provider> = AIProviderCatalog.official.map { provider ->
     Provider(
-        brand = "Deepseek",
-        company = "深度求索",
-        defaultModel = "deepseek-flash",
-        fallbackModels = listOf("deepseek-flash", "deepseek-v4-pro")
-    ),
-    Provider(
-        brand = "豆包",
-        company = "字节跳动",
-        defaultModel = "doubao-seed-evolving",
-        fallbackModels = listOf("doubao-seed-evolving", "doubao-seed-2-1-pro-260915")
-    ),
-    Provider(
-        brand = "智谱清言",
-        company = "北京智谱华章",
-        defaultModel = "glm-5.3-flash",
-        fallbackModels = listOf("glm-5.3-flash", "glm-5.3", "glm-5.2")
-    ),
-    Provider(
-        brand = "Kimi",
-        company = "月之暗面",
-        defaultModel = "kimi-k3.1-pro",
-        fallbackModels = listOf("kimi-k3.1-pro", "kimi-k3", "kimi-k2.6")
-    ),
-    Provider(
-        brand = "通义千问",
-        company = "阿里巴巴",
-        defaultModel = "qwen3.8-flash",
-        fallbackModels = listOf("qwen3.8-flash", "qwen3.8-max", "qwen-plus")
-    ),
-    Provider(
-        brand = "星火",
-        company = "科大讯飞",
-        defaultModel = "x1",
-        fallbackModels = listOf("x1"),
-        thinkingSwitchable = false
-    ),
-    Provider(
-        brand = "Gemini",
-        company = "Google",
-        defaultModel = "gemini-3.8-flash",
-        fallbackModels = listOf("gemini-3.8-flash", "gemini-3.7-flash", "gemini-flash-latest"),
-        thinkingSwitchable = false
+        brand = provider.name,
+        company = provider.company.ifBlank { provider.name },
+        defaultModel = provider.fallbackModels.firstOrNull().orEmpty(),
+        fallbackModels = provider.fallbackModels,
+        thinkingSwitchable = provider.thinkingSwitchable,
+        isGateway = false
     )
-)
+}
 
 data class AgentUiState(
     val friends: List<Friend> = emptyList(),
     val userAvatarPath: String? = null,
-    val providers: List<Provider> = DEFAULT_PROVIDERS,
-    val selectedBrand: String = DEFAULT_PROVIDERS.first().brand,
+    /**
+     * 可选服务商。
+     *
+     * 初值是空的，不是 [DEFAULT_PROVIDERS]：Key 由用户自己填，
+     * 加载完成前谁都没配，先摆出 7 个官方厂商会闪一下又消失。
+     */
+    val providers: List<Provider> = emptyList(),
+    val selectedBrand: String = "",
     val models: List<String> = emptyList(),
-    val selectedModel: String = DEFAULT_PROVIDERS.first().defaultModel,
+    val selectedModel: String = "",
     val isLoadingModels: Boolean = false,
     val thinkingEnabled: Boolean = false,
     val activeFriendId: String? = null,
@@ -103,4 +80,12 @@ sealed interface AgentScreen {
     data object Create : AgentScreen
     data class Chat(val friendId: String) : AgentScreen
     data class Edit(val friendId: String) : AgentScreen
+
+    /**
+     * 智能体信息页，从聊天页点头像进入。
+     *
+     * 不直接弹相册：先给一层「他是什么角色、用的什么模型」的信息页，
+     * 换头像在那页里再单独点一次。
+     */
+    data class Info(val friendId: String) : AgentScreen
 }
