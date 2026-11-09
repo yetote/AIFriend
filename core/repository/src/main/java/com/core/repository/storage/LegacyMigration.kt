@@ -54,7 +54,7 @@ object LegacyMigration {
 
         db.withTransaction {
             friends.forEach { friend ->
-                db.friendDao().upsert(friend.toEntity())
+                db.friendDao().insertFriend(friend.toEntity())
                 friend.messages.forEach { message ->
                     db.friendDao().insertMessage(message.toEntity(friend.id))
                 }

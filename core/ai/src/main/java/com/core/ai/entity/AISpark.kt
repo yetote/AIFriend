@@ -1,21 +1,14 @@
 package com.core.ai.entity
 
-import com.core.repository.AIConfigs
-
-class AISpark : OpenAICompatibleAI(
+class AISpark : OfficialAI(
     brandName = "星火",
     company = "科大讯飞",
-    config = AIConfigs.sparkConfig()
+    providerId = "spark"
 ) {
     /**
-     * 讯飞没有开放 /models 接口（实测 404），目前确认可用的对话模型是 x1，先固定下来。
+     * 讯飞没有开放 /models 接口（实测 404），模型名走目录里的兜底列表。
      */
-    override suspend fun requestModel() {
-        modelSet.clear()
-        modelSet.addAll(SPARK_MODELS)
-    }
-
-    private companion object {
-        val SPARK_MODELS = listOf("x1")
+    override suspend fun loadModels() {
+        useFallbackModels()
     }
 }

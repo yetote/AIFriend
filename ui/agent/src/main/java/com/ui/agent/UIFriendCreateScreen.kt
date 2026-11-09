@@ -66,6 +66,7 @@ import com.ui.agent.data.UIProvider
 import com.ui.agent.data.UIPriceTone
 import com.ui.common.theme.UIActionBrush
 import com.ui.common.theme.UIBlobBlue
+import com.ui.common.theme.UIFriendBarCreateButtonText
 import com.ui.common.theme.UIFriendBarItemMetaColor
 import com.ui.common.theme.UIFriendBarTagBgBlue
 import com.ui.common.theme.UIFriendBarTagTextBlue
@@ -114,7 +115,13 @@ fun UIFriendCreateScreen(
     /** 刷新进行中，按钮转圈并禁用。 */
     isRefreshingPrice: Boolean = false,
     /** 点「刷新价格」。为空表示当前平台不支持刷新。 */
-    onRefreshPrice: () -> Unit = {}
+    onRefreshPrice: () -> Unit = {},
+    /**
+     * 一个服务商都没配时，引导用户去设置页填 Key。
+     *
+     * 不设默认值：漏传应该是编译错误，而不是点了没反应。
+     */
+    onOpenSettings: () -> Unit
 ) {
     var name by rememberSaveable(initialName) { mutableStateOf(initialName) }
     var role by rememberSaveable(initialRole) { mutableStateOf(initialRole) }
@@ -310,11 +317,48 @@ fun UIFriendCreateScreen(
                     val gateways = providers.filter { it.isGateway }
 
                     SectionLabel(text = "模型提供方")
-                    ProviderGrid(
-                        providers = official,
-                        selectedBrand = selectedBrand,
-                        onBrandSelect = onBrandSelect
-                    )
+
+                    if (official.isEmpty() && gateways.isEmpty()) {
+                        // Key 全由用户自己填，一个都没配时这里不能空着：
+                        // 空网格看起来像加载失败，用户不知道下一步该去哪。
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .uiCard(shape = RoundedCornerShape(UIRadiusCard), elevation = 6.dp)
+                                .padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "还没有可用的模型服务",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = UIFriendBarTitleColor
+                                )
+                                Spacer(Modifier.height(3.dp))
+                                Text(
+                                    text = "App 不内置任何 API Key。去设置页填一个自己的 Key，就能开始创建好友。",
+                                    fontSize = 12.sp,
+                                    lineHeight = 17.sp,
+                                    color = UIFriendBarItemMetaColor
+                                )
+                            }
+                            Spacer(Modifier.width(12.dp))
+                            Text(
+                                text = "去设置",
+                                modifier = Modifier.clickable(onClick = onOpenSettings),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = UIFriendBarCreateButtonText
+                            )
+                        }
+                    } else {
+                        ProviderGrid(
+                            providers = official,
+                            selectedBrand = selectedBrand,
+                            onBrandSelect = onBrandSelect
+                        )
+                    }
 
                     if (gateways.isNotEmpty()) {
                         Spacer(Modifier.height(2.dp))
@@ -376,8 +420,10 @@ fun UIFriendCreateScreen(
                         }
                     }
 
-                    if (isGateway && modelGroups.isNotEmpty()) {
-                        // 聚合平台：厂商做成横向标签，选中的那家在下面竖向铺开
+                    if (modelGroups.isNotEmpty()) {
+                        // 有分组就按牌子摆：聚合平台（硅基流动…）和官方厂商里
+                        // 代理了别家模型的那两家（百炼、方舟）都走这里。
+                        // 后者没有价格，组标题上方不会出现价格说明。
                         ModelGroupBrowser(
                             groups = modelGroups,
                             selectedModel = selectedModel,
@@ -387,7 +433,7 @@ fun UIFriendCreateScreen(
                             onRefreshPrice = onRefreshPrice
                         )
                     } else {
-                        // 官方厂商：一个牌子一个列表，不分组也不标价
+                        // 纯官方厂商：一个牌子一个列表，不分组也不标价
                         models.forEach { model ->
                             ModelOption(
                                 model = UIModelOption(id = model, label = model),
@@ -400,7 +446,7 @@ fun UIFriendCreateScreen(
                     // 只有真的拿到价格时才解释价格；自定义网关可能一个价都查不到，
                     // 那时候再说「价格按每百万 token 计」就成了空话
                     val hasAnyPrice = modelGroups.any { group -> group.models.any { it.price != null } }
-                    if (isGateway && hasAnyPrice) {
+                    if (hasAnyPrice) {
                         PriceFootnote(
                             isSnapshot = priceIsSnapshot,
                             capturedAt = priceSnapshotDate

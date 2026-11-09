@@ -112,13 +112,48 @@ fun UIModelSettingsPage(
                 Spacer(Modifier.height(14.dp))
                 SectionLabel("选择服务商")
                 Spacer(Modifier.height(8.dp))
-                state.providers.forEach { provider ->
+                /*
+                 * 官方厂商和聚合平台分组显示。
+                 *
+                 * 十个服务商平铺在一列里，用户分不清「硅基流动」和「Deepseek」
+                 * 有什么区别 —— 前者是一把 Key 调几十家模型的中转，
+                 * 后者是模型厂商自己的开放平台，计费也各在各家后台。
+                 */
+                val officialOptions = state.providers.filterNot { it.isGateway }
+                val gatewayOptions = state.providers.filter { it.isGateway }
+                officialOptions.forEach { provider ->
                     ProviderRow(
                         option = provider,
                         selected = provider.id == state.selectedProviderId,
                         onClick = { onProviderSelect(provider.id) }
                     )
                     Spacer(Modifier.height(8.dp))
+                }
+                if (gatewayOptions.isNotEmpty()) {
+                    Spacer(Modifier.height(4.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "聚合平台",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = UIFriendBarItemMetaColor
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = "一把 Key 调多家模型",
+                            fontSize = 11.sp,
+                            color = UIFriendBarItemMetaColor.copy(alpha = 0.7f)
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    gatewayOptions.forEach { provider ->
+                        ProviderRow(
+                            option = provider,
+                            selected = provider.id == state.selectedProviderId,
+                            onClick = { onProviderSelect(provider.id) }
+                        )
+                        Spacer(Modifier.height(8.dp))
+                    }
                 }
 
                 Spacer(Modifier.height(6.dp))
@@ -256,14 +291,15 @@ private fun IntroCard() {
             .padding(16.dp)
     ) {
         Text(
-            text = "一把 Key 用遍所有模型",
+            text = "用你自己的 Key",
             fontSize = 15.sp,
             fontWeight = FontWeight.SemiBold,
             color = UIFriendBarTitleColor
         )
         Spacer(Modifier.height(6.dp))
         Text(
-            text = "填一次就能创建使用不同模型的 AI 好友，不用为每个模型单独注册。",
+            text = "App 不内置任何 Key，填谁的用谁的、走谁的额度。" +
+                "配一个聚合平台就能覆盖几十个模型；想直连官方厂商，也在这里填它自己的 Key。",
             fontSize = 12.sp,
             color = UIFriendBarItemSubtitleColor,
             lineHeight = 18.sp

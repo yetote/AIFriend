@@ -107,7 +107,8 @@ fun HomeRoute(viewModel: HomeViewModel = viewModel()) {
                 onExit = {
                     viewModel.back()
                     viewModel.refresh()
-                }
+                },
+                onOpenSettings = viewModel::openSettings
             )
 
             is HomeScreen.Chat -> AgentRoute(
@@ -115,7 +116,8 @@ fun HomeRoute(viewModel: HomeViewModel = viewModel()) {
                 onExit = {
                     viewModel.back()
                     viewModel.refresh()
-                }
+                },
+                onOpenSettings = viewModel::openSettings
             )
 
             is HomeScreen.EditFriend -> AgentRoute(
@@ -123,7 +125,8 @@ fun HomeRoute(viewModel: HomeViewModel = viewModel()) {
                 onExit = {
                     viewModel.back()
                     viewModel.refresh()
-                }
+                },
+                onOpenSettings = viewModel::openSettings
             )
 
             HomeScreen.RoomCreate -> RoomRoute(

@@ -35,3 +35,6 @@ google-services.json
 
 # Android Profiling
 *.hprof
+
+# 还原出来的旧 Key，禁止提交
+keys-recovered.txt

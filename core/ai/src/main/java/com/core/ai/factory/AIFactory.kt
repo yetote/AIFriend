@@ -19,12 +19,17 @@ class AIFactory : IFactory {
     /**
      * 按品牌名创建实例。
      *
-     * 两条路径：内置品牌走 [aiMap] 的无参构造；
+     * 内置品牌走 [aiMap] 的无参构造；
      * 聚合网关要带上服务商信息，走 [gatewayMap]。
+     *
+     * 先查 [aiMap]：[AIProviderCatalog.all] 里同时有官方厂商和聚合平台，
+     * 反过来的话 Deepseek、Kimi 这些会被当成网关，凭空多出一个
+     * 「用哪把 Key」的分支，官方厂商的思考开关也会失效。
      */
     fun createAI(brandName: String): IAI? {
+        aiMap[brandName]?.let { return createAI(it) }
         gatewayMap[brandName]?.let { return AIGateway(it) }
-        return aiMap[brandName]?.let { createAI(it) }
+        return null
     }
 
     companion object {
@@ -43,9 +48,12 @@ class AIFactory : IFactory {
          *
          * 用展示名做键，是因为好友表里存的就是品牌名字符串，
          * 这样用户换厂商不用改数据库结构。
+         *
+         * 只收 [AIProviderCatalog.gateways]：官方厂商是独立实体类，
+         * 混进来会让它们被错误地当成网关。
          */
         val gatewayMap: Map<String, com.core.repository.settings.AIProvider> =
-            AIProviderCatalog.all.associateBy { it.name }
+            AIProviderCatalog.gateways.associateBy { it.name }
 
         fun getAIClassByName(name: String): Class<out IAI>? = aiMap[name]
 

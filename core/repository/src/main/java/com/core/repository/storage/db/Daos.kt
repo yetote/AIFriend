@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface FriendDao {
@@ -13,8 +14,45 @@ interface FriendDao {
     @Query("SELECT * FROM friends ORDER BY rowid ASC")
     suspend fun loadAll(): List<FriendWithMessages>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(friend: FriendEntity)
+    /**
+     * 列表页用的响应式版本。
+     *
+     * 之前首页靠「退出时手工调一次 refresh()」来同步，
+     * 只要有一条返回路径没走到那个回调（改完头像、改完资料、系统返回键），
+     * 首页就还是旧数据。改成监听 friends / friend_messages 两张表的变更，
+     * 任何写入（换头像、编辑资料、发消息）都会自动把新列表推过来。
+     */
+    @Transaction
+    @Query("SELECT * FROM friends ORDER BY rowid ASC")
+    fun observeAll(): Flow<List<FriendWithMessages>>
+
+    /**
+     * 只更新好友自身的资料字段，绝不碰 friend_messages。
+     *
+     * 不能用 @Insert(onConflict = REPLACE)：SQLite 的 REPLACE 是「先 DELETE 再 INSERT」，
+     * 而 friend_messages 对 friends 是 ON DELETE CASCADE，
+     * 于是每次编辑资料都会把该好友的聊天记录整条连带删掉。
+     * 这里显式写成 UPDATE，行还在、外键不触发级联，消息自然留着。
+     */
+    @Query(
+        "UPDATE friends SET name = :name, role = :role, prompt = :prompt, " +
+            "brand = :brand, company = :company, model = :model, " +
+            "thinkingEnabled = :thinkingEnabled WHERE id = :id"
+    )
+    suspend fun updateProfile(
+        id: String,
+        name: String,
+        role: String,
+        prompt: String,
+        brand: String,
+        company: String,
+        model: String,
+        thinkingEnabled: Boolean
+    ): Int
+
+    /** 新建好友时才走插入。 */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertFriend(friend: FriendEntity)
 
     @Insert
     suspend fun insertMessage(message: FriendMessageEntity)

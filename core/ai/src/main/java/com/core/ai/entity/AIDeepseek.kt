@@ -4,23 +4,28 @@ import com.core.ai.model.ChatCompletionRequest
 import com.core.ai.model.DeepseekModelResponse
 import com.core.ai.model.ThinkingConfig
 import com.core.common.GlobalErrorHandler.handleCoreError
-import com.core.repository.AIConfigs
 import com.core.repository.WebRepository
 
-class AIDeepseek : OpenAICompatibleAI(
+class AIDeepseek : OfficialAI(
     brandName = "Deepseek",
     company = "深度求索",
-    config = AIConfigs.deepseekConfig()
+    providerId = "deepseek"
 ) {
-    override suspend fun requestModel() {
+    override suspend fun loadModels() {
         val response = WebRepository.instance
             .getModel<DeepseekModelResponse>(config)
             .getOrElse {
                 handleCoreError(it)
+                useFallbackModels()
                 return
             }
+        val models = response.deepseekModelList.mapNotNull { it.id }.filter { it.isNotBlank() }
         modelSet.clear()
-        modelSet.addAll(response.deepseekModelList.map { it.id })
+        if (models.isEmpty()) {
+            useFallbackModels()
+        } else {
+            modelSet.addAll(models)
+        }
     }
 
     override fun ChatCompletionRequest.applyThinking(

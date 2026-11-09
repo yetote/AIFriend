@@ -16,7 +16,9 @@ data class UIProviderOption(
     val hasKey: Boolean,
     /** 自定义服务商需要用户自己填 Base URL。 */
     val editableBaseUrl: Boolean = false,
-    val baseUrl: String = ""
+    val baseUrl: String = "",
+    /** 聚合平台；页面据此把官方厂商和聚合平台分成两组。 */
+    val isGateway: Boolean = false
 )
 
 /** 设置页模型列表里的一项：id + 可选价格。 */

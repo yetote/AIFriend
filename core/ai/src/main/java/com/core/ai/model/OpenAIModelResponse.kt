@@ -222,3 +222,60 @@ data class GatewayModel(
         const val OTHER_VENDOR = "其他"
     }
 }
+
+/**
+ * 官方厂商里「代理了别家模型」的那一类（百炼、方舟）用的分组名推断。
+ *
+ * 这两家的模型 id 混着两种写法：
+ * - 自家的 `qwen3.8-flash`、`doubao-seed-evolving`，没有厂商段；
+ * - 代理的 `deepseek-v4-pro-0813`、`kimi/kimi-k3`、`ZHIPU/GLM-5.3`，
+ *   有的带 `/`，有的只是名字里带着别家的牌子。
+ *
+ * 不能直接复用 [GatewayModel.vendorLabel]：它靠 `/` 切段，
+ * 而百炼的第三方 id 多数是平的（`deepseek-v4-pro-0813`），
+ * 按那条规则会整段被当成厂商名，分组栏里就会出现
+ * 「deepseek-v4-pro-0813」这种以模型名当分类的假组。
+ * 所以这里按「认识的牌子」匹配，认不出的归到 [selfName]。
+ */
+fun vendorLabelOf(modelId: String, selfName: String): String {
+    val lower = modelId.lowercase()
+
+    // 带路径的（`kimi/kimi-k3`、`ZHIPU/GLM-5.3`）先按段匹配，再看整串
+    KNOWN_VENDOR_MARKERS.forEach { (marker, label) ->
+        if (lower.startsWith(marker) || lower.contains("/$marker")) return label
+    }
+    // 认不出的（自家新系列、或没听过的第三方）留在自家组，
+    // 避免分组栏多出一堆只有一条模型的分组
+    return selfName
+}
+
+/**
+ * 认得出的模型牌子 → 展示用厂商名。
+ *
+ * 只收「一眼能认」的：这些是百炼 / 方舟上真正会出现的第三方对话模型。
+ * 宁可把少见模型归到自家组，也不要让分组栏塞满一行行猜出来的名字。
+ *
+ * 匹配用 startsWith，所以 marker 本身要有足够区分度：
+ * `step` 这种通用词会误吞 `stepladder-xxx`，必须写成 `step-` / `stepfun`。
+ * 同理 `yi-` 带横杠，避免吃掉 `yinglong` 之类。
+ */
+private val KNOWN_VENDOR_MARKERS: List<Pair<String, String>> = listOf(
+    "qwen" to "通义千问",
+    "doubao" to "豆包",
+    "deepseek" to "DeepSeek",
+    "kimi" to "Kimi",
+    "moonshot" to "Kimi",
+    "glm" to "GLM",
+    "zhipu" to "GLM",
+    "minimax" to "MiniMax",
+    "mimo-" to "小米",
+    "ernie" to "文心一言",
+    "hunyuan" to "混元",
+    "baichuan" to "百川",
+    "internlm" to "书生",
+    "step-" to "阶跃星辰",
+    "stepfun" to "阶跃星辰",
+    "yi-" to "零一万物",
+    "llama" to "Llama",
+    "mistral" to "Mistral"
+)

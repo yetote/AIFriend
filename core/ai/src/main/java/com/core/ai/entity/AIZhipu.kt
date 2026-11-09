@@ -5,23 +5,28 @@ import com.core.ai.model.ThinkingConfig
 import com.core.ai.model.ZhipuModelResponse
 import com.core.ai.model.toChatModelIds
 import com.core.common.GlobalErrorHandler.handleCoreError
-import com.core.repository.AIConfigs
 import com.core.repository.WebRepository
 
-class AIZhipu : OpenAICompatibleAI(
+class AIZhipu : OfficialAI(
     brandName = "智谱清言",
     company = "北京智谱华章",
-    config = AIConfigs.zhipuConfig()
+    providerId = "zhipu"
 ) {
-    override suspend fun requestModel() {
+    override suspend fun loadModels() {
         val response = WebRepository.instance
             .getModel<ZhipuModelResponse>(config)
             .getOrElse {
                 handleCoreError(it)
+                useFallbackModels()
                 return
             }
+        val models = response.zhipuModelList.toChatModelIds()
         modelSet.clear()
-        modelSet.addAll(response.zhipuModelList.toChatModelIds())
+        if (models.isEmpty()) {
+            useFallbackModels()
+        } else {
+            modelSet.addAll(models)
+        }
     }
 
     /**

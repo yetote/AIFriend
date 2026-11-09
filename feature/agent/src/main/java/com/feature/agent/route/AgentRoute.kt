@@ -17,12 +17,14 @@ import com.feature.agent.data.toUIModelGroups
 import com.feature.agent.vm.AgentViewModel
 import com.ui.agent.UIFriendChatPage
 import com.ui.agent.UIFriendCreateScreen
+import com.ui.agent.UIFriendInfoScreen
 import com.ui.agent.data.UIProvider
 
 @Composable
 fun AgentRoute(
     initial: AgentScreen,
     onExit: () -> Unit,
+    onOpenSettings: () -> Unit,
     viewModel: AgentViewModel = viewModel()
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -39,7 +41,16 @@ fun AgentRoute(
         }
     }
 
-    BackHandler { onExit() }
+    BackHandler {
+        // 系统返回要按「来路」退，不能一律退出到底：
+        // 信息页是从聊天页进来的，退回聊天页才符合预期。
+        val back = when (val current = screen) {
+            is AgentScreen.Info -> AgentScreen.Chat(current.friendId)
+            is AgentScreen.Edit -> AgentScreen.Chat(current.friendId)
+            else -> null
+        }
+        if (back != null) screen = back else onExit()
+    }
 
     when (val current = screen) {
         AgentScreen.Create -> {
@@ -73,6 +84,7 @@ fun AgentRoute(
                 } == true,
                 isRefreshingPrice = state.isRefreshingPrice,
                 onRefreshPrice = viewModel::refreshPrice,
+                onOpenSettings = onOpenSettings,
                 onSubmit = { name, role, prompt, avatarBytes, thinking ->
                     val friend = viewModel.createFriend(
                         name = name,
@@ -109,7 +121,38 @@ fun AgentRoute(
                     onSend = viewModel::send,
                     onBack = onExit,
                     onRetry = viewModel::retry,
-                    onChangeAvatar = { bytes -> viewModel.setFriendAvatar(friend.id, bytes) }
+                    // 点头像先去信息页，不再直接弹相册：
+                    // 用户多半只是想看看这个角色的设定和模型，
+                    // 直接跳相册显得突兀，还得先取消才能继续。
+                    onAvatarClick = { screen = AgentScreen.Info(friend.id) }
+                )
+            }
+        }
+
+        is AgentScreen.Info -> {
+            // 信息页总是从聊天页进来，activeFriendId 那时已经设好；
+            // 先按 id 查列表，查不到再退回 activeFriend 兜底。
+            val friend = state.friends.firstOrNull { it.id == current.friendId }
+                ?: state.activeFriend?.takeIf { it.id == current.friendId }
+            if (!state.loaded) {
+                // 等好友列表加载完成
+            } else if (friend == null) {
+                // 好友被删了，退回聊天（聊天那条分支会再检测并退出）
+                LaunchedEffect(Unit) { screen = AgentScreen.Chat(current.friendId) }
+            } else {
+                UIFriendInfoScreen(
+                    friendName = friend.name,
+                    role = friend.role,
+                    model = friend.model,
+                    brand = friend.brand,
+                    company = friend.company,
+                    prompt = friend.prompt,
+                    thinkingEnabled = friend.thinkingEnabled,
+                    messageCount = friend.messages.size,
+                    avatarPath = friend.avatarPath,
+                    onBack = { screen = AgentScreen.Chat(friend.id) },
+                    onChangeAvatar = { bytes -> viewModel.setFriendAvatar(friend.id, bytes) },
+                    onEdit = { screen = AgentScreen.Edit(friend.id) }
                 )
             }
         }
@@ -160,7 +203,8 @@ fun AgentRoute(
                     modelLabel = "${friend.brand} · ${friend.model}",
                     thinkingSwitchable = provider?.thinkingSwitchable ?: true,
                     personas = PersonaCatalog.all,
-                    personaToggleLabel = "换成内置模板"
+                    personaToggleLabel = "换成内置模板",
+                    onOpenSettings = onOpenSettings
                 )
             }
         }

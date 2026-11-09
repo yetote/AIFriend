@@ -83,7 +83,12 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
         val credentials = withContext(Dispatchers.IO) { settings.load() }
         saved = credentials.associateBy { it.providerId }
 
-        val provider = AIProviderCatalog.default()
+        // 默认停在用户已经配过的那个服务商上。
+        // Key 现在全部由用户自己填，一个都没配时停在目录默认值（硅基流动）——
+        // 那是新用户最可能要去的入口；但已经配了 Deepseek 的人
+        // 每次进来都看到硅基流动的空 Key 框，会以为 Key 丢了。
+        val provider = AIProviderCatalog.all.firstOrNull { saved[it.id]?.apiKey?.isNotBlank() == true }
+            ?: AIProviderCatalog.default()
         val models = withContext(Dispatchers.IO) { settings.selectedModel(provider.id) }
         // 价格可能刚被刷过，缓存里的明细要按最新的价格重算一遍
         pricedCache[provider.id]?.let { pricedCache[provider.id] = repriced(it, provider.id) }
@@ -256,6 +261,13 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
                 }
             )
 
+            // 没有 /models 的厂商（目前是星火）验证不了 Key，只能直接存下来：
+            // 模型名走目录里的兜底列表，等真聊一次才知道 Key 对不对。
+            if (!provider.hasModelList) {
+                saveCredential(provider, apiKey, baseUrl, provider.fallbackModels)
+                return@launch
+            }
+
             val result = WebRepository.instance.getModel<OpenAIModelResponse>(config)
 
             result.onSuccess { response ->
@@ -287,58 +299,78 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
                     return@launch
                 }
 
-                val credential = AICredential(
-                    providerId = provider.id,
-                    apiKey = apiKey,
-                    baseUrl = if (provider.id == AIProviderCatalog.Custom.id) baseUrl else ""
-                )
-                val stored = withContext(Dispatchers.IO) {
-                    val ok = settings.save(credential)
-                    if (ok) {
-                        // 默认选一个：优先沿用上次的，否则取列表第一个
-                        val previous = settings.selectedModel(provider.id)
-                        val chosen = previous?.takeIf { it in models } ?: models.first()
-                        settings.saveSelectedModel(provider.id, chosen)
-                    }
-                    ok
-                }
-                if (!stored) {
-                    // 系统密钥库不可用时不能写明文，宁可报错让用户重试。
-                    _state.value = _state.value.copy(
-                        isVerifying = false,
-                        isLoadingModels = false,
-                        verifyResult = UIVerifyResult.Failure(
-                            "连接成功，但 Key 保存失败（系统密钥库不可用），请重试。"
-                        )
-                    )
-                    return@launch
-                }
-                saved = saved + (provider.id to credential)
-                modelCache[provider.id] = models
-                pricedCache[provider.id] = priced
-
-                val previousSelected = _state.value.selectedModel
-                _state.value = _state.value.copy(
-                    providers = AIProviderCatalog.all.map { it.toOption() },
-                    models = models,
-                    pricedModels = priced,
-                    selectedModel = previousSelected.takeIf { it in models } ?: models.first(),
-                    isVerifying = false,
-                    isLoadingModels = false,
-                    keyInput = "",
-                    priceIsSnapshot = priced.any { it.price != null } &&
-                        ModelPrices.isSnapshot(provider.id),
-                    priceSnapshotDate = ModelPrices.snapshotDate(provider.id),
-                    verifyResult = UIVerifyResult.Success(models.size)
-                )
-            }.onFailure { throwable ->
+                saveCredential(provider, apiKey, baseUrl, models, priced)
+            }.onFailure { error ->
                 _state.value = _state.value.copy(
                     isVerifying = false,
                     isLoadingModels = false,
-                    verifyResult = UIVerifyResult.Failure(readableError(throwable, provider))
+                    verifyResult = UIVerifyResult.Failure(readableError(error, provider))
                 )
             }
         }
+    }
+
+    /** 把验证通过的凭证落盘，并更新列表与缓存。 */
+    private suspend fun saveCredential(
+        provider: com.core.repository.settings.AIProvider,
+        apiKey: String,
+        baseUrl: String,
+        models: List<String>,
+        priced: List<UISettingsModel> = emptyList()
+    ) {
+        val credential = AICredential(
+            providerId = provider.id,
+            apiKey = apiKey,
+            // 只有自定义服务商的地址是用户填的，其余用目录里的固定地址，
+            // 存下来的话用户以后改目录也改不动它。
+            baseUrl = if (provider.id == AIProviderCatalog.Custom.id) baseUrl else ""
+        )
+        val stored = withContext(Dispatchers.IO) {
+            val ok = settings.save(credential)
+            if (ok) {
+                // 默认选一个：优先沿用上次的，否则取列表第一个
+                val previous = settings.selectedModel(provider.id)
+                val chosen = previous?.takeIf { it in models } ?: models.firstOrNull()
+                if (chosen != null) settings.saveSelectedModel(provider.id, chosen)
+            }
+            ok
+        }
+        if (!stored) {
+            // 系统密钥库不可用时不能写明文，宁可报错让用户重试。
+            _state.value = _state.value.copy(
+                isVerifying = false,
+                isLoadingModels = false,
+                verifyResult = UIVerifyResult.Failure(
+                    "连接成功，但 Key 保存失败（系统密钥库不可用），请重试。"
+                )
+            )
+            return
+        }
+        saved = saved + (provider.id to credential)
+        modelCache[provider.id] = models
+        pricedCache[provider.id] = priced
+
+        val current = _state.value
+        // 保存期间用户可能已经切到别的服务商了，别把模型列表写到人家头上
+        val visible = current.selectedProviderId == provider.id
+        _state.value = current.copy(
+            providers = AIProviderCatalog.all.map { it.toOption() },
+            isVerifying = false,
+            isLoadingModels = false,
+            keyInput = "",
+            models = if (visible) models else current.models,
+            pricedModels = if (visible) priced else current.pricedModels,
+            selectedModel = if (visible) {
+                models.firstOrNull { it == current.selectedModel } ?: models.firstOrNull().orEmpty()
+            } else {
+                current.selectedModel
+            },
+            priceIsSnapshot = if (visible) false else current.priceIsSnapshot,
+            priceSnapshotDate = ModelPrices.snapshotDate(provider.id),
+            canRefreshPrice = ModelPrices.canRefresh(provider.id),
+            verifyResult = UIVerifyResult.Success(models.size),
+            error = null
+        )
     }
 
     /**
@@ -369,7 +401,8 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
         maskedKey = maskKey(saved[id]?.apiKey.orEmpty()),
         hasKey = saved[id]?.apiKey?.isNotBlank() == true,
         editableBaseUrl = this === AIProviderCatalog.Custom,
-        baseUrl = saved[id]?.baseUrl.orEmpty()
+        baseUrl = saved[id]?.baseUrl.orEmpty(),
+        isGateway = isGateway
     )
 
     /** Key 只露头尾各 4 位，够用户认出是哪把，又不至于被旁人瞥去。 */
