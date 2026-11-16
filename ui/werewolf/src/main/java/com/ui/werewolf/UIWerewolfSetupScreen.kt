@@ -617,58 +617,71 @@ private fun FriendRow(
     onClick: () -> Unit,
 ) {
     val active = enabled || checked
+    val dim = if (active) 1f else 0.5f
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.Top
     ) {
         UIAvatar(
             name = friend.name,
             avatarPath = friend.avatarPath,
             size = 40.dp,
-            shape = CircleShape
+            shape = CircleShape,
+            modifier = Modifier.padding(top = 2.dp)
         )
         Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = friend.name,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Medium,
-                color = if (active) UIFriendBarTitleColor else UIFriendBarTitleColor.copy(alpha = 0.4f)
-            )
-            val meta = listOf(friend.role, friend.model).filter { it.isNotBlank() }.joinToString(" · ")
-            if (meta.isNotBlank() || check != null) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (meta.isNotBlank()) {
-                        Text(
-                            text = meta,
-                            fontSize = 12.sp,
-                            color = UIFriendBarItemSubtitleColor.copy(alpha = if (active) 1f else 0.5f)
-                        )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            // 名字和状态标签同一行：标签压在名字这一行，就不会被下面那行长的模型名挤走。
+            // 名字 weight 占满、标签贴右，各行标签自然对齐成一条竖线，扫一眼就知道哪几个通。
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = friend.name,
+                    modifier = Modifier.weight(1f),
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = if (active) {
+                        UIFriendBarTitleColor
+                    } else {
+                        UIFriendBarTitleColor.copy(alpha = 0.4f)
                     }
-                    if (check != null && check.state != UIWerewolfApiState.IDLE) {
-                        val label = when (check.state) {
-                            UIWerewolfApiState.OK -> "已连通"
-                            UIWerewolfApiState.CHECKING -> "检测中"
-                            else -> "连不上"
-                        }
-                        val color = when (check.state) {
-                            UIWerewolfApiState.OK -> ConnectedGreen
-                            UIWerewolfApiState.CHECKING -> UIFriendBarItemSubtitleColor
-                            else -> UIFriendBarRed
-                        }
-                        Text(
-                            text = if (meta.isBlank()) label else " · $label",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = color
-                        )
-                    }
+                )
+                if (check != null && check.state != UIWerewolfApiState.IDLE) {
+                    Spacer(Modifier.width(6.dp))
+                    CheckTag(state = check.state)
                 }
             }
-            // 失败原因单独一行：塞进 meta 那行会被截断，而「Key 无效」和「超时」
+
+            // 人设、模型各占一行。原来拼成「人设 · 模型」一行，模型名动辄二十多个字符，
+            // 换行后把同一个 Row 里的状态标签压成「已/连通」两字竖排，读起来像乱码
+            if (friend.role.isNotBlank()) {
+                Text(
+                    text = friend.role,
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = UIFriendBarItemSubtitleColor.copy(alpha = dim)
+                )
+            }
+            if (friend.model.isNotBlank()) {
+                Text(
+                    text = friend.model,
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    // 再淡一档：模型名是排查问题时才看的东西，不该和人设抢注意力
+                    color = UIFriendBarItemSubtitleColor.copy(alpha = 0.75f * dim)
+                )
+            }
+
+            // 失败原因单独一行：塞进副标题会被截断，而「Key 无效」和「超时」
             // 对应的处理办法完全不同，看不全等于没提示
             if (check?.state == UIWerewolfApiState.FAILED && !check.message.isNullOrBlank()) {
                 Text(
@@ -682,6 +695,8 @@ private fun FriendRow(
             }
         }
         Spacer(Modifier.width(8.dp))
+        // 圈和名字行（15sp）顶部对齐即可：圈 24dp、名字行约 20dp，中心只差 2dp，看不出来；
+        // 往下挪反而会和第一行副标题错位
         Box(
             modifier = Modifier
                 .size(24.dp)
@@ -703,6 +718,48 @@ private fun FriendRow(
                 )
             }
         }
+    }
+}
+
+/**
+ * 连通状态的小标签。
+ *
+ * `softWrap = false` 是关键：默认允许换行时，宽度被挤到十几个像素就会一个汉字一行地
+ * 竖着排，屏幕上看到的是「已 / 连 / 通」三个字叠起来。宁可省略号，也不要竖排。
+ */
+@Composable
+private fun CheckTag(state: UIWerewolfApiState) {
+    val label = when (state) {
+        UIWerewolfApiState.OK -> "已连通"
+        UIWerewolfApiState.CHECKING -> "检测中"
+        else -> "连不上"
+    }
+    val color = when (state) {
+        UIWerewolfApiState.OK -> ConnectedGreen
+        UIWerewolfApiState.CHECKING -> UIFriendBarItemSubtitleColor
+        else -> UIFriendBarRed
+    }
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(color.copy(alpha = 0.10f))
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(3.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(4.dp)
+                .background(color, CircleShape)
+        )
+        Text(
+            text = label,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Medium,
+            color = color,
+            maxLines = 1,
+            softWrap = false
+        )
     }
 }
 
