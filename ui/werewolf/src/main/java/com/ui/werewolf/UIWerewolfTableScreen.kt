@@ -72,6 +72,19 @@ import com.ui.werewolf.data.UIWerewolfSeatLive
 import com.ui.werewolf.data.UIWerewolfTarget
 import com.ui.werewolf.data.UIWerewolfTurn
 import com.ui.werewolf.data.UIWerewolfTurnKind
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathOperation
+import androidx.compose.ui.graphics.StrokeCap
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 
 // ---------------------------------------------------------------------------
 // 配色
@@ -124,22 +137,22 @@ fun UIWerewolfTableScreen(
     val night = live.night && !live.finished
     val backdrop by animateColorAsState(
         targetValue = if (night) NightBackdrop else DayBackdrop,
-        animationSpec = tween(650),
+        animationSpec = tween(DAY_NIGHT_MS / 2),
         label = "backdrop"
     )
     val textColor by animateColorAsState(
         targetValue = if (night) NightText else UIFriendBarTitleColor,
-        animationSpec = tween(650),
+        animationSpec = tween(DAY_NIGHT_MS / 2),
         label = "text"
     )
     val dimColor by animateColorAsState(
         targetValue = if (night) NightDim else UIFriendBarItemSubtitleColor,
-        animationSpec = tween(650),
+        animationSpec = tween(DAY_NIGHT_MS / 2),
         label = "dim"
     )
     val surface by animateColorAsState(
         targetValue = if (night) NightSurface else DaySurface,
-        animationSpec = tween(650),
+        animationSpec = tween(DAY_NIGHT_MS / 2),
         label = "surface"
     )
 
@@ -219,6 +232,13 @@ fun UIWerewolfTableScreen(
                 }
             }
         }
+
+        // 过场画在最上层，但不吃触摸：1.4 秒里用户可能正要点「发言」，
+        // 拦一下只会让人觉得界面卡了
+        DayNightTransition(
+            night = live.night,
+            finished = live.finished
+        )
     }
 }
 
@@ -386,9 +406,8 @@ private fun ThinkingDot(color: Color) {
  * 头像缩到认不出人，而两侧大片空白根本用不上。竖排两列把同一屏的宽度用满，
  * 头像反而能大一号。
  *
- * 分配按序号**从左到右、从上到下**：1 号在左列第一行，2 号在右列第一行，
- * 3 号左列第二行……所以两列的号码是奇偶分开的。读起来仍是从小到大，
- * 只是先看一行再往下走——和发言顺序一致的直觉。
+ * 分法是**前一半在左、后一半在右**：6 人局左列 1-3、右列 4-6，8 人局左 1-4、右 5-8。
+ * 奇数人数时左边多坐一个（9 人就是 5/4），因为读的顺序本来就是左列读完再读右列。
  */
 @Composable
 private fun SeatColumns(
@@ -401,8 +420,11 @@ private fun SeatColumns(
 ) {
     // 座位号升序排一次再分栏。引擎给的是按座位排好的，但这里不依赖那个隐式约定
     val ordered = remember(live.seats) { live.seats.sortedBy { it.seat } }
-    val left = remember(ordered) { ordered.filterIndexed { index, _ -> index % 2 == 0 } }
-    val right = remember(ordered) { ordered.filterIndexed { index, _ -> index % 2 == 1 } }
+    // 左列先排满再排右列：ceil 而不是 size/2，奇数人数多出来的那个留在左边，
+    // 这样「1 号在左上、最后一位在右下」，顺序上没有断口
+    val half = (ordered.size + 1) / 2
+    val left = remember(ordered) { ordered.take(half) }
+    val right = remember(ordered) { ordered.drop(half) }
 
     Row(modifier = modifier.fillMaxWidth()) {
         SeatColumn(
@@ -1186,6 +1208,175 @@ private fun ErrorStrip(message: String, night: Boolean) {
             fontSize = 11.sp,
             lineHeight = 16.sp,
             color = if (night) Color(0xFFFFB4B0) else UIFriendBarRed
+        )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 昼夜过场
+//
+// 原来只是整页颜色渐变：上一秒还是浅蓝，一秒后全黑，中间的 650ms 里
+// 界面既不像白天也不像夜晚，看着像卡了一下。加一段天体升落的过场，
+// 变化就有了「原因」——太阳落下去、月亮升起来，而不是屏幕自己变黑。
+//
+// 长度定在 1.4 秒：短于这个数看不清月亮是月牙；长于这个数，
+// 每轮都要等一次，十几轮下来非常烦。
+// ---------------------------------------------------------------------------
+
+private const val DAY_NIGHT_MS = 1400
+
+private val SunCore = Color(0xFFFFC94D)
+private val SunGlow = Color(0xFFFFB020)
+private val MoonCore = Color(0xFFF3EAD3)
+private val MoonGlow = Color(0xFFCBD6F5)
+
+/**
+ * 星星的位置：横向比例、纵向比例、半径（dp）。
+ *
+ * 写死不随机：随机会让每次入夜的星空都不一样，虽然不是错误，
+ * 但同一局里反复出现的「一张熟悉的星空」更像一个地方。
+ */
+private val STARS = listOf(
+    Triple(0.10f, 0.12f, 1.6f), Triple(0.22f, 0.07f, 1.1f),
+    Triple(0.34f, 0.16f, 1.9f), Triple(0.46f, 0.06f, 1.0f),
+    Triple(0.58f, 0.14f, 1.5f), Triple(0.70f, 0.08f, 1.2f),
+    Triple(0.82f, 0.17f, 2.0f), Triple(0.92f, 0.10f, 1.1f),
+    Triple(0.16f, 0.24f, 1.0f), Triple(0.40f, 0.27f, 1.3f),
+    Triple(0.66f, 0.25f, 1.0f), Triple(0.88f, 0.30f, 1.4f),
+)
+
+/**
+ * 白天/夜晚切换时的天体过场。
+ *
+ * 只在**真的换了昼夜**时播放：首帧进入、旋转屏幕重组、对局结束（`finished`）都不播。
+ * 否则「结束」会被当成天亮，放完日出停在一张输掉的牌桌上，很怪。
+ *
+ * 全部用 Canvas 画，不引入图片资源：一个圆、一条线、一个减掉一角的路径就够，
+ * 换成 PNG 会带来几张密度的图和多一份内存，收益为零。
+ */
+@Composable
+private fun DayNightTransition(
+    night: Boolean,
+    finished: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    // 上一次的昼夜。首帧等于当前值，所以刚进牌桌不会莫名其妙放一段过场
+    var lastNight by remember { mutableStateOf(night) }
+    var playing by remember { mutableStateOf(false) }
+    // 播的是哪一次切换：动画中途状态被改写时，画面跟着它，不会画到一半换天体
+    var showingNight by remember { mutableStateOf(night) }
+    val progress = remember { Animatable(0f) }
+
+    LaunchedEffect(night, finished) {
+        if (finished || night == lastNight) {
+            lastNight = night
+            return@LaunchedEffect
+        }
+        lastNight = night
+        showingNight = night
+        playing = true
+        progress.snapTo(0f)
+        try {
+            progress.animateTo(1f, tween(DAY_NIGHT_MS, easing = LinearEasing))
+        } finally {
+            // 取消（退出页面）也要把层收掉，否则下一次组合它会停在半透明状态
+            playing = false
+        }
+    }
+
+    if (!playing) return
+
+    val p = progress.value
+    // 先起后落：遮罩和天体一起淡入淡出，避免头尾硬切
+    val veil = sin(p * PI).toFloat()
+    // 升起只占前 55%，剩下的时间让它停在半空、慢慢淡掉
+    val rise = FastOutSlowInEasing.transform((p / 0.55f).coerceIn(0f, 1f))
+
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        val anchor = maxHeight * 0.30f
+
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val radius = 30.dp.toPx()
+            val cx = size.width / 2f
+            val cy = size.height * 0.30f + (1f - rise) * size.height * 0.22f
+            val center = Offset(cx, cy)
+
+            if (showingNight) {
+                // 入夜：深蓝压下来，星星一起亮
+                drawRect(Color(0xFF050A14).copy(alpha = 0.5f * veil))
+                STARS.forEach { (fx, fy, density) ->
+                    drawCircle(
+                        color = Color(0xFFFFF6DA).copy(alpha = 0.8f * veil),
+                        // 半径带一点差异，不然十二个点大小一样像噪点
+                        radius = density.dp.toPx(),
+                        center = Offset(size.width * fx, size.height * fy)
+                    )
+                }
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(MoonGlow.copy(alpha = 0.32f * veil), Color.Transparent),
+                        center = center,
+                        radius = radius * 3.4f
+                    ),
+                    radius = radius * 3.4f,
+                    center = center
+                )
+                // 月牙 = 整圆减去右上偏移的圆。用路径求差而不是盖一个背景色圆：
+                // 背景是渐变，盖不干净，边上会留一圈色差
+                val disc = Path().apply { addOval(Rect(center, radius)) }
+                val bite = Path().apply {
+                    addOval(Rect(Offset(cx + radius * 0.55f, cy - radius * 0.45f), radius * 0.96f))
+                }
+                disc.op(disc, bite, PathOperation.Difference)
+                drawPath(disc, color = MoonCore.copy(alpha = veil))
+            } else {
+                // 天亮：暖光铺开，太阳从下往上顶
+                drawRect(Color(0xFFFFF6E0).copy(alpha = 0.55f * veil))
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(SunGlow.copy(alpha = 0.5f * veil), Color.Transparent),
+                        center = center,
+                        radius = radius * 4.4f
+                    ),
+                    radius = radius * 4.4f,
+                    center = center
+                )
+                // 十二道光芒，整体随进度慢转，看起来像在升起时晃了一下
+                repeat(12) { i ->
+                    val angle = (i / 12f) * 2f * PI.toFloat() + p * 0.4f
+                    val inner = radius * 1.3f
+                    val outer = radius * (1.55f + 0.12f * sin((i * 1.7f + p * 3f).toDouble()).toFloat())
+                    drawLine(
+                        color = SunCore.copy(alpha = 0.5f * veil),
+                        start = Offset(cx + inner * cos(angle), cy + inner * sin(angle)),
+                        end = Offset(cx + outer * cos(angle), cy + outer * sin(angle)),
+                        strokeWidth = 2.dp.toPx(),
+                        cap = StrokeCap.Round
+                    )
+                }
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(Color(0xFFFFF8E4), SunCore),
+                        center = Offset(cx - radius * 0.25f, cy - radius * 0.25f),
+                        radius = radius * 1.4f
+                    ),
+                    radius = radius,
+                    center = center
+                )
+            }
+        }
+
+        Text(
+            text = if (showingNight) "天黑请闭眼" else "天亮了",
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = anchor + 58.dp)
+                .alpha(veil),
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Medium,
+            // 拉开字距，像一句宣告而不是一条提示
+            letterSpacing = 4.sp,
+            color = if (showingNight) Color(0xFFDCE4F5) else Color(0xFF8A6A2F)
         )
     }
 }
