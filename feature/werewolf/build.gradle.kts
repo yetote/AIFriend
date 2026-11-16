@@ -13,6 +13,8 @@ android {
 dependencies {
     // 只依赖 core，不依赖 feature:room / feature:agent —— 狼人杀与聊天室互相独立
     implementation(project(":core:ai"))
+    // 取好友列表（选参与者、拿人设与模型配置）
+    implementation(project(":core:repository"))
     implementation(libs.ktor.serialization.json)
     // 自己的库：存档不进 aifriend.db，避免为了狼人杀去动聊天室的 schema 和迁移链
     implementation(libs.room.runtime)
