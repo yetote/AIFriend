@@ -91,6 +91,9 @@ class WerewolfController(
             agents = initial.game.players.associate { it.seat to agentsFor(it) },
             random = random,
             onProgress = { progress -> _state.update { it.copy(progress = progress) } },
+            // 只刷界面，不落档。落档还是每阶段一次：一个阶段十来条消息，
+            // 每条都写库既慢又没必要——真正需要「不丢」的边界是阶段
+            onTranscript = { snapshot -> _state.update { it.copy(table = snapshot) } },
         )
 
         _state.update { it.copy(running = true, error = null) }
@@ -114,6 +117,19 @@ class WerewolfController(
                 it.copy(running = false, error = t.message?.take(200) ?: "对局中断，请重试")
             }
         }
+    }
+
+    /**
+     * 把界面上当前的局面落一次档。
+     *
+     * 暂停时用：存档的粒度是「阶段」，而牌桌上可能已经又说了几句。
+     * 不落这一次，用户从列表点「接着打」会退回到阶段开头，看着像丢了几句话。
+     */
+    suspend fun flush() {
+        val id = gameId ?: return
+        val table = _state.value.table ?: return
+        if (table.game.isFinished) return
+        store.save(id, table, createdAt)
     }
 
     /** 清掉当前这局（比如玩家主动放弃）。 */

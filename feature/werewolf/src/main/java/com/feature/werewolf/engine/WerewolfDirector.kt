@@ -43,6 +43,14 @@ class WerewolfDirector(
      * 这里给的是**阶段内部**的步进——白天 8 个人发言要发 8 次，没有它这中间就是几十秒的静止。
      */
     private val onProgress: suspend (WerewolfProgress) -> Unit = {},
+    /**
+     * 阶段**内部**产出一条消息就回调一次，用来让界面边打边显示。
+     *
+     * 和 `play()` 的 `onUpdate` 差在粒度：`onUpdate` 一个阶段才给一次快照，
+     * 白天讨论八个人就是一分多钟之后才一次性蹦出八条——中间那段时间界面是静止的，
+     * 看着像卡死。这个回调只更新界面，不落档（落档仍然是每阶段一次）。
+     */
+    private val onTranscript: suspend (WerewolfTable) -> Unit = {},
 ) {
 
     // ---------------------------------------------------------------------
@@ -218,6 +226,9 @@ class WerewolfDirector(
                     text = text,
                 )
             )
+            // 说完一个就推一次。下一位要看到的上下文里已经有这句（current 已带），
+            // 界面拿到的也是同一份，不存在「显示的和模型看到的不是一回事」
+            onTranscript(current)
         }
         return current
     }
