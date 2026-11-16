@@ -701,14 +701,22 @@ private fun Feed(
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
-    LaunchedEffect(live.lines.size) {
-        if (live.lines.isNotEmpty()) {
+    // 轮到某位 AI 时在末尾挂一条「正在组织语言」。别看只是三个点：
+    // 一轮八个人要等一分多钟，中间没有任何东西在动的话，界面看着就是卡死的
+    val thinkingSeat = if (live.running && live.turn == null) {
+        live.seats.firstOrNull { it.active }
+    } else {
+        null
+    }
+    LaunchedEffect(live.lines.size, thinkingSeat?.seat) {
+        val last = live.lines.lastIndex + if (thinkingSeat != null) 1 else 0
+        if (last >= 0) {
             // 新消息贴底：中途抬头看「刚刚谁说了什么」必须落在最后一条
-            listState.animateScrollToItem(live.lines.lastIndex)
+            listState.animateScrollToItem(last)
         }
     }
 
-    if (live.lines.isEmpty()) {
+    if (live.lines.isEmpty() && thinkingSeat == null) {
         Box(modifier = modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
             Text(
                 text = "还没开始，\n等第一位开口",
@@ -737,6 +745,43 @@ private fun Feed(
                 surface = surface
             )
         }
+        if (thinkingSeat != null) {
+            item(key = "thinking") {
+                ThinkingLine(seat = thinkingSeat, dimColor = dimColor)
+            }
+        }
+    }
+}
+
+/**
+ * 「某人正在想」的一行。
+ *
+ * 刻意长得像一条普通发言的头（头像 + 座位号），而不是一个居中的加载圈：
+ * 它是记录流的最后一项，用户往下看的时候，视线自然接在那个人身上。
+ */
+@Composable
+private fun ThinkingLine(seat: UIWerewolfSeatLive, dimColor: Color) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        UIAvatar(
+            name = seat.name,
+            avatarPath = seat.avatarPath,
+            size = 22.dp,
+            shape = CircleShape,
+            modifier = Modifier.alpha(0.7f)
+        )
+        Spacer(Modifier.width(7.dp))
+        Text(
+            text = "${seat.seat} 号正在组织语言",
+            fontSize = 11.sp,
+            color = dimColor
+        )
+        Spacer(Modifier.width(5.dp))
+        ThinkingDot(color = dimColor)
     }
 }
 

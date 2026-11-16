@@ -275,6 +275,23 @@ class WerewolfDirectorTest {
         assertFalse("不能提前看到后面的人", fourthCall.userText.contains("5 号："))
     }
 
+    @Test
+    fun `每说完一句就往外推一次，不是攒完一圈才给`() = runBlocking {
+        // 一圈九个人要等一分多钟。全攒到阶段结束才推，中间界面是静止的，
+        // 看着像卡死；这个用例锁住的是「说完一个就推一个」
+        val ais = (1..9).associateWith { _ -> AutoAI() as IAI }
+        val pushed = mutableListOf<Int>()
+        val director = WerewolfDirector(
+            agents = ais.mapValues { SeatAgent(it.value, "test-model") },
+            onTranscript = { table -> pushed += table.transcript.count { it.kind == MessageKind.SPEECH } },
+        )
+
+        director.discussion(WerewolfTable(standard9().copy(phase = Phase.DAY_DISCUSSION)))
+
+        assertEquals("九个人应该推九次", 9, pushed.size)
+        assertEquals("每次推的消息条数逐条加一", (1..9).toList(), pushed)
+    }
+
     // ------------------------------------------------------------------
     // 白天：并发投票
     // ------------------------------------------------------------------

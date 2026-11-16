@@ -313,9 +313,16 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
      * 当前阶段重新开始。留在后台继续跑才是错的——他在看列表，AI 却在替他打牌。
      */
     fun pause() {
-        playJob?.cancel()
-        // 存档是按阶段写的，这一瞬间可能刚写进一条，刷新一次让列表跟上
-        refresh()
+        val job = playJob
+        playJob = null
+        viewModelScope.launch {
+            // 等它真的停下：取消是异步的，立刻 flush 可能写进一个马上要被覆盖的局面
+            job?.cancelAndJoin()
+            // 牌桌上可能已经说了几句、但还没到阶段边界，补存一次，
+            // 否则「接着打」回来会少掉这几句，看着像退回去了
+            runCatching { controller.flush() }
+            refresh()
+        }
     }
 
     /** 清掉所有已结束的对局，未完成的留下。存档只增不减迟早会堆成几百条。 */
