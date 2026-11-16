@@ -19,8 +19,17 @@ enum class WinRule {
 data class WerewolfConfig(
     val composition: Map<WerewolfRole, Int> = Standard8,
     val winRule: WinRule = WinRule.SLAY_SIDE,
-    /** 白天投票最多几轮。2 表示平票后加投一轮，再加投仍平票则无人出局。 */
-    val maxVoteRounds: Int = 2,
+    /**
+     * 白天投票最多几轮。默认 1，也就是**平票即无人出局**。
+     *
+     * 线下能「平票再投一轮」是因为有警长主持 PK：警长在场上、且他指定了 PK 名单，
+     * 大家才重投。本板子没有警长，没有谁能追加一轮，投完就结束这一天。
+     * 这条不只是流程细节——正因为票投不出去，2 狼 2 好人时狼人才能靠绑票直接赢
+     * （见 [WerewolfGame] 的胜负判定）。
+     *
+     * 传 2 以上只留给将来「有警长」的变体板子，现在没有任何入口会传。
+     */
+    val maxVoteRounds: Int = 1,
     /**
      * 女巫能否在第一夜自救。
      *

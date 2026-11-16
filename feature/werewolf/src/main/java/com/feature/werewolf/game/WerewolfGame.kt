@@ -262,8 +262,10 @@ data class WerewolfGame(
     /**
      * 投票。有投票权的玩家**全部**必须表态，弃票传 null。
      *
-     * 平票时若还有加投额度，则把候选人收窄到平票的那几个人并留在 [Phase.DAY_VOTE]，
-     * 调用方看到 `voteRound` 增加就知道要再收一轮票；额度用尽仍平票则无人出局。
+     * 平票即**无人出局**，当天到此为止：本板子没有警长，没人能追加一轮 PK。
+     * 加投只在 [WerewolfConfig.maxVoteRounds] > 1 的变体板子上才会发生——那时这里
+     * 把候选人收窄到平票的那几个人并留在 [Phase.DAY_VOTE]，调用方看到 `voteRound`
+     * 增加就知道要再收一轮票。
      */
     fun castVotes(votes: Map<Int, Int?>): WerewolfGame {
         require(phase == Phase.DAY_VOTE) { "当前不是投票阶段：$phase" }
@@ -538,26 +540,31 @@ data class WerewolfGame(
 
     /**
      * 判胜负。狼人全灭优先于一切——哪怕同一刻神职也全死了，也应该判好人赢。
+     *
+     * 第二条是**绑票**：存活狼人数 >= 存活好人数就判狼人胜，不分屠边屠城。
+     *
+     * 这不是屠城规则的复读，而是「票已经投不出去」这个事实本身：每人一票，狼人抱团
+     * 指同一个好人，好人凑不出比他更多的票，两边对投下去必然平票；而本板子没有警长
+     * （[WerewolfConfig.maxVoteRounds] 默认 1），平票就是当天无人出局，夜里狼人再刀一个，
+     * 好人只会更少。所以 2 狼 2 好人这一刻胜负已经定了，再演一整轮白天也只能演到同一个结局。
      */
     private fun evaluateWinner(): Faction? {
         val aliveWolfCount = players.count { it.alive && it.role == WerewolfRole.WEREWOLF }
         if (aliveWolfCount == 0) return Faction.GOOD
 
-        return when (config.winRule) {
-            WinRule.SLAY_ALL -> {
-                val aliveGoodCount = players.count { it.alive && it.faction == Faction.GOOD }
-                if (aliveWolfCount >= aliveGoodCount) Faction.WEREWOLF else null
-            }
+        val aliveGoodCount = players.count { it.alive && it.faction == Faction.GOOD }
+        if (aliveWolfCount >= aliveGoodCount) return Faction.WEREWOLF
 
-            WinRule.SLAY_SIDE -> {
-                // 只看「开局存在过的那一类」，避免 8 人局里没有平民时误判村民全灭。
-                val hadGods = players.any { it.role.isGod }
-                val hadVillagers = players.any { it.role == WerewolfRole.VILLAGER }
-                val godsAlive = players.any { it.alive && it.role.isGod }
-                val villagersAlive = players.any { it.alive && it.role == WerewolfRole.VILLAGER }
-                if ((hadGods && !godsAlive) || (hadVillagers && !villagersAlive)) Faction.WEREWOLF else null
-            }
+        if (config.winRule == WinRule.SLAY_SIDE) {
+            // 只看「开局存在过的那一类」，避免 8 人局里没有平民时误判村民全灭。
+            val hadGods = players.any { it.role.isGod }
+            val hadVillagers = players.any { it.role == WerewolfRole.VILLAGER }
+            val godsAlive = players.any { it.alive && it.role.isGod }
+            val villagersAlive = players.any { it.alive && it.role == WerewolfRole.VILLAGER }
+            if ((hadGods && !godsAlive) || (hadVillagers && !villagersAlive)) return Faction.WEREWOLF
         }
+        // 屠城走到这里说明人数还占着优，接着打
+        return null
     }
 
     private fun hasAliveRole(role: WerewolfRole): Boolean = alivePlayers.any { it.role == role }

@@ -91,6 +91,35 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.lerp
 
 // ---------------------------------------------------------------------------
+// 字号
+//
+// 这页是要连着盯十几分钟的：一屏里同时有人物、发言、倒计时和操作按钮，
+// 以前为了塞下 12 人的座位表，正文压到 12sp、名字压到 9sp——字是塞下了，
+// 但一屏字全是一样细的小灰块，读两轮眼睛就累。
+//
+// 所以这里整体往上抬一档：正文 14sp、名字 11sp、身份徽标 9.5sp，
+// 座位列从 62dp 放宽到 72dp 给头像留位置，中间那列宁可一行少两个字。
+// 唯一的硬约束还是 12 人局一列 6 个人（高度），所以头像只到 34dp。
+// ---------------------------------------------------------------------------
+
+/** 发言正文。整页最该被读的东西，字号也最大。 */
+private val FsSpeech = 14.sp
+private val FsSpeechLine = 21.sp
+
+/** 人名、按钮、面板标题。 */
+private val FsName = 12.5.sp
+private val FsAction = 14.sp
+
+/** 座位号、天数、辅助说明这类「看一眼就够」的字。 */
+private val FsMeta = 11.5.sp
+
+/** 座位上那一行「3 阿明」，受列宽限制，只能比正文小一档。 */
+private val FsSeatName = 11.sp
+
+/** 身份/死因徽标。压在名字下面，再小就认不出「刀」「票」两个字了。 */
+private val FsBadge = 9.5.sp
+
+// ---------------------------------------------------------------------------
 // 配色
 //
 // 狼人杀的「夜」是这个游戏最重要的一层信息：夜里谁能行动、谁在闭眼，
@@ -293,14 +322,14 @@ private fun TableTopBar(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
-                fontSize = 17.sp,
+                fontSize = 19.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = textColor
             )
             if (subtitle != null) {
                 Text(
                     text = subtitle,
-                    fontSize = 11.sp,
+                    fontSize = FsName,
                     color = dimColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -339,7 +368,7 @@ private fun SelfBar(
             Tag(text = "观战", night = night, color = dimColor)
             Text(
                 text = "八个人各说各话，你只负责看",
-                fontSize = 12.sp,
+                fontSize = FsName,
                 color = dimColor
             )
             return@Row
@@ -354,14 +383,14 @@ private fun SelfBar(
                 .clip(RoundedCornerShape(50))
                 .background(SelfBlue)
                 .padding(horizontal = 10.dp, vertical = 3.dp),
-            fontSize = 12.sp,
+            fontSize = 13.sp,
             fontWeight = FontWeight.SemiBold,
             color = Color.White
         )
         live.selfRoleLabel?.let { role ->
             Text(
                 text = role,
-                fontSize = 13.sp,
+                fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = textColor
             )
@@ -369,7 +398,7 @@ private fun SelfBar(
         live.selfFactionLabel?.let { faction ->
             Text(
                 text = faction,
-                fontSize = 11.sp,
+                fontSize = FsName,
                 color = dimColor
             )
         }
@@ -387,7 +416,7 @@ private fun Tag(text: String, night: Boolean, color: Color) {
             .clip(RoundedCornerShape(50))
             .background(if (night) NightStroke else UIFieldFill)
             .padding(horizontal = 9.dp, vertical = 3.dp),
-        fontSize = 11.sp,
+        fontSize = FsMeta,
         color = color
     )
 }
@@ -476,8 +505,13 @@ private fun SeatColumns(
     }
 }
 
-/** 一列侧栏的宽度。62dp 放得下 4 个汉字的名字，再多中间就不够说话了。 */
-private val COLUMN_WIDTH = 62.dp
+/**
+ * 一列侧栏的宽度。
+ *
+ * 72dp：34dp 头像 + 两侧留白，名字一行能放「12 阿明」这种四五个汉字。
+ * 再宽就要从中间那列抢地方——中间的对话是这页唯一需要逐字读的东西。
+ */
+private val COLUMN_WIDTH = 72.dp
 
 /**
  * 一列玩家。
@@ -521,6 +555,9 @@ private fun SeatColumn(
  *
  * 出局的人不删、不灰到底：狼人杀的「谁死了」和「谁还活着」一样重要，
  * 移走之后就没办法回头对照「他生前说了什么」。所以留着、压暗、再挂一个字说明怎么死的。
+ *
+ * 尺寸受 12 人局限制：一列 6 个人，一格只有七十多 dp 高，
+ * 头像 34 是「认得出这张脸」和「放得下第六个人」之间的那条线。
  */
 @Composable
 private fun SeatTile(
@@ -533,8 +570,7 @@ private fun SeatTile(
         modifier = Modifier.width(COLUMN_WIDTH),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // 12 人局一列要放 6 个，一格里每一像素都在抢高度：头像 30 是认得出人的下限
-        Box(modifier = Modifier.size(38.dp), contentAlignment = Alignment.Center) {
+        Box(modifier = Modifier.size(40.dp), contentAlignment = Alignment.Center) {
             if (seat.active) {
                 // 正在发言/正在行动的人要有动静，静止的牌桌看不出轮到谁
                 val transition = rememberInfiniteTransition(label = "active")
@@ -549,7 +585,7 @@ private fun SeatTile(
                 )
                 Box(
                     modifier = Modifier
-                        .size(36.dp)
+                        .size(38.dp)
                         .graphicsLayer {
                             scaleX = scale
                             scaleY = scale
@@ -566,7 +602,7 @@ private fun SeatTile(
             UIAvatar(
                 name = seat.name,
                 avatarPath = seat.avatarPath,
-                size = 30.dp,
+                size = 34.dp,
                 shape = CircleShape,
                 modifier = Modifier
                     .alpha(if (seat.alive) 1f else 0.34f)
@@ -585,13 +621,13 @@ private fun SeatTile(
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .size(15.dp)
+                        .size(17.dp)
                         .background(VoteRed, CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = votes.toString(),
-                        fontSize = 8.sp,
+                        fontSize = 9.5.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = Color.White
                     )
@@ -602,7 +638,7 @@ private fun SeatTile(
         Text(
             text = "${seat.seat} ${seat.name}",
             modifier = Modifier.padding(top = 1.dp),
-            fontSize = 9.sp,
+            fontSize = FsSeatName,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             color = when {
@@ -627,8 +663,8 @@ private fun SeatTile(
                             else -> Color(0x142B6BFF)
                         }
                     )
-                    .padding(horizontal = 4.dp, vertical = 0.5.dp),
-                fontSize = 8.sp,
+                    .padding(horizontal = 5.dp, vertical = 0.5.dp),
+                fontSize = FsBadge,
                 fontWeight = FontWeight.Medium,
                 color = when {
                     seat.fate != null -> FateRed
@@ -663,7 +699,7 @@ private fun StatusStrip(
         if (live.finished) {
             Text(
                 text = live.winnerLabel ?: "对局结束",
-                fontSize = 12.sp,
+                fontSize = FsAction,
                 fontWeight = FontWeight.SemiBold,
                 color = textColor,
                 maxLines = 1
@@ -673,12 +709,12 @@ private fun StatusStrip(
 
         Text(
             text = if (night) "第 ${live.day} 夜" else "第 ${live.day} 天",
-            fontSize = 10.sp,
+            fontSize = 12.sp,
             color = dimColor
         )
         Text(
             text = live.phaseLabel,
-            fontSize = 12.sp,
+            fontSize = FsAction,
             fontWeight = FontWeight.SemiBold,
             color = textColor,
             maxLines = 1,
@@ -688,7 +724,7 @@ private fun StatusStrip(
         if (acting != null) {
             Text(
                 text = "· 等 ${acting.seat} 号",
-                fontSize = 10.sp,
+                fontSize = 12.sp,
                 color = if (night) Color(0xFF8FB0FF) else SelfBlue,
                 maxLines = 1
             )
@@ -738,8 +774,8 @@ private fun Feed(
             Text(
                 text = "还没开始，\n等第一位开口",
                 modifier = Modifier.padding(horizontal = 10.dp),
-                fontSize = 11.sp,
-                lineHeight = 17.sp,
+                fontSize = FsName,
+                lineHeight = 19.sp,
                 textAlign = TextAlign.Center,
                 color = dimColor
             )
@@ -750,8 +786,8 @@ private fun Feed(
     LazyColumn(
         state = listState,
         modifier = modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        contentPadding = PaddingValues(horizontal = 9.dp, vertical = 9.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         items(live.lines, key = { it.index }) { line ->
             LineRow(
@@ -787,17 +823,17 @@ private fun ThinkingLine(seat: UIWerewolfSeatLive, dimColor: Color) {
         UIAvatar(
             name = seat.name,
             avatarPath = seat.avatarPath,
-            size = 22.dp,
+            size = 26.dp,
             shape = CircleShape,
             modifier = Modifier.alpha(0.7f)
         )
-        Spacer(Modifier.width(7.dp))
+        Spacer(Modifier.width(8.dp))
         Text(
             text = "${seat.seat} 号正在组织语言",
-            fontSize = 11.sp,
+            fontSize = FsName,
             color = dimColor
         )
-        Spacer(Modifier.width(5.dp))
+        Spacer(Modifier.width(6.dp))
         ThinkingDot(color = dimColor)
     }
 }
@@ -820,10 +856,10 @@ private fun LineRow(
                 modifier = Modifier
                     .clip(RoundedCornerShape(50))
                     .background(if (night) Color(0x14FFFFFF) else Color(0x0D000000))
-                    .padding(horizontal = 8.dp, vertical = 3.dp),
-                fontSize = 10.sp,
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
+                fontSize = FsName,
                 color = dimColor,
-                lineHeight = 15.sp,
+                lineHeight = 19.sp,
                 textAlign = TextAlign.Center
             )
         }
@@ -834,8 +870,9 @@ private fun LineRow(
                 line.seat?.let { append(" " ) }
                 append(line.text)
             },
-            modifier = Modifier.padding(start = 34.dp),
-            fontSize = 10.sp,
+            modifier = Modifier.padding(start = 40.dp),
+            fontSize = FsName,
+            lineHeight = 19.sp,
             color = dimColor
         )
 
@@ -867,15 +904,15 @@ private fun SpeechRow(
         UIAvatar(
             name = line.speaker ?: "?",
             avatarPath = line.avatarPath,
-            size = 26.dp,
+            size = 30.dp,
             shape = CircleShape
         )
-        Spacer(Modifier.width(7.dp))
+        Spacer(Modifier.width(8.dp))
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = line.speaker ?: "未知",
-                    fontSize = 11.sp,
+                    fontSize = FsName,
                     fontWeight = FontWeight.SemiBold,
                     color = textColor,
                     maxLines = 1,
@@ -884,7 +921,7 @@ private fun SpeechRow(
                 line.seat?.let {
                     Text(
                         text = " $it 号",
-                        fontSize = 9.sp,
+                        fontSize = 12.sp,
                         color = dimColor,
                         maxLines = 1
                     )
@@ -893,8 +930,8 @@ private fun SpeechRow(
             Text(
                 text = line.text,
                 modifier = Modifier.padding(top = 2.dp),
-                fontSize = 12.sp,
-                lineHeight = 18.sp,
+                fontSize = FsSpeech,
+                lineHeight = FsSpeechLine,
                 color = textColor.copy(alpha = 0.92f)
             )
         }
@@ -925,7 +962,7 @@ private fun PrivateRow(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = "仅你可见",
-                fontSize = 9.sp,
+                fontSize = FsMeta,
                 fontWeight = FontWeight.SemiBold,
                 color = if (night) Color(0xFFD9B563) else Color(0xFF9A7420)
             )
@@ -934,7 +971,7 @@ private fun PrivateRow(
             if (who.isNotBlank()) {
                 Text(
                     text = " · $who",
-                    fontSize = 9.sp,
+                    fontSize = FsMeta,
                     color = dimColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -943,9 +980,9 @@ private fun PrivateRow(
         }
         Text(
             text = line.text,
-            modifier = Modifier.padding(top = 2.dp),
-            fontSize = 11.sp,
-            lineHeight = 17.sp,
+            modifier = Modifier.padding(top = 3.dp),
+            fontSize = 13.sp,
+            lineHeight = 19.sp,
             color = textColor.copy(alpha = 0.9f)
         )
     }
@@ -984,14 +1021,14 @@ private fun TurnPanel(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = turn.title,
-                fontSize = 13.sp,
+                fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = textColor
             )
             turn.hint?.let {
                 Text(
                     text = "  $it",
-                    fontSize = 11.sp,
+                    fontSize = FsName,
                     color = dimColor
                 )
             }
@@ -1045,12 +1082,12 @@ private fun SpeechInput(
                 .weight(1f)
                 .clip(RoundedCornerShape(UIRadiusControl))
                 .background(UIFieldFill)
-                .padding(horizontal = 12.dp, vertical = 10.dp)
+                .padding(horizontal = 13.dp, vertical = 11.dp)
         ) {
             if (text.isEmpty()) {
                 Text(
                     text = "说点什么，其他人会据此投票",
-                    fontSize = 12.sp,
+                    fontSize = 13.5.sp,
                     color = dimColor
                 )
             }
@@ -1058,7 +1095,7 @@ private fun SpeechInput(
                 value = text,
                 onValueChange = { text = it },
                 modifier = Modifier.fillMaxWidth(),
-                textStyle = TextStyle(fontSize = 13.sp, color = textColor),
+                textStyle = TextStyle(fontSize = 15.sp, color = textColor),
                 maxLines = 4
             )
         }
@@ -1074,11 +1111,11 @@ private fun SpeechInput(
                     onSubmit(text.trim())
                     text = ""
                 }
-                .padding(horizontal = 16.dp, vertical = 10.dp)
+                .padding(horizontal = 18.dp, vertical = 11.dp)
         ) {
             Text(
                 text = "发言",
-                fontSize = 13.sp,
+                fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = if (enabled) Color.White else dimColor
             )
@@ -1115,8 +1152,8 @@ private fun TargetRow(
                         RoundedCornerShape(50)
                     )
                     .clickable(enabled = clickable) { onPick(target.seat) }
-                    .padding(horizontal = 12.dp, vertical = 7.dp),
-                fontSize = 12.sp,
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                fontSize = FsAction,
                 color = if (clickable) textColor else dimColor.copy(alpha = 0.5f),
                 maxLines = 1
             )
@@ -1128,8 +1165,8 @@ private fun TargetRow(
                     .clip(RoundedCornerShape(50))
                     .background(Color(0x0F000000))
                     .clickable { onExtra() }
-                    .padding(horizontal = 12.dp, vertical = 7.dp),
-                fontSize = 12.sp,
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                fontSize = FsAction,
                 color = dimColor
             )
         }
@@ -1176,8 +1213,8 @@ private fun WitchPanel(
                     .clip(RoundedCornerShape(50))
                     .background(UIActionBrush)
                     .clickable { onWitch(true, null) }
-                    .padding(horizontal = 14.dp, vertical = 8.dp),
-                fontSize = 12.sp,
+                    .padding(horizontal = 15.dp, vertical = 9.dp),
+                fontSize = FsAction,
                 fontWeight = FontWeight.SemiBold,
                 color = Color.White
             )
@@ -1189,8 +1226,8 @@ private fun WitchPanel(
                     .clip(RoundedCornerShape(50))
                     .background(UIFieldFill)
                     .clickable { poisoning = true }
-                    .padding(horizontal = 14.dp, vertical = 8.dp),
-                fontSize = 12.sp,
+                    .padding(horizontal = 15.dp, vertical = 9.dp),
+                fontSize = FsAction,
                 color = textColor
             )
         }
@@ -1200,8 +1237,8 @@ private fun WitchPanel(
                 .clip(RoundedCornerShape(50))
                 .background(UIFieldFill)
                 .clickable { onWitch(false, null) }
-                .padding(horizontal = 14.dp, vertical = 8.dp),
-            fontSize = 12.sp,
+                .padding(horizontal = 15.dp, vertical = 9.dp),
+            fontSize = FsAction,
             color = dimColor
         )
     }
@@ -1229,22 +1266,22 @@ private fun ReviewBar(
     ) {
         Text(
             text = "全部身份已公开 · 这一局已经存档",
-            fontSize = 10.sp,
+            fontSize = FsMeta,
             color = dimColor
         )
-        Spacer(Modifier.height(7.dp))
+        Spacer(Modifier.height(8.dp))
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(UIRadiusControl))
                 .background(UIActionBrush)
                 .clickable { onReview() }
-                .padding(vertical = 12.dp),
+                .padding(vertical = 13.dp),
             contentAlignment = Alignment.Center
         ) {
             Text(
                 text = "看复盘",
-                fontSize = 14.sp,
+                fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = Color.White
             )
@@ -1267,8 +1304,8 @@ private fun ErrorStrip(message: String, night: Boolean) {
     ) {
         Text(
             text = "$message\n这一局的进度已经存档，下次进来可以接着打。",
-            fontSize = 11.sp,
-            lineHeight = 16.sp,
+            fontSize = FsName,
+            lineHeight = 19.sp,
             color = if (night) Color(0xFFFFB4B0) else UIFriendBarRed
         )
     }
@@ -1434,7 +1471,7 @@ private fun DayNightTransition(
                 .align(Alignment.TopCenter)
                 .padding(top = anchor + 58.dp)
                 .alpha(veil),
-            fontSize = 15.sp,
+            fontSize = 17.sp,
             fontWeight = FontWeight.Medium,
             // 拉开字距，像一句宣告而不是一条提示
             letterSpacing = 4.sp,

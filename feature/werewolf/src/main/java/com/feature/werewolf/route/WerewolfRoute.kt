@@ -581,6 +581,15 @@ internal fun WerewolfUiState.toReview(
 private fun finishReason(game: WerewolfGame, winner: Faction): String {
     if (winner == Faction.GOOD) return "狼人全部出局，好人守住了。"
 
+    // 绑票要单独说，因为它在屠边局里也成立，而且现场看起来最反直觉：
+    // 神和民都还有人，怎么就结束了？答案是他们已经凑不出票把狼投出去
+    val aliveWolves = game.players.count { it.alive && it.role == WerewolfRole.WEREWOLF }
+    val aliveGood = game.players.count { it.alive && it.faction == Faction.GOOD }
+    if (aliveWolves >= aliveGood) {
+        return "场上还剩 $aliveWolves 狼 $aliveGood 好人，狼人已经绑票：白天全员投也凑不出比狼更多的票，" +
+            "没有警长就没有 PK，平票等于无人出局，夜里再少一个只会更糟。"
+    }
+
     return when (game.config.winRule) {
         WinRule.SLAY_ALL -> "存活的狼人已经不少于好人，投票再也翻不过来了。"
 
