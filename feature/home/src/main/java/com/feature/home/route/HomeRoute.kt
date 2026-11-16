@@ -17,13 +17,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.core.ai.model.Friend
 import com.feature.agent.contract.AgentScreen
 import com.feature.agent.route.AgentRoute
+import com.feature.home.contract.HomeScreen
+import com.feature.home.vm.HomeViewModel
 import com.feature.room.contract.RoomScreen
 import com.feature.room.route.RoomRoute
-import com.feature.home.contract.HomeScreen
-import com.feature.agent.model.Friend
-import com.feature.home.vm.HomeViewModel
 import com.ui.common.UIAvatarCropDialog
 import com.ui.common.UIGroupMember
 import com.ui.home.UIFriendPage

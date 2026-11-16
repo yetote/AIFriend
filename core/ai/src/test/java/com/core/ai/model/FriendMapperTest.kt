@@ -1,6 +1,5 @@
-package com.feature.agent.data
-import com.core.ai.model.ChatMessage
-import com.feature.agent.model.Friend
+package com.core.ai.model
+
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

@@ -1,6 +1,6 @@
 package com.feature.room.contract
 
-import com.feature.agent.model.Friend
+import com.core.ai.model.Friend
 import com.feature.room.model.Room
 import com.feature.room.model.RoomMessage
 

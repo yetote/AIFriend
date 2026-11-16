@@ -1,9 +1,9 @@
 package com.feature.agent.contract
 
+import com.core.ai.model.Friend
 import com.core.ai.model.GatewayModel
 import com.core.ai.model.ModelPrice
 import com.core.repository.settings.AIProviderCatalog
-import com.feature.agent.model.Friend
 import com.feature.agent.model.Provider
 
 /**

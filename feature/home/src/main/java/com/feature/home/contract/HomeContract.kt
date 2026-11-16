@@ -1,6 +1,6 @@
 package com.feature.home.contract
 
-import com.feature.agent.model.Friend
+import com.core.ai.model.Friend
 import com.feature.room.model.Room
 
 /** 单 Activity 内的页面状态，导航由 HomeRoute 持有。 */
