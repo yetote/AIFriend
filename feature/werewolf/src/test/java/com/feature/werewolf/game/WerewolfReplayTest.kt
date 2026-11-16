@@ -22,8 +22,14 @@ class WerewolfReplayTest {
 
     private val six = listOf(WEREWOLF, WEREWOLF, SEER, WITCH, VILLAGER, VILLAGER)
 
-    private fun game(roles: List<WerewolfRole> = six): WerewolfGame = WerewolfGame.withRoles(
-        config = WerewolfConfig(composition = roles.groupingBy { it }.eachCount()),
+    private fun game(
+        roles: List<WerewolfRole> = six,
+        maxVoteRounds: Int = 1,
+    ): WerewolfGame = WerewolfGame.withRoles(
+        config = WerewolfConfig(
+            composition = roles.groupingBy { it }.eachCount(),
+            maxVoteRounds = maxVoteRounds,
+        ),
         roster = roles.indices.map { RosterEntry(id = "p${it + 1}", name = "${it + 1}号") },
         roles = roles,
     ).atWolfVote()
@@ -110,8 +116,9 @@ private fun WerewolfGame.atWolfVote(): WerewolfGame =
 
     @Test
     fun `平票加投记成两轮，每轮只装自己这一轮的票`() {
+        // 这条验的是「加投时票型怎么记」，得先有加投额度（默认板子平票即结束）
         // 6 号第一夜被刀，天亮后剩 1/2/3/4/5
-        val morning = playNight(game(), victim = 6)
+        val morning = playNight(game(maxVoteRounds = 2), victim = 6)
         val first = morning.beginVote()
 
         // 1 号 2 票、2 号 2 票 → 平票，进入加投

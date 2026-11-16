@@ -412,19 +412,19 @@ private fun FinishedRow(record: UIWerewolfRecord, onClick: () -> Unit) {
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(
                 text = "第 ${record.day} 天 · ${record.winnerLabel ?: "已结束"}",
-                fontSize = 14.sp,
+                fontSize = 15.sp,
                 fontWeight = FontWeight.Medium,
                 color = UIFriendBarTitleColor
             )
             Text(
                 text = "${record.metaLabel} · ${record.timeLabel}",
-                fontSize = 11.sp,
+                fontSize = 12.5.sp,
                 color = UIFriendBarItemSubtitleColor
             )
         }
         Text(
             text = "看复盘",
-            fontSize = 12.sp,
+            fontSize = 13.sp,
             fontWeight = FontWeight.Medium,
             color = UIFriendBarTagTextBlue
         )

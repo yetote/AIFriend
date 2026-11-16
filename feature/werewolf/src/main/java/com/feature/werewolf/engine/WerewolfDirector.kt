@@ -320,8 +320,8 @@ class WerewolfDirector(
      * 用的是 [WerewolfGame.votingSeats] 而不是存活座位：翻过牌的白痴还在场上说话，
      * 但票已经和他无关了。让他投一票再被引擎拒掉，只会污染上下文。
      *
-     * 平票时状态机把候选人收窄并停在 [Phase.DAY_VOTE]，这里再收一轮，
-     * 额度用尽后状态机自己判「无人出局」。
+     * 平票就是当天结束：本板子没有警长，没人能主持 PK，[WerewolfConfig.maxVoteRounds]
+     * 默认 1，这个 while 只走一圈。循环本身留着，是为了将来有警长的板子能直接复用。
      */
     suspend fun vote(table: WerewolfTable): WerewolfTable {
         var current = table

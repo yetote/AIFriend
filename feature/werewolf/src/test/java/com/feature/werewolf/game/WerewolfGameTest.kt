@@ -358,8 +358,14 @@ private fun WerewolfGame.atWolfVote(): WerewolfGame =
     // ------------------------------------------------------------------
 
     @Test
-    fun `平票进入加投且候选人收窄，再平票则无人出局`() {
-        var mode = game(sixWithWitch)
+    fun `有加投额度时平票收窄候选人，再平票则无人出局`() {
+        // 这条规则要 maxVoteRounds > 1 才会发生，也就是「有警长主持 PK」的变体板子。
+        // 默认板子是 1（平票即无人出局），见下面那条用例
+        val config = WerewolfConfig(
+            composition = sixWithWitch.groupingBy { it }.eachCount(),
+            maxVoteRounds = 2,
+        )
+        var mode = game(sixWithWitch, config)
         mode = playNight(mode, victim = 5) // 存活 1/2/3/4/6
         mode = mode.beginVote()
 
@@ -379,6 +385,47 @@ private fun WerewolfGame.atWolfVote(): WerewolfGame =
         assertTrue(mode.history.any { it is GameEvent.NoExile })
         assertEquals(2, mode.day)
         assertEquals("平票无人出局后翻下一夜，从商议开始", Phase.NIGHT_WOLF_CHAT, mode.phase)
+    }
+
+    @Test
+    fun `没有警长时平票直接无人出局，没有第二次投票`() {
+        var mode = game(sixWithWitch)
+        mode = playNight(mode, victim = 5) // 存活 1/2/3/4/6
+        mode = mode.beginVote()
+
+        // 3 号 2 票、1 号 2 票：平票，但本板子没有警长，没人能追加 PK
+        mode = mode.castVotes(mapOf(1 to 3, 2 to 3, 3 to 1, 4 to 1, 6 to 4))
+
+        assertTrue(mode.history.any { it is GameEvent.NoExile })
+        assertEquals("不应该进入第二轮", 1, mode.voteRound)
+        assertEquals(VoteOutcome.NO_EXILE, mode.voteRounds.single().outcome)
+        assertEquals("平票即翻夜", 2, mode.day)
+        assertEquals(Phase.NIGHT_WOLF_CHAT, mode.phase)
+    }
+
+    @Test
+    fun `狼人追平好人即绑票获胜，屠边没达成也判狼赢`() {
+        // 2 狼 3 好人，神和民都还有人在——屠边的两个条件一个都没满足
+        val roles = listOf(WEREWOLF, WEREWOLF, SEER, VILLAGER, VILLAGER)
+        var mode = game(roles)
+
+        mode = playNight(mode, victim = 4) // 剩 2 狼 2 好人
+
+        assertEquals("票已经投不出去了，2v2 就是狼胜", Phase.FINISHED, mode.phase)
+        assertEquals(Faction.WEREWOLF, mode.winner)
+        assertTrue(mode.history.any { it is GameEvent.GameOver })
+    }
+
+    @Test
+    fun `狼人还没追平好人时不提前判负`() {
+        // 2 狼 4 好人，刀掉一个平民后是 2v3，还没到绑票线，白天照常打
+        val roles = listOf(WEREWOLF, WEREWOLF, SEER, VILLAGER, VILLAGER, VILLAGER)
+        var mode = game(roles)
+
+        mode = playNight(mode, victim = 5)
+
+        assertNull(mode.winner)
+        assertEquals(Phase.DAY_DISCUSSION, mode.phase)
     }
 
     @Test
