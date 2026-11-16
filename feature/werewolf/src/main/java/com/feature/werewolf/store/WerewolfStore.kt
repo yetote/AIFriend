@@ -71,6 +71,27 @@ interface WerewolfGameDao {
 }
 
 /**
+ * 存档读写的抽象。
+ *
+ * 抽出来是为了让对局控制器不直接依赖 Room：控制器要测「开局落档、每阶段落档、
+ * 出错时局面不丢」这些行为，用真库就得跑仪器测试，太慢也太重。
+ */
+interface WerewolfGameStore {
+
+    /** 保存（或覆盖）一局。[createdAt] 传开局时间，不要用当前时间，否则列表排序会乱。 */
+    suspend fun save(id: String, table: WerewolfTable, createdAt: Long)
+
+    suspend fun load(id: String): WerewolfTable?
+
+    /** 最近一局没打完的。没有则返回 null。 */
+    suspend fun latestUnfinished(): Pair<String, WerewolfTable>?
+
+    suspend fun summaries(): List<WerewolfGameSummary>
+
+    suspend fun delete(id: String)
+}
+
+/**
  * 狼人杀自己的库。
  *
  * 没有并进 `aifriend.db`，理由是两条：
@@ -111,7 +132,7 @@ abstract class WerewolfDatabase : RoomDatabase() {
 class WerewolfStore(
     private val dao: WerewolfGameDao,
     private val clock: () -> Long = System::currentTimeMillis,
-) {
+) : WerewolfGameStore {
 
     constructor(context: Context) : this(WerewolfDatabase.get(context).gameDao())
 
@@ -120,7 +141,7 @@ class WerewolfStore(
      *
      * [createdAt] 由调用方传，保证反复保存不会把开局时间刷新成最后一次行动的时间。
      */
-    suspend fun save(id: String, table: WerewolfTable, createdAt: Long = clock()) {
+    override suspend fun save(id: String, table: WerewolfTable, createdAt: Long) {
         dao.upsert(
             WerewolfGameEntity(
                 id = id,
@@ -136,19 +157,19 @@ class WerewolfStore(
     }
 
     /** 读一局。存档损坏或版本不匹配时返回 null，调用方当作没有存档处理。 */
-    suspend fun load(id: String): WerewolfTable? =
+    override suspend fun load(id: String): WerewolfTable? =
         dao.byId(id)?.let { WerewolfSnapshot.decode(it.snapshot) }
 
     /** 最近一局没打完的。没有则返回 null。 */
-    suspend fun latestUnfinished(): Pair<String, WerewolfTable>? {
+    override suspend fun latestUnfinished(): Pair<String, WerewolfTable>? {
         val id = dao.latestUnfinishedId() ?: return null
         val table = load(id) ?: return null
         return id to table
     }
 
-    suspend fun summaries(): List<WerewolfGameSummary> = dao.summaries()
+    override suspend fun summaries(): List<WerewolfGameSummary> = dao.summaries()
 
-    suspend fun delete(id: String) = dao.delete(id)
+    override suspend fun delete(id: String) = dao.delete(id)
 
     /** 清理已结束的局，保留未完成的。 */
     suspend fun deleteFinished() = dao.deleteFinished()
