@@ -13,7 +13,8 @@ enum class WinRule {
  * 一局游戏的规则配置。
  *
  * 所有可调参数集中在这里，[WerewolfGame] 内部不出现魔法数字。
- * 身份构成用 Map 表达而不是固定枚举，是为了让 6 人局、9 人局、12 人局共用同一套引擎。
+ * 身份构成用 Map 表达而不是固定枚举，是为了让 6 人局、9 人局、12 人局共用同一套引擎，
+ * 加一个新身份（守卫、白痴）也不需要新增一套规则代码。
  */
 data class WerewolfConfig(
     val composition: Map<WerewolfRole, Int> = Standard8,
@@ -37,8 +38,15 @@ data class WerewolfConfig(
         require((composition[WerewolfRole.VILLAGER] ?: 0) + composition.filterKeys { it.isGod }.values.sum() >= 1) {
             "至少要有一名好人"
         }
-        // 引擎按「场上有唯一一个行动者」实现夜晚阶段，多神职同场会语义不明，直接挡住。
-        listOf(WerewolfRole.SEER, WerewolfRole.WITCH, WerewolfRole.HUNTER).forEach { role ->
+        // 引擎按「场上有唯一一个行动者」实现夜晚阶段：两个预言家同场，查验结果该给谁说不清，
+        // 两个守卫的守护怎么叠加也说不清。所以这一组身份一律最多 1 名。
+        listOf(
+            WerewolfRole.SEER,
+            WerewolfRole.WITCH,
+            WerewolfRole.HUNTER,
+            WerewolfRole.GUARD,
+            WerewolfRole.IDIOT,
+        ).forEach { role ->
             require((composition[role] ?: 0) <= 1) { "${role.displayName} 最多 1 名" }
         }
         require(maxVoteRounds >= 1) { "投票轮次至少为 1" }
@@ -46,7 +54,23 @@ data class WerewolfConfig(
 
     val playerCount: Int get() = composition.values.sum()
 
+    /** 场上有没有这个身份（含已出局的人）。用于「开局时这个板子有没有守卫」这类判断。 */
+    fun has(role: WerewolfRole): Boolean = (composition[role] ?: 0) > 0
+
     companion object {
+        /**
+         * 6 人快局：2 狼 + 预言家 / 女巫 + 2 民。
+         *
+         * 两神两民，屠边意味着狼人只要打穿任意一边就赢，好人一次都错不得。
+         * 短，但比 8 人局紧张——适合先试一局看看模型的水平。
+         */
+        val Quick6: Map<WerewolfRole, Int> = mapOf(
+            WerewolfRole.WEREWOLF to 2,
+            WerewolfRole.SEER to 1,
+            WerewolfRole.WITCH to 1,
+            WerewolfRole.VILLAGER to 2,
+        )
+
         /** 8 人局：2 狼 + 预言家 / 女巫 / 猎人 + 3 民。 */
         val Standard8: Map<WerewolfRole, Int> = mapOf(
             WerewolfRole.WEREWOLF to 2,
@@ -56,13 +80,48 @@ data class WerewolfConfig(
             WerewolfRole.VILLAGER to 3,
         )
 
-        /** 9 人局：3 狼 + 预女猎 + 3 民。狼人需要多数决，是本引擎最典型的板子。 */
+        /** 9 人局：3 狼 + 预女猎 + 3 民。三狼在场，投票随时可能被狼队带走。 */
         val Standard9: Map<WerewolfRole, Int> = mapOf(
             WerewolfRole.WEREWOLF to 3,
             WerewolfRole.SEER to 1,
             WerewolfRole.WITCH to 1,
             WerewolfRole.HUNTER to 1,
             WerewolfRole.VILLAGER to 3,
+        )
+
+        /** 10 人守卫局：3 狼 + 预女猎守 + 3 民。四神在场，好人第一次有了「挡刀」的余量。 */
+        val Guard10: Map<WerewolfRole, Int> = mapOf(
+            WerewolfRole.WEREWOLF to 3,
+            WerewolfRole.SEER to 1,
+            WerewolfRole.WITCH to 1,
+            WerewolfRole.HUNTER to 1,
+            WerewolfRole.GUARD to 1,
+            WerewolfRole.VILLAGER to 3,
+        )
+
+        /** 12 人守卫局：4 狼 + 预女猎守 + 4 民。标准线下局之一。 */
+        val Guard12: Map<WerewolfRole, Int> = mapOf(
+            WerewolfRole.WEREWOLF to 4,
+            WerewolfRole.SEER to 1,
+            WerewolfRole.WITCH to 1,
+            WerewolfRole.HUNTER to 1,
+            WerewolfRole.GUARD to 1,
+            WerewolfRole.VILLAGER to 4,
+        )
+
+        /**
+         * 12 人白痴局：4 狼 + 预女猎白 + 4 民。
+         *
+         * 白痴替好人挡一次放逐：票错了不死，只是从此没有票。和守卫局的区别是——
+         * 守卫防夜里的刀，白痴防白天的错，两种容错的方向不一样。
+         */
+        val Fool12: Map<WerewolfRole, Int> = mapOf(
+            WerewolfRole.WEREWOLF to 4,
+            WerewolfRole.SEER to 1,
+            WerewolfRole.WITCH to 1,
+            WerewolfRole.HUNTER to 1,
+            WerewolfRole.IDIOT to 1,
+            WerewolfRole.VILLAGER to 4,
         )
     }
 }

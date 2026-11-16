@@ -36,6 +36,13 @@ data class NightRecord(
     val day: Int,
     /** 狼人最终决定刀的人。null 表示空刀（意见不合，或狼已全灭）。 */
     val wolfTarget: Int? = null,
+    /**
+     * 守卫这一夜守的人。null 表示没有守卫、守卫已出局、或他空守。
+     *
+     * 单独记一份而不是「刀口没死就是守住了」：刀口没死也可能是女巫用了药，
+     * 两者在复盘里是完全不同的结论——一个是守对了，一个是药没了。
+     */
+    val guarded: Int? = null,
     /** 女巫是否用了救药。 */
     val healed: Boolean = false,
     /** 女巫毒了谁。null 表示这夜没用毒。 */
@@ -48,6 +55,14 @@ data class NightRecord(
 enum class VoteOutcome {
     /** 有人被放逐。 */
     EXILED,
+
+    /**
+     * 票到了白痴身上：翻牌，不死。
+     *
+     * 和 [EXILED] 分开，是因为复盘里「谁出局了」是按结果统计的——把翻牌记成放逐，
+     * 复盘会显示一个明明还活着的人「第 2 天被票出」。
+     */
+    IDIOT_REVEALED,
 
     /** 平票，当天还会加投一轮。 */
     TIE,

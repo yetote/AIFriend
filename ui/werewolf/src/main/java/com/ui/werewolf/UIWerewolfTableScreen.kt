@@ -895,7 +895,7 @@ private fun TurnPanel(
                 textColor = textColor,
                 dimColor = dimColor,
                 onPick = { onSeat(it) },
-                extraLabel = if (turn.canAbstain) "不开枪" else null,
+                extraLabel = if (turn.canAbstain) turn.abstainLabel ?: "不做" else null,
                 onExtra = { onVote(null) }
             )
 

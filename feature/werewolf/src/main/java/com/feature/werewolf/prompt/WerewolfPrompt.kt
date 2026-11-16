@@ -3,6 +3,7 @@ package com.feature.werewolf.prompt
 import com.feature.werewolf.game.Faction
 import com.feature.werewolf.game.GameEvent
 import com.feature.werewolf.game.Phase
+import com.feature.werewolf.game.WerewolfConfig
 import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfRole
 import com.feature.werewolf.game.WinRule
@@ -53,6 +54,7 @@ object WerewolfPrompt {
                     .append("这个身份只有你自己知道。\n\n")
             }
             append(ruleBrief(game.config.winRule)).append("\n\n")
+            append(boardBrief(game.config).trimEnd()).append("\n\n")
             append(publicSituation(game).trimEnd()).append("\n\n")
             append(privateBriefing(game, seat)).append("\n\n")
             append(task(game, seat))
@@ -99,6 +101,10 @@ object WerewolfPrompt {
         is GameEvent.NoExile ->
             "第${event.day}天 投票：无人被放逐"
 
+        is GameEvent.IdiotRevealed ->
+            "第${event.day}天 投票：${event.seat} 号以 ${event.voteCount} 票被投出，" +
+                "翻开是白痴，没有出局，此后失去投票权"
+
         is GameEvent.HunterShot -> if (event.targetSeat == null) {
             "第${event.day}天：猎人 ${event.hunterSeat} 号出局，没有开枪"
         } else {
@@ -109,14 +115,39 @@ object WerewolfPrompt {
             "游戏结束：${event.winner.displayName}阵营获胜"
     }
 
+    /**
+     * 本局板子。
+     *
+     * 板子是**公开信息**：线下开局前所有人都知道今天打的是什么配置。不告诉模型，
+     * 它就会拿 8 人局的经验去推 12 人局——比如笃定场上只有三神，或者不知道有守卫。
+     *
+     * 新身份的规则也写在这里，而不是指望模型从「守卫」这个名字猜出他能做什么。
+     */
+    fun boardBrief(config: WerewolfConfig): String = buildString {
+        append("【本局板子】").append(config.playerCount).append(" 人局：")
+        append(
+            WerewolfRole.entries
+                .mapNotNull { role ->
+                    config.composition[role]?.takeIf { it > 0 }?.let { "$it ${role.displayName}" }
+                }
+                .joinToString("、")
+        ).append("\n")
+        if (config.has(WerewolfRole.GUARD)) {
+            append("守卫每夜先于狼人守一个人，被守的人当夜不会被刀死；不能连续两夜守同一个人，可以守自己。")
+            append("守卫和解药同时作用在一个人身上时，那个人活下来。\n")
+        }
+        if (config.has(WerewolfRole.IDIOT)) {
+            append("白痴被投票放逐时翻开身份，不会死，但从此不能再投票、也不能再被投；夜里被刀或被毒照常会死。\n")
+        }
+    }
+
     // ---------------------------------------------------------------------
     // 私有信息
     // ---------------------------------------------------------------------
-
     /**
      * 只有本人知道的那些事。
      *
-     * 四种身份各自不同，共同点是**绝不进公共播报**。狼队友必须知道彼此，否则没法配合；
+     * 每种身份各自不同，共同点是**绝不进公共播报**。狼队友必须知道彼此，否则没法配合；
      * 预言家必须看到历史查验，否则每晚都在重复验同一个人。
      */
     fun privateBriefing(game: WerewolfGame, seat: Int): String {
@@ -177,6 +208,29 @@ object WerewolfPrompt {
                 lines += "你是猎人：被狼人杀死或被投票放逐时可以开枪带走一个人；如果是被女巫毒死的，不能开枪。"
             }
 
+            WerewolfRole.GUARD -> {
+                lines += if (game.lastGuardedSeat == null) {
+                    "你昨夜没有守人，今晚任何人都可以守。"
+                } else {
+                    "你昨夜守的是 ${game.lastGuardedSeat} 号，今晚不能再守他。"
+                }
+                if (game.phase == Phase.NIGHT_GUARD) {
+                    lines += "现在轮到你守护。你不知道今晚狼人会刀谁，只能凭白天的发言去猜。"
+                }
+                lines += "你守的人当夜不会被刀死，但你自己也可能被刀——守自己同样是合法选择。"
+                lines += "你救下人的时候不会被告知，平安夜也可能只是狼人空刀，不要在白天当成证据说出来。"
+            }
+
+            WerewolfRole.IDIOT -> {
+                if (game.idiotRevealed) {
+                    lines += "你已经翻过牌了：所有人都知道你是白痴，你还能说话，但**不能再投票**，也不会再被投。"
+                    lines += "你现在唯一有用的地方，是继续用发言帮好人指认狼人。"
+                } else {
+                    lines += "你是白痴：如果被投票投出，你会翻开身份但不死；代价是从此失去投票权。"
+                    lines += "所以被投不是灾难，但也不能因此乱说话——翻牌之后你就只剩一张嘴了。"
+                }
+            }
+
             WerewolfRole.VILLAGER -> {
                 // 平民确实没有私有信息。明确写出来，比留一段空白好——
                 // 空白会让模型自己脑补「我是不是漏了什么」，进而编出不存在的信息。
@@ -193,6 +247,8 @@ object WerewolfPrompt {
                 WerewolfRole.VILLAGER -> Unit
                 WerewolfRole.HUNTER ->
                     append("你的猎人身份不要主动说出来，除非你已经开枪——开枪之后就藏不住了。")
+                WerewolfRole.IDIOT ->
+                    append("不要在白天主动说自己是白痴：翻牌虽然不死，但你会立刻失去投票权，狼人也就不必再怕你。")
                 else -> append("以上信息不能在白天直接说出来。")
             }
         }
@@ -213,6 +269,18 @@ object WerewolfPrompt {
         return buildString {
             append("【本轮任务】")
             when (game.phase) {
+                Phase.NIGHT_GUARD -> {
+                    // 守卫可以守自己，所以候选里刻意包含自己的座位号，
+                    // 和 WerewolfDecisions.guardProtect 里的候选保持同一份
+                    append("第 ${game.day} 夜，你要守护一个人。")
+                    append("可选目标：").append(seats(game.guardTargets)).append("（含你自己）。")
+                    if (game.lastGuardedSeat != null) {
+                        append("你昨夜守的是 ${game.lastGuardedSeat} 号，今晚不能再守他。")
+                    }
+                    append("空守等于这一夜白过，除非你确信狼人会空刀。")
+                    append("先用一句话说明你为什么守他，再给出座位号。")
+                }
+
                 Phase.NIGHT_WOLF -> {
                     val targets = game.aliveSeats.filter { it != seat && !game.isWerewolf(it) }
                     append("第 ${game.day} 夜，狼人商议今晚刀谁。")

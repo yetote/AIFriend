@@ -305,6 +305,41 @@ class WerewolfDirectorTest {
         assertEquals(9, result.publicTranscript.count { it.kind == MessageKind.VOTE })
     }
 
+    @Test
+    fun `守护局的整局能跑通，守卫的话只有他自己能看到`() = runBlocking {
+        // 10 人守卫局：7 号是守卫
+        val game = WerewolfGame.withRoles(
+            config = WerewolfConfig(composition = WerewolfConfig.Guard10),
+            roster = roster(10),
+            roles = listOf(
+                WerewolfRole.WEREWOLF,
+                WerewolfRole.WEREWOLF,
+                WerewolfRole.WEREWOLF,
+                WerewolfRole.SEER,
+                WerewolfRole.WITCH,
+                WerewolfRole.HUNTER,
+                WerewolfRole.GUARD,
+                WerewolfRole.VILLAGER,
+                WerewolfRole.VILLAGER,
+                WerewolfRole.VILLAGER,
+            ),
+        )
+        val agents = game.players.associate { it.seat to SeatAgent(AutoAI(), "test-model") }
+
+        val result = WerewolfDirector(agents, random = Random(7)).play(WerewolfTable(game))
+
+        assertTrue("守护局也要能打完", result.game.isFinished)
+        assertEquals("第一夜从守卫开始", Phase.NIGHT_GUARD, result.transcript.first().phase)
+        val guardMessage = result.transcript.first()
+        assertEquals("守卫的行踪只能是私有消息", setOf(7), guardMessage.audience)
+        assertTrue(
+            "别人看不到守卫守了谁",
+            result.transcriptFor(1).none { it.phase == Phase.NIGHT_GUARD },
+        )
+        // 每一夜都要有人守，否则守护毫无意义
+        assertTrue("应该有守中刀口或有守人的记录", result.game.nights.any { it.guarded != null })
+    }
+
     // ------------------------------------------------------------------
     // 兜底
     // ------------------------------------------------------------------

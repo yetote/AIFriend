@@ -50,6 +50,35 @@ class WerewolfDirector(
     // ---------------------------------------------------------------------
 
     /**
+     * 守卫守护。**先于狼人**，所以这里拿不到刀口，守卫只能盲守。
+     *
+     * 守了谁只有守卫自己知道——说出来的话，狼人下一夜就知道该换谁了。
+     */
+    suspend fun nightGuard(table: WerewolfTable): WerewolfTable {
+        val game = table.game
+        if (game.phase != Phase.NIGHT_GUARD) return table
+        val guard = game.alivePlayers.firstOrNull { it.role == WerewolfRole.GUARD } ?: return table
+
+        onProgress(WerewolfProgress(game.day, Phase.NIGHT_GUARD, 1, 1, seat = guard.seat))
+        val outcome = askGuard(table, guard.seat)
+        val target = outcome.value.target
+        val next = game.guardProtect(target)
+        return table
+            .append(
+                WerewolfMessage(
+                    day = game.day,
+                    phase = Phase.NIGHT_GUARD,
+                    seat = guard.seat,
+                    kind = MessageKind.NIGHT_ACT,
+                    text = if (target == null) "这晚我不守人。" + outcome.value.reason
+                    else "我守 $target 号。" + outcome.value.reason,
+                    audience = setOf(guard.seat),
+                )
+            )
+            .let { it.copy(game = next).syncBroadcasts(game) }
+    }
+
+    /**
      * 狼人商议。存活狼人**并发**给出目标，再交给状态机多数决。
      *
      * 平票时状态机会停在 [Phase.NIGHT_WOLF] 并把 `wolfVoteRound` 加一，
@@ -194,7 +223,10 @@ class WerewolfDirector(
     }
 
     /**
-     * 白天投票。所有存活玩家**并发**投票，互相看不到。
+     * 白天投票。所有有投票权的玩家**并发**投票，互相看不到。
+     *
+     * 用的是 [WerewolfGame.votingSeats] 而不是存活座位：翻过牌的白痴还在场上说话，
+     * 但票已经和他无关了。让他投一票再被引擎拒掉，只会污染上下文。
      *
      * 平票时状态机把候选人收窄并停在 [Phase.DAY_VOTE]，这里再收一轮，
      * 额度用尽后状态机自己判「无人出局」。
@@ -204,26 +236,27 @@ class WerewolfDirector(
         var rounds = 0
         while (current.game.phase == Phase.DAY_VOTE && rounds < current.game.config.maxVoteRounds) {
             val game = current.game
-            val candidates = game.voteCandidates ?: game.aliveSeats
+            val voters = game.votingSeats
+            val candidates = game.voteCandidates ?: voters
 
             onProgress(
                 WerewolfProgress(
                     day = game.day,
                     phase = Phase.DAY_VOTE,
                     step = 0,
-                    total = game.aliveSeats.size,
+                    total = voters.size,
                     note = if (rounds > 0) "平票，重新投票" else null,
                 )
             )
 
             val outcomes = coroutineScope {
-                game.aliveSeats.map { seat ->
+                voters.map { seat ->
                     async { seat to askVote(current, seat, candidates) }
                 }.awaitAll()
             }
 
             onProgress(
-                WerewolfProgress(game.day, Phase.DAY_VOTE, game.aliveSeats.size, game.aliveSeats.size)
+                WerewolfProgress(game.day, Phase.DAY_VOTE, voters.size, voters.size)
             )
 
             var next = current
@@ -291,6 +324,7 @@ class WerewolfDirector(
         while (!current.game.isFinished) {
             check(steps++ < MAX_STEPS) { "编排没有收敛，停在 ${current.game.phase}" }
             current = when (current.game.phase) {
+                Phase.NIGHT_GUARD -> nightGuard(current)
                 Phase.NIGHT_WOLF -> nightWolf(current)
                 Phase.NIGHT_SEER -> nightSeer(current)
                 Phase.NIGHT_WITCH -> nightWitch(current)
@@ -331,6 +365,17 @@ class WerewolfDirector(
             spec = WerewolfDecisions.seerCheck(game, seat),
             fallback = { WerewolfDecisions.fallbackSeerCheck(game, seat, random) },
             task = "请给出你今晚要查验的人。",
+        )
+    }
+
+    private suspend fun askGuard(table: WerewolfTable, seat: Int): StructuredOutcome<VoteChoice> {
+        val game = table.game
+        return ask(
+            table = table,
+            seat = seat,
+            spec = WerewolfDecisions.guardProtect(game, seat),
+            fallback = { WerewolfDecisions.fallbackGuard(game, random) },
+            task = "请给出你今晚要守护的人，不想守就填 null。",
         )
     }
 
@@ -439,6 +484,10 @@ class WerewolfDirector(
      *
      * 用「history 的长度差」判断新增，而不是让每个阶段自己记得播报什么——
      * 播报文案只有 [WerewolfPrompt.describe] 一处，规则改了不用同步改第二个地方。
+     *
+     * 消息的 phase 取 **previous.phase**，也就是「产生这条播报的那个阶段」，不是推进后的阶段。
+     * 这里差一步会出真问题：投票结束时状态机直接翻到下一夜，如果标成新阶段，
+     * 一条「无人被放逐」的公开播报就会被记成「守卫阶段」的事情，谁都看得见。
      */
     private fun WerewolfTable.syncBroadcasts(previous: WerewolfGame): WerewolfTable {
         val fresh = game.history.drop(previous.history.size)
@@ -448,7 +497,7 @@ class WerewolfDirector(
             next = next.append(
                 WerewolfMessage(
                     day = event.day,
-                    phase = game.phase,
+                    phase = previous.phase,
                     seat = null,
                     kind = MessageKind.DIVINE,
                     text = WerewolfPrompt.describe(event),

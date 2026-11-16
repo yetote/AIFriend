@@ -33,6 +33,10 @@ class WerewolfReviewMappingTest {
         while (!game.isFinished) {
             check(steps++ < 800) { "局面没打完：第 ${game.day} 天 ${game.phase}" }
             game = when (game.phase) {
+                Phase.NIGHT_GUARD -> game.guardProtect(
+                    if (rng.nextInt(4) == 0) null else game.guardTargets.random(rng),
+                )
+
                 Phase.NIGHT_WOLF -> {
                     val target = game.aliveSeats.random(rng)
                     game.wolfVote(game.aliveWolves().associate { it.seat to target })
@@ -63,9 +67,10 @@ class WerewolfReviewMappingTest {
                 Phase.DAY_DISCUSSION -> game.beginVote()
 
                 Phase.DAY_VOTE -> {
-                    val candidates = game.voteCandidates ?: game.aliveSeats
+                    val voters = game.votingSeats
+                    val candidates = game.voteCandidates ?: voters
                     game.castVotes(
-                        game.aliveSeats.associateWith {
+                        voters.associateWith {
                             if (rng.nextInt(5) == 0) null else candidates.random(rng)
                         },
                     )

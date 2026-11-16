@@ -23,6 +23,7 @@ import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfPlayer
 import com.feature.werewolf.game.WerewolfRole
 import com.feature.werewolf.game.WinRule
+import com.feature.werewolf.game.VoteOutcome
 import com.feature.werewolf.store.WerewolfGameSummary
 import com.feature.werewolf.vm.WerewolfMode
 import com.feature.werewolf.vm.WerewolfViewModel
@@ -178,45 +179,68 @@ fun WerewolfRoute(
 // 展示模型映射
 // ---------------------------------------------------------------------------
 
+private const val PRESET_QUICK_6 = "quick6"
 private const val PRESET_STANDARD_8 = "standard8"
 private const val PRESET_STANDARD_9 = "standard9"
+private const val PRESET_GUARD_10 = "guard10"
+private const val PRESET_GUARD_12 = "guard12"
+private const val PRESET_FOOL_12 = "fool12"
 
 /**
  * 板子列表。
  *
  * 身份构成文案由这里根据 `WerewolfConfig` 现拼，不在 UI 里再写一份——
  * 规则改了文案会自动跟着变，不会出现「界面写着 3 神、引擎发 2 神」。
+ *
+ * 顺序按人数排，不是按推荐度：玩家挑板子时先问「凑得齐几个人」，
+ * 把 6 人局放在最后会让人以为要凑满 12 个才能开局。
  */
 private val PRESETS = listOf(
-    UIWerewolfPreset(
-        key = PRESET_STANDARD_8,
-        title = "8 人标准局",
-        playerCount = WerewolfConfig.Standard8.values.sum(),
-        composition = compositionText(WerewolfConfig.Standard8),
-    ),
-    UIWerewolfPreset(
-        key = PRESET_STANDARD_9,
-        title = "9 人标准局",
-        playerCount = WerewolfConfig.Standard9.values.sum(),
-        composition = compositionText(WerewolfConfig.Standard9),
-    ),
+    preset(PRESET_QUICK_6, "6 人快局", WerewolfConfig.Quick6),
+    preset(PRESET_STANDARD_8, "8 人标准局", WerewolfConfig.Standard8),
+    preset(PRESET_STANDARD_9, "9 人标准局", WerewolfConfig.Standard9),
+    preset(PRESET_GUARD_10, "10 人守卫局", WerewolfConfig.Guard10),
+    preset(PRESET_GUARD_12, "12 人守卫局", WerewolfConfig.Guard12),
+    preset(PRESET_FOOL_12, "12 人白痴局", WerewolfConfig.Fool12),
 )
 
+private fun preset(key: String, title: String, composition: Map<WerewolfRole, Int>): UIWerewolfPreset =
+    UIWerewolfPreset(
+        key = key,
+        title = title,
+        playerCount = composition.values.sum(),
+        composition = compositionText(composition),
+    )
+
 private fun configOf(presetKey: String): WerewolfConfig = when (presetKey) {
+    PRESET_QUICK_6 -> WerewolfConfig(composition = WerewolfConfig.Quick6)
     PRESET_STANDARD_9 -> WerewolfConfig(composition = WerewolfConfig.Standard9)
+    PRESET_GUARD_10 -> WerewolfConfig(composition = WerewolfConfig.Guard10)
+    PRESET_GUARD_12 -> WerewolfConfig(composition = WerewolfConfig.Guard12)
+    PRESET_FOOL_12 -> WerewolfConfig(composition = WerewolfConfig.Fool12)
     else -> WerewolfConfig()
 }
 
-private fun compositionText(composition: Map<WerewolfRole, Int>): String =
-    listOf(
-        WerewolfRole.WEREWOLF to "狼",
-        WerewolfRole.SEER to "预言家",
-        WerewolfRole.WITCH to "女巫",
-        WerewolfRole.HUNTER to "猎人",
-        WerewolfRole.VILLAGER to "民",
-    ).mapNotNull { (role, label) ->
-        composition[role]?.takeIf { it > 0 }?.let { "$it $label" }
-    }.joinToString(" · ")
+/**
+ * 身份构成文案，例如「4 狼 · 预女猎守 · 4 民」。
+ *
+ * 神职合成一组而不是逐个报数：一个 12 人板有六个身份，逐个写「1 预言家 · 1 女巫 · 1 猎人 ·
+ * 1 守卫 · 4 平民」在卡片里会折成三行，而玩家扫一眼要的其实就是「几狼几神几民」。
+ */
+private fun compositionText(composition: Map<WerewolfRole, Int>): String = buildList {
+    val wolves = composition[WerewolfRole.WEREWOLF] ?: 0
+    if (wolves > 0) add("$wolves 狼")
+    val gods = listOf(
+        WerewolfRole.SEER,
+        WerewolfRole.WITCH,
+        WerewolfRole.HUNTER,
+        WerewolfRole.GUARD,
+        WerewolfRole.IDIOT,
+    ).mapNotNull { role -> composition[role]?.takeIf { it > 0 }?.let { role.shortName } }
+    if (gods.isNotEmpty()) add(gods.joinToString(""))
+    val villagers = composition[WerewolfRole.VILLAGER] ?: 0
+    if (villagers > 0) add("$villagers 民")
+}.joinToString(" · ")
 
 private fun UIWerewolfMode.toMode(): WerewolfMode = when (this) {
     UIWerewolfMode.PLAY -> WerewolfMode.PLAY
@@ -316,7 +340,12 @@ internal fun WerewolfUiState.toReview(
         .eachCount()
 
     fun fateOf(player: WerewolfPlayer): String? {
-        val day = player.deathDay ?: return null
+        val day = player.deathDay
+        if (day == null) {
+            // 翻过牌的白痴还活着，但「还活着」不是这一局的全部事实：
+            // 不说清楚，复盘里会显示一个没有任何归宿标记的白痴
+            return if (player.role == WerewolfRole.IDIOT && game.idiotRevealed) "翻过牌，没被投出" else null
+        }
         return when (player.deathCause) {
             DeathCause.WOLF_KILL -> "第 $day 夜被刀"
             DeathCause.WITCH_POISON -> "第 $day 夜被毒"
@@ -366,11 +395,15 @@ internal fun WerewolfUiState.toReview(
             // 加投时只摆最后一轮：前一轮的票已经被「再投一次」作废了，
             // 两轮的票并排摆出来，会让人以为 XX 号拿了双倍票
             val last = rounds.maxByOrNull { it.round } ?: return@map null
-            val exiled = last.exiledSeat
+            // 票到了白痴身上只翻牌，没有人出局。这里如果按「放逐」显示，
+            // 复盘会写着「放逐 4 号」，而底牌区那个 4 号明明还活着
+            val revealed = last.outcome == VoteOutcome.IDIOT_REVEALED
+            val exiled = last.exiledSeat.takeIf { !revealed }
             val abstained = last.ballots.isNotEmpty() && last.ballots.all { it.targetSeat == null }
             UIWerewolfDayReport(
                 day = day,
                 result = when {
+                    revealed -> "${last.exiledSeat} 号翻牌（白痴，${last.exileVotes} 票），不出局"
                     exiled != null -> "放逐 $exiled 号（${last.exileVotes} 票）"
                     abstained -> "全员弃票"
                     else -> "平票，无人出局"
@@ -396,6 +429,7 @@ internal fun WerewolfUiState.toReview(
             UIWerewolfNightReport(
                 day = night.day,
                 wolfLine = night.wolfTarget?.let { "狼刀 $it 号" } ?: "狼人空刀",
+                guardLine = night.guarded?.let { "守卫守 $it 号" },
                 witchLine = when {
                     night.healed -> "女巫用解药救下"
                     night.poisonTarget != null -> "女巫毒 ${night.poisonTarget} 号"
@@ -489,6 +523,9 @@ private fun WerewolfUiState.toLive(
         .orEmpty()
 
     val seats = game?.players?.map { player ->
+        // 翻过牌的白痴身份是公开的：牌桌上必须给所有人看见，
+        // 否则会留下一个「没有身份标记却还活着」的座位，读起来自相矛盾
+        val known = reveal || (player.role == WerewolfRole.IDIOT && game.idiotRevealed)
         UIWerewolfSeatLive(
             seat = player.seat,
             name = player.name,
@@ -496,7 +533,7 @@ private fun WerewolfUiState.toLive(
             isSelf = player.seat == humanSeat,
             alive = player.alive,
             fate = player.deathCause?.toFate(),
-            roleLabel = if (reveal) player.role.displayName else null,
+            roleLabel = if (known) player.role.displayName else null,
             wolf = player.role == WerewolfRole.WEREWOLF,
             active = progress?.seat == player.seat,
             votes = voteCounts[player.seat],
@@ -585,10 +622,28 @@ private fun buildTurn(
             targets = if (game.voteCandidates != null) {
                 others.filter { it.seat in game.voteCandidates }
             } else {
-                others
+                // 翻牌的白痴不能再被投：投他只是浪费一次放逐，还会把白天拖成平票
+                others.filter { it.seat in game.votingSeats }
             },
             canAbstain = true,
         )
+
+        Phase.NIGHT_GUARD -> if (me.role == WerewolfRole.GUARD) {
+            UIWerewolfTurn(
+                kind = UIWerewolfTurnKind.SEAT,
+                seat = humanSeat,
+                title = "今晚守谁",
+                hint = game.lastGuardedSeat?.let { "昨夜守了 $it 号，不能连守" },
+                // 守卫可以守自己，所以候选里包含本人座位
+                targets = game.alivePlayers
+                    .filter { it.seat in game.guardTargets }
+                    .map { UIWerewolfTarget(seat = it.seat, name = it.name) },
+                canAbstain = true,
+                abstainLabel = "这晚不守",
+            )
+        } else {
+            null
+        }
 
         Phase.NIGHT_WOLF -> if (me.role == WerewolfRole.WEREWOLF) {
             UIWerewolfTurn(
@@ -639,6 +694,7 @@ private fun buildTurn(
                 hint = "也可以不开",
                 targets = others,
                 canAbstain = true,
+                abstainLabel = "不开枪",
             )
         } else {
             null
@@ -648,9 +704,10 @@ private fun buildTurn(
     }
 }
 
-/** 夜晚三段算夜。猎人开枪归到白天播报里，所以不算。 */
+/** 夜晚几个阶段算夜。猎人开枪归到白天播报里，所以不算。 */
 private fun Phase.isNightPhase(): Boolean =
-    this == Phase.NIGHT_WOLF || this == Phase.NIGHT_SEER || this == Phase.NIGHT_WITCH
+    this == Phase.NIGHT_GUARD || this == Phase.NIGHT_WOLF ||
+        this == Phase.NIGHT_SEER || this == Phase.NIGHT_WITCH
 
 private fun DeathCause.toFate(): UIWerewolfFate = when (this) {
     DeathCause.WOLF_KILL -> UIWerewolfFate.WOLF_KILL

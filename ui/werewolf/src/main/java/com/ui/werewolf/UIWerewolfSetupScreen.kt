@@ -39,6 +39,7 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ui.common.UIAvatar
@@ -146,7 +147,7 @@ fun UIWerewolfSetupScreen(
 
                 SectionTitle(
                     title = "怎么玩",
-                    subtitle = "自己占一个座位，还是纯粹看 8 个 AI 自己打"
+                    subtitle = "自己占一个座位，还是纯粹看着 AI 自己打"
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     UIWerewolfMode.entries.forEach { item ->
@@ -159,16 +160,15 @@ fun UIWerewolfSetupScreen(
                     }
                 }
 
-                SectionTitle(title = "板子", subtitle = "身份构成固定，开局时随机发牌")
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    presets.forEach { item ->
-                        PresetRow(
-                            preset = item,
-                            selected = item.key == presetKey,
-                            onClick = { onPresetChange(item.key) }
-                        )
-                    }
-                }
+                SectionTitle(
+                    title = "板子",
+                    subtitle = "身份构成固定，开局时随机发牌。挑一个：人数决定要凑几个好友"
+                )
+                PresetGrid(
+                    presets = presets,
+                    presetKey = presetKey,
+                    onPresetChange = onPresetChange
+                )
 
                 // 座位条：这是整页的主视觉，把「还差几位」变成几个空位
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -425,55 +425,103 @@ private fun ModeCard(
     }
 }
 
+/**
+ * 板子网格。
+ *
+ * 六套板子竖着排要占两屏，会把「座位条」和「选人」挤到看不见的地方——而这两块
+ * 才是开局前真正要盯的东西（还差几个人）。两列既能一屏放完，也仍然读得出人数递增的顺序。
+ */
 @Composable
-private fun PresetRow(preset: UIWerewolfPreset, selected: Boolean, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .uiControl(
-                shape = RoundedCornerShape(UIRadiusControl),
-                color = if (selected) UIFriendBarCreateButtonText.copy(alpha = 0.07f) else UIGlassSurfaceStrong,
-                borderColor = if (selected) UIFriendBarCreateButtonText.copy(alpha = 0.4f) else UIGlassStroke
-            )
-            .clickable { onClick() }
-            .padding(horizontal = 14.dp, vertical = 11.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(
-                text = preset.title,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                color = if (selected) UIFriendBarCreateButtonText else UIFriendBarTitleColor
-            )
-            Text(
-                text = preset.composition,
-                fontSize = 11.sp,
-                color = UIFriendBarItemSubtitleColor
-            )
-        }
-        Box(
-            modifier = Modifier
-                .size(20.dp)
-                .clip(CircleShape)
-                .then(
-                    if (selected) {
-                        Modifier.background(UIActionBrush)
-                    } else {
-                        Modifier.border(1.5.dp, UIGlassStroke, CircleShape)
-                    }
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            if (selected) {
-                Icon(
-                    imageVector = Icons.Default.Check,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(13.dp)
-                )
+private fun PresetGrid(
+    presets: List<UIWerewolfPreset>,
+    presetKey: String,
+    onPresetChange: (String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        presets.chunked(2).forEach { row ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                row.forEach { item ->
+                    PresetCard(
+                        preset = item,
+                        selected = item.key == presetKey,
+                        modifier = Modifier.weight(1f),
+                        onClick = { onPresetChange(item.key) }
+                    )
+                }
+                // 奇数个时补一个空权重，否则最后一张卡会拉满整行，看起来像另一类东西
+                if (row.size == 1) Spacer(Modifier.weight(1f))
             }
         }
+    }
+}
+
+@Composable
+private fun PresetCard(
+    preset: UIWerewolfPreset,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Column(
+        modifier = modifier
+            // 固定高度而不是 wrap：同一行的两张卡要一样高，否则「12 人白痴局」那行
+            // 会比「6 人快局」那行高一截，读起来像两种东西
+            .height(76.dp)
+            .clip(RoundedCornerShape(UIRadiusControl))
+            .background(if (selected) UIFriendBarCreateButtonText.copy(alpha = 0.07f) else UIGlassSurfaceStrong)
+            .border(
+                width = if (selected) 1.5.dp else 0.5.dp,
+                color = if (selected) UIFriendBarCreateButtonText.copy(alpha = 0.4f) else UIGlassStroke,
+                shape = RoundedCornerShape(UIRadiusControl)
+            )
+            .clickable { onClick() }
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = preset.title,
+                modifier = Modifier.weight(1f),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = if (selected) UIFriendBarCreateButtonText else UIFriendBarTitleColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Box(
+                modifier = Modifier
+                    .size(15.dp)
+                    .clip(CircleShape)
+                    .then(
+                        if (selected) {
+                            Modifier.background(UIActionBrush)
+                        } else {
+                            Modifier.border(1.2.dp, UIGlassStroke, CircleShape)
+                        }
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                if (selected) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(10.dp)
+                    )
+                }
+            }
+        }
+        Text(
+            text = preset.composition,
+            fontSize = 11.sp,
+            lineHeight = 15.sp,
+            color = UIFriendBarItemSubtitleColor,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
@@ -482,9 +530,13 @@ private fun PresetRow(preset: UIWerewolfPreset, selected: Boolean, onClick: () -
  *
  * 空位用虚线圆而不是浅灰实心圆：实心会被误读成「已有一个没头像的人」，
  * 虚线才有「这里还空着，等人来」的意思。
+ *
+ * 12 人局的圆要缩小：一行 12 个 30dp 的圆圈加上间距会超出屏宽，
+ * 而这条是整页主视觉，挤掉一两个人比缩小几个像素糟糕得多。
  */
 @Composable
 private fun SeatStrip(seats: List<UIWerewolfSeat>) {
+    val diameter = if (seats.size >= 11) 22.dp else if (seats.size >= 10) 25.dp else 30.dp
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -494,11 +546,11 @@ private fun SeatStrip(seats: List<UIWerewolfSeat>) {
             if (seat.name == null) {
                 Box(
                     modifier = Modifier
-                        .size(30.dp)
+                        .size(diameter)
                         .drawBehind {
                             drawCircle(
                                 color = UIFriendBarItemSubtitleColor.copy(alpha = 0.35f),
-                                radius = size.minDimension / 2f - 1.dp.toPx(),
+                                radius = this.size.minDimension / 2f - 1.dp.toPx(),
                                 style = Stroke(
                                     width = 1.2.dp.toPx(),
                                     pathEffect = PathEffect.dashPathEffect(
@@ -511,7 +563,7 @@ private fun SeatStrip(seats: List<UIWerewolfSeat>) {
             } else {
                 Box(
                     modifier = Modifier
-                        .size(30.dp)
+                        .size(diameter)
                         .then(
                             if (seat.isSelf) {
                                 Modifier.border(2.dp, UIFriendBarCreateButtonText, CircleShape)
@@ -524,7 +576,7 @@ private fun SeatStrip(seats: List<UIWerewolfSeat>) {
                     UIAvatar(
                         name = seat.name,
                         avatarPath = seat.avatarPath,
-                        size = if (seat.isSelf) 26.dp else 30.dp,
+                        size = if (seat.isSelf) diameter - 4.dp else diameter,
                         shape = CircleShape
                     )
                 }
