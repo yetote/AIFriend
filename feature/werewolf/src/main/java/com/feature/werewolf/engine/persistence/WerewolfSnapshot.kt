@@ -7,8 +7,11 @@ import com.feature.werewolf.game.Ballot
 import com.feature.werewolf.game.DeathCause
 import com.feature.werewolf.game.Faction
 import com.feature.werewolf.game.GameEvent
+import com.feature.werewolf.game.NightRecord
 import com.feature.werewolf.game.Phase
 import com.feature.werewolf.game.SeerCheck
+import com.feature.werewolf.game.VoteOutcome
+import com.feature.werewolf.game.VoteRound
 import com.feature.werewolf.game.WerewolfConfig
 import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfPlayer
@@ -35,7 +38,7 @@ import kotlinx.serialization.json.Json
 object WerewolfSnapshot {
 
     /** 当前存档格式版本。改动 DTO 结构时必须加一。 */
-    const val VERSION = 1
+    const val VERSION = 2
 
     private val json = Json {
         ignoreUnknownKeys = true   // 旧档多出来的字段不该让新版本读不出来
@@ -51,9 +54,15 @@ object WerewolfSnapshot {
      */
     fun decode(text: String): WerewolfTable? {
         val dto = runCatching { json.decodeFromString<TableSnapshot>(text) }.getOrNull() ?: return null
-        if (dto.version != VERSION) return null
+        // v2 只**新增**了两个带默认值的字段，v1 的语义一个字都没改，所以 v1 可以直接读。
+        // 旧档读出来 `nights` / `voteRounds` 是空的：局面照常能续，只是复盘缺那一段。
+        // 这比「一声不响把玩家没打完的局丢掉」要好。真正的语义变更才该拒绝旧档。
+        if (dto.version !in MIN_SUPPORTED_VERSION..VERSION) return null
         return runCatching { dto.toTable() }.getOrNull()
     }
+
+    /** 最低可读版本。低于它的档语义已经对不上，宁可当作没有存档。 */
+    private const val MIN_SUPPORTED_VERSION = 1
 }
 
 private const val SNAPSHOT_VERSION = WerewolfSnapshot.VERSION
@@ -81,6 +90,10 @@ internal data class TableSnapshot(
     val afterHunterPhase: String = Phase.NIGHT_WOLF.name,
     val history: List<EventSnapshot> = emptyList(),
     val winner: String? = null,
+    /** v2 起：每夜结算记录，复盘用。旧档没有这一段，读出来是空列表。 */
+    val nights: List<NightSnapshot> = emptyList(),
+    /** v2 起：逐轮投票历史，复盘用。 */
+    val voteRounds: List<VoteRoundSnapshot> = emptyList(),
     val transcript: List<MessageSnapshot> = emptyList(),
 )
 
@@ -121,6 +134,26 @@ internal data class CheckSnapshot(
 internal data class BallotSnapshot(
     val voterSeat: Int,
     val targetSeat: Int? = null,
+)
+
+@Serializable
+internal data class NightSnapshot(
+    val day: Int,
+    val wolfTarget: Int? = null,
+    val healed: Boolean = false,
+    val poisonTarget: Int? = null,
+    val deaths: List<Int> = emptyList(),
+)
+
+@Serializable
+internal data class VoteRoundSnapshot(
+    val day: Int,
+    val round: Int,
+    val ballots: List<BallotSnapshot> = emptyList(),
+    /** [com.feature.werewolf.game.VoteOutcome] 的名字。 */
+    val outcome: String,
+    val exiledSeat: Int? = null,
+    val exileVotes: Int = 0,
 )
 
 /**
@@ -190,6 +223,16 @@ internal fun WerewolfTable.toSnapshot(): TableSnapshot {
         afterHunterPhase = game.afterHunterPhase.name,
         history = game.history.map { it.toSnapshot() },
         winner = game.winner?.name,
+        nights = game.nights.map {
+            NightSnapshot(
+                day = it.day,
+                wolfTarget = it.wolfTarget,
+                healed = it.healed,
+                poisonTarget = it.poisonTarget,
+                deaths = it.deaths,
+            )
+        },
+        voteRounds = game.voteRounds.map { it.toSnapshot() },
         transcript = this.transcript.map {
             MessageSnapshot(
                 day = it.day,
@@ -203,8 +246,16 @@ internal fun WerewolfTable.toSnapshot(): TableSnapshot {
     )
 }
 
-private fun GameEvent.toSnapshot(): EventSnapshot = when (this) {
-    is GameEvent.Dawn -> EventSnapshot(type = "DAWN", day = day, deadSeats = deadSeats)
+private fun VoteRound.toSnapshot(): VoteRoundSnapshot = VoteRoundSnapshot(
+    day = day,
+    round = round,
+    ballots = ballots.map { BallotSnapshot(it.voterSeat, it.targetSeat) },
+    outcome = outcome.name,
+    exiledSeat = exiledSeat,
+    exileVotes = exileVotes,
+)
+
+private fun GameEvent.toSnapshot(): EventSnapshot = when (this) {    is GameEvent.Dawn -> EventSnapshot(type = "DAWN", day = day, deadSeats = deadSeats)
     is GameEvent.Exiled -> EventSnapshot(type = "EXILED", day = day, seat = seat, voteCount = voteCount)
     is GameEvent.NoExile -> EventSnapshot(type = "NO_EXILE", day = day)
     is GameEvent.HunterShot ->
@@ -249,6 +300,16 @@ internal fun TableSnapshot.toTable(): WerewolfTable = WerewolfTable(
         afterHunterPhase = enumOf<Phase>(afterHunterPhase),
         history = history.map { it.toEvent() },
         winner = winner?.let { enumOf<Faction>(it) },
+        nights = nights.map {
+            NightRecord(
+                day = it.day,
+                wolfTarget = it.wolfTarget,
+                healed = it.healed,
+                poisonTarget = it.poisonTarget,
+                deaths = it.deaths,
+            )
+        },
+        voteRounds = voteRounds.map { it.toRound() },
     ),
     transcript = transcript.map {
         WerewolfMessage(
@@ -260,6 +321,15 @@ internal fun TableSnapshot.toTable(): WerewolfTable = WerewolfTable(
             audience = it.audience?.toSet(),
         )
     },
+)
+
+private fun VoteRoundSnapshot.toRound(): VoteRound = VoteRound(
+    day = day,
+    round = round,
+    ballots = ballots.map { Ballot(it.voterSeat, it.targetSeat) },
+    outcome = enumOf<VoteOutcome>(outcome),
+    exiledSeat = exiledSeat,
+    exileVotes = exileVotes,
 )
 
 private fun EventSnapshot.toEvent(): GameEvent = when (type) {

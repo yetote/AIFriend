@@ -7,9 +7,12 @@ import com.feature.werewolf.game.Ballot
 import com.feature.werewolf.game.DeathCause
 import com.feature.werewolf.game.Faction
 import com.feature.werewolf.game.GameEvent
+import com.feature.werewolf.game.NightRecord
 import com.feature.werewolf.game.Phase
 import com.feature.werewolf.game.RosterEntry
 import com.feature.werewolf.game.SeerCheck
+import com.feature.werewolf.game.VoteOutcome
+import com.feature.werewolf.game.VoteRound
 import com.feature.werewolf.game.WerewolfConfig
 import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfPlayer
@@ -79,6 +82,26 @@ class WerewolfSnapshotTest {
                 GameEvent.GameOver(day = 3, winner = Faction.WEREWOLF),
             ),
             winner = Faction.WEREWOLF,
+            nights = listOf(
+                NightRecord(day = 1, wolfTarget = 5, healed = false, poisonTarget = 5, deaths = listOf(5)),
+                NightRecord(day = 2, wolfTarget = 3, healed = true, deaths = emptyList()),
+            ),
+            voteRounds = listOf(
+                VoteRound(
+                    day = 1,
+                    round = 1,
+                    ballots = listOf(Ballot(1, 2), Ballot(4, null)),
+                    outcome = VoteOutcome.TIE,
+                ),
+                VoteRound(
+                    day = 1,
+                    round = 2,
+                    ballots = listOf(Ballot(1, 2), Ballot(4, 2)),
+                    outcome = VoteOutcome.EXILED,
+                    exiledSeat = 2,
+                    exileVotes = 2,
+                ),
+            ),
         )
 
         val transcript = listOf(
@@ -155,6 +178,21 @@ class WerewolfSnapshotTest {
         // 模拟未来版本多写了一个字段，旧版本读到时应该忽略而不是失败
         val withExtra = text.dropLast(1) + ",\"futureField\":123}"
         assertNotNull(WerewolfSnapshot.decode(withExtra))
+    }
+
+    @Test
+    fun `上一版存档还能读`() {
+        // v2 只新增了两个带默认值的字段，语义没变，所以 v1 必须能继续续玩——
+        // 升级一次就把玩家没打完的局丢掉，比缺一段复盘难受得多
+        val legacy = richTable().let { it.copy(game = it.game.copy(nights = emptyList(), voteRounds = emptyList())) }
+        val text = WerewolfSnapshot.encode(legacy)
+            .replaceFirst("\"version\":${WerewolfSnapshot.VERSION}", "\"version\":1")
+
+        val restored = WerewolfSnapshot.decode(text)
+        assertNotNull("老档应该还能续上", restored)
+        assertTrue("老档没有夜间记录", restored!!.game.nights.isEmpty())
+        assertTrue("老档没有票型历史", restored.game.voteRounds.isEmpty())
+        assertEquals("除复盘数据外，局面必须一字不差", legacy, restored)
     }
 
     @Test
