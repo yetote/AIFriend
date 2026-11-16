@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -64,11 +65,21 @@ import com.ui.common.theme.UIRadiusControl
 import com.ui.common.theme.UITopBar
 import com.ui.common.theme.uiCard
 import com.ui.common.theme.uiControl
+import com.ui.werewolf.data.UIWerewolfApiCheck
+import com.ui.werewolf.data.UIWerewolfApiState
 import com.ui.werewolf.data.UIWerewolfFriend
 import com.ui.werewolf.data.UIWerewolfMode
 import com.ui.werewolf.data.UIWerewolfPreset
 import com.ui.werewolf.data.UIWerewolfRecord
 import com.ui.werewolf.data.UIWerewolfSeat
+
+/**
+ * 连通标记用的绿。
+ *
+ * 单独定一个而不是复用主题色：主题里没有「成功」这个语义色，
+ * 而且这个绿只在检测结果上出现一次，放进公共主题反而会诱导别处乱用。
+ */
+private val ConnectedGreen = Color(0xFF2E9E6B)
 
 /**
  * 开局配置页。
@@ -87,14 +98,18 @@ fun UIWerewolfSetupScreen(
     records: List<UIWerewolfRecord>,
     unfinished: UIWerewolfRecord?,
     error: String?,
+    apiChecks: Map<String, UIWerewolfApiCheck>,
+    checking: Boolean,
     onModeChange: (UIWerewolfMode) -> Unit,
     onPresetChange: (String) -> Unit,
     onToggleFriend: (String) -> Unit,
     onResume: () -> Unit,
     onAbandon: () -> Unit,
     onClearError: () -> Unit,
+    onCheckApi: () -> Unit,
     onBack: () -> Unit,
     onStart: () -> Unit,
+    onStartAnyway: () -> Unit,
 ) {
     var search by rememberSaveable { mutableStateOf("") }
     val visibleFriends = if (search.isBlank()) {
@@ -112,6 +127,10 @@ fun UIWerewolfSetupScreen(
     val needFriends = (preset?.playerCount ?: 0) - if (mode == UIWerewolfMode.PLAY) 1 else 0
     val missing = (needFriends - selectedIds.size).coerceAtLeast(0)
     val canStart = needFriends > 0 && missing == 0
+
+    // 只在「已选且查过」的人里数：没选的人查不查无所谓，不该影响开局按钮
+    val failedCount = selectedIds.count { apiChecks[it]?.state == UIWerewolfApiState.FAILED }
+    val selectedCheckable = selectedIds.isNotEmpty() && !checking
 
     UIGradientBackground(modifier = Modifier.pageInsetsTop()) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -192,14 +211,28 @@ fun UIWerewolfSetupScreen(
                     SeatStrip(seats = seats)
                 }
 
-                SectionTitle(
-                    title = "选人",
-                    subtitle = if (needFriends > 0) {
-                        "已选 ${selectedIds.size} / $needFriends 位"
-                    } else {
-                        "还没有可选的板子"
-                    }
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.Bottom
+                ) {
+                    SectionTitle(
+                        modifier = Modifier.weight(1f),
+                        title = "选人",
+                        subtitle = if (needFriends > 0) {
+                            "已选 ${selectedIds.size} / $needFriends 位"
+                        } else {
+                            "还没有可选的板子"
+                        }
+                    )
+                    // 检测放在这一行的右边而不是另起一块：它测的就是「上面选的这批人」，
+                    // 隔开一段距离会让人以为是个全局设置
+                    CheckApiButton(
+                        checking = checking,
+                        enabled = selectedCheckable,
+                        hasFailure = failedCount > 0,
+                        onClick = onCheckApi
+                    )
+                }
 
                 SearchField(
                     value = search,
@@ -235,6 +268,9 @@ fun UIWerewolfSetupScreen(
                                 friend = friend,
                                 checked = checked,
                                 enabled = enabled,
+                                // 没选中的人不显示检测结果：一列红点会让人以为整页都在报错，
+                                // 而真正要关心的是「这一局坐上桌的那几个」
+                                check = if (checked) apiChecks[friend.id] else null,
                                 onClick = { onToggleFriend(friend.id) }
                             )
                         }
@@ -262,7 +298,10 @@ fun UIWerewolfSetupScreen(
                 canStart = canStart,
                 missing = missing,
                 playMode = mode == UIWerewolfMode.PLAY,
-                onStart = onStart
+                checking = checking,
+                failedCount = failedCount,
+                onStart = onStart,
+                onStartAnyway = onStartAnyway
             )
         }
     }
@@ -273,8 +312,8 @@ fun UIWerewolfSetupScreen(
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun SectionTitle(title: String, subtitle: String) {
-    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+private fun SectionTitle(title: String, subtitle: String, modifier: Modifier = Modifier) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(3.dp)) {
         Text(
             text = title,
             fontSize = 15.sp,
@@ -285,6 +324,60 @@ private fun SectionTitle(title: String, subtitle: String) {
             text = subtitle,
             fontSize = 12.sp,
             color = UIFriendBarItemSubtitleColor
+        )
+    }
+}
+
+/**
+ * 「检测连接」按钮。
+ *
+ * 三种状态三套文案：没测过是「检测连接」，测出问题变「重试」，跑起来变「检测中」。
+ * 一个永远写着「检测」的按钮，用户既不知道点下去会发生什么，也不知道点完没有。
+ *
+ * 颜色跟着状态走：有失败时整个按钮转红，用户在列表里一眼能找回这个入口。
+ */
+@Composable
+private fun CheckApiButton(
+    checking: Boolean,
+    enabled: Boolean,
+    hasFailure: Boolean,
+    onClick: () -> Unit,
+) {
+    val color = when {
+        checking -> UIFriendBarCreateButtonText
+        hasFailure -> UIFriendBarRed
+        enabled -> UIFriendBarCreateButtonText
+        else -> UIFriendBarItemSubtitleColor
+    }
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .border(
+                width = 1.dp,
+                color = color.copy(alpha = if (enabled || checking) 0.4f else 0.2f),
+                shape = RoundedCornerShape(50)
+            )
+            .clickable(enabled = enabled) { onClick() }
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp)
+    ) {
+        if (checking) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(11.dp),
+                strokeWidth = 1.5.dp,
+                color = color
+            )
+        }
+        Text(
+            text = when {
+                checking -> "检测中"
+                hasFailure -> "重试"
+                else -> "检测连接"
+            },
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            color = color
         )
     }
 }
@@ -620,8 +713,10 @@ private fun FriendRow(
     friend: UIWerewolfFriend,
     checked: Boolean,
     enabled: Boolean,
+    check: UIWerewolfApiCheck?,
     onClick: () -> Unit,
 ) {
+    val active = enabled || checked
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -641,14 +736,48 @@ private fun FriendRow(
                 text = friend.name,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Medium,
-                color = if (enabled || checked) UIFriendBarTitleColor else UIFriendBarTitleColor.copy(alpha = 0.4f)
+                color = if (active) UIFriendBarTitleColor else UIFriendBarTitleColor.copy(alpha = 0.4f)
             )
             val meta = listOf(friend.role, friend.model).filter { it.isNotBlank() }.joinToString(" · ")
-            if (meta.isNotBlank()) {
+            if (meta.isNotBlank() || check != null) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (meta.isNotBlank()) {
+                        Text(
+                            text = meta,
+                            fontSize = 12.sp,
+                            color = UIFriendBarItemSubtitleColor.copy(alpha = if (active) 1f else 0.5f)
+                        )
+                    }
+                    if (check != null && check.state != UIWerewolfApiState.IDLE) {
+                        val label = when (check.state) {
+                            UIWerewolfApiState.OK -> "已连通"
+                            UIWerewolfApiState.CHECKING -> "检测中"
+                            else -> "连不上"
+                        }
+                        val color = when (check.state) {
+                            UIWerewolfApiState.OK -> ConnectedGreen
+                            UIWerewolfApiState.CHECKING -> UIFriendBarItemSubtitleColor
+                            else -> UIFriendBarRed
+                        }
+                        Text(
+                            text = if (meta.isBlank()) label else " · $label",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = color
+                        )
+                    }
+                }
+            }
+            // 失败原因单独一行：塞进 meta 那行会被截断，而「Key 无效」和「超时」
+            // 对应的处理办法完全不同，看不全等于没提示
+            if (check?.state == UIWerewolfApiState.FAILED && !check.message.isNullOrBlank()) {
                 Text(
-                    text = meta,
-                    fontSize = 12.sp,
-                    color = UIFriendBarItemSubtitleColor.copy(alpha = if (enabled || checked) 1f else 0.5f)
+                    text = check.message,
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp,
+                    color = UIFriendBarRed.copy(alpha = 0.85f),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
@@ -711,8 +840,26 @@ private fun RecordRow(record: UIWerewolfRecord) {
     }
 }
 
+/**
+ * 底部开局条。
+ *
+ * 检测失败时不把按钮按死，而是改成「忽略问题，仍然开局」，并在上面加一行红字说明后果。
+ * 按死的话，一次偶发超时就能让人永远开不了局，而他手上没有任何别的理由——
+ * 模型明明是可用的，只是刚才慢了半拍。把代价写清楚，选择权留给用户。
+ */
 @Composable
-private fun StartBar(canStart: Boolean, missing: Int, playMode: Boolean, onStart: () -> Unit) {
+private fun StartBar(
+    canStart: Boolean,
+    missing: Int,
+    playMode: Boolean,
+    checking: Boolean,
+    failedCount: Int,
+    onStart: () -> Unit,
+    onStartAnyway: () -> Unit,
+) {
+    val hasFailure = failedCount > 0
+    val clickable = canStart && !checking
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -721,38 +868,58 @@ private fun StartBar(canStart: Boolean, missing: Int, playMode: Boolean, onStart
             .pageInsetsBottom()
             .padding(horizontal = 10.dp, vertical = 6.dp)
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(50.dp)
-                .shadow(
-                    elevation = if (canStart) 10.dp else 0.dp,
-                    shape = RoundedCornerShape(UIRadiusControl),
-                    clip = false,
-                    ambientColor = UIBlobBlue,
-                    spotColor = UIBlobBlue
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (hasFailure && canStart) {
+                Text(
+                    text = "$failedCount 个座位连不上，开局后第一回合就可能卡住",
+                    modifier = Modifier.padding(horizontal = 6.dp),
+                    fontSize = 11.sp,
+                    color = UIFriendBarRed
                 )
-                .clip(RoundedCornerShape(UIRadiusControl))
-                .then(
-                    if (canStart) {
-                        Modifier.background(UIActionBrush)
-                    } else {
-                        Modifier.background(UIGlassSurface)
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp)
+                    .shadow(
+                        elevation = if (clickable && !hasFailure) 10.dp else 0.dp,
+                        shape = RoundedCornerShape(UIRadiusControl),
+                        clip = false,
+                        ambientColor = UIBlobBlue,
+                        spotColor = UIBlobBlue
+                    )
+                    .clip(RoundedCornerShape(UIRadiusControl))
+                    .then(
+                        if (clickable && !hasFailure) {
+                            Modifier.background(UIActionBrush)
+                        } else {
+                            Modifier.background(UIGlassSurface)
+                        }
+                    )
+                    .clickable(enabled = clickable) {
+                        if (hasFailure) onStartAnyway() else onStart()
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = when {
+                        // 缺人比「正在检测」更该先说：检测跑完也开不了局，用户需要知道的是还差几位
+                        !canStart -> "还差 $missing 位好友"
+                        checking -> "检查连接中…"
+                        hasFailure -> "忽略问题，仍然开局"
+                        playMode -> "开局，我参与"
+                        else -> "开局，看它们打"
+                    },
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = when {
+                        !canStart -> UIFriendBarItemSubtitleColor
+                        checking -> UIFriendBarItemSubtitleColor
+                        hasFailure -> UIFriendBarRed
+                        else -> Color.White
                     }
                 )
-                .clickable(enabled = canStart) { onStart() },
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = when {
-                    canStart && playMode -> "开局，我参与"
-                    canStart -> "开局，看它们打"
-                    else -> "还差 $missing 位好友"
-                },
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = if (canStart) Color.White else UIFriendBarItemSubtitleColor
-            )
+            }
         }
     }
 }

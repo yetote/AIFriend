@@ -7,6 +7,8 @@ import com.core.ai.entity.IAI
 import com.core.ai.factory.AIFactory
 import com.core.ai.model.Friend
 import com.core.ai.model.toFriend
+import com.core.ai.probe.ApiProbeResult
+import com.core.ai.probe.probe
 import com.core.repository.storage.FriendRepository
 import com.feature.werewolf.decision.SeatChoice
 import com.feature.werewolf.decision.VoteChoice
@@ -24,10 +26,16 @@ import com.feature.werewolf.game.WerewolfPlayer
 import com.feature.werewolf.store.WerewolfGameSummary
 import com.feature.werewolf.store.WerewolfStore
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
 import java.util.UUID
 import kotlin.random.Random
@@ -88,6 +96,22 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
+    /** 好友 id → 那个模型的连通状况。只存内存，不进存档。 */
+    private val _apiChecks = MutableStateFlow<Map<String, ApiCheck>>(emptyMap())
+    val apiChecks: StateFlow<Map<String, ApiCheck>> = _apiChecks.asStateFlow()
+
+    /** 这一轮检测有没有跑完。配置页据此把「检测连接」变成「检测中」。 */
+    private val _verifying = MutableStateFlow(false)
+    val verifying: StateFlow<Boolean> = _verifying.asStateFlow()
+
+    /**
+     * 保证同一时刻只有一轮探活在跑。
+     *
+     * 用户完全可能在检测还没回来时又点一次，或者点完检测直接去点开局；
+     * 不串行化就会出现两拨请求、结果互相覆盖，红绿乱跳。
+     */
+    private val probeLock = Mutex()
+
     init {
         refresh()
     }
@@ -108,14 +132,41 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
     }
 
     /**
+     * 主动检测选中的这些好友能不能调通。
+     *
+     * [force] 为 true：用户明确点了按钮，即使刚测过也重测一遍。
+     * 刚测完就是全绿时再点一次会白花钱，但那比「点了按钮什么也没发生」好——
+     * 后者的后果是用户开始怀疑这个功能坏了。
+     */
+    fun checkApi(friendIds: Collection<String>) {
+        if (friendIds.isEmpty()) return
+        if (state.value.running) return
+        viewModelScope.launch {
+            val friends = _friends.value.ifEmpty { friendRepository.load().map { it.toFriend() } }
+            val allOk = runProbe(friends.filter { it.id in friendIds }, force = true)
+            // 用户点这个按钮就是要解掉那条红字，全绿了还挂着会让人以为没生效。
+            // 万一是别的原因（比如人数不对），点开局会重新提示一次，不会被藏掉
+            if (allOk) _error.value = null
+        }
+    }
+
+    /**
      * 开一局。
      *
      * [friendIds] 是参与的好友；[WerewolfMode.PLAY] 时会额外把「你」加进名单，
      * 所以玩的时候只需要选 7 个好友（8 人局）。
      *
      * 座位号由洗牌决定，不固定给「你」1 号——发言顺序是座位顺序，固定 1 号等于每局都先手。
+     *
+     * [skipCheck] 跳过连通性检查。只在用户已经看见红灯、仍然选择开局时用：
+     * 请求能从配置页一路走到这里，说明他读过失败原因了。
      */
-    fun startGame(mode: WerewolfMode, friendIds: List<String>, config: WerewolfConfig = WerewolfConfig()) {
+    fun startGame(
+        mode: WerewolfMode,
+        friendIds: List<String>,
+        config: WerewolfConfig = WerewolfConfig(),
+        skipCheck: Boolean = false,
+    ) {
         if (state.value.running) return
         viewModelScope.launch {
             try {
@@ -127,6 +178,10 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
                     _error.value = "需要选 $expected 位好友，当前选了 ${chosen.size} 位"
                     return@launch
                 }
+
+                // 开局前先确认每个模型真的能回话。这一步失败比打到第三天某个 AI 突然
+                // 报错要好得多：那时牌桌已经铺开，用户分不清是游戏坏了还是模型坏了
+                if (!skipCheck && !verifyReachable(chosen)) return@launch
 
                 val roster = chosen.map { RosterEntry(id = it.id, name = it.name) } +
                     if (mode == WerewolfMode.PLAY) {
@@ -170,6 +225,12 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
                 val friends = _friends.value.ifEmpty { friendRepository.load().map { it.toFriend() } }
                 val humanSeat = table.game.players.firstOrNull { it.id == SELF_ID }?.seat
 
+                // 续档也要检：这一局可能是昨天开的，Key 过期、模型下线都在这中间发生过
+                val participants = table.game.players
+                    .filter { it.seat != humanSeat }
+                    .mapNotNull { player -> friends.firstOrNull { it.id == player.id } }
+                if (!verifyReachable(participants)) return@launch
+
                 _humanSeat.value = humanSeat
                 agents = buildAgents(table.game.players, friends.associateBy { it.id }, humanSeat)
                 _error.value = null
@@ -191,6 +252,105 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
             _humanSeat.value = null
             agents = emptyMap()
             refresh()
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // 连通性检查
+    // ---------------------------------------------------------------------
+
+    /**
+     * 确认这些座位背后的模型都能回话。
+     *
+     * 只看 [ApiCheckState.FAILED]：还没测的说明刚被跳过（同厂商已绿），不能当成失败。
+     */
+    private suspend fun verifyReachable(chosen: List<Friend>): Boolean {
+        if (chosen.isEmpty()) return true
+        runProbe(chosen, force = false)
+
+        val checks = _apiChecks.value
+        val failed = chosen.filter { checks[it.id]?.state == ApiCheckState.FAILED }
+        if (failed.isEmpty()) return true
+
+        val names = failed.joinToString("、") { it.name }
+        val reason = checks[failed.first().id]?.message.orEmpty()
+        // 把「谁的哪把 Key 不行」写清楚：只说「开局失败」，用户只能一个个去试
+        _error.value = buildString {
+            append("${failed.size} 个座位连不上：$names")
+            if (reason.isNotBlank()) append("（$reason）")
+            append("。可以重试、换人，或者仍然开局")
+        }.take(200)
+        return false
+    }
+
+    /**
+     * 跑一轮探活并把结果写进 [apiChecks]，返回「是否全部通过」。
+     *
+     * 已通过且还新鲜的结果会被跳过（见 [planProbes]），所以反复调用不会反复花钱。
+     */
+    private suspend fun runProbe(chosen: List<Friend>, force: Boolean): Boolean = probeLock.withLock {
+        if (chosen.isEmpty()) return@withLock true
+
+        val tasks = planProbes(
+            targets = chosen.toProbeTargets(),
+            known = _apiChecks.value,
+            force = force,
+            now = System.currentTimeMillis(),
+        )
+        if (tasks.isEmpty()) return@withLock true
+
+        _verifying.value = true
+        try {
+            // 先点亮成「检测中」：点了按钮界面毫无变化，用户会以为没点上，然后再点一次
+            _apiChecks.update { current ->
+                current + tasks.flatMap { it.friendIds }.associateWith {
+                    ApiCheck(state = ApiCheckState.CHECKING)
+                }
+            }
+
+            // AI 实例在这里一次性取好：aiFor 内部是普通 MutableMap，
+            // 放到并发分支里去建会有竞争，而建实例本身并不慢
+            val ais = tasks.associateWith { task ->
+                runCatching { aiFor(task.brand) }.getOrNull()
+            }
+
+            val results = coroutineScope {
+                tasks.map { task ->
+                    async {
+                        val ai = ais[task]
+                        val result = if (ai == null) {
+                            ApiProbeResult(ok = false, elapsedMs = 0, message = "暂不支持的厂商：${task.brand}")
+                        } else {
+                            ai.probe(task.model)
+                        }
+                        task to result
+                    }
+                }.awaitAll()
+            }
+
+            val at = System.currentTimeMillis()
+            _apiChecks.update { current ->
+                current + results.flatMap { (task, result) ->
+                    // 同组座位共享一个结果：它们背后是同一个厂商、同一个模型、同一把 Key
+                    task.friendIds.map { id ->
+                        id to ApiCheck(
+                            state = if (result.ok) ApiCheckState.OK else ApiCheckState.FAILED,
+                            message = result.message,
+                            elapsedMs = result.elapsedMs,
+                            at = at,
+                        )
+                    }
+                }
+            }
+            results.all { it.second.ok }
+        } catch (cancelled: CancellationException) {
+            // 退出页面时要把「检测中」擦掉，否则下次进来那几个座位会永远转圈
+            _apiChecks.update { current ->
+                current.filterValues { it.state != ApiCheckState.CHECKING }
+            }
+            throw cancelled
+        } finally {
+            _verifying.value = false
         }
     }
 

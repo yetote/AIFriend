@@ -56,3 +56,25 @@ data class UIWerewolfPreset(
     val playerCount: Int,
     val composition: String,
 )
+
+/** 一次连通性检查的状态。 */
+enum class UIWerewolfApiState {
+    /** 还没查过。不给任何标记——灰色问号会让「没查」看起来像「查出了问题」。 */
+    IDLE,
+    CHECKING,
+    OK,
+    FAILED,
+}
+
+/**
+ * 某个座位背后那个模型，此刻能不能调通。
+ *
+ * 它挂在好友上而不是座位上：配置页还没有座位号，而且换板子会重新洗牌，
+ * 但「这个模型能不能用」跟坐几号没关系。
+ */
+data class UIWerewolfApiCheck(
+    val state: UIWerewolfApiState,
+    /** 失败原因，已经翻成人话，例如「API Key 无效或已过期」。成功时为 null。 */
+    val message: String? = null,
+    val elapsedMs: Long? = null,
+)
