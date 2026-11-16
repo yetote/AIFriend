@@ -16,6 +16,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -27,6 +28,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
@@ -57,6 +59,8 @@ import com.ui.common.theme.UIActionSheetItem
 import com.ui.common.theme.UIDialogButtons
 import com.ui.common.theme.UIIosDialog
 import com.ui.common.theme.UIGradientBackground
+import com.ui.common.theme.UIHeroBrush
+import com.ui.common.theme.UIRadiusCard
 import com.ui.common.theme.UIRadiusControl
 import com.ui.common.theme.uiCard
 import com.ui.common.theme.UIFriendBarCreateButtonBg
@@ -89,7 +93,8 @@ fun UIFriendPage(
     onDeleteRoom: (String) -> Unit = {},
     onTogglePin: (String) -> Unit = {},
     onPickUserAvatar: () -> Unit = {},
-    onOpenSettings: () -> Unit = {}
+    onOpenSettings: () -> Unit = {},
+    onOpenWerewolf: () -> Unit = {}
 ) {
     var pendingFriendAction by remember { mutableStateOf<UIFriendListData?>(null) }
     var pendingRoomAction by remember { mutableStateOf<UIRoomData?>(null) }
@@ -125,6 +130,8 @@ fun UIFriendPage(
                 onRoomClick = onRoomClick,
                 onRoomLongClick = { pendingRoomAction = it }
             )
+            Spacer(Modifier.height(18.dp))
+            WerewolfEntry(onClick = onOpenWerewolf)
             Spacer(Modifier.height(18.dp))
             UIFriendCreate(
                 createdCount = createdCount,
@@ -202,6 +209,76 @@ fun UIFriendPage(
                 )
             }
         )
+    }
+}
+
+/**
+ * 狼人杀入口。
+ *
+ * 用深色卡片而不是又一条「+ 新建」：它和聊天室不是同一类操作——
+ * 聊天室是「把问题问给几个人」，狼人杀是「让几个人互相骗」，值得一块独立的分量。
+ */
+@Composable
+private fun WerewolfEntry(onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .shadow(
+                12.dp,
+                RoundedCornerShape(UIRadiusCard),
+                clip = false,
+                ambientColor = UIBlobBlue,
+                spotColor = UIBlobBlue
+            )
+            .clip(RoundedCornerShape(UIRadiusCard))
+            .background(UIHeroBrush)
+            .clickable { onClick() }
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(38.dp)
+                .clip(CircleShape)
+                .background(Color.White.copy(alpha = 0.16f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "狼",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "狼人杀",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White
+            )
+            Spacer(Modifier.height(3.dp))
+            Text(
+                text = "挑几个好友围一桌，看它们互相骗",
+                fontSize = 12.sp,
+                color = Color.White.copy(alpha = 0.78f)
+            )
+        }
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(50))
+                .background(Color.White)
+                .padding(horizontal = 14.dp, vertical = 7.dp)
+        ) {
+            Text(
+                text = "开局",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = UIFriendBarTitleColor
+            )
+        }
     }
 }
 
