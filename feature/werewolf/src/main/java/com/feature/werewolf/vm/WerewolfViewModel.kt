@@ -11,12 +11,19 @@ import com.core.ai.probe.ApiProbeResult
 import com.core.ai.probe.probe
 import com.core.repository.storage.AIProviderSettings
 import com.core.repository.storage.FriendRepository
+import com.core.repository.storage.WerewolfSettings
+import com.core.tts.SpeechCandidate
+import com.core.tts.SpeechEngine
+import com.core.tts.SpeechFilter
+import com.core.tts.SpeechQueue
+import com.core.tts.SystemSpeechEngine
 import com.feature.werewolf.decision.SeatChoice
 import com.feature.werewolf.decision.VoteChoice
 import com.feature.werewolf.decision.WitchChoice
 import com.feature.werewolf.engine.HumanSeatAI
 import com.feature.werewolf.engine.HumanTurn
 import com.feature.werewolf.engine.SeatAgent
+import com.feature.werewolf.engine.MessageKind
 import com.feature.werewolf.engine.WerewolfController
 import com.feature.werewolf.engine.WerewolfTable
 import com.feature.werewolf.engine.WerewolfUiState
@@ -37,11 +44,18 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.resume
 import kotlinx.serialization.json.Json
 import java.util.UUID
 import kotlin.random.Random
@@ -90,7 +104,24 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
      * 于是每个厂商都「没有 Key」，探活请求不带 Authorization，全部 401。
      */
     private val providerSettings = AIProviderSettings(application)
+    private val werewolfSettings = WerewolfSettings(application)
     private val aiFactory = AIFactory()
+
+    // ---- 自动朗读 ----------------------------------------------------
+    // 引擎是 Android 对象，必须在 ViewModel 里创建（它要 applicationContext）。
+    // 抽象成接口是为了将来换云端语音时，下面这套调度逻辑一行都不用动。
+    private val speechEngine: SpeechEngine = SystemSpeechEngine(application)
+    private val speechQueue = SpeechQueue()
+
+    private val _autoSpeak = MutableStateFlow(true)
+    val autoSpeak: StateFlow<Boolean> = _autoSpeak.asStateFlow()
+
+    /** 朗读开关是否真的能出声。系统没装中文语音包时为 false，界面据此提示。 */
+    private val _speechReady = MutableStateFlow(speechEngine.available)
+    val speechReady: StateFlow<Boolean> = _speechReady.asStateFlow()
+
+    /** 串行朗读循环：一次只在读一句，上一句读完才 poll 下一句。 */
+    private var speakJob: Job? = null
 
     /** 厂商 → 实例。同一厂商的多个座位共用一个实例，和聊天室的做法一致。 */
     private val ais = mutableMapOf<String, IAI>()
@@ -161,6 +192,97 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
 
     init {
         refresh()
+
+        // 中文语音包是异步探测的，构造时拿不到结果。等它回调再更新界面，
+        // 否则「朗读」开关一进页面就被误标成不可用。
+        speechEngine.onReady = { ready -> _speechReady.value = ready }
+        // 回调可能早于订阅发生（初始化在另一个线程），补拉一次当前值
+        if (speechEngine.initialized) _speechReady.value = speechEngine.available
+
+        viewModelScope.launch { runCatching { werewolfSettings.autoSpeak.collect { _autoSpeak.value = it } } }
+
+        // 消息流一有新发言就喂给朗读队列。采集和播放分开：
+        // 采集只管把话放进队列（很快），播放是长挂起的串行循环，
+        // 两者搅在一起会让「暂停」既停不干净、又容易漏掉正在读的那句。
+        state
+            .map { it.table?.transcript.orEmpty() }
+            .distinctUntilChanged()
+            .onEach { transcript -> enqueueSpeech(transcript) }
+            .launchIn(viewModelScope)
+    }
+
+    // -----------------------------------------------------------------
+    // 自动朗读
+    // -----------------------------------------------------------------
+
+    /**
+     * 把新增的公开发言放进朗读队列。
+     *
+     * 筛选规则按用户的选择收紧到「只有 AI 说的话」：
+     * - 只读 [MessageKind.SPEECH]：上帝播报（DIVINE）不读——那是事实陈述，
+     *   读出来既长又和发言混在一起；投票表态（VOTE）不读——屏幕上一目了然。
+     * - 私有消息（狼人夜聊、夜间行动）本来 audience 就不包含人类座位，
+     *   `transcriptFor` 里根本不会出现；这里再判一次 isPublic 是双保险：
+     *   语音是不可撤回的，一旦读错一句「我是狼」，说出去的话收不回来。
+     * - 不读自己说的话：自己刚打完的字再念一遍是纯粹的噪音。
+     */
+    private fun enqueueSpeech(transcript: List<com.feature.werewolf.engine.WerewolfMessage>) {
+        if (!_autoSpeak.value) return
+        val self = _humanSeat.value
+        val candidates = transcript.mapIndexed { index, message ->
+            val speakable = SpeechFilter.speakable(
+                isPublicSpeech = message.kind == MessageKind.SPEECH && message.isPublic,
+                speakerSeat = message.seat,
+                selfSeat = self,
+                text = message.text,
+            )
+            SpeechCandidate(text = message.text, speakable = speakable)
+        }
+        val added = speechQueue.offer(candidates)
+        if (added.isNotEmpty()) startSpeakLoop()
+    }
+
+    /** 串行读：poll 一句、等它读完、再读下一句。同时只会有一个循环在跑。 */
+    private fun startSpeakLoop() {
+        if (speakJob?.isActive == true) return
+        speakJob = viewModelScope.launch {
+            while (isActive && _autoSpeak.value) {
+                val line = speechQueue.poll() ?: break
+                suspendCancellableCoroutine<Unit> { cont ->
+                    speechEngine.speak(line.text, line.index.toString()) {
+                        if (cont.isActive) cont.resume(Unit)
+                    }
+                    cont.invokeOnCancellation { speechEngine.stop() }
+                }
+            }
+        }
+    }
+
+    /** 停掉朗读并清空队列。开局、续档、暂停、放弃都走这里。 */
+    private fun stopSpeech(clearQueue: Boolean) {
+        speakJob?.cancel()
+        speakJob = null
+        if (clearQueue) speechQueue.clear()
+        speechEngine.stop()
+    }
+
+    /** 开关：关掉时立刻闭嘴，打开时把当前已有的发言重新入队（从游标继续，不重读历史）。 */
+    fun setAutoSpeak(enabled: Boolean) {
+        _autoSpeak.value = enabled
+        viewModelScope.launch { werewolfSettings.setAutoSpeak(enabled) }
+        if (enabled) {
+            // 关着的时候积下的发言不补念，从「现在」开始听
+            speechQueue.skipTo(state.value.table?.transcript?.size ?: 0)
+        } else {
+            stopSpeech(clearQueue = true)
+        }
+    }
+
+    override fun onCleared() {
+        stopSpeech(clearQueue = true)
+        speechEngine.onReady = null
+        speechEngine.release()
+        super.onCleared()
     }
 
     /** 关掉配置页上的错误提示。 */
@@ -247,9 +369,14 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
                     null
                 }
 
+                stopSpeech(clearQueue = true)
                 _humanSeat.value = humanSeat
                 agents = buildAgents(game.players, chosen.associateBy { it.id }, humanSeat)
                 _error.value = null
+                // 全新开局：消息流是空的，从第 0 条开始读。
+                // 必须在 controller.start 之前复位——start 会发状态，
+                // 采集器异步跑，放后面会漏掉早期发言或读到上一局的残留。
+                speechQueue.reset(fromIndex = 0)
                 controller.start(UUID.randomUUID().toString(), game)
                 controller.play()
                 refresh()
@@ -290,11 +417,15 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
                 // 先备好座位再让控制器接手：座位表没建好就 resume，
                 // 一旦 play() 起来会立刻撞上「X 号没有模型」
                 agents = buildAgents(table.game.players, friends.associateBy { it.id }, humanSeat)
+                stopSpeech(clearQueue = true)
+                _humanSeat.value = humanSeat
+                // 续档：已有的一大段历史不补念，从当前末尾往下听。
+                // 同样要在 resume 发状态之前复位，避免采集器读到历史后补念。
+                speechQueue.reset(fromIndex = table.transcript.size)
                 if (!controller.resume(id)) {
                     _error.value = "这条存档读不出来，可能已经损坏"
                     return@launch
                 }
-                _humanSeat.value = humanSeat
                 _error.value = null
                 controller.play()
                 refresh()
@@ -313,6 +444,7 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
      * 当前阶段重新开始。留在后台继续跑才是错的——他在看列表，AI 却在替他打牌。
      */
     fun pause() {
+        stopSpeech(clearQueue = true)
         val job = playJob
         playJob = null
         viewModelScope.launch {
@@ -341,6 +473,7 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
             // 座位表同理：清掉之后当前这局的下一次请求会撞上「X 号没有模型」。
             val isCurrent = id == state.value.gameId
             if (isCurrent) {
+                stopSpeech(clearQueue = true)
                 playJob?.cancelAndJoin()
                 playJob = null
                 _humanSeat.value = null
@@ -379,6 +512,7 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
 
     /** 放弃当前这局，存档一并删掉。 */
     fun abandon() {
+        stopSpeech(clearQueue = true)
         viewModelScope.launch {
             playJob?.cancelAndJoin()
             playJob = null

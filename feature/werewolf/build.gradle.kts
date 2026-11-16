@@ -13,6 +13,8 @@ android {
 dependencies {
     // 只依赖 core 与自己的 ui，不依赖 feature:room / feature:agent —— 狼人杀与聊天室互相独立
     implementation(project(":core:ai"))
+    // 自动朗读：系统 TTS 引擎 + 朗读队列
+    implementation(project(":core:tts"))
     // 取好友列表（选参与者、拿人设与模型配置）
     implementation(project(":core:repository"))
     implementation(project(":ui:werewolf"))

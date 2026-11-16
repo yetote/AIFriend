@@ -167,4 +167,8 @@ data class UIWerewolfLive(
     val turn: UIWerewolfTurn? = null,
     /** 出错信息（多为网络或 Key 问题），局面不会因此丢失。 */
     val error: String? = null,
+    /** 自动朗读别人发言是否开启。 */
+    val autoSpeak: Boolean = true,
+    /** 系统中文语音是否可用。false 时开关点了也不出声，界面要说明原因。 */
+    val speechReady: Boolean = true,
 )

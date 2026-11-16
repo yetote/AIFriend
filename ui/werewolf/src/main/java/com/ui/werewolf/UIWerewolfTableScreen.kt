@@ -32,6 +32,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.VolumeOff
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -186,6 +188,7 @@ fun UIWerewolfTableScreen(
     onSeat: (Int) -> Unit = {},
     onWitch: (heal: Boolean, poison: Int?) -> Unit = { _, _ -> },
     onReview: (() -> Unit)? = null,
+    onToggleSpeak: () -> Unit = {},
 ) {
     val night = live.night && !live.finished
     val textColor by animateColorAsState(
@@ -225,6 +228,9 @@ fun UIWerewolfTableScreen(
                 textColor = textColor,
                 dimColor = dimColor,
                 spectating = live.spectating,
+                autoSpeak = live.autoSpeak,
+                speechReady = live.speechReady,
+                onToggleSpeak = onToggleSpeak,
                 onBack = onExit
             )
 
@@ -307,6 +313,9 @@ private fun TableTopBar(
     textColor: Color,
     dimColor: Color,
     spectating: Boolean,
+    autoSpeak: Boolean,
+    speechReady: Boolean,
+    onToggleSpeak: () -> Unit,
     onBack: () -> Unit,
 ) {
     Row(
@@ -342,6 +351,23 @@ private fun TableTopBar(
         if (spectating) {
             Tag(text = "上帝视角", night = night, color = dimColor)
             Spacer(Modifier.width(12.dp))
+        }
+        IconButton(
+            onClick = onToggleSpeak,
+            enabled = speechReady,
+        ) {
+            Icon(
+                imageVector = if (autoSpeak) Icons.Filled.VolumeUp else Icons.Filled.VolumeOff,
+                contentDescription = if (!speechReady) {
+                    "此设备没有中文语音包，无法朗读"
+                } else if (autoSpeak) {
+                    "关闭自动朗读"
+                } else {
+                    "开启自动朗读"
+                },
+                // 不可用时用暗色，别让开关看着能用、点了却没反应。
+                tint = if (speechReady) textColor else dimColor,
+            )
         }
     }
 }

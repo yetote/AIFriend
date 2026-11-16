@@ -79,6 +79,8 @@ fun WerewolfRoute(
     val apiChecks by viewModel.apiChecks.collectAsState()
     val verifying by viewModel.verifying.collectAsState()
     val recordView by viewModel.record.collectAsState()
+    val autoSpeak by viewModel.autoSpeak.collectAsState()
+    val speechReady by viewModel.speechReady.collectAsState()
 
     // 入口是列表，不是配置页，更不是上次的牌桌
     var screen by remember { mutableStateOf<WerewolfScreen>(WerewolfScreen.History) }
@@ -252,7 +254,13 @@ fun WerewolfRoute(
                 )
             } else {
                 UIWerewolfTableScreen(
-                    live = state.toLive(humanSeat = humanSeat, turn = humanTurn, avatars = avatars),
+                    live = state.toLive(
+                        humanSeat = humanSeat,
+                        turn = humanTurn,
+                        avatars = avatars,
+                        autoSpeak = autoSpeak,
+                        speechReady = speechReady,
+                    ),
                     // 牌桌左上角的返回 = 收起牌桌回列表，不是退出狼人杀
                     onExit = {
                         viewModel.pause()
@@ -263,6 +271,7 @@ fun WerewolfRoute(
                     onSeat = { viewModel.submitSeat(it) },
                     onWitch = { heal, poison -> viewModel.submitWitch(heal, poison) },
                     onReview = if (review != null) ({ showReview = true }) else null,
+                    onToggleSpeak = { viewModel.setAutoSpeak(!autoSpeak) },
                 )
             }
         }
@@ -653,6 +662,8 @@ private fun WerewolfUiState.toLive(
     humanSeat: Int?,
     turn: HumanTurn?,
     avatars: Map<String, String?>,
+    autoSpeak: Boolean = true,
+    speechReady: Boolean = true,
 ): UIWerewolfLive {
     val table = table
     val game = table?.game
@@ -744,6 +755,8 @@ private fun WerewolfUiState.toLive(
         spectating = humanSeat == null,
         turn = if (game != null) buildTurn(game, humanSeat, me, turn) else null,
         error = error,
+        autoSpeak = autoSpeak,
+        speechReady = speechReady,
     )
 }
 
