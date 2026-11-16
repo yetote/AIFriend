@@ -85,6 +85,10 @@ import androidx.compose.ui.graphics.StrokeCap
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.lerp
 
 // ---------------------------------------------------------------------------
 // 配色
@@ -96,15 +100,32 @@ import kotlin.math.sin
 // 暗色只压在牌桌和记录上，顶栏和输入区跟着一起变，避免出现「上半截夜里、下半截白天」。
 // ---------------------------------------------------------------------------
 
-private val NightBackdrop = Color(0xFF101725)
-private val NightBackdropDeep = Color(0xFF0B111B)
 private val NightText = Color(0xFFE9EEF9)
 private val NightDim = Color(0xFF97A3BC)
 private val NightSurface = Color(0xFF1B2437)
 private val NightStroke = Color(0x1FFFFFFF)
 
-private val DayBackdrop = Color(0xFFF3F6FC)
 private val DaySurface = Color(0xFFFDFDFF)
+
+// 背景。
+//
+// 白天的天色是浅蓝到暖沙，夜里的天色是墨蓝，而**山脊的形状两个时段完全一样**：
+// 玩家白天记住的地形，到夜里还是那个轮廓，「天色变了、地方没变」。
+// 两张互不相干的背景虽然更省事，但会让人觉得每回合换了一个场地。
+private val DaySkyTop = Color(0xFFE6EFFC)
+private val DaySkyMid = Color(0xFFF4F8FE)
+private val DaySkyLow = Color(0xFFFBF6EC)
+private val NightSkyTop = Color(0xFF060A12)
+private val NightSkyLow = Color(0xFF121D31)
+
+private val DaySun = Color(0xFFFFCE7A)
+private val DayRidgeFar = Color(0xFF7E9484)
+private val DayRidgeNear = Color(0xFF5E7466)
+private val NightRidgeFar = Color(0xFF0A1018)
+private val NightRidgeNear = Color(0xFF05080E)
+
+private val MoonLight = Color(0xFFCBD6F5)
+private val WindowGlow = Color(0xFFFFC069)
 
 /** 自己：座位环上的描边、身份胶囊。 */
 private val SelfBlue = Color(0xFF2B6BFF)
@@ -135,11 +156,6 @@ fun UIWerewolfTableScreen(
     onReview: (() -> Unit)? = null,
 ) {
     val night = live.night && !live.finished
-    val backdrop by animateColorAsState(
-        targetValue = if (night) NightBackdrop else DayBackdrop,
-        animationSpec = tween(DAY_NIGHT_MS / 2),
-        label = "backdrop"
-    )
     val textColor by animateColorAsState(
         targetValue = if (night) NightText else UIFriendBarTitleColor,
         animationSpec = tween(DAY_NIGHT_MS / 2),
@@ -156,19 +172,20 @@ fun UIWerewolfTableScreen(
         label = "surface"
     )
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                if (night) {
-                    Brush.verticalGradient(listOf(NightBackdropDeep, NightBackdrop))
-                } else {
-                    Brush.verticalGradient(listOf(DayBackdrop, DayBackdrop))
-                }
-            )
-            .pageInsetsTop()
-    ) {
-        Column(modifier = Modifier.fillMaxSize()) {
+    // 背景整体按昼夜插值：白天图层乘 dayness、夜里图层乘 (1-dayness)。
+    // 用的是和文字、卡片同一段时长，天一黑是整片一起黑，不会出现
+    // 「字已经白了、天还亮着」那种半截状态。
+    val dayness by animateFloatAsState(
+        targetValue = if (night) 0f else 1f,
+        animationSpec = tween(DAY_NIGHT_MS / 2),
+        label = "dayness"
+    )
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        // 背景铺满整屏（含状态栏后面），内容再按安全区往里缩
+        TableBackdrop(dayness = dayness)
+
+        Column(modifier = Modifier.fillMaxSize().pageInsetsTop()) {
             TableTopBar(
                 title = if (live.finished) "对局结束" else if (night) "第 ${live.day} 夜" else "第 ${live.day} 天",
                 subtitle = live.progressLabel,
@@ -1423,5 +1440,227 @@ private fun DayNightTransition(
             letterSpacing = 4.sp,
             color = if (showingNight) Color(0xFFDCE4F5) else Color(0xFF8A6A2F)
         )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 背景
+//
+// 之前牌的背景就是一块纯色（白天 #F3F6FC、夜里深蓝），干净但空：
+// 一屏文字压在什么都没有的底上，看起来像还没做完的界面。
+//
+// 这里画一个村子：白天是蓝天、薄云、远山，夜里是星空、月亮、同一道山脊上
+// 几户亮着灯的人家。所有元素都不用图片——几个路径和圆就够，
+// 省掉三四套密度图和一份额外的内存。
+//
+// 三条自我约束：
+// 1. 一切都很淡。背景是背景，中央那列对话才是要读的东西，
+//    任何一处 0.3 以上的不透明度都会开始抢字。
+// 2. 山和房子固定在底部：那里要么是操作面板（有卡片底），要么是整屏最后几行，
+//    再怎么也不会压在中段正在读的发言上。
+// 3. 星星和云的位置写死。随机位置每开一局都换个星空，
+//    同一局里回头看一眼天际线都会觉得「刚才不是这样」。
+// ---------------------------------------------------------------------------
+
+/** 星星的横向/纵向比例与半径（dp）。黄金比取模排布，比随机均匀，且每次一致。 */
+private val NIGHT_STARS: List<Triple<Float, Float, Float>> = List(26) { i ->
+    val fx = (0.05f + i * 0.6180339887f) % 1f
+    val fy = ((0.03f + i * 0.3819660113f) % 1f) * 0.58f
+    Triple(fx, fy, 0.9f + (i % 4) * 0.35f)
+}
+
+/** 薄云：横向比例、纵向比例、大小比例。 */
+private val DAY_CLOUDS = listOf(
+    Triple(0.14f, 0.155f, 1.00f),
+    Triple(0.48f, 0.095f, 0.72f),
+    Triple(0.78f, 0.205f, 0.86f),
+)
+
+/**
+ * 山脚下的几户人家：横向中心、宽度、高度（都是屏幕比例）。
+ *
+ * 只在两侧各放三户，中间留空——中间那一片到夜里是最暗的地方，
+ * 放房子等于把灯开在用户正在读字的位置上。
+ */
+private val VILLAGE_HOUSES = listOf(
+    floatArrayOf(0.075f, 0.070f, 0.052f),
+    floatArrayOf(0.155f, 0.052f, 0.040f),
+    floatArrayOf(0.245f, 0.060f, 0.046f),
+    floatArrayOf(0.760f, 0.058f, 0.044f),
+    floatArrayOf(0.845f, 0.072f, 0.056f),
+    floatArrayOf(0.925f, 0.050f, 0.038f),
+)
+
+/**
+ * 牌桌背景。
+ *
+ * [dayness] 1 = 白天，0 = 夜晚，中间的连续值用于过场：两层同时画，
+ * 各自乘自己的权重，所以天色是慢慢退成夜色的，不是切一张图。
+ */
+@Composable
+private fun TableBackdrop(dayness: Float, modifier: Modifier = Modifier) {
+    // 星空呼吸。整层共用一个相位，各星按序号错开，
+    // 拿 State 而不是读出来的值：这样每帧只重绘，不重组整个牌桌
+    val twinkle = rememberInfiniteTransition(label = "backdrop")
+    val phaseState = twinkle.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(6000, easing = LinearEasing)),
+        label = "twinkle"
+    )
+
+    Canvas(modifier = modifier.fillMaxSize()) {
+        val w = size.width
+        val h = size.height
+        val nightAmount = 1f - dayness
+
+        // 天色本身也跟着权重插值，两层的接缝才不会露出来
+        drawRect(
+            Brush.verticalGradient(
+                0f to lerp(DaySkyTop, NightSkyTop, nightAmount),
+                0.42f to lerp(DaySkyMid, NightSkyTop, nightAmount),
+                1f to lerp(DaySkyLow, NightSkyLow, nightAmount),
+            )
+        )
+
+        if (dayness > 0.01f) drawDaySky(w, h, dayness)
+
+        val far = ridgeFar(w, h)
+        val near = ridgeNear(w, h)
+
+        if (nightAmount > 0.01f) {
+            drawNightSky(w, h, nightAmount, phaseState.value)
+            drawPath(far, NightRidgeFar.copy(alpha = 0.92f * nightAmount))
+            drawPath(near, NightRidgeNear)
+            drawVillage(
+                w = w,
+                h = h,
+                color = NightRidgeNear,
+                windowColor = WindowGlow.copy(alpha = 0.62f * nightAmount)
+            )
+        }
+
+        if (dayness > 0.01f) {
+            drawPath(far, DayRidgeFar.copy(alpha = 0.15f * dayness))
+            drawPath(near, DayRidgeNear.copy(alpha = 0.11f * dayness))
+            drawVillage(
+                w = w,
+                h = h,
+                color = DayRidgeNear.copy(alpha = 0.13f * dayness),
+                windowColor = null
+            )
+        }
+    }
+}
+
+/** 白天：一团暖光当太阳，再加几条薄云。不画实心太阳——它会变成第二个焦点，抢「第几天」。 */
+private fun DrawScope.drawDaySky(w: Float, h: Float, a: Float) {
+    val sun = Offset(w * 0.84f, h * 0.09f)
+    val halo = h * 0.36f
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(DaySun.copy(alpha = 0.30f * a), Color.Transparent),
+            center = sun,
+            radius = halo
+        ),
+        radius = halo,
+        center = sun
+    )
+
+    DAY_CLOUDS.forEach { (fx, fy, scale) ->
+        val cx = w * fx
+        val cy = h * fy
+        val r = h * 0.026f * scale
+        val color = Color.White.copy(alpha = 0.62f * a)
+        // 三个扁椭圆叠一朵：单个椭圆看着像块污渍
+        drawOval(color, Offset(cx - r * 2.3f, cy - r * 0.55f), Size(r * 4.6f, r * 1.10f))
+        drawOval(color, Offset(cx - r * 1.30f, cy - r * 1.05f), Size(r * 2.60f, r * 1.25f))
+        drawOval(color, Offset(cx + r * 0.10f, cy - r * 1.30f), Size(r * 2.10f, r * 1.35f))
+    }
+}
+
+/** 夜里：星、月，以及一层压在天际线上的暗。 */
+private fun DrawScope.drawNightSky(w: Float, h: Float, a: Float, phase: Float) {
+    NIGHT_STARS.forEachIndexed { i, (fx, fy, r) ->
+        // 亮度按相位起伏，各星错开 0.13 个周期，看起来像缓慢的闪烁而不是整片一起呼吸
+        val flicker = 0.45f + 0.35f * sin((phase + i * 0.13f) * 2f * PI).toFloat()
+        drawCircle(
+            color = Color(0xFFFFF6DA).copy(alpha = flicker * a),
+            radius = r.dp.toPx(),
+            center = Offset(w * fx, h * fy)
+        )
+    }
+
+    // 月亮放在右上角，跟过场里正中升起的那颗避开：过场是「刚升起来」，
+    // 稳定态是「已经挂在那个位置上了」
+    val moon = Offset(w * 0.87f, h * 0.105f)
+    val r = h * 0.020f
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(MoonLight.copy(alpha = 0.22f * a), Color.Transparent),
+            center = moon,
+            radius = r * 5.0f
+        ),
+        radius = r * 5.0f,
+        center = moon
+    )
+    // 月牙：整圆减掉偏右上的圆。用路径求差而不是盖一个天色圆，
+    // 天色是渐变，盖上去会留一圈色差
+    val disc = Path().apply { addOval(Rect(moon, r)) }
+    val bite = Path().apply {
+        addOval(Rect(Offset(moon.x + r * 0.55f, moon.y - r * 0.45f), r * 0.96f))
+    }
+    disc.op(disc, bite, PathOperation.Difference)
+    drawPath(disc, MoonLight.copy(alpha = 0.55f * a))
+}
+
+/** 远山。曲线固定，白天黑夜共用同一道轮廓。 */
+private fun ridgeFar(w: Float, h: Float): Path = Path().apply {
+    moveTo(0f, h * 0.760f)
+    quadraticTo(w * 0.16f, h * 0.700f, w * 0.33f, h * 0.744f)
+    quadraticTo(w * 0.50f, h * 0.786f, w * 0.66f, h * 0.728f)
+    quadraticTo(w * 0.83f, h * 0.684f, w, h * 0.752f)
+    lineTo(w, h)
+    lineTo(0f, h)
+    close()
+}
+
+/** 近处的一道缓坡，山脚那几户人家站在它上面。 */
+private fun ridgeNear(w: Float, h: Float): Path = Path().apply {
+    moveTo(0f, h * 0.872f)
+    quadraticTo(w * 0.23f, h * 0.818f, w * 0.46f, h * 0.864f)
+    quadraticTo(w * 0.71f, h * 0.912f, w, h * 0.846f)
+    lineTo(w, h)
+    lineTo(0f, h)
+    close()
+}
+
+/** 屋顶天际线：墙 + 出檐的三角屋顶，夜里再点一盏窗灯。 */
+private fun DrawScope.drawVillage(w: Float, h: Float, color: Color, windowColor: Color?) {
+    val ground = h * 0.998f
+    VILLAGE_HOUSES.forEach { house ->
+        val cx = w * house[0]
+        val half = w * house[1] / 2f
+        val body = h * house[2]
+        val top = ground - body
+
+        drawRect(color, Offset(cx - half, top), Size(half * 2f, body))
+        drawPath(
+            Path().apply {
+                moveTo(cx - half * 1.24f, top + 1f)
+                lineTo(cx, top - body * 0.48f)
+                lineTo(cx + half * 1.24f, top + 1f)
+                close()
+            },
+            color
+        )
+
+        if (windowColor != null) {
+            drawCircle(
+                color = windowColor,
+                radius = minOf(half * 0.30f, body * 0.16f),
+                center = Offset(cx, top + body * 0.45f)
+            )
+        }
     }
 }
