@@ -125,6 +125,49 @@ object WerewolfDecisions {
         )
     }
 
+    /**
+     * 上警报名。
+     *
+     * 用 [VoteChoice] 而不是新建一个 `Boolean` 决策：`target` 填自己的座位号就是上警、
+     * 填 null 就是不上警。牌桌上的输入面板、人类提交路径、存档都因此不用为它再加一条分支，
+     * 而「选自己」这个动作在界面上也说得通（点自己的头像报名）。
+     */
+    fun sheriffSignup(game: WerewolfGame, seat: Int): StructuredSpec<VoteChoice> {
+        return StructuredSpec(
+            instruction = "输出 {\"target\": 座位号或 null, \"reason\": \"一句话理由\"}。" +
+                "想竞选警长就把 target 填成你自己的 $seat 号；不想上警就填 null。" +
+                "reason 用一句话说明你的动机（上警就当作竞选宣言的第一句）。",
+            serializer = VoteChoice.serializer(),
+            validate = { it.target == null || it.target == seat },
+        )
+    }
+
+    /** 警长投票：只能投上警的那几个人，且不能投自己（自己上警了本来也投不了）。 */
+    fun sheriffVote(game: WerewolfGame, candidates: List<Int>): StructuredSpec<VoteChoice> {
+        val valid = candidates.sorted()
+        return StructuredSpec(
+            instruction = "输出 {\"target\": 座位号或 null, \"reason\": \"一句话理由\"}。" +
+                "target 是你要选为警长的人，只能从 ${list(valid)} 中选；实在不想选就填 null。" +
+                "你是警下的人，这一票决定警徽归谁。reason 用一句中文说明理由。",
+            serializer = VoteChoice.serializer(),
+            validate = { it.target == null || it.target in valid },
+        )
+    }
+
+    /** 警徽移交。出局的警长决定交给谁，或者撕掉。 */
+    fun badgeTransfer(game: WerewolfGame, seat: Int): StructuredSpec<VoteChoice> {
+        val valid = game.aliveSeats.filter { it != seat }
+        return StructuredSpec(
+            instruction = "遗言里还要交代警徽。输出 {\"target\": 座位号或 null, \"reason\": \"你的遗言\"}。" +
+                "target 是你把警徽交给的人，只能从 ${list(valid)} 中选；" +
+                "想撕掉警徽（谁也不给）就填 null。" +
+                "reason 会被当成你的遗言公开说出来，用 1-2 句中文交代你的判断。" +
+                "注意：把警徽交给一个可能是狼的人，比撕掉更糟。",
+            serializer = VoteChoice.serializer(),
+            validate = { it.target == null || it.target in valid },
+        )
+    }
+
     /** 猎人开枪。目标可以为 null（放弃），所以只需要校验座位存在。 */
     fun hunterShoot(game: WerewolfGame): StructuredSpec<VoteChoice> {
         val valid = game.aliveSeats

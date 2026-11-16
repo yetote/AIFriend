@@ -163,6 +163,9 @@ private val SelfBlue = Color(0xFF2B6BFF)
 private val FateRed = Color(0xFFD9534F)
 private val VoteRed = Color(0xFFE0564F)
 
+/** 警徽的金色。和票数的红、自己的蓝都拉开，扫一眼不会认错。 */
+private val SheriffGold = Color(0xFFC79A2E)
+
 /**
  * 牌桌页。
  *
@@ -633,6 +636,25 @@ private fun SeatTile(
                     )
                 }
             }
+
+            // 警徽：戴在头像左上角。它和右下角的票数不会打架，
+            // 而「1.5 票」这件事只有靠这个标记才能当场读出来
+            if (seat.sheriff) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .size(15.dp)
+                        .background(SheriffGold, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "警",
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White
+                    )
+                }
+            }
         }
 
         Text(
@@ -1046,7 +1068,9 @@ private fun TurnPanel(
                 textColor = textColor,
                 dimColor = dimColor,
                 onPick = onVote,
-                extraLabel = if (turn.canAbstain) "弃票" else null,
+                // 上警报名也走这个面板，但它的「不做」是「不上警」不是「弃票」。
+                // 写死「弃票」的话，玩家会以为自己点的是放弃投票
+                extraLabel = if (turn.canAbstain) turn.abstainLabel ?: "弃票" else null,
                 onExtra = { onVote(null) }
             )
 

@@ -73,7 +73,7 @@ private fun WerewolfGame.atWolfVote(): WerewolfGame =
 
     /** 走完一个白天：全员弃票，无人出局，进入下一夜。 */
     private fun skipDay(game: WerewolfGame): WerewolfGame {
-        val voting = game.beginVote()
+        val voting = game.atDiscussion().beginVote()
         return voting.castVotes(voting.votingSeats.associateWith { null })
     }
 
@@ -96,6 +96,7 @@ private fun WerewolfGame.atWolfVote(): WerewolfGame =
 
         assertTrue("8 号被守住，应该活着", morning.playerAt(8).alive)
         assertTrue("这一夜应该和平", lastDawn(morning).isPeaceful)
+        // 平安夜没人出局，也就没有遗言，天亮直接进讨论
         assertEquals(Phase.DAY_DISCUSSION, morning.phase)
 
         val record = morning.nights.single()
@@ -178,7 +179,7 @@ private fun WerewolfGame.atWolfVote(): WerewolfGame =
     @Test
     fun `白痴被票出只是翻牌，不死也不出局`() {
         val morning = night(game(fool12), victim = 12)
-        val voting = morning.beginVote()
+        val voting = morning.atDiscussion().beginVote()
         val voted = voting.castVotes(voting.votingSeats.associateWith { 8 })
 
         assertTrue("翻牌不是出局", voted.playerAt(8).alive)
@@ -188,7 +189,7 @@ private fun WerewolfGame.atWolfVote(): WerewolfGame =
         val event = voted.history.filterIsInstance<GameEvent.IdiotRevealed>().single()
         assertEquals(8, event.seat)
         // 第一夜死了 12 号，所以这天是 11 个人投票，全票投给了白痴
-        assertEquals(11, event.voteCount)
+        assertEquals(11.0, event.voteCount, 0.0)
 
         val round = voted.voteRounds.last()
         assertEquals(VoteOutcome.IDIOT_REVEALED, round.outcome)
@@ -201,7 +202,7 @@ private fun WerewolfGame.atWolfVote(): WerewolfGame =
     @Test
     fun `翻牌后失去投票权，也不能再被投`() {
         val morning = night(game(fool12), victim = 12)
-        val voting = morning.beginVote()
+        val voting = morning.atDiscussion().beginVote()
         val voted = voting.castVotes(voting.votingSeats.associateWith { 8 })
 
         assertFalse("翻牌的白痴不该再有票", 8 in voted.votingSeats)
@@ -209,7 +210,7 @@ private fun WerewolfGame.atWolfVote(): WerewolfGame =
 
         // 第二天再投：把 8 号当目标必须被挡住，否则会出现「投他→翻牌→再投他」的循环
         val nextMorning = night(voted, victim = 11)
-        val nextVoting = nextMorning.beginVote()
+        val nextVoting = nextMorning.atDiscussion().beginVote()
         assertThrows(IllegalArgumentException::class.java) {
             nextVoting.castVotes(nextVoting.votingSeats.associateWith { 8 })
         }
@@ -218,7 +219,7 @@ private fun WerewolfGame.atWolfVote(): WerewolfGame =
     @Test
     fun `白痴翻牌后夜里照样会被刀死`() {
         val morning = night(game(fool12), victim = 12)
-        val voting = morning.beginVote()
+        val voting = morning.atDiscussion().beginVote()
         val voted = voting.castVotes(voting.votingSeats.associateWith { 8 })
 
         val nextMorning = night(voted, victim = 8)
@@ -234,7 +235,7 @@ private fun WerewolfGame.atWolfVote(): WerewolfGame =
         // 12 人白痴局：四个神全倒才算屠神。
         // 这里只验「白痴翻牌不算神全灭」：翻牌后神位仍然有人在。
         val morning = night(game(fool12), victim = 12)
-        val voting = morning.beginVote()
+        val voting = morning.atDiscussion().beginVote()
         val voted = voting.castVotes(voting.votingSeats.associateWith { 8 })
 
         assertNull("翻牌不该直接判负", voted.winner)

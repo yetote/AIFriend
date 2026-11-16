@@ -101,6 +101,17 @@ class WerewolfGameSimulationTest {
             "10 人守卫局" to WerewolfConfig(composition = WerewolfConfig.Guard10),
             "12 人守卫局" to WerewolfConfig(composition = WerewolfConfig.Guard12),
             "12 人白痴局" to WerewolfConfig(composition = WerewolfConfig.Fool12),
+            // 带警长的板子单独跑一遍：竞选、PK、警徽移交都是新状态，随机走位最容易撞出漏清的字段
+            "12 人守卫局（警长）" to WerewolfConfig(
+                composition = WerewolfConfig.Guard12,
+                hasSheriff = true,
+                maxVoteRounds = 2,
+            ),
+            "12 人白痴局（警长）" to WerewolfConfig(
+                composition = WerewolfConfig.Fool12,
+                hasSheriff = true,
+                maxVoteRounds = 2,
+            ),
         )
         boards.forEach { (name, config) ->
             repeat(30) { seed ->
@@ -152,7 +163,7 @@ class WerewolfGameSimulationTest {
             }
         }
 
-        Phase.DAY_DISCUSSION -> game.beginVote()
+        Phase.DAY_DISCUSSION -> game.atDiscussion().beginVote()
 
         Phase.DAY_VOTE -> {
             val voters = game.votingSeats
@@ -160,6 +171,33 @@ class WerewolfGameSimulationTest {
             game.castVotes(
                 voters.associateWith { if (rng.nextInt(6) == 0) null else candidates.random(rng) },
             )
+        }
+
+        // 警长竞选：随机上警、随机投票，把「无人上警 / 单人自动当选 / 多人投票 / 平票 PK」
+        // 四种结局都撞一遍，比只写单元测试更能发现状态机漏清字段
+        Phase.DAY_SHERIFF_SIGNUP ->
+            game.signUpSheriff(game.aliveSeats.filter { rng.nextInt(3) == 0 }.toSet())
+
+        Phase.DAY_SHERIFF_SPEECH -> game.beginSheriffVote()
+
+        Phase.DAY_SHERIFF_VOTE -> {
+            val candidates = game.sheriffCandidates
+            game.castSheriffVotes(
+                game.sheriffVoters.associateWith {
+                    if (candidates.isEmpty() || rng.nextInt(6) == 0) null else candidates.random(rng)
+                },
+            )
+        }
+
+        Phase.DAY_LAST_WORDS -> {
+            // 警长的遗言里可能交警徽，这里两种都走：交出去，或者直接撕掉
+            val sheriff = game.sheriffSeat
+            val heir = game.aliveSeats.filter { it != sheriff }
+            if (sheriff != null && game.canTransferBadge(sheriff) && heir.isNotEmpty() && rng.nextBoolean()) {
+                game.transferBadge(sheriff, heir.random(rng))
+            } else {
+                game.finishLastWords()
+            }
         }
 
         Phase.HUNTER_SHOOT -> {
@@ -190,6 +228,22 @@ class WerewolfGameSimulationTest {
         if (game.phase == Phase.HUNTER_SHOOT) {
             assertNotNull("猎人阶段没有待开枪的猎人", game.pendingHunterSeat)
         }
+
+        // 警长座位上必须是活人，只有两个窗口例外：他刚死、遗言还没说（要交徽），
+        // 或者天亮刚结算完、猎人还在开枪（交徽排在开枪之后）
+        // 分出胜负之后不再要求清理：死人名下的警徽是那一局的真实历史，复盘要用
+        game.sheriffSeat?.let { seat ->
+            if (!game.isFinished && !game.playerAt(seat).alive) {
+                assertTrue(
+                    "警长 $seat 号已出局，但既不在遗言队列，也不在等枪开完：${game.phase}",
+                    (game.phase == Phase.DAY_LAST_WORDS && seat in game.pendingLastWords) ||
+                        game.phase == Phase.HUNTER_SHOOT,
+                )
+            }
+        }
+
+        // 上过警的人一定都是活人：竞选发生在第 1 天，而第 1 天之前不可能有人出局
+        assertTrue("上警名单里出现了已出局的人：${game.sheriffRunners}", game.sheriffRunners.all { it in game.aliveSeats })
 
         // 有投票权的人必须都是活人：翻牌的白痴会被排除，但死人绝不能留在里面
         assertTrue(

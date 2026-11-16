@@ -2,6 +2,7 @@ package com.feature.werewolf.engine
 
 import com.core.ai.entity.IAI
 import com.core.ai.model.ChatMessage
+import com.feature.werewolf.game.DeathCause
 import com.feature.werewolf.game.GameEvent
 import com.feature.werewolf.game.Phase
 import com.feature.werewolf.game.RosterEntry
@@ -107,6 +108,20 @@ class WerewolfDirectorTest {
             val system = systemPrompt.orEmpty()
             if (!jsonMode) return "${seatOf(system)} 号觉得应该谨慎。"
 
+            // 上警报名：奇数座位报名，模拟「有人争警徽」的局面。
+            // 全都不报的话整局都走「无人上警 → 没有警长」，警长相关路径永远跑不到
+            if (system.contains("想竞选警长就把 target 填成你自己")) {
+                val seat = seatOf(system)
+                return if (seat % 2 == 1) {
+                    """{"target": $seat, "reason": "我来带队。"}"""
+                } else {
+                    """{"target": null, "reason": "我不上警。"}"""
+                }
+            }
+            // 警徽移交：一律撕掉。合法且不留后患，适合无脑自走
+            if (system.contains("遗言里还要交代警徽")) {
+                return """{"target": null, "reason": "来不及交代了。"}"""
+            }
             // 女巫的说明书里有 heal 字段，单独处理成「不用药」，永远合法
             if (system.contains("\"heal\"")) {
                 return """{"heal": false, "poison": null, "reason": "药先留着。"}"""
@@ -352,6 +367,81 @@ class WerewolfDirectorTest {
         assertEquals(9, result.publicTranscript.count { it.kind == MessageKind.VOTE })
     }
 
+    // ------------------------------------------------------------------
+    // 上下文：票型压缩
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `当天投票在上下文里压成一行票型`() = runBlocking {
+        val ai = ScriptedAI(listOf("""{"target": 3, "reason": "我跟票。"}"""))
+        val table = WerewolfTable(
+            game = standard9().copy(phase = Phase.DAY_VOTE),
+            transcript = listOf(
+                WerewolfMessage(
+                    day = 1,
+                    phase = Phase.DAY_VOTE,
+                    seat = 1,
+                    kind = MessageKind.VOTE,
+                    text = "我投 3 号。因为他昨天说漏了嘴，而且一直不肯表态。",
+                ),
+                WerewolfMessage(
+                    day = 1,
+                    phase = Phase.DAY_VOTE,
+                    seat = 2,
+                    kind = MessageKind.VOTE,
+                    text = "我弃票。",
+                ),
+            ),
+        )
+        val director = WerewolfDirector((1..9).associate { it to SeatAgent(ai, "test-model") })
+
+        director.vote(table)
+
+        val context = ai.calls.first().userText
+        // 理由只留 15 字：原文 19 字，截到「因为他昨天说漏了嘴，而且一直不」
+        assertTrue(
+            "两票应该压成一行、理由截到 15 字",
+            context.contains("投票：1→3（因为他昨天说漏了嘴，而且一直不）、2→弃票"),
+        )
+        assertFalse("投票原文不该再进上下文", context.contains("我投 3 号。"))
+    }
+
+    @Test
+    fun `投票压成票型之后，当天最早的发言不会被挤出去`() = runBlocking {
+        // 9 条 200 字的发言 + 9 条带长理由的投票，原文总量超过 3200 字预算。
+        // 先压票再裁，就都放得下；先裁再压，1 号那句会被挤掉。
+        val ai = ScriptedAI(listOf("""{"target": 4, "reason": "我跟票。"}"""))
+        val speeches = (1..9).map { seat ->
+            WerewolfMessage(
+                day = 1,
+                phase = Phase.DAY_DISCUSSION,
+                seat = seat,
+                kind = MessageKind.SPEECH,
+                text = "MARK$seat " + "发".repeat(190),
+            )
+        }
+        val votes = (1..9).map { seat ->
+            WerewolfMessage(
+                day = 1,
+                phase = Phase.DAY_VOTE,
+                seat = seat,
+                kind = MessageKind.VOTE,
+                text = "我投 4 号。" + "因为".repeat(100),
+            )
+        }
+        val table = WerewolfTable(
+            game = standard9().copy(phase = Phase.DAY_VOTE),
+            transcript = speeches + votes,
+        )
+        val director = WerewolfDirector((1..9).associate { it to SeatAgent(ai, "test-model") })
+
+        director.vote(table)
+
+        val context = ai.calls.first().userText
+        assertTrue("最早的那句发言必须还在", context.contains("MARK1"))
+        assertTrue("最后一句也在", context.contains("MARK9"))
+    }
+
     @Test
     fun `守护局的整局能跑通，守卫的话只有他自己能看到`() = runBlocking {
         // 10 人守卫局：7 号是守卫
@@ -385,6 +475,133 @@ class WerewolfDirectorTest {
         )
         // 每一夜都要有人守，否则守护毫无意义
         assertTrue("应该有守中刀口或有守人的记录", result.game.nights.any { it.guarded != null })
+    }
+
+    // ------------------------------------------------------------------
+    // 警长、遗言、自爆
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `警长竞选：报名、竞选发言、警下投票串起来`() = runBlocking {
+        // 1、2 号上警；警下 3-9 号按剧本全投 1 号。
+        // 每个座位一个模型实例，所以「第几次调用」是确定的，不看并发顺序
+        val agents = (1..9).associate { seat ->
+            val replies = if (seat <= 2) {
+                listOf(
+                    """{"target": $seat, "reason": "我上警。"}""",
+                    "我竞选警长，我会先推 3 号。",
+                )
+            } else {
+                listOf(
+                    """{"target": null, "reason": "我不上警。"}""",
+                    """{"target": 1, "reason": "我选一个看着有主意的。"}""",
+                )
+            }
+            seat to SeatAgent(ScriptedAI(replies), "test-model")
+        }
+        val director = WerewolfDirector(agents)
+
+        val signedUp = director.sheriffSignup(
+            WerewolfTable(standard9().copy(phase = Phase.DAY_SHERIFF_SIGNUP))
+        )
+        assertEquals(Phase.DAY_SHERIFF_SPEECH, signedUp.game.phase)
+        assertEquals(listOf(1, 2), signedUp.game.sheriffCandidates)
+
+        val spoken = director.sheriffSpeech(signedUp)
+        assertEquals(Phase.DAY_SHERIFF_VOTE, spoken.game.phase)
+        // 上警报名阶段每人也要说一句，所以只数竞选发言阶段的消息
+        assertEquals(
+            "两个候选人都发了言",
+            2,
+            spoken.transcript.count {
+                it.kind == MessageKind.SPEECH && it.phase == Phase.DAY_SHERIFF_SPEECH
+            },
+        )
+
+        val voted = director.sheriffVote(spoken)
+        assertEquals(1, voted.game.sheriffSeat)
+        // 竞选结束、当天没有死者，所以直接进白天讨论
+        assertEquals(Phase.DAY_DISCUSSION, voted.game.phase)
+        assertTrue(voted.game.history.any { it is GameEvent.SheriffElected })
+    }
+
+    @Test
+    fun `遗言由死者自己说，说完继续白天`() = runBlocking {
+        val dead = standard9().let { game ->
+            game.copy(
+                phase = Phase.DAY_LAST_WORDS,
+                pendingLastWords = listOf(8),
+                players = game.players.map {
+                    if (it.seat == 8) {
+                        it.copy(alive = false, deathCause = DeathCause.WOLF_KILL, deathDay = 1)
+                    } else {
+                        it
+                    }
+                },
+            )
+        }
+        val director = WerewolfDirector(agentsOf(8 to ScriptedAI(listOf("我死了，3 号和 5 号里有一个有问题。"))))
+
+        val result = director.lastWords(WerewolfTable(dead))
+
+        assertEquals(Phase.DAY_DISCUSSION, result.game.phase)
+        assertTrue(
+            "遗言要进公开记录，活着的人投票前得听得到",
+            result.transcript.any { it.seat == 8 && it.text.contains("3 号") },
+        )
+    }
+
+    @Test
+    fun `警长的遗言里会交代警徽`() = runBlocking {
+        val dead = standard9().let { game ->
+            game.copy(
+                day = 2,
+                phase = Phase.DAY_LAST_WORDS,
+                sheriffSeat = 4,
+                pendingLastWords = listOf(4),
+                afterLastWordsPhase = Phase.NIGHT_WOLF,
+                players = game.players.map {
+                    if (it.seat == 4) {
+                        it.copy(alive = false, deathCause = DeathCause.WOLF_KILL, deathDay = 2)
+                    } else {
+                        it
+                    }
+                },
+            )
+        }
+        val director = WerewolfDirector(
+            agentsOf(4 to ScriptedAI(listOf("""{"target": 7, "reason": "警徽给 7 号，他思路最清楚。"}"""))),
+        )
+
+        val result = director.lastWords(WerewolfTable(dead))
+
+        assertEquals(7, result.game.sheriffSeat)
+        assertTrue(result.transcript.any { it.text.contains("7 号") && it.text.contains("警徽") })
+        assertEquals("遗言说完就进下一夜", Phase.NIGHT_WOLF_CHAT, result.game.phase)
+    }
+
+    @Test
+    fun `狼人发言带自爆标记就当场自爆，白天提前结束`() = runBlocking {
+        val exploding = ScriptedAI(listOf("【自爆】我自爆，别再投他了。"))
+        val quiet = ScriptedAI(listOf("我觉得 2 号有点急。"))
+        // 只有 1 号会开口：没有警长、没有死讯，发言从 1 号起，他自爆之后这一天就结束了
+        val director = WerewolfDirector(
+            agentsOf(1 to exploding, 2 to quiet, 3 to quiet, 4 to quiet, 5 to quiet, 6 to quiet, 7 to quiet, 8 to quiet, 9 to quiet),
+        )
+
+        val result = director.discussion(
+            WerewolfTable(standard9().copy(day = 1, phase = Phase.DAY_DISCUSSION))
+        )
+
+        assertFalse(result.game.playerAt(1).alive)
+        assertEquals(DeathCause.SELF_EXPLODE, result.game.playerAt(1).deathCause)
+        assertTrue(result.game.history.any { it is GameEvent.WolfExploded })
+        assertEquals("自爆直接翻夜", Phase.NIGHT_WOLF_CHAT, result.game.phase)
+        assertEquals("自爆之后没人再发言", 1, result.transcript.count { it.kind == MessageKind.SPEECH })
+        assertFalse(
+            "标记本身不该留在记录里",
+            result.transcript.any { it.text.contains("【自爆】") },
+        )
     }
 
     // ------------------------------------------------------------------
@@ -428,6 +645,31 @@ class WerewolfDirectorTest {
             )
             assertTrue("应该有人发过言", result.publicTranscript.any { it.kind == MessageKind.SPEECH })
             assertTrue("应该投过票", result.publicTranscript.any { it.kind == MessageKind.VOTE })
+        }
+    }
+
+    @Test
+    fun `带警长的板子也能整局跑完`() = runBlocking {
+        repeat(5) { seed ->
+            val config = WerewolfConfig(
+                composition = WerewolfConfig.Guard12,
+                hasSheriff = true,
+                maxVoteRounds = 2,
+            )
+            val game = WerewolfGame.deal(config, roster(12), Random(seed))
+            val agents = game.players.associate { it.seat to SeatAgent(AutoAI(), "test-model") }
+
+            val result = WerewolfDirector(agents, random = Random(seed + 7)).play(WerewolfTable(game))
+
+            assertTrue("种子 $seed 没有结束", result.game.isFinished)
+            // 竞选必须有结论：要么有人当选，要么明确记一笔「没有警长」。
+            // 少了任何一条都说明这条新流程被跳过了
+            assertTrue(
+                "种子 $seed 没有竞选结果",
+                result.game.history.any {
+                    it is GameEvent.SheriffElected || it is GameEvent.SheriffVacant
+                },
+            )
         }
     }
 

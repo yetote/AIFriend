@@ -24,6 +24,13 @@ data class UIWerewolfSeatLive(
     val active: Boolean = false,
     /** 当前得票数。null 表示还没人投。 */
     val votes: Int? = null,
+    /**
+     * 这个座位此刻持有警徽。
+     *
+     * 是公开信息，所以不需要 [roleLabel] 那种「观战才给」的保护。
+     * 牌桌上必须一直显示：警长的一票值 1.5，不标出来，玩家会算不明白票型。
+     */
+    val sheriff: Boolean = false,
 )
 
 /**
@@ -38,6 +45,9 @@ enum class UIWerewolfFate(val short: String, val full: String) {
     WITCH_POISON("毒", "被女巫毒死"),
     EXILE("票", "被投票放逐"),
     HUNTER_SHOOT("枪", "被猎人开枪带走"),
+
+    /** 自爆：狼人自己结束的白天。字形用「爆」，和「票」区分得开。 */
+    SELF_EXPLODE("爆", "狼人自爆，白天就此结束"),
 }
 
 /** 一条记录在界面上的性质。不同性质用不同排版，不要都塞成一行字。 */

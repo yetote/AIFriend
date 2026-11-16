@@ -41,8 +41,12 @@ data class WerewolfProgress(
             Phase.NIGHT_WOLF -> "狼人下刀"
             Phase.NIGHT_SEER -> "预言家查验"
             Phase.NIGHT_WITCH -> "女巫用药"
+            Phase.DAY_SHERIFF_SIGNUP -> "上警"
+            Phase.DAY_SHERIFF_SPEECH -> "竞选发言"
+            Phase.DAY_SHERIFF_VOTE -> "警长投票"
             Phase.DAY_DISCUSSION -> "发言"
             Phase.DAY_VOTE -> "投票"
+            Phase.DAY_LAST_WORDS -> "遗言"
             Phase.HUNTER_SHOOT -> "猎人开枪"
             Phase.FINISHED -> "结算"
         }

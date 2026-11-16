@@ -7,6 +7,7 @@ import com.feature.werewolf.game.WerewolfConfig
 import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfRole
 import com.feature.werewolf.game.WinRule
+import com.feature.werewolf.game.formatVotes
 
 /**
  * 每个玩家的「入场提示词」。
@@ -53,7 +54,7 @@ object WerewolfPrompt {
                     .append("（").append(player.faction.displayName).append("阵营），")
                     .append("这个身份只有你自己知道。\n\n")
             }
-            append(ruleBrief(game.config.winRule)).append("\n\n")
+            append(ruleBrief(game.config)).append("\n\n")
             append(boardBrief(game.config).trimEnd()).append("\n\n")
             append(publicSituation(game).trimEnd()).append("\n\n")
             append(privateBriefing(game, seat)).append("\n\n")
@@ -74,13 +75,100 @@ object WerewolfPrompt {
         if (dead.isNotEmpty()) {
             append("已出局：").append(seats(dead)).append("\n")
         }
+        if (game.config.hasSheriff) {
+            val sheriff = game.aliveSheriffSeat
+            append("警长：").append(
+                if (sheriff != null) {
+                    "$sheriff 号（票权 1.5 票，白天最后一个发言）"
+                } else {
+                    "暂无（还没选出，或警徽已经流失）"
+                }
+            ).append("\n")
+            // 竞选期间「谁上警」是公开信息，也是投票的唯一依据，必须写进来
+            if (game.sheriffRunners.isNotEmpty() && game.phase.isSheriffPhase) {
+                append("上警：").append(seats(game.sheriffRunners)).append("\n")
+            }
+        }
         append("\n【已经发生的事】\n")
         if (game.history.isEmpty()) {
             append("还没有任何播报，这是第一夜。")
-        } else {
-            game.history.forEach { append("· ").append(describe(it)).append("\n") }
+            return@buildString
         }
+        // 更早的天数压成「一天一行」，最近 EXPANDED_DAYS 天保持逐条
+        val expandedFrom = (game.day - EXPANDED_DAYS + 1).coerceAtLeast(1)
+        val older = game.history.filter { it.day < expandedFrom }
+        if (older.isNotEmpty()) {
+            older.groupBy { it.day }.forEach { (day, events) ->
+                append("第").append(day).append("天：").append(summarize(events)).append("\n")
+            }
+            append("—— 最近 ").append(EXPANDED_DAYS).append(" 天，逐条 ——\n")
+        }
+        game.history.filter { it.day >= expandedFrom }
+            .forEach { append("· ").append(describe(it)).append("\n") }
     }
+
+    /**
+     * 历史里**逐条展开**的天数，更早的压成一天一行。
+     *
+     * 为什么不全部逐条：打到第六天，history 就有三四十条，铺开之后「第 1 天谁出局」
+     * 被推到三十行之外——这不是 token 问题，是注意力问题，跟我们特意把私有信息
+     * 放到历史之后是同一个理由。
+     *
+     * 为什么不全部压成一行：最近两天还要用来对质（昨天谁说了什么、谁投了谁），
+     * 压缩会丢掉「同一天里谁先说、谁后说」的时序，而那个时序本身是推理材料。
+     *
+     * 折叠**只发生在拼提示词这一步**：[WerewolfGame.history] 一条不动，
+     * 存档和复盘读的都是 history，所以压缩永远不会让对局记忆真的丢掉。
+     */
+    private const val EXPANDED_DAYS = 2
+
+    /** 一天的事件压成一句，子句之间用「；」隔开。 */
+    private fun summarize(events: List<GameEvent>): String =
+        events.mapNotNull { brief(it) }.joinToString("；").ifEmpty { "没有需要记住的事" }
+
+    /**
+     * 摘要用的短句。返回 null 表示这件事**在折叠后不必再提**。
+     *
+     * 和 [describe] 分开而不是复用它：那份文案同时被编排层拿去写上帝消息，
+     * 改了它会连带改掉界面上的记录流。这里只服务于提示词。
+     */
+    private fun brief(event: GameEvent): String? = when (event) {
+        is GameEvent.Dawn ->
+            if (event.isPeaceful) "夜里平安" else "夜里 ${seats(event.deadSeats)}出局"
+
+        is GameEvent.Exiled -> "${event.seat} 号被放逐（${formatVotes(event.voteCount)} 票）"
+        is GameEvent.NoExile -> "无人被放逐"
+        is GameEvent.IdiotRevealed -> "${event.seat} 号翻牌是白痴，没有出局"
+
+        is GameEvent.HunterShot -> if (event.targetSeat == null) {
+            "猎人 ${event.hunterSeat} 号没开枪"
+        } else {
+            "猎人 ${event.hunterSeat} 号开枪带走 ${event.targetSeat} 号"
+        }
+
+        is GameEvent.WolfExploded -> "${event.seat} 号狼人自爆，当天直接入夜"
+
+        is GameEvent.SheriffElected -> if (event.votes <= 0) {
+            "${event.seat} 号自动当选警长"
+        } else {
+            "${event.seat} 号当选警长（${event.votes} 票）"
+        }
+
+        is GameEvent.SheriffVacant -> "没有警长（${event.reason}）"
+
+        // PK 是过程：平票这件事对结局没有额外后果，结果已经由 SheriffElected 或
+        // SheriffVacant 表达过了，折叠之后再留一行只是重复占位
+        is GameEvent.SheriffPk -> null
+
+        is GameEvent.SheriffBadgePassed ->
+            if (event.toSeat == null) "警徽作废" else "警徽交给 ${event.toSeat} 号"
+
+        is GameEvent.GameOver -> "${event.winner.displayName}阵营获胜"
+    }
+
+    private val Phase.isSheriffPhase: Boolean
+        get() = this == Phase.DAY_SHERIFF_SIGNUP || this == Phase.DAY_SHERIFF_SPEECH ||
+            this == Phase.DAY_SHERIFF_VOTE
 
     /**
      * 把一条公开事件写成一句话。
@@ -96,19 +184,42 @@ object WerewolfPrompt {
         }
 
         is GameEvent.Exiled ->
-            "第${event.day}天 投票：${event.seat} 号被放逐（${event.voteCount} 票）"
+            "第${event.day}天 投票：${event.seat} 号被放逐（${formatVotes(event.voteCount)} 票）"
 
         is GameEvent.NoExile ->
             "第${event.day}天 投票：无人被放逐"
 
         is GameEvent.IdiotRevealed ->
-            "第${event.day}天 投票：${event.seat} 号以 ${event.voteCount} 票被投出，" +
+            "第${event.day}天 投票：${event.seat} 号以 ${formatVotes(event.voteCount)} 票被投出，" +
                 "翻开是白痴，没有出局，此后失去投票权"
 
         is GameEvent.HunterShot -> if (event.targetSeat == null) {
             "第${event.day}天：猎人 ${event.hunterSeat} 号出局，没有开枪"
         } else {
             "第${event.day}天：猎人 ${event.hunterSeat} 号开枪带走了 ${event.targetSeat} 号"
+        }
+
+        is GameEvent.WolfExploded ->
+            "第${event.day}天：${event.seat} 号狼人自爆，这一天就此结束，" +
+                "没有投票、没有人被放逐，直接进入黑夜"
+
+        is GameEvent.SheriffElected -> if (event.votes <= 0) {
+            "第${event.day}天：只有 ${event.seat} 号上警，自动当选警长"
+        } else {
+            "第${event.day}天：${event.seat} 号当选警长（${event.votes} 票）"
+        }
+
+        is GameEvent.SheriffVacant ->
+            "第${event.day}天：本局没有警长（${event.reason}）"
+
+        is GameEvent.SheriffPk ->
+            "第${event.day}天：警长投票平票（${seats(event.seats)}），进入 PK 发言，" +
+                "之后由上过警以外的人重投一次"
+
+        is GameEvent.SheriffBadgePassed -> if (event.toSeat == null) {
+            "第${event.day}天：警长 ${event.fromSeat} 号出局，警徽没有交出，已作废"
+        } else {
+            "第${event.day}天：警长 ${event.fromSeat} 号把警徽交给 ${event.toSeat} 号"
         }
 
         is GameEvent.GameOver ->
@@ -138,6 +249,13 @@ object WerewolfPrompt {
         }
         if (config.has(WerewolfRole.IDIOT)) {
             append("白痴被投票放逐时翻开身份，不会死，但从此不能再投票、也不能再被投；夜里被刀或被毒照常会死。\n")
+        }
+        if (config.hasSheriff) {
+            append(
+                "本局有警长：第 1 天天亮先竞选——想当的人上警、各说一段，再由**没上警的人**投票选出。" +
+                    "警长的一票算 1.5 票，并且决定当天从谁开始发言（他自己最后说）。" +
+                    "警长出局时要在遗言里移交警徽，没人接手或没来得及交代就作废。\n"
+            )
         }
     }
 
@@ -246,6 +364,19 @@ object WerewolfPrompt {
             }
         }
 
+        // 警长、竞选、遗言这三件事和身份无关，任何座位都可能碰上，所以放在 when 之外。
+        // 尤其是「你是警长」——警长本身是公开身份，但**只有本人**需要知道自己的票权是 1.5。
+        if (game.sheriffSeat == seat && game.phase != Phase.FINISHED) {
+            lines += "你是警长：你的一票算 1.5 票，白天从你的下一位开始发言、你最后说（归票位）。"
+            lines += "你出局时要在遗言里决定把警徽交给谁——交给错的人比撕掉更糟。"
+        }
+        if (seat in game.sheriffRunners && game.phase.isSheriffPhase) {
+            lines += "你在竞选警长。上过警的人不能投警长票，所以既然报了名就要争到底。"
+        }
+        if (game.phase == Phase.DAY_LAST_WORDS && seat in game.pendingLastWords) {
+            lines += "你已经出局了，现在轮到你说遗言。遗言改不了结局，但会直接影响活着的人怎么投。"
+        }
+
         return buildString {
             append("【只有你知道的事】\n")
             lines.forEach { append("· ").append(it).append("\n") }
@@ -326,12 +457,58 @@ object WerewolfPrompt {
                     append("也可以什么都不做，把药留到更关键的时候。")
                 }
 
-                Phase.DAY_DISCUSSION ->
+                Phase.DAY_SHERIFF_SIGNUP ->
+                    append(
+                        "第 ${game.day} 天，警长竞选开始，先问你要不要上警。" +
+                            "想当警长就把 target 填成你自己的 $seat 号，不想就填 null。" +
+                            "当上警长票权 1.5 票、还能决定当天的发言起点，代价是被狼人优先盯上；" +
+                            "而且上过警的人不能投警长票。用一句中文说明你的动机。"
+                    )
+
+                Phase.DAY_SHERIFF_SPEECH ->
+                    append(
+                        "现在轮到你竞选发言。用 2-3 句说服警下把票投给你：" +
+                            "你的判断、你觉得谁是狼、你当选之后打算先推谁。" +
+                            "不要念座位号清单，不要写「某某说：」这样的格式。"
+                    )
+
+                Phase.DAY_SHERIFF_VOTE ->
+                    append(
+                        "第 ${game.day} 天，警下投票选警长。候选人是 " +
+                            seats(game.sheriffCandidates) + "。你可以投其中一个，也可以弃票。"
+                    )
+
+                Phase.DAY_LAST_WORDS ->
+                    if (game.sheriffSeat == seat) {
+                        append(
+                            "你已经出局了。这是你的遗言，同时还要交代警徽交给谁：" +
+                                "把要带走警徽的人填进 target，想撕掉就填 null。" +
+                                "reason 会被当成你的遗言公开说出来，用 1-2 句交代你的判断。"
+                        )
+                    } else {
+                        append(
+                            "你已经出局了，现在说遗言。用 1-3 句交代你的判断：" +
+                                "你怀疑谁、为什么，或者提醒活着的人别投错。" +
+                                "只说你自己的话，不要替别人发言。"
+                        )
+                    }
+
+                Phase.DAY_DISCUSSION -> {
                     append(
                         "第 ${game.day} 天白天讨论，轮到你发言。" +
                             "用 2-3 句中文说出你的判断：你怀疑谁、为什么，或者解释你上一轮为什么那样投票。" +
                             "只说你自己的话，不要替别人发言，不要写「某某说：」这样的格式。"
                     )
+                    // 自爆只对狼有意义。写给所有人等于向好人泄露「这局的狼会自爆」，
+                    // 虽然规则公开可查，但提示词里不该出现一句只对狼有用的话
+                    if (player.role == WerewolfRole.WEREWOLF) {
+                        append(
+                            "如果你判断自爆能打断一次已经成形的放逐（比如队友马上就要被投出去），" +
+                                "就在发言开头写「【自爆】」，后面写你的自爆发言——" +
+                                "这一天会立刻结束、直接进入黑夜。没有明确收益别用，自爆是用一条命换一天。"
+                        )
+                    }
+                }
 
                 Phase.DAY_VOTE -> {
                     val candidates = game.voteCandidates ?: game.aliveSeats
@@ -362,20 +539,40 @@ object WerewolfPrompt {
     /**
      * 规则说明。
      *
-     * 「绑票」和「平票直接无人出局」必须写进去：这两条决定了白天的算术——
+     * 「绑票」和「平票怎么处理」必须写进去：这两条决定了白天的算术——
      * 好人投错一次就再也追不回来，狼人可以故意把票打成平手。不写，
      * 模型就会按「平票还有一轮 PK」的线下记忆去推，推出的结论整个是错的。
+     *
+     * 同理，有警长和没警长的板子必须给出**不同的**平票规则：警长在场上才能追加一轮，
+     * 而且 1.5 票会让「谁跟谁投」变得比人数更重要。
      */
-    private fun ruleBrief(winRule: WinRule): String = when (winRule) {
-        WinRule.SLAY_SIDE ->
-            "【胜负规则】屠边局：狼人杀光所有神职，或杀光所有平民，狼人获胜；好人放逐全部狼人则好人获胜。"
+    private fun ruleBrief(config: WerewolfConfig): String {
+        val win = when (config.winRule) {
+            WinRule.SLAY_SIDE ->
+                "【胜负规则】屠边局：狼人杀光所有神职，或杀光所有平民，狼人获胜；好人放逐全部狼人则好人获胜。"
 
-        WinRule.SLAY_ALL ->
-            "【胜负规则】屠城局：存活狼人数不少于存活好人数时狼人获胜；好人放逐全部狼人则好人获胜。"
-    } + "\n【绑票】存活狼人数不少于存活好人数时，狼人直接获胜，游戏当场结束——" +
-        "这时所有人一起投也压不过狼队的票，投不出人了。" +
-        "\n【白天投票】本局没有警长，没有 PK：平票就是当天无人出局，不存在加投一轮。" +
-        "\n【夜里】狼人多数决，平票加商一次。"
+            WinRule.SLAY_ALL ->
+                "【胜负规则】屠城局：存活狼人数不少于存活好人数时狼人获胜；好人放逐全部狼人则好人获胜。"
+        }
+        return buildString {
+            append(win).append("\n")
+            append("【绑票】存活狼人数不少于存活好人数时，狼人直接获胜，游戏当场结束——")
+            append("这时所有人一起投也压不过狼队的票，投不出人了。\n")
+            if (config.hasSheriff) {
+                append("【白天投票】平票时，平票的人再各说一轮（PK），然后由全体重投一次；")
+                append("再平票就当天无人出局。警长的一票算 1.5 票。\n")
+                append("【发言顺序】每天从警长下一位开始，警长最后发言（他是归票位）。\n")
+            } else {
+                append("【白天投票】本局没有警长，没有 PK：平票就是当天无人出局，不存在加投一轮。\n")
+                append("【发言顺序】每天从昨夜死者的下一位开始，按座位号绕一圈。\n")
+            }
+            append("【遗言】第一夜出局的人、每次被投票放逐的人、以及任何原因出局的警长，")
+            append("出局后都会留一段遗言；第二夜起，夜里死的人不再发言。\n")
+            append("【自爆】狼人可以在白天发言时自爆：当场出局，这一天立刻结束——没有投票、")
+            append("没有人被放逐，直接进入黑夜。自爆通常用来打断一次已经成形的放逐。\n")
+            append("【夜里】狼人多数决，平票加商一次。")
+        }
+    }
 
     /** 座位号列表，写成「1 号、2 号」，不带结尾标点。 */
     private fun seats(list: List<Int>): String =

@@ -38,7 +38,7 @@ import kotlinx.serialization.json.Json
 object WerewolfSnapshot {
 
     /** 当前存档格式版本。改动 DTO 结构时必须加一。 */
-    const val VERSION = 3
+    const val VERSION = 4
 
     private val json = Json {
         ignoreUnknownKeys = true   // 旧档多出来的字段不该让新版本读不出来
@@ -92,6 +92,15 @@ internal data class TableSnapshot(
     val voteCandidates: List<Int>? = null,
     val ballots: List<BallotSnapshot> = emptyList(),
     val pendingHunterSeat: Int? = null,
+    /** v4 起：警长与竞选状态。旧档没有这一段，读出来就是「没有警长」。 */
+    val sheriffSeat: Int? = null,
+    val sheriffCandidates: List<Int> = emptyList(),
+    val sheriffRunners: List<Int> = emptyList(),
+    val sheriffRound: Int = 1,
+    val sheriffElectionDone: Boolean = false,
+    /** v4 起：待说遗言的座位，以及遗言结束后去哪。 */
+    val pendingLastWords: List<Int> = emptyList(),
+    val afterLastWordsPhase: String = Phase.DAY_DISCUSSION.name,
     val afterHunterPhase: String = Phase.NIGHT_WOLF.name,
     val history: List<EventSnapshot> = emptyList(),
     val winner: String? = null,
@@ -109,6 +118,8 @@ internal data class ConfigSnapshot(
     val winRule: String,
     val maxVoteRounds: Int,
     val witchCanSelfHealOnFirstNight: Boolean,
+    /** v4 起：是否竞选警长。旧档没有这一项，按 false 读。 */
+    val hasSheriff: Boolean = false,
 )
 
 @Serializable
@@ -160,7 +171,8 @@ internal data class VoteRoundSnapshot(
     /** [com.feature.werewolf.game.VoteOutcome] 的名字。 */
     val outcome: String,
     val exiledSeat: Int? = null,
-    val exileVotes: Int = 0,
+    /** v4 起改成浮点：警长一票算 1.5，票数会出现 3.5。旧档里的整数照样读得出来。 */
+    val exileVotes: Double = 0.0,
 )
 
 /**
@@ -175,10 +187,17 @@ internal data class EventSnapshot(
     val day: Int,
     val deadSeats: List<Int>? = null,
     val seat: Int? = null,
-    val voteCount: Int? = null,
+    /** v4 起改成浮点：警长票权 1.5，票数会出现 3.5。 */
+    val voteCount: Double? = null,
     val hunterSeat: Int? = null,
     val targetSeat: Int? = null,
     val winner: String? = null,
+    /** v4 起：警长 PK 的平票座位。 */
+    val seats: List<Int>? = null,
+    /** v4 起：没有警长的原因（只有 [SheriffVacant] 会用到）。 */
+    val reason: String? = null,
+    /** v4 起：警徽是谁交出来的。 */
+    val fromSeat: Int? = null,
 )
 
 @Serializable
@@ -204,6 +223,7 @@ internal fun WerewolfTable.toSnapshot(): TableSnapshot {
             winRule = game.config.winRule.name,
             maxVoteRounds = game.config.maxVoteRounds,
             witchCanSelfHealOnFirstNight = game.config.witchCanSelfHealOnFirstNight,
+            hasSheriff = game.config.hasSheriff,
         ),
         players = game.players.map {
             PlayerSnapshot(
@@ -230,6 +250,13 @@ internal fun WerewolfTable.toSnapshot(): TableSnapshot {
         voteCandidates = game.voteCandidates,
         ballots = game.ballots.map { BallotSnapshot(it.voterSeat, it.targetSeat) },
         pendingHunterSeat = game.pendingHunterSeat,
+        sheriffSeat = game.sheriffSeat,
+        sheriffCandidates = game.sheriffCandidates,
+        sheriffRunners = game.sheriffRunners,
+        sheriffRound = game.sheriffRound,
+        sheriffElectionDone = game.sheriffElectionDone,
+        pendingLastWords = game.pendingLastWords,
+        afterLastWordsPhase = game.afterLastWordsPhase.name,
         afterHunterPhase = game.afterHunterPhase.name,
         history = game.history.map { it.toSnapshot() },
         winner = game.winner?.name,
@@ -274,6 +301,13 @@ private fun GameEvent.toSnapshot(): EventSnapshot = when (this) {
         EventSnapshot(type = "IDIOT_REVEALED", day = day, seat = seat, voteCount = voteCount)
     is GameEvent.HunterShot ->
         EventSnapshot(type = "HUNTER_SHOT", day = day, hunterSeat = hunterSeat, targetSeat = targetSeat)
+    is GameEvent.WolfExploded -> EventSnapshot(type = "WOLF_EXPLODED", day = day, seat = seat)
+    is GameEvent.SheriffElected ->
+        EventSnapshot(type = "SHERIFF_ELECTED", day = day, seat = seat, voteCount = votes.toDouble())
+    is GameEvent.SheriffVacant -> EventSnapshot(type = "SHERIFF_VACANT", day = day, reason = reason)
+    is GameEvent.SheriffPk -> EventSnapshot(type = "SHERIFF_PK", day = day, seats = seats)
+    is GameEvent.SheriffBadgePassed ->
+        EventSnapshot(type = "SHERIFF_BADGE_PASSED", day = day, fromSeat = fromSeat, targetSeat = toSeat)
     is GameEvent.GameOver -> EventSnapshot(type = "GAME_OVER", day = day, winner = winner.name)
 }
 
@@ -288,6 +322,7 @@ internal fun TableSnapshot.toTable(): WerewolfTable = WerewolfTable(
             winRule = enumOf<WinRule>(config.winRule),
             maxVoteRounds = config.maxVoteRounds,
             witchCanSelfHealOnFirstNight = config.witchCanSelfHealOnFirstNight,
+            hasSheriff = config.hasSheriff,
         ),
         players = players.map {
             WerewolfPlayer(
@@ -314,6 +349,13 @@ internal fun TableSnapshot.toTable(): WerewolfTable = WerewolfTable(
         voteCandidates = voteCandidates,
         ballots = ballots.map { Ballot(it.voterSeat, it.targetSeat) },
         pendingHunterSeat = pendingHunterSeat,
+        sheriffSeat = sheriffSeat,
+        sheriffCandidates = sheriffCandidates,
+        sheriffRunners = sheriffRunners,
+        sheriffRound = sheriffRound,
+        sheriffElectionDone = sheriffElectionDone,
+        pendingLastWords = pendingLastWords,
+        afterLastWordsPhase = enumOf<Phase>(afterLastWordsPhase),
         afterHunterPhase = enumOf<Phase>(afterHunterPhase),
         history = history.map { it.toEvent() },
         winner = winner?.let { enumOf<Faction>(it) },
@@ -355,18 +397,37 @@ private fun EventSnapshot.toEvent(): GameEvent = when (type) {
     "EXILED" -> GameEvent.Exiled(
         day = day,
         seat = requireNotNull(seat) { "EXILED 缺少 seat" },
-        voteCount = requireNotNull(voteCount) { "EXILED 缺少 voteCount" },
+        voteCount = voteCount ?: 0.0,
     )
     "NO_EXILE" -> GameEvent.NoExile(day = day)
     "IDIOT_REVEALED" -> GameEvent.IdiotRevealed(
         day = day,
         seat = requireNotNull(seat) { "IDIOT_REVEALED 缺少 seat" },
-        voteCount = requireNotNull(voteCount) { "IDIOT_REVEALED 缺少 voteCount" },
+        voteCount = voteCount ?: 0.0,
     )
     "HUNTER_SHOT" -> GameEvent.HunterShot(
         day = day,
         hunterSeat = requireNotNull(hunterSeat) { "HUNTER_SHOT 缺少 hunterSeat" },
         targetSeat = targetSeat,
+    )
+    "WOLF_EXPLODED" -> GameEvent.WolfExploded(
+        day = day,
+        seat = requireNotNull(seat) { "WOLF_EXPLODED 缺少 seat" },
+    )
+    "SHERIFF_ELECTED" -> GameEvent.SheriffElected(
+        day = day,
+        seat = requireNotNull(seat) { "SHERIFF_ELECTED 缺少 seat" },
+        votes = voteCount?.toInt() ?: 0,
+    )
+    "SHERIFF_VACANT" -> GameEvent.SheriffVacant(
+        day = day,
+        reason = reason ?: "警徽流失",
+    )
+    "SHERIFF_PK" -> GameEvent.SheriffPk(day = day, seats = seats.orEmpty())
+    "SHERIFF_BADGE_PASSED" -> GameEvent.SheriffBadgePassed(
+        day = day,
+        fromSeat = requireNotNull(fromSeat) { "SHERIFF_BADGE_PASSED 缺少 fromSeat" },
+        toSeat = targetSeat,
     )
     "GAME_OVER" -> GameEvent.GameOver(
         day = day,

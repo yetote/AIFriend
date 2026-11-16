@@ -144,7 +144,7 @@ class WerewolfPromptTest {
     @Test
     fun `各种播报文案都读得通`() {
         assertTrue(WerewolfPrompt.describe(GameEvent.Dawn(1, emptyList())).contains("平安夜"))
-        assertTrue(WerewolfPrompt.describe(GameEvent.Exiled(2, 4, 5)).contains("4 号被放逐"))
+        assertTrue(WerewolfPrompt.describe(GameEvent.Exiled(2, 4, 5.0)).contains("4 号被放逐"))
         assertTrue(WerewolfPrompt.describe(GameEvent.NoExile(2)).contains("无人被放逐"))
         assertTrue(WerewolfPrompt.describe(GameEvent.HunterShot(2, 5, null)).contains("没有开枪"))
         assertTrue(WerewolfPrompt.describe(GameEvent.HunterShot(2, 5, 7)).contains("带走"))
@@ -203,6 +203,65 @@ class WerewolfPromptTest {
     // ------------------------------------------------------------------
     // 长历史
     // ------------------------------------------------------------------
+
+    /**
+     * 打到第四天：第一天和第二天压成一行，最近两天还是逐条。
+     *
+     * 判据分两边：折叠的那天**细节形状**没了（没有「· 第1天 天亮」这种逐条行），
+     * 但**事实**一个不少（死的是谁、谁被放逐、几票）。
+     */
+    @Test
+    fun `旧天折叠成一行，最近两天仍然逐条`() {
+        val history = listOf(
+            GameEvent.Dawn(day = 1, deadSeats = listOf(8)),
+            GameEvent.Exiled(day = 1, seat = 4, voteCount = 5.0),
+            GameEvent.Dawn(day = 2, deadSeats = emptyList()),
+            GameEvent.NoExile(day = 2),
+            GameEvent.Dawn(day = 3, deadSeats = listOf(6)),
+            GameEvent.Exiled(day = 3, seat = 2, voteCount = 4.0),
+            GameEvent.Dawn(day = 4, deadSeats = emptyList()),
+        )
+        val situation = WerewolfPrompt.publicSituation(standardGame().copy(day = 4, history = history))
+
+        assertTrue("第一天应该被压成一行", situation.contains("第1天：夜里 8 号出局；4 号被放逐（5 票）"))
+        assertTrue("第二天也只有一行", situation.contains("第2天：夜里平安；无人被放逐"))
+        assertFalse("折叠之后不该再有第一天的逐条播报", situation.contains("· 第1天 天亮"))
+        assertFalse("折叠之后不该再有第一天的逐条投票", situation.contains("· 第1天 投票"))
+
+        assertTrue("第三天要逐条保留", situation.contains("· 第3天 天亮：6 号出局"))
+        assertTrue("第四天也要逐条保留", situation.contains("· 第4天 天亮：平安夜"))
+    }
+
+    @Test
+    fun `只打到第二天时一条都不折叠`() {
+        val history = listOf(
+            GameEvent.Dawn(day = 1, deadSeats = listOf(8)),
+            GameEvent.NoExile(day = 1),
+            GameEvent.Dawn(day = 2, deadSeats = emptyList()),
+        )
+        val situation = WerewolfPrompt.publicSituation(standardGame().copy(day = 2, history = history))
+
+        assertTrue(situation.contains("· 第1天 天亮：8 号出局"))
+        assertFalse("两天都在展开窗口内，不该出现折叠行", situation.contains("第1天：夜里"))
+    }
+
+    @Test
+    fun `折叠后的能看出警长、自爆和开枪`() {
+        val history = listOf(
+            GameEvent.SheriffElected(day = 1, seat = 2, votes = 4),
+            GameEvent.WolfExploded(day = 1, seat = 7),
+            GameEvent.SheriffBadgePassed(day = 2, fromSeat = 2, toSeat = 6),
+            GameEvent.HunterShot(day = 2, hunterSeat = 5, targetSeat = 3),
+            GameEvent.Dawn(day = 3, deadSeats = emptyList()),
+            GameEvent.Dawn(day = 4, deadSeats = emptyList()),
+        )
+        val situation = WerewolfPrompt.publicSituation(standardGame().copy(day = 4, history = history))
+
+        assertTrue(situation.contains("2 号当选警长（4 票）"))
+        assertTrue(situation.contains("7 号狼人自爆"))
+        assertTrue(situation.contains("警徽交给 6 号"))
+        assertTrue(situation.contains("猎人 5 号开枪带走 3 号"))
+    }
 
     @Test
     fun `历史很长时身份信息仍然完整`() {

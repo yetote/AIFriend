@@ -25,11 +25,16 @@ sealed interface GameEvent {
         val isPeaceful: Boolean get() = deadSeats.isEmpty()
     }
 
-    /** 投票结果：有人被放逐。 */
+    /**
+     * 投票结果：有人被放逐。
+     *
+     * [voteCount] 是 [Double]：警长的一票算 1.5，得票会出现 3.5 这种值。
+     * 播报里的数字必须和「谁票多」这件事一致，否则玩家会算不明白为什么是他出局。
+     */
     data class Exiled(
         override val day: Int,
         val seat: Int,
-        val voteCount: Int,
+        val voteCount: Double,
     ) : GameEvent
 
     /** 投票结果：平票到底或全员弃票，无人出局。 */
@@ -47,7 +52,7 @@ sealed interface GameEvent {
     data class IdiotRevealed(
         override val day: Int,
         val seat: Int,
-        val voteCount: Int,
+        val voteCount: Double,
     ) : GameEvent
 
     /** 猎人开枪。[targetSeat] 为 null 表示放弃开枪。 */
@@ -55,6 +60,54 @@ sealed interface GameEvent {
         override val day: Int,
         val hunterSeat: Int,
         val targetSeat: Int?,
+    ) : GameEvent
+
+    /**
+     * 狼人白天自爆。
+     *
+     * 这条播报的意义不只是「死了一个人」：它同时宣布**这一天到此为止**——
+     * 没有投票、没有人被放逐，直接进入黑夜。不写清楚，其他人会以为
+     * 自己漏看了一轮投票。
+     */
+    data class WolfExploded(
+        override val day: Int,
+        val seat: Int,
+    ) : GameEvent
+
+    /** 警长选出来了。[votes] 是得票数（警下每人一票，所以是整数）。 */
+    data class SheriffElected(
+        override val day: Int,
+        val seat: Int,
+        val votes: Int,
+    ) : GameEvent
+
+    /**
+     * 本局没有警长。
+     *
+     * [reason] 是引擎给出的短语（「无人上警」「两轮平票」），不用枚举：
+     * 这几个原因都不带状态，只是解释给玩家听，写成字符串反而少一处改动。
+     */
+    data class SheriffVacant(
+        override val day: Int,
+        val reason: String,
+    ) : GameEvent
+
+    /** 警长投票平票，进入 PK：这几个座位再各说一轮，然后重投。 */
+    data class SheriffPk(
+        override val day: Int,
+        val seats: List<Int>,
+    ) : GameEvent
+
+    /**
+     * 警徽移交。[toSeat] 为 null 表示警长把警徽撕了（或没来得及指定就出局）。
+     *
+     * 和 [SheriffVacant] 分开：那个是「从来没选出警长」，这个是「有过，现在没了」。
+     * 复盘里这两件事的差别很大——前者是开局没人上警，后者是警长死了。
+     */
+    data class SheriffBadgePassed(
+        override val day: Int,
+        val fromSeat: Int,
+        val toSeat: Int?,
     ) : GameEvent
 
     /** 游戏结束。到这里才可以公开全部身份。 */

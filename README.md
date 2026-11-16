@@ -19,7 +19,7 @@ Android 端「AI 好友 / AI 智能体团队」应用：用户创建带角色设
 - ✅ **人格模板**：30 个内置人格/角色（娱乐 + 专业四类），创建与编辑时可搜索筛选后一键套用，套用后仍可自由修改
 - ⏳ 流式输出、思考过程展示
 - ✅ **iOS 风格 UI**：全局浅灰蓝渐变底 + 毛玻璃卡片、大圆角、柔和投影，统一到首页 / 1:1 对话 / 聊天室 / 创建与设置 / 全部弹窗
-- ⏳ `feature:werewolf` / `ui:werewolf` 仍是空模块（AI 狼人杀，规划中）
+- ✅ **AI 狼人杀**：六套板子（6/8/9/10/12 人，含守卫、白痴）、人机混合与纯观战、规则由状态机判定、白天串行发言 + 并发投票、狼人先商议再定刀、私有信息按座位隔离、阶段进度、断点续玩、逐日票型与夜间行动复盘
 
 ## 模块
 
@@ -29,9 +29,11 @@ Android 端「AI 好友 / AI 智能体团队」应用：用户创建带角色设
 | `feature:home` | 首页状态、搜索、统计、删除/置顶、导航 |
 | `feature:agent` | 智能体创建/编辑、1:1 会话、`AgentViewModel` / `AgentRoute` |
 | `feature:room` | 聊天室创建/设置、消息与成员、`RoomViewModel` / `RoomRoute` |
+| `feature:werewolf` | 狼人杀规则引擎、编排（发言串行 / 决策并发）、提示词、整局存档、`WerewolfViewModel` / `WerewolfRoute` |
 | `ui:common` | 头像、裁剪、PageInsets、主题 |
 | `ui:agent` | 1:1 对话、创建/编辑、好友列表组件 |
 | `ui:room` | 房间对话、创建、设置 |
+| `ui:werewolf` | 狼人杀配置页、牌桌（两列座位 + 昼夜背景）、复盘页 |
 | `ui:home` | 首页 Compose 组件 |
 | `core:ai` | `IAI` 抽象、各厂商实现、对话与模型 DTO |
 | `core:persona` | 内置人格/角色模板目录，纯数据 + 过滤，无 Android 依赖 |

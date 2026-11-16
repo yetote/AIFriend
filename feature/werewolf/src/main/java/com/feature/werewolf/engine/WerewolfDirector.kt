@@ -276,21 +276,27 @@ class WerewolfDirector(
     // ---------------------------------------------------------------------
 
     /**
-     * 白天讨论，按座位顺序**串行**发言。
+     * 白天讨论，按 [WerewolfGame.discussionOrder] **串行**发言。
      *
      * 必须是串行：后一位要能接上前一位的话，否则一圈下来像各说各的。
      * 每说完一条就追加到 [WerewolfTable.transcript]，下一位拼上下文时自然就能看到。
+     *
+     * 顺序不是「活人按座位升序」：有警长从警长下位起（警长归票位最后说），
+     * 没警长从昨夜死者下位起。规则写在引擎里，这里只照着念。
+     *
+     * 每说完一句都要重新看一眼阶段：狼人可能在这一句里自爆，那样这一天就结束了，
+     * 后面的人不该再被叫起来说话。
      */
     suspend fun discussion(table: WerewolfTable): WerewolfTable {
-        val game = table.game
-        if (game.phase != Phase.DAY_DISCUSSION) return table
-
         var current = table
-        val speakers = game.aliveSeats.sorted()
+        if (current.game.phase != Phase.DAY_DISCUSSION) return current
+
+        val speakers = current.game.discussionOrder
         speakers.forEachIndexed { index, seat ->
+            if (current.game.phase != Phase.DAY_DISCUSSION) return current
             onProgress(
                 WerewolfProgress(
-                    day = game.day,
+                    day = current.game.day,
                     phase = Phase.DAY_DISCUSSION,
                     step = index + 1,
                     total = speakers.size,
@@ -298,20 +304,220 @@ class WerewolfDirector(
                 )
             )
             val text = askSpeech(current, seat)
-            current = current.append(
-                WerewolfMessage(
-                    day = game.day,
-                    phase = Phase.DAY_DISCUSSION,
-                    seat = seat,
-                    kind = MessageKind.SPEECH,
-                    text = text,
-                )
-            )
+            current = current.speakAndMaybeExplode(seat, Phase.DAY_DISCUSSION, text)
             // 说完一个就推一次。下一位要看到的上下文里已经有这句（current 已带），
             // 界面拿到的也是同一份，不存在「显示的和模型看到的不是一回事」
             onTranscript(current)
         }
         return current
+    }
+
+    // ---------------------------------------------------------------------
+    // 警长竞选
+    // ---------------------------------------------------------------------
+
+    /**
+     * 上警报名。全员**并发**表态，互相看不到谁报了名。
+     *
+     * 并发是为了不让后面的座位跟风：串行的话，第 5 个人听到前 4 个都上警了，
+     * 就只会做「我也上」或「那我算了」的从众判断，而这恰恰是唯一不该从众的一步。
+     * 报名结果随后一次性公开——线下本来也是举手，谁都能看见。
+     */
+    suspend fun sheriffSignup(table: WerewolfTable): WerewolfTable {
+        val game = table.game
+        if (game.phase != Phase.DAY_SHERIFF_SIGNUP) return table
+
+        onProgress(WerewolfProgress(game.day, Phase.DAY_SHERIFF_SIGNUP, 0, game.aliveSeats.size))
+        val outcomes = coroutineScope {
+            game.aliveSeats.map { seat -> async { seat to askSheriffSignup(table, seat) } }.awaitAll()
+        }
+        onProgress(WerewolfProgress(game.day, Phase.DAY_SHERIFF_SIGNUP, game.aliveSeats.size, game.aliveSeats.size))
+
+        var next = table
+        outcomes.forEach { (seat, outcome) ->
+            val running = outcome.value.target == seat
+            next = next.append(
+                WerewolfMessage(
+                    day = game.day,
+                    phase = Phase.DAY_SHERIFF_SIGNUP,
+                    seat = seat,
+                    kind = MessageKind.SPEECH,
+                    text = (if (running) "我上警。" else "我不上警。") + outcome.value.reason,
+                )
+            )
+        }
+        val runners = outcomes.filter { (seat, outcome) -> outcome.value.target == seat }
+            .map { it.first }
+            .toSet()
+        val after = game.signUpSheriff(runners)
+        return next.copy(game = after).syncBroadcasts(game).also { onTranscript(it) }
+    }
+
+    /**
+     * 竞选发言。候选人按座位顺序各说一段，平票 PK 时也是这里，只是人少了。
+     *
+     * 候选人在这一句里也可以自爆（把竞选搅乱是狼队的正当打法），
+     * 所以每说完一个都要检查阶段。
+     */
+    suspend fun sheriffSpeech(table: WerewolfTable): WerewolfTable {
+        var current = table
+        if (current.game.phase != Phase.DAY_SHERIFF_SPEECH) return current
+        val speakers = current.game.sheriffCandidates.sorted()
+        val pk = current.game.sheriffRound > 1
+
+        speakers.forEachIndexed { index, seat ->
+            if (current.game.phase != Phase.DAY_SHERIFF_SPEECH) return current
+            onProgress(
+                WerewolfProgress(
+                    day = current.game.day,
+                    phase = Phase.DAY_SHERIFF_SPEECH,
+                    step = index + 1,
+                    total = speakers.size,
+                    seat = seat,
+                    note = if (pk) "平票 PK" else null,
+                )
+            )
+            val text = askSpeech(
+                current,
+                seat,
+                task = if (pk) {
+                    "你和另一位候选人平票了，现在是 PK 发言。" +
+                        "说清楚为什么警下应该把票投给你，而不是另一位。"
+                } else {
+                    "现在轮到你竞选发言。" +
+                        "用 2-3 句说清你的判断和当选后的思路，让警下愿意把票投给你。"
+                },
+            )
+            current = current.speakAndMaybeExplode(seat, Phase.DAY_SHERIFF_SPEECH, text)
+            onTranscript(current)
+        }
+
+        // 中途自爆的话阶段已经变了，这里不能再推进投票
+        return if (current.game.phase == Phase.DAY_SHERIFF_SPEECH) {
+            current.copy(game = current.game.beginSheriffVote())
+        } else {
+            current
+        }
+    }
+
+    /**
+     * 警下投票选警长。**只有没上警的人投**，并发收集，互相看不到。
+     *
+     * 平票时 [WerewolfGame.castSheriffVotes] 把阶段退回竞选发言做 PK，
+     * 这个循环因此只走一圈；留着 while 是为了 PK 之后再平票时能自然收尾。
+     */
+    suspend fun sheriffVote(table: WerewolfTable): WerewolfTable {
+        var current = table
+        var rounds = 0
+        while (current.game.phase == Phase.DAY_SHERIFF_VOTE && rounds < WerewolfGame.SHERIFF_MAX_ROUNDS) {
+            val game = current.game
+            val voters = game.sheriffVoters
+            val candidates = game.sheriffCandidates
+
+            if (voters.isEmpty()) {
+                // 全员上警：没人有资格投票。引擎会直接判「没有警长」
+                val after = game.castSheriffVotes(emptyMap())
+                current = current.copy(game = after).syncBroadcasts(game)
+                break
+            }
+
+            onProgress(
+                WerewolfProgress(
+                    day = game.day,
+                    phase = Phase.DAY_SHERIFF_VOTE,
+                    step = 0,
+                    total = voters.size,
+                    note = if (game.sheriffRound > 1) "PK 后重投" else null,
+                )
+            )
+            val outcomes = coroutineScope {
+                voters.map { seat -> async { seat to askSheriffVote(current, seat, candidates) } }.awaitAll()
+            }
+            onProgress(WerewolfProgress(game.day, Phase.DAY_SHERIFF_VOTE, voters.size, voters.size))
+
+            var next = current
+            outcomes.forEach { (seat, outcome) ->
+                val target = outcome.value.target
+                next = next.append(
+                    WerewolfMessage(
+                        day = game.day,
+                        phase = Phase.DAY_SHERIFF_VOTE,
+                        seat = seat,
+                        kind = MessageKind.VOTE,
+                        text = (if (target == null) "我弃票。" else "我选 $target 号当警长。") + outcome.value.reason,
+                    )
+                )
+            }
+            val votes = outcomes.associate { (seat, outcome) -> seat to outcome.value.target }
+            val after = game.castSheriffVotes(votes)
+            current = next.copy(game = after).syncBroadcasts(game)
+            onTranscript(current)
+            rounds++
+        }
+        return current
+    }
+
+    // ---------------------------------------------------------------------
+    // 遗言
+    // ---------------------------------------------------------------------
+
+    /**
+     * 遗言。按 [WerewolfGame.pendingLastWords] 的顺序一个个说。
+     *
+     * 死者说话不影响任何规则状态，但有两件事必须走这条路：
+     * 1. 遗言是**公开信息**，后面投票的人要听得到；
+     * 2. 警长的遗言里要交警徽——那是唯一能拿到他本人意愿的时机。
+     */
+    suspend fun lastWords(table: WerewolfTable): WerewolfTable {
+        var current = table
+        if (current.game.phase != Phase.DAY_LAST_WORDS) return current
+
+        val pending = current.game.pendingLastWords
+        pending.forEachIndexed { index, seat ->
+            if (current.game.phase != Phase.DAY_LAST_WORDS) return current
+            onProgress(
+                WerewolfProgress(
+                    day = current.game.day,
+                    phase = Phase.DAY_LAST_WORDS,
+                    step = index + 1,
+                    total = pending.size,
+                    seat = seat,
+                )
+            )
+            if (current.game.canTransferBadge(seat)) {
+                val outcome = askBadge(current, seat)
+                val target = outcome.value.target
+                val head = if (target == null) "我把警徽撕了。" else "我把警徽交给 $target 号。"
+                current = current.append(
+                    WerewolfMessage(
+                        day = current.game.day,
+                        phase = Phase.DAY_LAST_WORDS,
+                        seat = seat,
+                        kind = MessageKind.SPEECH,
+                        text = head + outcome.value.reason,
+                    )
+                )
+                val before = current.game
+                current = current.copy(game = before.transferBadge(seat, target)).syncBroadcasts(before)
+            } else {
+                val text = askSpeech(
+                    current,
+                    seat,
+                    task = "你已经出局了，现在说遗言。用 1-3 句交代你的判断，提醒活着的人别投错。",
+                )
+                current = current.append(
+                    WerewolfMessage(
+                        day = current.game.day,
+                        phase = Phase.DAY_LAST_WORDS,
+                        seat = seat,
+                        kind = MessageKind.SPEECH,
+                        text = text,
+                    )
+                )
+            }
+            onTranscript(current)
+        }
+        return current.copy(game = current.game.finishLastWords())
     }
 
     /**
@@ -421,11 +627,20 @@ class WerewolfDirector(
                 Phase.NIGHT_WOLF -> nightWolf(current)
                 Phase.NIGHT_SEER -> nightSeer(current)
                 Phase.NIGHT_WITCH -> nightWitch(current)
+                Phase.DAY_SHERIFF_SIGNUP -> sheriffSignup(current)
+                Phase.DAY_SHERIFF_SPEECH -> sheriffSpeech(current)
+                Phase.DAY_SHERIFF_VOTE -> sheriffVote(current)
                 Phase.DAY_DISCUSSION -> {
                     val discussed = discussion(current)
-                    discussed.copy(game = discussed.game.beginVote())
+                    // 讨论里可能有人自爆，那样这一天已经结束了，不能再开投票
+                    if (discussed.game.phase == Phase.DAY_DISCUSSION) {
+                        discussed.copy(game = discussed.game.beginVote())
+                    } else {
+                        discussed
+                    }
                 }
                 Phase.DAY_VOTE -> vote(current)
+                Phase.DAY_LAST_WORDS -> lastWords(current)
                 Phase.HUNTER_SHOOT -> hunterShoot(current)
                 // 只有 winner 非空才会是 FINISHED，循环条件已经挡住
                 Phase.FINISHED -> current
@@ -511,6 +726,45 @@ class WerewolfDirector(
         )
     }
 
+    private suspend fun askSheriffSignup(table: WerewolfTable, seat: Int): StructuredOutcome<VoteChoice> {
+        val game = table.game
+        return ask(
+            table = table,
+            seat = seat,
+            spec = WerewolfDecisions.sheriffSignup(game, seat),
+            // 不上警永远合法，也比「兜底上一个警」安全：警上的人没有警长投票权
+            fallback = { VoteChoice(target = null, reason = "我先看看局势。") },
+            task = "请决定要不要上警。",
+        )
+    }
+
+    private suspend fun askSheriffVote(
+        table: WerewolfTable,
+        seat: Int,
+        candidates: List<Int>,
+    ): StructuredOutcome<VoteChoice> {
+        val game = table.game
+        return ask(
+            table = table,
+            seat = seat,
+            spec = WerewolfDecisions.sheriffVote(game, candidates),
+            fallback = { WerewolfDecisions.fallbackVote(game, seat, candidates, random) },
+            task = "请投出你的警长票。",
+        )
+    }
+
+    private suspend fun askBadge(table: WerewolfTable, seat: Int): StructuredOutcome<VoteChoice> {
+        val game = table.game
+        return ask(
+            table = table,
+            seat = seat,
+            spec = WerewolfDecisions.badgeTransfer(game, seat),
+            // 兜底撕掉警徽，而不是随便找个人接手：交错的代价比没有警长大得多
+            fallback = { VoteChoice(target = null, reason = "我来不及交代了。") },
+            task = "请在遗言里交代警徽交给谁。",
+        )
+    }
+
     /** 自由发言走普通 chat，不需要 JSON。狼人商议也走这条路。 */
     private suspend fun askSpeech(
         table: WerewolfTable,
@@ -556,24 +810,117 @@ class WerewolfDirector(
     /**
      * 拼本次请求的 user 消息：当天进程 + 交付给模型的任务。
      *
-     * 只取当天的消息，因为跨天的信息已经写进 system 的公开播报了；
-     * 再取最近若干条，避免夜聊越攒越长把当天的发言挤出去。
+     * 只取当天的消息，因为跨天的信息已经写进 system 的公开播报了。
+     * 顺序是**先把投票压成票型，再按字数裁剪**（见 [renderDay] / [recentlySaid]）——
+     * 反过来先裁再压，预算就被一堆「我投 3 号。因为……」提前吃掉了，
+     * 当天最早的那几句发言会在压缩之前就已经被丢掉。
      */
     private fun context(table: WerewolfTable, seat: Int, task: String): String = buildString {
-        val recent = table.transcriptFor(seat)
-            .filter { it.day == table.game.day }
-            .takeLast(MAX_CONTEXT_MESSAGES)
-        if (recent.isNotEmpty()) {
+        val lines = recentlySaid(renderDay(table.transcriptFor(seat).filter { it.day == table.game.day }))
+        if (lines.isNotEmpty()) {
             append("【本日进程】\n")
-            recent.forEach { message ->
-                append(if (message.seat == null) "上帝" else "${message.seat} 号")
-                append("：")
-                append(message.text)
-                append("\n")
-            }
+            lines.forEach { append(it).append("\n") }
             append("\n")
         }
         append(task)
+    }
+
+    /**
+     * 把当天的消息渲染成行，**投票压成一行票型**。
+     *
+     * 一条投票原文是「我投 3 号。因为他昨天说漏了。」，二三十字，12 个人就是三四百字；
+     * 压成 `1→3（因为他昨天说漏了）、2→3（跟票）` 之后只剩几十字。
+     * 省下来的预算全给发言——真正需要原文的只有发言，票型本身才是推理依据。
+     *
+     * 同一阶段连续的投票合成一行（警长投票与放逐票分开），因为它们是并发发生的，
+     * 逐条列出来反而暗示了先后。
+     */
+    private fun renderDay(messages: List<WerewolfMessage>): List<String> {
+        val lines = mutableListOf<String>()
+        var index = 0
+        while (index < messages.size) {
+            val message = messages[index]
+            if (message.kind != MessageKind.VOTE) {
+                lines += "${message.seat?.let { "$it 号" } ?: "上帝"}：${message.text}"
+                index++
+                continue
+            }
+            val phase = message.phase
+            val ballots = mutableListOf<String>()
+            while (index < messages.size &&
+                messages[index].kind == MessageKind.VOTE &&
+                messages[index].phase == phase
+            ) {
+                ballots += ballotOf(messages[index])
+                index++
+            }
+            val head = if (phase == Phase.DAY_SHERIFF_VOTE) "警长投票" else "投票"
+            lines += "$head：" + ballots.joinToString("、")
+        }
+        return lines
+    }
+
+    /**
+     * 一条投票压成「3→5（理由）」。
+     *
+     * 投票文本由 [voteText] 与警长投票那两处生成，格式是固定的。解析不出来就退回原文前
+     * 十几字——宁可这一票读起来别扭，也不能因为改了文案就让整条投票从上下文里消失。
+     */
+    private fun ballotOf(message: WerewolfMessage): String {
+        val seat = message.seat ?: return message.text
+        val match = BALLOT.find(message.text)
+            ?: return "$seat→" + message.text.take(VOTE_REASON_CHARS)
+        val target = match.groupValues[1].ifEmpty { match.groupValues[2] }
+        val reason = match.groupValues[3].trim().take(VOTE_REASON_CHARS)
+        val head = "$seat→" + target.ifEmpty { "弃票" }
+        return if (reason.isEmpty()) head else "$head（$reason）"
+    }
+
+    /**
+     * 当天渲染好的行里，最后能塞进一次请求的那一段。
+     *
+     * 按字数裁而不是按条数：一句 200 字的发言和一行票型在上下文里差了十倍，
+     * 按条数算对谁都不公平。压完票之后一天的正文通常在一千字上下，
+     * [MAX_CONTEXT_CHARS] 这条线是留给「模型今天话特别多」那种情况的。
+     *
+     * 最后 [MIN_CONTEXT_MESSAGES] 行无条件保留：宁可这一次略超预算，
+     * 也不能把「刚说完的话」裁掉——模型会立刻开始自相矛盾。
+     */
+    private fun recentlySaid(lines: List<String>): List<String> {
+        val kept = ArrayDeque<String>()
+        var chars = 0
+        for (line in lines.asReversed()) {
+            val size = line.length + 1
+            if (kept.size >= MIN_CONTEXT_MESSAGES && chars + size > MAX_CONTEXT_CHARS) break
+            kept.addFirst(line)
+            chars += size
+        }
+        return kept
+    }
+
+    /**
+     * 记一条发言，并识别「自爆」。
+     *
+     * 自爆不走结构化决策，而是让狼在**发言开头写一个标记**。理由：自爆是一句话，
+     * 不是一次选择——如果为了它再加一次 JSON 请求，每只狼每天都要多调一次模型，
+     * 而绝大多数时候答案是「不爆」。用标记的话，自爆的成本是零，误判的成本也只是
+     * 一句被剥掉前缀的发言。
+     *
+     * 标记只在「真的是能自爆的狼」时才生效：好人写了这四个字，不该让他凭空出局，
+     * 也不该把这句话吃掉——那是他自己说的，就让它留在记录里。
+     */
+    private fun WerewolfTable.speakAndMaybeExplode(seat: Int, phase: Phase, raw: String): WerewolfTable {
+        val marker = EXPLODE_MARKERS.firstOrNull { raw.trimStart().startsWith(it) }
+        val exploding = marker != null && game.canExplode(seat)
+        val text = if (exploding) raw.trimStart().removePrefix(marker!!).trim() else raw
+        var next = append(
+            WerewolfMessage(day = game.day, phase = phase, seat = seat, kind = MessageKind.SPEECH, text = text)
+        )
+        if (exploding) {
+            val before = game
+            next = next.copy(game = before.wolfExplode(seat)).syncBroadcasts(before)
+        }
+        return next
     }
 
     /**
@@ -630,11 +977,40 @@ class WerewolfDirector(
     }
 
     private companion object {
-        /** 单次请求带几条当天消息。够接上前文，又不会把上下文撑太长。 */
-        const val MAX_CONTEXT_MESSAGES = 24
+        /**
+         * 当天进程的字数预算。
+         *
+         * 12 人局一句发言上限 [MAX_SPEECH_LENGTH] 字，一天最多 12 条发言加 12 张票再加几条播报。
+         * 投票压成票型之后，典型一天只剩一千字上下，这条线留给「模型今天话特别多」的情况。
+         */
+        const val MAX_CONTEXT_CHARS = 3200
+
+        /** 无论超没超预算都要留下的最近几行，保证「刚说完的话」一定在。 */
+        const val MIN_CONTEXT_MESSAGES = 12
+
+        /**
+         * 票型里每个人理由保留的字数。
+         *
+         * 再长就是重复白天的发言了，而票型真正要回答的是「谁和谁投在一起」。
+         */
+        const val VOTE_REASON_CHARS = 15
+
+        /**
+         * 投票消息的固定格式，由 [voteText] 与警长投票两处生成。
+         *
+         * 三个分支对应三种文本：`我投 3 号。`、`我选 3 号当警长。`、`我弃票。`，
+         * 句号之后全部是理由。
+         */
+        val BALLOT = Regex("""^我(?:投 (\d+) 号|选 (\d+) 号当警长|弃票)。(.*)$""", RegexOption.DOT_MATCHES_ALL)
 
         /** 一句发言的长度上限。模型偶尔会写一整段小作文。 */
         const val MAX_SPEECH_LENGTH = 200
+
+        /**
+         * 自爆标记。模型写成全角、半角方括号都认，中文括号也认——
+         * 这几个写法都是它自己会写出来的，多认一种就少一次「明明爆了却没算」。
+         */
+        val EXPLODE_MARKERS = listOf("【自爆】", "[自爆]", "（自爆）", "(自爆)")
 
         /** 整局的调度步数上限，防止某处状态不推进导致死循环。 */
         const val MAX_STEPS = 500

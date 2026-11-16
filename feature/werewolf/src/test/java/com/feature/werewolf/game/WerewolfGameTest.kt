@@ -67,7 +67,7 @@ private fun WerewolfGame.atWolfVote(): WerewolfGame =
 
     /** 走完一个白天：全员弃票，无人出局，进入下一夜。 */
     private fun skipDay(game: WerewolfGame): WerewolfGame {
-        val voting = game.beginVote()
+        val voting = game.atDiscussion().beginVote()
         return voting.castVotes(voting.aliveSeats.associateWith { null })
     }
 
@@ -123,7 +123,9 @@ private fun WerewolfGame.atWolfVote(): WerewolfGame =
         mode = mode.seerCheck(1)
         mode = mode.witchAct(heal = false)
 
-        assertEquals(Phase.DAY_DISCUSSION, mode.phase)
+        // 首夜死者要留遗言，遗言说完才进白天讨论
+        assertEquals(Phase.DAY_LAST_WORDS, mode.phase)
+        assertEquals(listOf(7), mode.pendingLastWords)
         val dawn = mode.history.filterIsInstance<GameEvent.Dawn>().single()
         assertEquals(listOf(7), dawn.deadSeats)
         assertFalse(mode.playerAt(7).alive)
@@ -271,7 +273,9 @@ private fun WerewolfGame.atWolfVote(): WerewolfGame =
         mode = mode.hunterShoot(1)
         assertFalse(mode.playerAt(1).alive)
         assertEquals(DeathCause.HUNTER_SHOOT, mode.playerAt(1).deathCause)
-        assertEquals(Phase.DAY_DISCUSSION, mode.phase)
+        // 天亮被刀的猎人也算首夜死者：枪开完了，遗言还在
+        assertEquals(Phase.DAY_LAST_WORDS, mode.phase)
+        assertEquals(listOf(6), mode.pendingLastWords)
         assertEquals(1, mode.day)
     }
 
@@ -279,7 +283,9 @@ private fun WerewolfGame.atWolfVote(): WerewolfGame =
     fun `猎人被女巫毒死不能开枪`() {
         val mode = playNight(game(standard9), victim = 7, poison = 6)
 
-        assertEquals(Phase.DAY_DISCUSSION, mode.phase)
+        // 首夜死了两个（7 号被刀、6 号被毒），遗言按座位顺序排
+        assertEquals(Phase.DAY_LAST_WORDS, mode.phase)
+        assertEquals(listOf(6, 7), mode.pendingLastWords)
         assertNull(mode.pendingHunterSeat)
         assertEquals(DeathCause.WITCH_POISON, mode.playerAt(6).deathCause)
     }
@@ -288,9 +294,15 @@ private fun WerewolfGame.atWolfVote(): WerewolfGame =
     fun `猎人被票出可以开枪，之后直接进入下一夜`() {
         var mode = game(standard9)
         mode = playNight(mode, victim = 7)
-        mode = mode.beginVote()
+        mode = mode.atDiscussion().beginVote()
         mode = mode.castVotes(mode.aliveSeats.associateWith { 6 })
 
+        // 被票出的猎人先留遗言，再开枪——枪是他死前最后一张牌
+        assertEquals(Phase.DAY_LAST_WORDS, mode.phase)
+        assertEquals(listOf(6), mode.pendingLastWords)
+        assertEquals(Phase.HUNTER_SHOOT, mode.afterLastWordsPhase)
+
+        mode = mode.finishLastWords()
         assertEquals(Phase.HUNTER_SHOOT, mode.phase)
         assertEquals(Phase.NIGHT_WOLF, mode.afterHunterPhase)
 
@@ -307,9 +319,9 @@ private fun WerewolfGame.atWolfVote(): WerewolfGame =
     fun `狼人全部出局则好人获胜`() {
         var mode = game(listOf(WEREWOLF, SEER, VILLAGER, VILLAGER))
         mode = playNight(mode, victim = 3) // 3 号平民
-        assertEquals(Phase.DAY_DISCUSSION, mode.phase)
+        assertEquals(Phase.DAY_LAST_WORDS, mode.phase)
 
-        mode = mode.beginVote()
+        mode = mode.atDiscussion().beginVote()
         mode = mode.castVotes(mapOf(1 to 1, 2 to 1, 4 to 1))
 
         assertEquals(Faction.GOOD, mode.winner)
@@ -338,14 +350,14 @@ private fun WerewolfGame.atWolfVote(): WerewolfGame =
         mode = mode.seerCheck(1)
 
         assertNull(mode.winner)
-        assertEquals(Phase.DAY_DISCUSSION, mode.phase)
+        assertEquals(Phase.DAY_LAST_WORDS, mode.phase)
     }
 
     @Test
     fun `游戏结束后拒绝继续行动`() {
         var mode = game(listOf(WEREWOLF, SEER, VILLAGER, VILLAGER))
         mode = playNight(mode, victim = 3)
-        mode = mode.beginVote().castVotes(mapOf(1 to 1, 2 to 1, 4 to 1))
+        mode = mode.atDiscussion().beginVote().castVotes(mapOf(1 to 1, 2 to 1, 4 to 1))
         assertEquals(Phase.FINISHED, mode.phase)
 
         val finished = mode
@@ -367,7 +379,7 @@ private fun WerewolfGame.atWolfVote(): WerewolfGame =
         )
         var mode = game(sixWithWitch, config)
         mode = playNight(mode, victim = 5) // 存活 1/2/3/4/6
-        mode = mode.beginVote()
+        mode = mode.atDiscussion().beginVote()
 
         // 3 号 2 票、1 号 2 票 → 平票，候选人收窄到 1 和 3
         mode = mode.castVotes(mapOf(1 to 3, 2 to 3, 3 to 1, 4 to 1, 6 to 4))
@@ -388,10 +400,33 @@ private fun WerewolfGame.atWolfVote(): WerewolfGame =
     }
 
     @Test
+    fun `加投时牌桌票数只算这一轮，不叠加已作废的上一轮`() {
+        // 牌桌的票数角标读的是 game.ballots，复盘页读的是 game.voteRounds 的最后一轮。
+        // 两处必须说同一件事：第二轮 5 个人投票就该是 5 张票，不是 10 张
+        val config = WerewolfConfig(
+            composition = sixWithWitch.groupingBy { it }.eachCount(),
+            maxVoteRounds = 3,
+        )
+        var mode = game(sixWithWitch, config)
+        mode = playNight(mode, victim = 5) // 存活 1/2/3/4/6
+        mode = mode.atDiscussion().beginVote()
+
+        mode = mode.castVotes(mapOf(1 to 3, 2 to 3, 3 to 1, 4 to 1, 6 to 4))
+        assertEquals("平票当场就把轮次推到下一轮", 2, mode.voteRound)
+        assertEquals(5, mode.ballots.size)
+
+        mode = mode.castVotes(mapOf(1 to 3, 2 to 3, 3 to 1, 4 to 1, 6 to null))
+        assertEquals("又平票，进第三轮", 3, mode.voteRound)
+        assertEquals("只装第三轮开始前的这一轮票", 5, mode.ballots.size)
+        // 逐轮历史仍然是完整的，复盘要靠它
+        assertEquals(listOf(5, 5), mode.voteRounds.map { it.ballots.size })
+    }
+
+    @Test
     fun `没有警长时平票直接无人出局，没有第二次投票`() {
         var mode = game(sixWithWitch)
         mode = playNight(mode, victim = 5) // 存活 1/2/3/4/6
-        mode = mode.beginVote()
+        mode = mode.atDiscussion().beginVote()
 
         // 3 号 2 票、1 号 2 票：平票，但本板子没有警长，没人能追加 PK
         mode = mode.castVotes(mapOf(1 to 3, 2 to 3, 3 to 1, 4 to 1, 6 to 4))
@@ -421,18 +456,17 @@ private fun WerewolfGame.atWolfVote(): WerewolfGame =
         // 2 狼 4 好人，刀掉一个平民后是 2v3，还没到绑票线，白天照常打
         val roles = listOf(WEREWOLF, WEREWOLF, SEER, VILLAGER, VILLAGER, VILLAGER)
         var mode = game(roles)
-
         mode = playNight(mode, victim = 5)
 
         assertNull(mode.winner)
-        assertEquals(Phase.DAY_DISCUSSION, mode.phase)
+        assertEquals(Phase.DAY_LAST_WORDS, mode.phase)
     }
 
     @Test
     fun `全员弃票则无人出局`() {
         var mode = game(standard9)
         mode = playNight(mode, victim = 7)
-        mode = mode.beginVote()
+        mode = mode.atDiscussion().beginVote()
 
         val voters = mode.aliveSeats
         mode = mode.castVotes(voters.associateWith { null })

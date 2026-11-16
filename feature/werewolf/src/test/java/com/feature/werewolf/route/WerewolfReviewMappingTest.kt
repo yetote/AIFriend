@@ -78,6 +78,23 @@ class WerewolfReviewMappingTest {
                     )
                 }
 
+                Phase.DAY_SHERIFF_SIGNUP ->
+                    game.signUpSheriff(game.aliveSeats.filter { rng.nextBoolean() }.toSet())
+
+                Phase.DAY_SHERIFF_SPEECH -> game.beginSheriffVote()
+
+                Phase.DAY_SHERIFF_VOTE -> {
+                    val candidates = game.sheriffCandidates
+                    game.castSheriffVotes(
+                        game.sheriffVoters.associateWith {
+                            if (candidates.isEmpty() || rng.nextInt(5) == 0) null
+                            else candidates.random(rng)
+                        },
+                    )
+                }
+
+                Phase.DAY_LAST_WORDS -> game.finishLastWords()
+
                 Phase.HUNTER_SHOOT -> game.hunterShoot(game.aliveSeats.randomOrNull(rng))
 
                 Phase.FINISHED -> game

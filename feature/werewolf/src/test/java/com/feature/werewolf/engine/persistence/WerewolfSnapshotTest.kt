@@ -76,7 +76,7 @@ class WerewolfSnapshotTest {
             afterHunterPhase = Phase.DAY_DISCUSSION,
             history = listOf(
                 GameEvent.Dawn(day = 1, deadSeats = listOf(5, 7)),
-                GameEvent.Exiled(day = 2, seat = 2, voteCount = 5),
+                GameEvent.Exiled(day = 2, seat = 2, voteCount = 5.0),
                 GameEvent.NoExile(day = 2),
                 GameEvent.HunterShot(day = 3, hunterSeat = 5, targetSeat = 7),
                 GameEvent.GameOver(day = 3, winner = Faction.WEREWOLF),
@@ -99,7 +99,7 @@ class WerewolfSnapshotTest {
                     ballots = listOf(Ballot(1, 2), Ballot(4, 2)),
                     outcome = VoteOutcome.EXILED,
                     exiledSeat = 2,
-                    exileVotes = 2,
+                    exileVotes = 2.0,
                 ),
             ),
         )
@@ -163,7 +163,7 @@ class WerewolfSnapshotTest {
             idiotRevealed = true,
             history = listOf(
                 GameEvent.Dawn(day = 1, deadSeats = listOf(5)),
-                GameEvent.IdiotRevealed(day = 1, seat = 4, voteCount = 4),
+                GameEvent.IdiotRevealed(day = 1, seat = 4, voteCount = 4.0),
             ),
             nights = listOf(
                 NightRecord(day = 1, wolfTarget = 5, guarded = 6, healed = false, deaths = listOf(5)),
@@ -175,7 +175,7 @@ class WerewolfSnapshotTest {
                     ballots = listOf(Ballot(1, 4), Ballot(2, 4), Ballot(3, 4), Ballot(6, 4)),
                     outcome = VoteOutcome.IDIOT_REVEALED,
                     exiledSeat = 4,
-                    exileVotes = 4,
+                    exileVotes = 4.0,
                 ),
             ),
         )

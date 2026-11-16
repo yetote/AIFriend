@@ -85,6 +85,23 @@ data class VoteRound(
     val outcome: VoteOutcome,
     /** [outcome] 为 [VoteOutcome.EXILED] 时是被放逐的人。 */
     val exiledSeat: Int? = null,
-    /** 出局者得了几票。 */
-    val exileVotes: Int = 0,
+    /**
+     * 出局者得了几票。
+     *
+     * 是 [Double] 而不是 [Int]：警长一票算 1.5，票数会出现 3.5 这种值。
+     * 用半点制在引擎里累加（见 `WerewolfGame.voteWeight`），这里只是把它还原成票数，
+     * 所以不会出现 0.1+0.2 那种浮点尾数。
+     */
+    val exileVotes: Double = 0.0,
 )
+
+/**
+ * 票数的显示形式：整数票不写小数点，半点票写一位小数。
+ *
+ * 引擎内部用「半点」当单位（平民 2 点、警长 3 点），所以这里的值一定落在 .0 / .5 上，
+ * 直接判断小数部分即可，不需要四舍五入。
+ */
+fun formatVotes(value: Double): String {
+    val whole = value.toInt()
+    return if (value == whole.toDouble()) whole.toString() else value.toString()
+}

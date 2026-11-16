@@ -51,6 +51,47 @@ data class WerewolfGame(
     /** 待开枪的猎人座位。非 null 时 [phase] 必为 [Phase.HUNTER_SHOOT]。 */
     val pendingHunterSeat: Int? = null,
     /**
+     * 警长座位。null 表示此刻没有警长：没开警长、还没选出来，或者警徽已经流失。
+     *
+     * 警长死了之后这个字段**不会立刻清空**——如果他有遗言，警徽要等他在遗言里
+     * 指定继任者；指定的那一刻才改。没指定（或根本没遗言）才作废，
+     * 由 `dropDeadBadge()` 统一处理。
+     */
+    val sheriffSeat: Int? = null,
+    /**
+     * 上警的座位，按座位号排序。第二轮 PK 时会收窄成平票的那几个。
+     *
+     * 它决定「谁发言」和「谁不能投票」——警上的人不参与警长投票，这是规则。
+     */
+    val sheriffCandidates: List<Int> = emptyList(),
+    /**
+     * 上过警的全部座位，PK 收窄 [sheriffCandidates] 时它不变。
+     *
+     * 单独留一份，是因为「谁上过警」和「这轮谁在竞选」是两件事：
+     * PK 只在平票的两人之间进行，但**没进 PK 的其他人依然是警上的人，依然不能投票**。
+     * 只留一份的话，第一轮被淘汰的候选人会莫名其妙拿回选票。
+     */
+    val sheriffRunners: List<Int> = emptyList(),
+    /** 警长选举轮次：1 首次投票，2 平票后的 PK。 */
+    val sheriffRound: Int = 1,
+    /** 警长选举是否已经办过。第 1 天办过一次就不再办，无人上警也算办过。 */
+    val sheriffElectionDone: Boolean = false,
+    /**
+     * 待发表遗言的座位，按顺序处理。
+     *
+     * 这是**调度队列**，不是规则状态：遗言说什么都不改变局面，
+     * 但轮到谁、还要说几个，编排层必须知道，否则天亮之后谁先开口就只能靠猜。
+     */
+    val pendingLastWords: List<Int> = emptyList(),
+    /**
+     * 遗言结束后去哪。
+     *
+     * 三种去处：天亮死者的遗言之后是白天讨论；被放逐者的遗言之后是黑夜；
+     * 被放逐的猎人先遗言、再开枪，所以也可能是 [Phase.HUNTER_SHOOT]。
+     * 用一个字段而不是按阶段现推，是因为「遗言说完了」这件事本身不携带信息。
+     */
+    val afterLastWordsPhase: Phase = Phase.DAY_DISCUSSION,
+    /**
      * 猎人开枪结算完之后去哪。天亮时猎人被刀，后面接着白天讨论；
      * 白天被票出，后面直接进入下一夜。两者不能用同一个默认值。
      */
@@ -109,13 +150,85 @@ data class WerewolfGame(
     /**
      * 有资格投票的座位。
      *
-     * 翻过牌的白痴不在里面：他已经亮明身份、不能再影响票数。**被投的候选也一并排除**，
-     * 否则会出现「投他→翻牌→再投他」的死循环，一个永远出不了局的座位会把白天拖住。
+     * 翻过牌的白痴不在里面：他已经亮明身份、不能再影响票数。
+     *
+     * 要注意「不能投票」和「不能被投」是同一件事的两种说法，但**不是同一处代码**：
+     * 这里只负责前者，后者靠 [castVotes] 用 `voteCandidates ?: votingSeats` 收窄候选。
+     * 两处都问同一个集合，所以「投他→翻牌→再投他」的循环才闭合——白痴一旦翻开，
+     * 既投不了别人，也不再是候选。只改其中一处会重新打开那个死循环。
      */
     val votingSeats: List<Int>
         get() = alivePlayers
             .filter { !(it.role == WerewolfRole.IDIOT && idiotRevealed) }
             .map { it.seat }
+
+    // ---------------------------------------------------------------------
+    // 警长与发言顺序
+    // ---------------------------------------------------------------------
+
+    /** 还活着的警长。警长死了但警徽还没移交时，这里给 null。 */
+    val aliveSheriffSeat: Int?
+        get() = sheriffSeat?.takeIf { seat -> playerAt(seat).alive }
+
+    /**
+     * 这个座位的一票值几个半点：平民 2 点（1 票），警长 3 点（1.5 票）。
+     *
+     * 用半点做单位而不是 Double：票数会出现 1.5，如果直接浮点累加，
+     * 「3 票 vs 3.5 票」这种比较迟早会栽在 0.30000000000000004 上。
+     */
+    fun voteWeight(seat: Int): Int = if (seat == sheriffSeat) 3 else 2
+
+    /**
+     * 白天发言顺序。
+     *
+     * 两条线下惯例，按优先级：
+     * 1. **有警长从警长下位起**——警长最后一个发言。他是归票位，先说完就等于
+     *    把自己的判断摊在桌上，后面的人全在顺着他说。
+     * 2. 没警长从**昨夜死者的下位**起。让紧挨着死者的人先开口，是线下最自然的起手，
+     *    因为他们最先看到尸体、也最容易被怀疑。
+     * 3. 都没有就从 1 号起。
+     *
+     * 返回的是**从起点绕一圈**的完整顺序（越过最大座位号后回到最小的），
+     * 不是「排好序的活人」——差一个绕圈，7 号之后的 1 号就会被漏掉。
+     */
+    val discussionOrder: List<Int>
+        get() {
+            val alive = aliveSeats.sorted()
+            if (alive.isEmpty()) return emptyList()
+            val anchor = aliveSheriffSeat ?: lastDawnDeadSeats.firstOrNull()
+            if (anchor == null) return alive
+            val start = alive.firstOrNull { it > anchor } ?: alive.first()
+            return alive.filter { it >= start } + alive.filter { it < start }
+        }
+
+    /** 今天天亮时死的人。只用来定发言起点和遗言，不参与判定。 */
+    private val lastDawnDeadSeats: List<Int>
+        get() = history.lastOrNull { it is GameEvent.Dawn && it.day == day }
+            ?.let { it as GameEvent.Dawn }
+            ?.deadSeats
+            .orEmpty()
+
+    /** 此刻还有没有遗言没说完。 */
+    val hasPendingLastWords: Boolean get() = pendingLastWords.isNotEmpty()
+
+    /** 这个座位此刻能不能自爆：白天的发言环节、活着、且是狼。 */
+    fun canExplode(seat: Int): Boolean =
+        (phase == Phase.DAY_DISCUSSION || phase == Phase.DAY_SHERIFF_SPEECH) &&
+            playerAt(seat).alive &&
+            playerAt(seat).role == WerewolfRole.WEREWOLF
+
+    /**
+     * 警长此刻能不能移交警徽：必须正在办遗言，并且说话的人就是那位已出局的警长。
+     *
+     * 只判断「是不是警长的遗言」，不判断他是不是刚死——警徽只在遗言里移交，
+     * 这是线下流程，也是唯一能拿到他本人意愿的时机。
+     */
+    fun canTransferBadge(seat: Int): Boolean =
+        phase == Phase.DAY_LAST_WORDS && sheriffSeat == seat && !playerAt(seat).alive
+
+    /** 有资格投警长票的人：活着、且没上过警。 */
+    val sheriffVoters: List<Int>
+        get() = aliveSeats.filter { it !in sheriffRunners }
 
     // ---------------------------------------------------------------------
     // 夜晚
@@ -266,6 +379,10 @@ data class WerewolfGame(
      * 加投只在 [WerewolfConfig.maxVoteRounds] > 1 的变体板子上才会发生——那时这里
      * 把候选人收窄到平票的那几个人并留在 [Phase.DAY_VOTE]，调用方看到 `voteRound`
      * 增加就知道要再收一轮票。
+     *
+     * 加投时 [ballots] **只装这一轮的票**，不叠加上一轮：上一轮的票已经被「再投一次」
+     * 作废了，叠进来的话牌桌上的票数角标会翻倍，而复盘页只摆最后一轮，两边对不上。
+     * 逐轮票型由 [voteRounds] 完整保留，复盘要的就是那份。
      */
     fun castVotes(votes: Map<Int, Int?>): WerewolfGame {
         require(phase == Phase.DAY_VOTE) { "当前不是投票阶段：$phase" }
@@ -279,25 +396,29 @@ data class WerewolfGame(
             }
         }
 
-        val recorded = ballots + votes.map { Ballot(it.key, it.value) }
         val thisRound = votes.map { Ballot(it.key, it.value) }
-        val tally = votes.values.filterNotNull().groupingBy { it }.eachCount()
+        // 按半点累加：警长的一票算 3 点，普通人 2 点。
+        val tally = mutableMapOf<Int, Int>()
+        votes.forEach { (voter, target) ->
+            if (target != null) tally.merge(target, voteWeight(voter), Int::plus)
+        }
         if (tally.isEmpty()) {
             // 全员弃票：直接无人出局，没有加投的意义
             return finishVote(
-                recorded = recorded,
+                thisRound = thisRound,
                 exiled = null,
-                voteCount = 0,
+                voteCount = 0.0,
                 round = thisRound.toRound(VoteOutcome.NO_EXILE),
             )
         }
 
         val max = tally.values.max()
         val top = tally.filterValues { it == max }.keys.sorted()
+        val maxVotes = max / 2.0
         if (top.size > 1) {
             return if (voteRound < config.maxVoteRounds) {
                 copy(
-                    ballots = recorded,
+                    ballots = thisRound,
                     voteRound = voteRound + 1,
                     voteCandidates = top,
                     // 平票只是「这一天还没结束」，单独记一轮 TIE，复盘才能看出投了两次
@@ -305,21 +426,21 @@ data class WerewolfGame(
                 )
             } else {
                 finishVote(
-                    recorded = recorded,
+                    thisRound = thisRound,
                     exiled = null,
-                    voteCount = 0,
+                    voteCount = 0.0,
                     round = thisRound.toRound(VoteOutcome.NO_EXILE),
                 )
             }
         }
         return finishVote(
-            recorded = recorded,
+            thisRound = thisRound,
             exiled = top.first(),
-            voteCount = max,
+            voteCount = maxVotes,
             round = thisRound.toRound(
                 outcome = VoteOutcome.EXILED,
                 exiledSeat = top.first(),
-                exileVotes = max,
+                exileVotes = maxVotes,
             ),
         )
     }
@@ -328,7 +449,7 @@ data class WerewolfGame(
     private fun List<Ballot>.toRound(
         outcome: VoteOutcome,
         exiledSeat: Int? = null,
-        exileVotes: Int = 0,
+        exileVotes: Double = 0.0,
     ): VoteRound = VoteRound(
         day = day,
         round = voteRound,
@@ -349,6 +470,9 @@ data class WerewolfGame(
         var next = copy(history = history + GameEvent.HunterShot(day, hunter, targetSeat))
         if (targetSeat != null) {
             next = next.applyDeaths(listOf(targetSeat to DeathCause.HUNTER_SHOOT))
+            // 被枪带走的人不留遗言（线下惯例），所以如果带走的是警长，警徽当场作废。
+            // 不在这里清的话，牌桌上会一直挂着一个死人名下的警徽。
+            next = next.dropDeadBadge()
             val winnerFaction = next.evaluateWinner()
             if (winnerFaction != null) {
                 return next.copy(
@@ -360,6 +484,181 @@ data class WerewolfGame(
             }
         }
         return next.afterHunter()
+    }
+
+    // ---------------------------------------------------------------------
+    // 警长
+    // ---------------------------------------------------------------------
+
+    /**
+     * 上警报名。所有存活玩家都要表态，[runners] 是决定竞选的那几个人。
+     *
+     * 三种结局在这里一次分开，编排层不用自己判断：
+     * - 没人上警 → 本局没有警长，直接进入遗言/讨论；
+     * - 只有一个人 → 直接当选，不必投票（投也只有他一个）；
+     * - 两个以上 → 进竞选发言，之后由警下投票。
+     */
+    fun signUpSheriff(runners: Set<Int>): WerewolfGame {
+        require(phase == Phase.DAY_SHERIFF_SIGNUP) { "当前不是上警阶段：$phase" }
+        require(runners.all { it in aliveSeats }) { "只有存活玩家能上警：$runners" }
+        val candidates = runners.sorted()
+        val base = copy(
+            sheriffRunners = candidates,
+            sheriffCandidates = candidates,
+            sheriffRound = 1,
+        )
+        return when (candidates.size) {
+            0 -> base.copy(
+                sheriffElectionDone = true,
+                history = base.history + GameEvent.SheriffVacant(day, "无人上警"),
+            ).afterSheriffElection()
+
+            1 -> base.electSheriff(candidates.first(), votes = 0)
+
+            else -> base.copy(phase = Phase.DAY_SHERIFF_SPEECH)
+        }
+    }
+
+    /** 竞选发言结束，开始警下投票。 */
+    fun beginSheriffVote(): WerewolfGame {
+        require(phase == Phase.DAY_SHERIFF_SPEECH) { "当前不是竞选发言阶段：$phase" }
+        return copy(phase = Phase.DAY_SHERIFF_VOTE)
+    }
+
+    /**
+     * 警长投票。**只有警下的人投**（上过警的都不投），弃票传 null。
+     *
+     * 平票进入 PK：平票的那几位再各说一轮，然后由警下重投。第二轮再平票就
+     * 警徽流失——本局没有警长。这是线下最常见的处理，也让「上警」有真实代价：
+     * 争不到警徽，还把自己排除在投票之外。
+     *
+     * 注意这里**没有 1.5 票**：警长还没选出来，这个权重只属于「已经当上警长的人」。
+     */
+    fun castSheriffVotes(votes: Map<Int, Int?>): WerewolfGame {
+        require(phase == Phase.DAY_SHERIFF_VOTE) { "当前不是警长投票阶段：$phase" }
+        val voters = sheriffVoters.toSet()
+        if (voters.isEmpty()) {
+            // 全员上警，没人有资格投。这不是异常局面，是「大家都想当警长」的必然结果
+            return copy(
+                sheriffElectionDone = true,
+                history = history + GameEvent.SheriffVacant(day, "全员上警，无人可投"),
+            ).afterSheriffElection()
+        }
+        require(votes.keys == voters) {
+            "所有警下玩家都要投票（上警的人不投），期望 $voters，实际 ${votes.keys}"
+        }
+        val candidates = sheriffCandidates.toSet()
+        votes.forEach { (voter, target) ->
+            if (target != null) {
+                require(target in candidates) { "$voter 号投给了不在候选范围的 $target 号" }
+            }
+        }
+
+        val tally = votes.values.filterNotNull().groupingBy { it }.eachCount()
+        if (tally.isEmpty()) {
+            return copy(
+                sheriffElectionDone = true,
+                history = history + GameEvent.SheriffVacant(day, "警下全员弃票"),
+            ).afterSheriffElection()
+        }
+
+        val max = tally.values.max()
+        val top = tally.filterValues { it == max }.keys.sorted()
+        if (top.size > 1) {
+            return if (sheriffRound < SHERIFF_MAX_ROUNDS) {
+                copy(
+                    sheriffRound = sheriffRound + 1,
+                    // 收窄到平票的人，但 sheriffRunners 保持不变：他们仍然没有投票权
+                    sheriffCandidates = top,
+                    phase = Phase.DAY_SHERIFF_SPEECH,
+                    history = history + GameEvent.SheriffPk(day, top),
+                )
+            } else {
+                copy(
+                    sheriffElectionDone = true,
+                    history = history + GameEvent.SheriffVacant(day, "两轮平票，警徽流失"),
+                ).afterSheriffElection()
+            }
+        }
+        return electSheriff(top.first(), max)
+    }
+
+    /**
+     * 警徽移交。只能在警长的遗言里做。
+     *
+     * [toSeat] 为 null 表示撕掉警徽。允许撕是规则的一部分：有时候交给自己不信任的人
+     * 比没有警长更糟。
+     */
+    fun transferBadge(fromSeat: Int, toSeat: Int?): WerewolfGame {
+        require(phase == Phase.DAY_LAST_WORDS) { "只能在遗言里移交警徽：$phase" }
+        require(sheriffSeat == fromSeat) { "$fromSeat 号不是警长，不能移交警徽" }
+        if (toSeat != null) {
+            require(toSeat in aliveSeats) { "警徽只能交给存活玩家，$toSeat 号不在存活列表" }
+        }
+        return copy(
+            sheriffSeat = toSeat,
+            history = history + GameEvent.SheriffBadgePassed(day, fromSeat, toSeat),
+        )
+    }
+
+    /**
+     * 遗言说完了，进入下一段。
+     *
+     * 这里顺带处理「警长死了但没有移交」的情况：警徽随他一起作废。
+     * 放在这里而不是死亡那一刻，是因为遗言正是他最后一次能改变主意的机会。
+     */
+    fun finishLastWords(): WerewolfGame {
+        require(phase == Phase.DAY_LAST_WORDS) { "当前不是遗言阶段：$phase" }
+        val cleared = copy(pendingLastWords = emptyList()).dropDeadBadge()
+        return when (afterLastWordsPhase) {
+            Phase.NIGHT_WOLF -> cleared.startNextNight()
+            // 被票出的猎人：先遗言，再开枪。枪开完才轮到入夜
+            Phase.HUNTER_SHOOT -> cleared.copy(phase = Phase.HUNTER_SHOOT)
+            else -> cleared.copy(phase = afterLastWordsPhase)
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // 自爆
+    // ---------------------------------------------------------------------
+
+    /**
+     * 狼人自爆：当场出局，**白天立刻结束**，跳过投票直接入夜。
+     *
+     * 只允许在白天的发言环节（讨论、竞选发言）自爆——投票已经开始了再爆没有意义，
+     * 那时票型已经收上来了。
+     *
+     * 规则上自爆者不留遗言：他要说的那句「我自爆」本身就是交代。唯一的例外是他正好
+     * 是警长——警徽得交出去，所以走一遍遗言。
+     */
+    fun wolfExplode(seat: Int): WerewolfGame {
+        require(phase == Phase.DAY_DISCUSSION || phase == Phase.DAY_SHERIFF_SPEECH) {
+            "只有白天的发言环节可以自爆：$phase"
+        }
+        val player = playerAt(seat)
+        require(player.alive) { "$seat 号已经出局" }
+        require(player.role == WerewolfRole.WEREWOLF) { "只有狼人可以自爆" }
+
+        var next = applyDeaths(listOf(seat to DeathCause.SELF_EXPLODE))
+        next = next.copy(history = next.history + GameEvent.WolfExploded(next.day, seat))
+
+        val winnerFaction = next.evaluateWinner()
+        if (winnerFaction != null) {
+            return next.copy(
+                phase = Phase.FINISHED,
+                winner = winnerFaction,
+                history = next.history + GameEvent.GameOver(next.day, winnerFaction),
+            )
+        }
+        return if (next.sheriffSeat == seat) {
+            next.copy(
+                phase = Phase.DAY_LAST_WORDS,
+                pendingLastWords = listOf(seat),
+                afterLastWordsPhase = Phase.NIGHT_WOLF,
+            )
+        } else {
+            next.startNextNight()
+        }
     }
 
     // ---------------------------------------------------------------------
@@ -411,8 +710,11 @@ data class WerewolfGame(
         stock: WitchStock,
         healed: Boolean = false,
     ): WerewolfGame {
-        var next = copy(witch = stock).applyDeaths(deaths)
-        val deadSeats = deaths.map { it.first }.sorted()
+        // 同一夜可能有两个来源指向同一个人（狼刀 + 女巫毒）。播报、复盘记录、玩家死因
+        // 三处必须只算一次，否则会出现「6 号、6 号出局」和「记为毒死却照常开枪」。
+        val merged = mergeDeaths(deaths)
+        var next = copy(witch = stock).applyDeaths(merged)
+        val deadSeats = merged.map { it.first }.sorted()
         next = next.copy(
             history = next.history + GameEvent.Dawn(next.day, deadSeats),
             nights = nights + NightRecord(
@@ -420,7 +722,7 @@ data class WerewolfGame(
                 wolfTarget = tonightVictim,
                 guarded = tonightGuardedSeat,
                 healed = healed,
-                poisonTarget = deaths.firstOrNull { it.second == DeathCause.WITCH_POISON }?.first,
+                poisonTarget = merged.firstOrNull { it.second == DeathCause.WITCH_POISON }?.first,
                 deaths = deadSeats,
             ),
         )
@@ -434,31 +736,43 @@ data class WerewolfGame(
             )
         }
 
-        // 只有被狼刀死的猎人可以开枪，被毒的不能。
-        val fallenHunter = deaths.firstOrNull { (seat, cause) ->
+        // 只有被狼刀死的猎人可以开枪，被毒的不能。这里必须读合并后的死因，
+        // 不能读入参：入参里他可能同时有刀和毒两条记录，那样会和 applyDeaths
+        // 写进 player.deathCause 的结论打架。
+        val fallenHunter = merged.firstOrNull { (seat, cause) ->
             cause == DeathCause.WOLF_KILL && next.playerAt(seat).role == WerewolfRole.HUNTER
         }?.first
+
+        // 首夜死者留遗言（线下惯例：第二夜起，夜里死的人不再发言）。
+        // 警长是例外——不管第几夜，他都要在遗言里把警徽交出去，否则好人白丢 1.5 票。
+        val lastWords = buildList {
+            if (next.day == 1) addAll(deadSeats)
+            val sheriff = next.sheriffSeat
+            if (sheriff != null && sheriff in deadSeats && sheriff !in this) add(sheriff)
+        }.sorted()
 
         return if (fallenHunter != null) {
             next.copy(
                 phase = Phase.HUNTER_SHOOT,
                 pendingHunterSeat = fallenHunter,
                 afterHunterPhase = Phase.DAY_DISCUSSION,
+                // 遗言排在天亮开枪之后：先看枪打到谁，再让死者开口
+                pendingLastWords = lastWords,
             )
         } else {
-            next.copy(phase = Phase.DAY_DISCUSSION)
+            next.copy(pendingLastWords = lastWords).dayOpening()
         }
     }
 
     private fun finishVote(
-        recorded: List<Ballot>,
+        thisRound: List<Ballot>,
         exiled: Int?,
-        voteCount: Int,
+        voteCount: Double,
         round: VoteRound,
     ): WerewolfGame {
         if (exiled == null) {
             return copy(
-                ballots = recorded,
+                ballots = thisRound,
                 voteRounds = voteRounds + round,
                 history = history + GameEvent.NoExile(day),
             ).startNextNight()
@@ -468,14 +782,14 @@ data class WerewolfGame(
         // 这不是「免死一次」而是「票不死」——夜里被刀、被毒照样会死。
         if (playerAt(exiled).role == WerewolfRole.IDIOT && !idiotRevealed) {
             return copy(
-                ballots = recorded,
+                ballots = thisRound,
                 voteRounds = voteRounds + round.copy(outcome = VoteOutcome.IDIOT_REVEALED),
                 idiotRevealed = true,
                 history = history + GameEvent.IdiotRevealed(day, exiled, voteCount),
             ).startNextNight()
         }
 
-        var next = copy(ballots = recorded, voteRounds = voteRounds + round)
+        var next = copy(ballots = thisRound, voteRounds = voteRounds + round)
             .applyDeaths(listOf(exiled to DeathCause.EXILE))
         next = next.copy(history = next.history + GameEvent.Exiled(next.day, exiled, voteCount))
 
@@ -488,25 +802,36 @@ data class WerewolfGame(
             )
         }
 
-        return if (next.playerAt(exiled).role == WerewolfRole.HUNTER) {
-            next.copy(
-                phase = Phase.HUNTER_SHOOT,
-                pendingHunterSeat = exiled,
-                afterHunterPhase = Phase.NIGHT_WOLF,
-            )
+        // 被放逐的人一定留遗言（这是他被冤枉后唯一能说话的机会）。
+        // 如果他正好是猎人，顺序是**先遗言、再开枪**——枪是死前最后一张牌，
+        // 先说两句再放，才解释得清他为什么带走这个人。
+        val hunter = next.playerAt(exiled).role == WerewolfRole.HUNTER
+        return next.copy(
+            phase = Phase.DAY_LAST_WORDS,
+            pendingLastWords = listOf(exiled),
+            afterLastWordsPhase = if (hunter) Phase.HUNTER_SHOOT else Phase.NIGHT_WOLF,
+            pendingHunterSeat = if (hunter) exiled else null,
+            afterHunterPhase = Phase.NIGHT_WOLF,
+        )
+    }
+
+    /**
+     * 天亮时开枪结束之后。
+     *
+     * [afterHunterPhase] 只有两种值：天亮被刀（回到白天开场，可能还要竞选、遗言）
+     * 和白天被票出（直接入夜）。这里用 [dayOpening] 重新算一遍开场，
+     * 而不是把阶段写死，是因为「天亮之后先干什么」取决于当天有没有竞选、有没有遗言。
+     */
+    private fun afterHunter(): WerewolfGame {
+        val cleared = copy(pendingHunterSeat = null)
+        return if (afterHunterPhase == Phase.NIGHT_WOLF) {
+            cleared.startNextNight()
         } else {
-            next.startNextNight()
+            cleared.dayOpening()
         }
     }
 
-    private fun afterHunter(): WerewolfGame =
-        if (afterHunterPhase == Phase.NIGHT_WOLF) {
-            copy(pendingHunterSeat = null).startNextNight()
-        } else {
-            copy(pendingHunterSeat = null, phase = Phase.DAY_DISCUSSION)
-        }
-
-    private fun startNextNight(): WerewolfGame = copy(
+    private fun startNextNight(): WerewolfGame = dropDeadBadge().copy(
         day = day + 1,
         // 有活着的守卫就先走守护阶段。守卫死了就不该再由他行动，
         // 这个判断每夜现算，不能只看开局配置——否则守卫出局后全队会卡在一个永远不动的阶段
@@ -521,7 +846,105 @@ data class WerewolfGame(
         voteCandidates = null,
         ballots = emptyList(),
         pendingHunterSeat = null,
+        // 竞选只在第 1 天办一次，跨夜时把选举过程的中间状态收干净；
+        // sheriffElectionDone 留着，它记录的是「办过了」
+        sheriffCandidates = emptyList(),
+        sheriffRunners = emptyList(),
+        sheriffRound = 1,
+        pendingLastWords = emptyList(),
+        afterLastWordsPhase = Phase.DAY_DISCUSSION,
     )
+
+    /**
+     * 天亮之后先做什么。
+     *
+     * 顺序是有讲究的：**第 1 天先选警长，再让死者留遗言**。反过来先遗言的话，
+     * 死者的指控会直接左右警长投票——等于给死人一张选票，而且这张票还没有成本。
+     *
+     * 警长死了、但遗言还没说的时候，不能在这里把警徽清掉：他得先在遗言里指定继任者。
+     */
+    private fun dayOpening(): WerewolfGame {
+        val cleaned = if (pendingLastWords.contains(sheriffSeat)) this else dropDeadBadge()
+        if (cleaned.day == 1 && cleaned.config.hasSheriff && !cleaned.sheriffElectionDone) {
+            return cleaned.copy(phase = Phase.DAY_SHERIFF_SIGNUP)
+        }
+        return if (cleaned.pendingLastWords.isNotEmpty()) {
+            cleaned.copy(
+                phase = Phase.DAY_LAST_WORDS,
+                afterLastWordsPhase = Phase.DAY_DISCUSSION,
+            )
+        } else {
+            cleaned.copy(phase = Phase.DAY_DISCUSSION)
+        }
+    }
+
+    /**
+     * 竞选结束（选出来了，或者确定没有警长）之后去哪。
+     *
+     * 顺带把竞选名单清干净：选举一旦定下来，这两个列表就没有读者了。
+     * 留着它们不只是内存问题——`sheriffRunners` 会被当成「上过警的人」继续影响
+     * `sheriffVoters`，而第二天再问「谁上过警」已经没有任何意义；
+     * 更糟的是名单里会留下当天被票出的人。
+     */
+    private fun afterSheriffElection(): WerewolfGame {
+        val closed = copy(
+            sheriffCandidates = emptyList(),
+            sheriffRunners = emptyList(),
+            sheriffElectionDone = true,
+        )
+        return if (closed.pendingLastWords.isNotEmpty()) {
+            closed.copy(phase = Phase.DAY_LAST_WORDS, afterLastWordsPhase = Phase.DAY_DISCUSSION)
+        } else {
+            closed.copy(phase = Phase.DAY_DISCUSSION)
+        }
+    }
+
+    private fun electSheriff(seat: Int, votes: Int): WerewolfGame = copy(
+        sheriffSeat = seat,
+        sheriffCandidates = emptyList(),
+        sheriffRunners = emptyList(),
+        sheriffElectionDone = true,
+        history = history + GameEvent.SheriffElected(day, seat, votes),
+    ).afterSheriffElection()
+
+    /**
+     * 死掉的警长如果没把警徽交出去，警徽就作废。
+     *
+     * 三个调用点（天亮开场、入夜、被枪带走）都不是「死亡那一刻」——因为死亡那一刻
+     * 他可能还有遗言，还有机会改主意。等遗言说完再清，是唯一不会抢在他前面的时机。
+     */
+    private fun dropDeadBadge(): WerewolfGame {
+        val sheriff = sheriffSeat ?: return this
+        if (playerAt(sheriff).alive) return this
+        return copy(
+            sheriffSeat = null,
+            history = history + GameEvent.SheriffBadgePassed(day, sheriff, toSeat = null),
+        )
+    }
+
+    /**
+     * 把同一夜指向同一个座位的多条死因合并成一条。
+     *
+     * 实际只会有一种撞车：**狼刀和女巫毒落在同一个人身上**（守卫和解药都是让人活下来，
+     * 不会产生第二条死亡记录）。合并时**毒覆盖刀**，两个理由：
+     *
+     * 1. 毒既不能被守卫挡、也不能被解药救，是这一夜里更「硬」的那个来源；
+     * 2. 规则上「被毒不能开枪」。按毒记，[WerewolfPlayer.deathCause] 和
+     *    「猎人能不能开枪」这两处才会给出同一个答案。
+     *
+     * 顺带按座位排序，让播报和复盘的顺序永远稳定。
+     */
+    private fun mergeDeaths(deaths: List<Pair<Int, DeathCause>>): List<Pair<Int, DeathCause>> =
+        deaths.groupBy { it.first }
+            .map { (seat, causes) ->
+                val cause = if (causes.any { it.second == DeathCause.WITCH_POISON }) {
+                    DeathCause.WITCH_POISON
+                } else {
+                    causes.first().second
+                }
+                seat to cause
+            }
+            .sortedBy { it.first }
 
     private fun applyDeaths(deaths: List<Pair<Int, DeathCause>>): WerewolfGame {
         if (deaths.isEmpty()) return this
@@ -574,15 +997,27 @@ data class WerewolfGame(
         const val MAX_WOLF_VOTE_ROUNDS = 2
 
         /**
+         * 警长投票最多几轮：首轮 + 一次 PK。
+         *
+         * 和 [WerewolfConfig.maxVoteRounds] 分开，是因为这两个数字管的是两件事：
+         * 那个是「放逐投票能重投几次」，这个是「选警长能投几次」。都叫 maxVoteRounds
+         * 会让「12 人局改一次配置」变成一次改两处规则的赌博。
+         */
+        const val SHERIFF_MAX_ROUNDS = 2
+
+        /**
          * 洗牌发身份，开局。有守卫的板子从守卫阶段开始，否则从狼人行动开始。
          *
-         * 洗牌用的 [Random] 由外部传入，测试里传 `Random(seed)` 就能复现同一副牌。
+         * **座位也一起洗**，不只是身份。座位的唯一用途是发言次序和互相指代，
+         * 而名单是配置页按选人顺序排出来的：不洗的话第一个被勾选的人永远是 1 号、
+         * 永远先手发言，坐哪个位子完全可预测。座位和身份用同一个 [random] 连洗两次，
+         * 传 `Random(seed)` 依然能复现整局。
          */
         fun deal(
             config: WerewolfConfig = WerewolfConfig(),
             roster: List<RosterEntry>,
             random: Random = Random.Default,
-        ): WerewolfGame = build(config, roster) { roles -> roles.shuffled(random) }
+        ): WerewolfGame = build(config, roster.shuffled(random)) { roles -> roles.shuffled(random) }
 
         /**
          * 按给定顺序分配身份，不洗牌。

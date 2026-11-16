@@ -23,11 +23,11 @@ data class WerewolfConfig(
      * 白天投票最多几轮。默认 1，也就是**平票即无人出局**。
      *
      * 线下能「平票再投一轮」是因为有警长主持 PK：警长在场上、且他指定了 PK 名单，
-     * 大家才重投。本板子没有警长，没有谁能追加一轮，投完就结束这一天。
+     * 大家才重投。所以这条和 [hasSheriff] 是配套的——开警长的板子传 2，
+     * 没警长的板子保持 1。传 2 而没有警长也能跑，只是规则上讲不通（谁来追加这一轮）。
+     *
      * 这条不只是流程细节——正因为票投不出去，2 狼 2 好人时狼人才能靠绑票直接赢
      * （见 [WerewolfGame] 的胜负判定）。
-     *
-     * 传 2 以上只留给将来「有警长」的变体板子，现在没有任何入口会传。
      */
     val maxVoteRounds: Int = 1,
     /**
@@ -37,6 +37,14 @@ data class WerewolfConfig(
      * 第二夜之后一律禁止，不受这个开关影响。要让女巫全程可自救，需要改规则而不是开开关。
      */
     val witchCanSelfHealOnFirstNight: Boolean = true,
+    /**
+     * 是否竞选警长。
+     *
+     * 开了之后第 1 天天亮先上警、竞选、警下投票；警长票权 1.5，并且决定当天的发言起点。
+     * 关着的时候整套警长流程不存在（[Phase.DAY_SHERIFF_SIGNUP] 等三个阶段不会出现），
+     * 所以老档、老配置读出来行为一个字都不变。
+     */
+    val hasSheriff: Boolean = false,
 ) {
     init {
         require(composition.isNotEmpty()) { "身份构成不能为空" }

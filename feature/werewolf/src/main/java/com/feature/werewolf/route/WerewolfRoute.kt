@@ -17,6 +17,7 @@ import com.feature.werewolf.engine.MessageKind
 import com.feature.werewolf.engine.WerewolfUiState
 import com.feature.werewolf.game.DeathCause
 import com.feature.werewolf.game.Faction
+import com.feature.werewolf.game.GameEvent
 import com.feature.werewolf.game.Phase
 import com.feature.werewolf.game.WerewolfConfig
 import com.feature.werewolf.game.WerewolfGame
@@ -24,6 +25,7 @@ import com.feature.werewolf.game.WerewolfPlayer
 import com.feature.werewolf.game.WerewolfRole
 import com.feature.werewolf.game.WinRule
 import com.feature.werewolf.game.VoteOutcome
+import com.feature.werewolf.game.formatVotes
 import com.feature.werewolf.store.WerewolfGameSummary
 import com.feature.werewolf.vm.ApiCheck
 import com.feature.werewolf.vm.ApiCheckState
@@ -286,49 +288,57 @@ private const val PRESET_FOOL_12 = "fool12"
  *
  * 顺序按人数排，不是按推荐度：玩家挑板子时先问「凑得齐几个人」，
  * 把 6 人局放在最后会让人以为要凑满 12 个才能开局。
+ *
+ * 12 人局默认带警长（线下 12 人标准局就是这样打的），所以这两张卡片是
+ * `sheriffBoard(...)` 而不是裸配置；[configOf] 也从这同一份表取，
+ * 不再各写一份映射——以前两处都得改一次，改漏了就是「卡片写着带警长、开局却没有」。
  */
-private val PRESETS = listOf(
-    preset(PRESET_QUICK_6, "6 人快局", WerewolfConfig.Quick6),
-    preset(PRESET_STANDARD_8, "8 人标准局", WerewolfConfig.Standard8),
-    preset(PRESET_STANDARD_9, "9 人标准局", WerewolfConfig.Standard9),
-    preset(PRESET_GUARD_10, "10 人守卫局", WerewolfConfig.Guard10),
-    preset(PRESET_GUARD_12, "12 人守卫局", WerewolfConfig.Guard12),
-    preset(PRESET_FOOL_12, "12 人白痴局", WerewolfConfig.Fool12),
+private val BOARDS: List<Triple<String, String, WerewolfConfig>> = listOf(
+    Triple(PRESET_QUICK_6, "6 人快局", WerewolfConfig(composition = WerewolfConfig.Quick6)),
+    Triple(PRESET_STANDARD_8, "8 人标准局", WerewolfConfig(composition = WerewolfConfig.Standard8)),
+    Triple(PRESET_STANDARD_9, "9 人标准局", WerewolfConfig(composition = WerewolfConfig.Standard9)),
+    Triple(PRESET_GUARD_10, "10 人守卫局", WerewolfConfig(composition = WerewolfConfig.Guard10)),
+    Triple(PRESET_GUARD_12, "12 人守卫局", sheriffBoard(WerewolfConfig.Guard12)),
+    Triple(PRESET_FOOL_12, "12 人白痴局", sheriffBoard(WerewolfConfig.Fool12)),
 )
 
-private fun preset(key: String, title: String, composition: Map<WerewolfRole, Int>): UIWerewolfPreset =
+private val PRESETS = BOARDS.map { (key, title, config) -> preset(key, title, config) }
+
+/**
+ * 开警长的板子。
+ *
+ * `maxVoteRounds = 2` 跟着一起开：警长在场上才能主持 PK，这两个开关是配套的。
+ * 只开警长而把加投关掉，等于有一位「票权 1.5 但按不出第二轮」的警长。
+ */
+private fun sheriffBoard(composition: Map<WerewolfRole, Int>): WerewolfConfig =
+    WerewolfConfig(composition = composition, hasSheriff = true, maxVoteRounds = 2)
+
+private fun preset(key: String, title: String, config: WerewolfConfig): UIWerewolfPreset =
     UIWerewolfPreset(
         key = key,
         title = title,
-        playerCount = composition.values.sum(),
-        composition = compositionText(composition),
+        playerCount = config.playerCount,
+        composition = compositionText(config.composition) + if (config.hasSheriff) " · 警长" else "",
     )
 
-private fun configOf(presetKey: String): WerewolfConfig = when (presetKey) {
-    PRESET_QUICK_6 -> WerewolfConfig(composition = WerewolfConfig.Quick6)
-    PRESET_STANDARD_9 -> WerewolfConfig(composition = WerewolfConfig.Standard9)
-    PRESET_GUARD_10 -> WerewolfConfig(composition = WerewolfConfig.Guard10)
-    PRESET_GUARD_12 -> WerewolfConfig(composition = WerewolfConfig.Guard12)
-    PRESET_FOOL_12 -> WerewolfConfig(composition = WerewolfConfig.Fool12)
-    else -> WerewolfConfig()
-}
+private fun configOf(presetKey: String): WerewolfConfig =
+    BOARDS.firstOrNull { it.first == presetKey }?.third ?: WerewolfConfig()
 
 /**
  * 身份构成文案，例如「4 狼 · 预女猎守 · 4 民」。
  *
  * 神职合成一组而不是逐个报数：一个 12 人板有六个身份，逐个写「1 预言家 · 1 女巫 · 1 猎人 ·
  * 1 守卫 · 4 平民」在卡片里会折成三行，而玩家扫一眼要的其实就是「几狼几神几民」。
+ *
+ * 神职直接问 [WerewolfRole.isGod]，不在这里另抄一份名单：抄出来的那份不会随新身份一起更新，
+ * 也不会编译报错，只会安静地在卡片上少显示一个「守」或「白」。
  */
 private fun compositionText(composition: Map<WerewolfRole, Int>): String = buildList {
     val wolves = composition[WerewolfRole.WEREWOLF] ?: 0
     if (wolves > 0) add("$wolves 狼")
-    val gods = listOf(
-        WerewolfRole.SEER,
-        WerewolfRole.WITCH,
-        WerewolfRole.HUNTER,
-        WerewolfRole.GUARD,
-        WerewolfRole.IDIOT,
-    ).mapNotNull { role -> composition[role]?.takeIf { it > 0 }?.let { role.shortName } }
+    val gods = WerewolfRole.entries
+        .filter { it.isGod }
+        .mapNotNull { role -> if ((composition[role] ?: 0) > 0) role.shortName else null }
     if (gods.isNotEmpty()) add(gods.joinToString(""))
     val villagers = composition[WerewolfRole.VILLAGER] ?: 0
     if (villagers > 0) add("$villagers 民")
@@ -455,9 +465,21 @@ internal fun WerewolfUiState.toReview(
             DeathCause.WITCH_POISON -> "第 $day 夜被毒"
             DeathCause.EXILE -> "第 $day 天被票出"
             DeathCause.HUNTER_SHOOT -> "第 $day 天被枪带走"
+            DeathCause.SELF_EXPLODE -> "第 $day 天自爆"
             null -> null
         }
     }
+
+    // 这一局当过警长的人：选出来的 + 后来接手警徽的。
+    // 底牌区不改排版，只在身份后面挂一个「警长」——比新增一行图例省事，
+    // 也不会让 12 人局的底牌区再宽一截
+    val sheriffSeats = game.history.mapNotNull { event ->
+        when (event) {
+            is GameEvent.SheriffElected -> event.seat
+            is GameEvent.SheriffBadgePassed -> event.toSeat
+            else -> null
+        }
+    }.toSet()
 
     fun members(predicate: (WerewolfPlayer) -> Boolean) = game.players
         .filter(predicate)
@@ -466,7 +488,7 @@ internal fun WerewolfUiState.toReview(
                 seat = player.seat,
                 name = player.name,
                 avatarPath = avatars[player.id],
-                roleLabel = player.role.displayName,
+                roleLabel = player.role.displayName + if (player.seat in sheriffSeats) "·警长" else "",
                 isSelf = player.seat == humanSeat,
                 alive = player.alive,
                 fate = fateOf(player),
@@ -507,8 +529,8 @@ internal fun WerewolfUiState.toReview(
             UIWerewolfDayReport(
                 day = day,
                 result = when {
-                    revealed -> "${last.exiledSeat} 号翻牌（白痴，${last.exileVotes} 票），不出局"
-                    exiled != null -> "放逐 $exiled 号（${last.exileVotes} 票）"
+                    revealed -> "${last.exiledSeat} 号翻牌（白痴，${formatVotes(last.exileVotes)} 票），不出局"
+                    exiled != null -> "放逐 $exiled 号（${formatVotes(last.exileVotes)} 票）"
                     abstained -> "全员弃票"
                     else -> "平票，无人出局"
                 },
@@ -586,8 +608,14 @@ private fun finishReason(game: WerewolfGame, winner: Faction): String {
     val aliveWolves = game.players.count { it.alive && it.role == WerewolfRole.WEREWOLF }
     val aliveGood = game.players.count { it.alive && it.faction == Faction.GOOD }
     if (aliveWolves >= aliveGood) {
-        return "场上还剩 $aliveWolves 狼 $aliveGood 好人，狼人已经绑票：白天全员投也凑不出比狼更多的票，" +
+        // 有没有警长，「为什么投不出去」的说法不一样：警长在也只能多投一轮 PK，
+        // 凑不出票这件事不会因为有个警徽就改变。照抄「没有警长就没有 PK」会自相矛盾
+        val tail = if (game.config.hasSheriff) {
+            "警长在场也最多主持一轮 PK，票数差在这里已经追不回来了。"
+        } else {
             "没有警长就没有 PK，平票等于无人出局，夜里再少一个只会更糟。"
+        }
+        return "场上还剩 $aliveWolves 狼 $aliveGood 好人，狼人已经绑票：白天全员投也凑不出比狼更多的票，$tail"
     }
 
     return when (game.config.winRule) {
@@ -659,6 +687,8 @@ private fun WerewolfUiState.toLive(
             wolf = player.role == WerewolfRole.WEREWOLF,
             active = actorSeat == player.seat,
             votes = voteCounts[player.seat],
+            // 警长是公开身份，牌桌上必须一直挂着——它是「谁的一票值 1.5」的唯一提示
+            sheriff = game.sheriffSeat == player.seat,
         )
     }.orEmpty()
 
@@ -727,6 +757,56 @@ private fun buildTurn(
         .map { UIWerewolfTarget(seat = it.seat, name = it.name) }
 
     return when (game.phase) {
+        // 上警报名：点自己 = 上警，点「不上警」= 弃权。
+        // 复用 VOTE 面板而不是新做一个开关：这一步的答案就是「一个座位或 null」，
+        // 和投票的形状完全一样，多一种面板只会多一处要维护的按钮文案
+        Phase.DAY_SHERIFF_SIGNUP -> UIWerewolfTurn(
+            kind = UIWerewolfTurnKind.VOTE,
+            seat = humanSeat,
+            title = "要不要竞选警长",
+            hint = "警长票权 1.5 票，上警的人不能投警长票",
+            targets = listOf(UIWerewolfTarget(seat = humanSeat, name = "上警")),
+            canAbstain = true,
+            abstainLabel = "不上警",
+        )
+
+        Phase.DAY_SHERIFF_SPEECH -> UIWerewolfTurn(
+            kind = UIWerewolfTurnKind.SPEECH,
+            seat = humanSeat,
+            title = if (game.sheriffRound > 1) "PK 发言" else "竞选发言",
+            hint = "警下的人会按这几句投票",
+        )
+
+        Phase.DAY_SHERIFF_VOTE -> UIWerewolfTurn(
+            kind = UIWerewolfTurnKind.VOTE,
+            seat = humanSeat,
+            title = "投票选警长",
+            hint = if (game.sheriffRound > 1) "PK 后重投" else "只能投上警的人",
+            targets = others.filter { it.seat in game.sheriffCandidates },
+            canAbstain = true,
+        )
+
+        Phase.DAY_LAST_WORDS -> if (game.sheriffSeat == humanSeat) {
+            // 警长的遗言要同时交代警徽。用 SEAT 面板：选一个人就是交给他，
+            // 「撕掉警徽」走弃权那条路
+            UIWerewolfTurn(
+                kind = UIWerewolfTurnKind.SEAT,
+                seat = humanSeat,
+                title = "遗言：警徽交给谁",
+                hint = "交错了人，比撕掉更糟",
+                targets = others,
+                canAbstain = true,
+                abstainLabel = "撕掉警徽",
+            )
+        } else {
+            UIWerewolfTurn(
+                kind = UIWerewolfTurnKind.SPEECH,
+                seat = humanSeat,
+                title = "说遗言",
+                hint = "说给还活着的人听",
+            )
+        }
+
         Phase.DAY_DISCUSSION -> UIWerewolfTurn(
             kind = UIWerewolfTurnKind.SPEECH,
             seat = humanSeat,
@@ -856,6 +936,7 @@ private fun DeathCause.toFate(): UIWerewolfFate = when (this) {
     DeathCause.WITCH_POISON -> UIWerewolfFate.WITCH_POISON
     DeathCause.EXILE -> UIWerewolfFate.EXILE
     DeathCause.HUNTER_SHOOT -> UIWerewolfFate.HUNTER_SHOOT
+    DeathCause.SELF_EXPLODE -> UIWerewolfFate.SELF_EXPLODE
 }
 
 /**
