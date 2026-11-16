@@ -22,19 +22,29 @@ import com.feature.werewolf.game.WerewolfConfig
 import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfPlayer
 import com.feature.werewolf.game.WerewolfRole
+import com.feature.werewolf.game.WinRule
 import com.feature.werewolf.store.WerewolfGameSummary
 import com.feature.werewolf.vm.WerewolfMode
 import com.feature.werewolf.vm.WerewolfViewModel
+import com.ui.werewolf.UIWerewolfReviewScreen
 import com.ui.werewolf.UIWerewolfSetupScreen
 import com.ui.werewolf.UIWerewolfTableScreen
+import com.ui.werewolf.data.UIWerewolfBallotLine
+import com.ui.werewolf.data.UIWerewolfCheckReport
+import com.ui.werewolf.data.UIWerewolfDayReport
 import com.ui.werewolf.data.UIWerewolfFate
 import com.ui.werewolf.data.UIWerewolfFriend
+import com.ui.werewolf.data.UIWerewolfGroupKind
 import com.ui.werewolf.data.UIWerewolfLine
 import com.ui.werewolf.data.UIWerewolfLineKind
 import com.ui.werewolf.data.UIWerewolfLive
 import com.ui.werewolf.data.UIWerewolfMode
+import com.ui.werewolf.data.UIWerewolfNightReport
 import com.ui.werewolf.data.UIWerewolfPreset
 import com.ui.werewolf.data.UIWerewolfRecord
+import com.ui.werewolf.data.UIWerewolfReview
+import com.ui.werewolf.data.UIWerewolfRevealedSeat
+import com.ui.werewolf.data.UIWerewolfRoleGroup
 import com.ui.werewolf.data.UIWerewolfSeat
 import com.ui.werewolf.data.UIWerewolfSeatLive
 import com.ui.werewolf.data.UIWerewolfTarget
@@ -60,6 +70,7 @@ fun WerewolfRoute(
     val humanTurn by viewModel.humanTurn.collectAsState()
 
     var screen by remember { mutableStateOf<WerewolfScreen>(WerewolfScreen.Setup) }
+    var showReview by remember { mutableStateOf(false) }
     var mode by remember { mutableStateOf(UIWerewolfMode.PLAY) }
     var presetKey by remember { mutableStateOf(PRESET_STANDARD_8) }
     var selectedIds by rememberSaveable(saver = SelectedIdsSaver) { mutableStateOf(emptySet<String>()) }
@@ -73,7 +84,15 @@ fun WerewolfRoute(
         if (state.table != null && !state.finished) screen = WerewolfScreen.Table
     }
 
-    BackHandler { onExit() }
+    // 新的一局开始了，复盘必须收起来，否则会盖在还没打完的牌桌上
+    LaunchedEffect(state.finished) {
+        if (!state.finished) showReview = false
+    }
+
+    // 返回键先关复盘、再退出页面。复盘是盖在牌桌上的一层，不是另一个目的地。
+    BackHandler {
+        if (showReview) showReview = false else onExit()
+    }
 
     val uiFriends = remember(friends) { friends.map { it.toUiFriend() } }
     // 座位 → 好友头像。牌桌上认人主要靠头像，名字在 60dp 里会被截断。
@@ -127,14 +146,31 @@ fun WerewolfRoute(
             },
         )
 
-        WerewolfScreen.Table -> UIWerewolfTableScreen(
-            live = state.toLive(humanSeat = humanSeat, turn = humanTurn, avatars = avatars),
-            onExit = onExit,
-            onSpeech = viewModel::submitSpeech,
-            onVote = { viewModel.submitTarget(it) },
-            onSeat = { viewModel.submitSeat(it) },
-            onWitch = { heal, poison -> viewModel.submitWitch(heal, poison) },
-        )
+        WerewolfScreen.Table -> {
+            val review = remember(state, humanSeat, avatars) {
+                if (state.finished) state.toReview(humanSeat, avatars) else null
+            }
+            if (showReview && review != null) {
+                UIWerewolfReviewScreen(
+                    review = review,
+                    onBack = { showReview = false },
+                    onRestart = {
+                        showReview = false
+                        screen = WerewolfScreen.Setup
+                    },
+                )
+            } else {
+                UIWerewolfTableScreen(
+                    live = state.toLive(humanSeat = humanSeat, turn = humanTurn, avatars = avatars),
+                    onExit = onExit,
+                    onSpeech = viewModel::submitSpeech,
+                    onVote = { viewModel.submitTarget(it) },
+                    onSeat = { viewModel.submitSeat(it) },
+                    onWitch = { heal, poison -> viewModel.submitWitch(heal, poison) },
+                    onReview = if (review != null) ({ showReview = true }) else null,
+                )
+            }
+        }
     }
 }
 
@@ -255,6 +291,174 @@ private fun relativeTime(at: Long): String {
         diff < 3_600_000L -> "${diff / 60_000L} 分钟前"
         diff < 86_400_000L -> "${diff / 3_600_000L} 小时前"
         else -> "${diff / 86_400_000L} 天前"
+    }
+}
+
+/**
+ * 把一局结束的局面翻成复盘页。
+ *
+ * 这里可以放心地把所有私有信息都摊开：局已经完了，看不懂的部分唯一的意义就是「原来是这样」。
+ * 但仍然守住一条：**不去猜**。票型、刀口、查验都只从引擎记下来的记录里读，
+ * 没有记录就明说没有（[UIWerewolfReview.incomplete]），不拿播报文案去反推。
+ */
+internal fun WerewolfUiState.toReview(
+    humanSeat: Int?,
+    avatars: Map<String, String?>,
+): UIWerewolfReview? {
+    val game = table?.game ?: return null
+    val winner = game.winner ?: return null
+
+    // 整局累计得票：票型历史是逐轮的，加投会让同一个人被投两次，这里如实累加
+    val votesBySeat = game.voteRounds
+        .flatMap { it.ballots }
+        .mapNotNull { it.targetSeat }
+        .groupingBy { it }
+        .eachCount()
+
+    fun fateOf(player: WerewolfPlayer): String? {
+        val day = player.deathDay ?: return null
+        return when (player.deathCause) {
+            DeathCause.WOLF_KILL -> "第 $day 夜被刀"
+            DeathCause.WITCH_POISON -> "第 $day 夜被毒"
+            DeathCause.EXILE -> "第 $day 天被票出"
+            DeathCause.HUNTER_SHOOT -> "第 $day 天被枪带走"
+            null -> null
+        }
+    }
+
+    fun members(predicate: (WerewolfPlayer) -> Boolean) = game.players
+        .filter(predicate)
+        .map { player ->
+            UIWerewolfRevealedSeat(
+                seat = player.seat,
+                name = player.name,
+                avatarPath = avatars[player.id],
+                roleLabel = player.role.displayName,
+                isSelf = player.seat == humanSeat,
+                alive = player.alive,
+                fate = fateOf(player),
+                votes = votesBySeat[player.seat] ?: 0,
+            )
+        }
+
+    val groups = listOfNotNull(
+        UIWerewolfRoleGroup(
+            kind = UIWerewolfGroupKind.WOLF,
+            title = "狼人",
+            members = members { it.role == WerewolfRole.WEREWOLF },
+        ).takeIf { it.members.isNotEmpty() },
+        UIWerewolfRoleGroup(
+            kind = UIWerewolfGroupKind.GOD,
+            title = "神职",
+            members = members { it.role.isGod },
+        ).takeIf { it.members.isNotEmpty() },
+        UIWerewolfRoleGroup(
+            kind = UIWerewolfGroupKind.VILLAGER,
+            title = "平民",
+            members = members { it.role == WerewolfRole.VILLAGER },
+        ).takeIf { it.members.isNotEmpty() },
+    )
+
+    val days = game.voteRounds
+        .groupBy { it.day }
+        .toSortedMap()
+        .map { (day, rounds) ->
+            // 加投时只摆最后一轮：前一轮的票已经被「再投一次」作废了，
+            // 两轮的票并排摆出来，会让人以为 XX 号拿了双倍票
+            val last = rounds.maxByOrNull { it.round } ?: return@map null
+            val exiled = last.exiledSeat
+            val abstained = last.ballots.isNotEmpty() && last.ballots.all { it.targetSeat == null }
+            UIWerewolfDayReport(
+                day = day,
+                result = when {
+                    exiled != null -> "放逐 $exiled 号（${last.exileVotes} 票）"
+                    abstained -> "全员弃票"
+                    else -> "平票，无人出局"
+                },
+                exiled = exiled != null,
+                extraRounds = (rounds.size - 1).coerceAtLeast(0),
+                ballots = last.ballots
+                    .sortedBy { it.voterSeat }
+                    .map { ballot ->
+                        UIWerewolfBallotLine(
+                            voter = ballot.voterSeat,
+                            target = ballot.targetSeat,
+                            key = exiled != null && ballot.targetSeat == exiled,
+                        )
+                    },
+            )
+        }
+        .filterNotNull()
+
+    val nights = game.nights
+        .sortedBy { it.day }
+        .map { night ->
+            UIWerewolfNightReport(
+                day = night.day,
+                wolfLine = night.wolfTarget?.let { "狼刀 $it 号" } ?: "狼人空刀",
+                witchLine = when {
+                    night.healed -> "女巫用解药救下"
+                    night.poisonTarget != null -> "女巫毒 ${night.poisonTarget} 号"
+                    else -> null
+                },
+                deathLine = if (night.deaths.isEmpty()) {
+                    "平安夜"
+                } else {
+                    night.deaths.joinToString("、") + " 号出局"
+                },
+            )
+        }
+
+    val selfLine = humanSeat?.let { seat ->
+        val me = game.players.firstOrNull { it.seat == seat } ?: return@let null
+        buildString {
+            append("你是 $seat 号 · ${me.role.displayName} · ${me.role.faction.displayName}")
+            if (me.alive) {
+                append("，活到了最后。")
+            } else {
+                append("，").append(fateOf(me) ?: "已出局").append("。")
+            }
+            append("下面是当时你看不到的底牌。")
+        }
+    }
+
+    val deaths = game.players.count { !it.alive }
+
+    return UIWerewolfReview(
+        winnerLabel = "${winner.displayName}胜",
+        wolfWon = winner == Faction.WEREWOLF,
+        reason = finishReason(game, winner),
+        facts = "${game.players.size} 人局 · 打到第 ${game.day} 天 · $deaths 人出局",
+        selfLine = selfLine,
+        groups = groups,
+        days = days,
+        nights = nights,
+        checks = game.seerChecks.map { UIWerewolfCheckReport(it.day, it.targetSeat, it.isWerewolf) },
+        // 每局至少有一夜，一条夜间记录都没有只可能是旧档
+        incomplete = game.nights.isEmpty(),
+    )
+}
+
+/** 为什么会结束。胜负本身在横幅上，这里补的是「哪一边先撑不住」。 */
+private fun finishReason(game: WerewolfGame, winner: Faction): String {
+    if (winner == Faction.GOOD) return "狼人全部出局，好人守住了。"
+
+    return when (game.config.winRule) {
+        WinRule.SLAY_ALL -> "存活的狼人已经不少于好人，投票再也翻不过来了。"
+
+        WinRule.SLAY_SIDE -> {
+            // 只问「开局有过、现在全没了」的那一类，避免把没有平民的板子判成屠民
+            val godsWiped = game.players.any { it.role.isGod } &&
+                game.players.none { it.alive && it.role.isGod }
+            val villagersWiped = game.players.any { it.role == WerewolfRole.VILLAGER } &&
+                game.players.none { it.alive && it.role == WerewolfRole.VILLAGER }
+            when {
+                godsWiped && villagersWiped -> "神职和平民都已经死光，狼人屠边成功。"
+                godsWiped -> "神职全部出局，狼人屠边成功。"
+                villagersWiped -> "平民全部出局，狼人屠边成功。"
+                else -> "好人一方已经无力回天。"
+            }
+        }
     }
 }
 

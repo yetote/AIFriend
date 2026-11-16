@@ -119,6 +119,7 @@ fun UIWerewolfTableScreen(
     onVote: (Int?) -> Unit = {},
     onSeat: (Int) -> Unit = {},
     onWitch: (heal: Boolean, poison: Int?) -> Unit = { _, _ -> },
+    onReview: (() -> Unit)? = null,
 ) {
     val night = live.night && !live.finished
     val backdrop by animateColorAsState(
@@ -193,8 +194,18 @@ fun UIWerewolfTableScreen(
             )
 
             val turn = live.turn
-            if (turn != null && !live.finished) {
-                TurnPanel(
+            when {
+                // 结束了就只留一个出口。原本这里是输入区，输入区已经没有任何意义，
+                // 但空着会让人以为界面坏了——空位必须被「下一步做什么」填上。
+                live.finished && onReview != null -> ReviewBar(
+                    surface = surface,
+                    textColor = textColor,
+                    dimColor = dimColor,
+                    onReview = onReview,
+                    modifier = Modifier.pageInsetsBottom()
+                )
+
+                turn != null -> TurnPanel(
                     turn = turn,
                     night = night,
                     textColor = textColor,
@@ -206,9 +217,11 @@ fun UIWerewolfTableScreen(
                     onWitch = onWitch,
                     modifier = Modifier.pageInsetsBottom()
                 )
-            } else {
-                Spacer(Modifier.height(8.dp))
-                Box(Modifier.pageInsetsBottom())
+
+                else -> {
+                    Spacer(Modifier.height(8.dp))
+                    Box(Modifier.pageInsetsBottom())
+                }
             }
         }
     }
@@ -1068,6 +1081,51 @@ private fun WitchPanel(
             fontSize = 12.sp,
             color = dimColor
         )
+    }
+}
+
+/**
+ * 结束后的底部条。
+ *
+ * 只放一个动作：看复盘。不做「再来一局」——刚被投出去的人未必想立刻重开，
+ * 而重开的入口在配置页，从复盘页回去比在这里塞两个按钮清楚。
+ */
+@Composable
+private fun ReviewBar(
+    surface: Color,
+    textColor: Color,
+    dimColor: Color,
+    onReview: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(surface)
+            .padding(horizontal = 14.dp, vertical = 10.dp)
+    ) {
+        Text(
+            text = "全部身份已公开 · 这一局已经存档",
+            fontSize = 10.sp,
+            color = dimColor
+        )
+        Spacer(Modifier.height(7.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(UIRadiusControl))
+                .background(UIActionBrush)
+                .clickable { onReview() }
+                .padding(vertical = 12.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "看复盘",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White
+            )
+        }
     }
 }
 

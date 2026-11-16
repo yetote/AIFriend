@@ -47,6 +47,20 @@ data class WerewolfGame(
     /** 公开事件流，可以安全地给任何玩家看。 */
     val history: List<GameEvent> = emptyList(),
     val winner: Faction? = null,
+    /**
+     * 每夜的结算记录。**规则一行都不读它**，纯粹为了复盘。
+     *
+     * 刀口、用药这些是私有的，结算完就会被下一夜覆盖（[tonightVictim] 会被清空），
+     * 事后从公开播报里也推不出来，所以必须在结算那一刻抄下来。
+     */
+    val nights: List<NightRecord> = emptyList(),
+    /**
+     * 逐轮投票历史。**规则不读它**。
+     *
+     * [ballots] 只装当前这一轮：进下一夜会清空，加投时会累加，两种语义混在一起，
+     * 事后没法还原「第一天投了几轮、每轮是谁投的谁」。复盘需要这个还原，所以另存一份。
+     */
+    val voteRounds: List<VoteRound> = emptyList(),
 ) {
     val alivePlayers: List<WerewolfPlayer> get() = players.filter { it.alive }
     val aliveSeats: List<Int> get() = alivePlayers.map { it.seat }
@@ -155,7 +169,7 @@ data class WerewolfGame(
             antidoteAvailable = witch.antidoteAvailable && !heal,
             poisonAvailable = witch.poisonAvailable && poisonTarget == null,
         )
-        return settleNight(deaths, stock)
+        return settleNight(deaths, stock, healed = heal)
     }
 
     // ---------------------------------------------------------------------
@@ -187,20 +201,63 @@ data class WerewolfGame(
         }
 
         val recorded = ballots + votes.map { Ballot(it.key, it.value) }
+        val thisRound = votes.map { Ballot(it.key, it.value) }
         val tally = votes.values.filterNotNull().groupingBy { it }.eachCount()
-        if (tally.isEmpty()) return finishVote(recorded, exiled = null, voteCount = 0)
+        if (tally.isEmpty()) {
+            // 全员弃票：直接无人出局，没有加投的意义
+            return finishVote(
+                recorded = recorded,
+                exiled = null,
+                voteCount = 0,
+                round = thisRound.toRound(VoteOutcome.NO_EXILE),
+            )
+        }
 
         val max = tally.values.max()
         val top = tally.filterValues { it == max }.keys.sorted()
         if (top.size > 1) {
             return if (voteRound < config.maxVoteRounds) {
-                copy(ballots = recorded, voteRound = voteRound + 1, voteCandidates = top)
+                copy(
+                    ballots = recorded,
+                    voteRound = voteRound + 1,
+                    voteCandidates = top,
+                    // 平票只是「这一天还没结束」，单独记一轮 TIE，复盘才能看出投了两次
+                    voteRounds = voteRounds + thisRound.toRound(VoteOutcome.TIE),
+                )
             } else {
-                finishVote(recorded, exiled = null, voteCount = 0)
+                finishVote(
+                    recorded = recorded,
+                    exiled = null,
+                    voteCount = 0,
+                    round = thisRound.toRound(VoteOutcome.NO_EXILE),
+                )
             }
         }
-        return finishVote(recorded, exiled = top.first(), voteCount = max)
+        return finishVote(
+            recorded = recorded,
+            exiled = top.first(),
+            voteCount = max,
+            round = thisRound.toRound(
+                outcome = VoteOutcome.EXILED,
+                exiledSeat = top.first(),
+                exileVotes = max,
+            ),
+        )
     }
+
+    /** 把这一轮的票封成一条历史。票型是纯数据，不留对当时局面的引用。 */
+    private fun List<Ballot>.toRound(
+        outcome: VoteOutcome,
+        exiledSeat: Int? = null,
+        exileVotes: Int = 0,
+    ): VoteRound = VoteRound(
+        day = day,
+        round = voteRound,
+        ballots = this,
+        outcome = outcome,
+        exiledSeat = exiledSeat,
+        exileVotes = exileVotes,
+    )
 
     /** 猎人决定是否开枪。[targetSeat] 为 null 表示放弃。 */
     fun hunterShoot(targetSeat: Int?): WerewolfGame {
@@ -250,9 +307,29 @@ data class WerewolfGame(
             )
         }
 
-    private fun settleNight(deaths: List<Pair<Int, DeathCause>>, stock: WitchStock): WerewolfGame {
+    /**
+     * 结算天亮。
+     *
+     * [healed] 必须由调用方传入，不能靠「刀口没死」反推：万一女巫毒的人和狼刀的人是同一个，
+     * 那个人照样会死，反推就会把「用过解药」记成「没用」，复盘里那一夜就解释不通了。
+     */
+    private fun settleNight(
+        deaths: List<Pair<Int, DeathCause>>,
+        stock: WitchStock,
+        healed: Boolean = false,
+    ): WerewolfGame {
         var next = copy(witch = stock).applyDeaths(deaths)
-        next = next.copy(history = next.history + GameEvent.Dawn(next.day, deaths.map { it.first }.sorted()))
+        val deadSeats = deaths.map { it.first }.sorted()
+        next = next.copy(
+            history = next.history + GameEvent.Dawn(next.day, deadSeats),
+            nights = nights + NightRecord(
+                day = day,
+                wolfTarget = tonightVictim,
+                healed = healed,
+                poisonTarget = deaths.firstOrNull { it.second == DeathCause.WITCH_POISON }?.first,
+                deaths = deadSeats,
+            ),
+        )
 
         val winnerFaction = next.evaluateWinner()
         if (winnerFaction != null) {
@@ -279,12 +356,22 @@ data class WerewolfGame(
         }
     }
 
-    private fun finishVote(recorded: List<Ballot>, exiled: Int?, voteCount: Int): WerewolfGame {
+    private fun finishVote(
+        recorded: List<Ballot>,
+        exiled: Int?,
+        voteCount: Int,
+        round: VoteRound,
+    ): WerewolfGame {
         if (exiled == null) {
-            return copy(ballots = recorded, history = history + GameEvent.NoExile(day)).startNextNight()
+            return copy(
+                ballots = recorded,
+                voteRounds = voteRounds + round,
+                history = history + GameEvent.NoExile(day),
+            ).startNextNight()
         }
 
-        var next = copy(ballots = recorded).applyDeaths(listOf(exiled to DeathCause.EXILE))
+        var next = copy(ballots = recorded, voteRounds = voteRounds + round)
+            .applyDeaths(listOf(exiled to DeathCause.EXILE))
         next = next.copy(history = next.history + GameEvent.Exiled(next.day, exiled, voteCount))
 
         val winnerFaction = next.evaluateWinner()
