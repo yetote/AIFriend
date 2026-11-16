@@ -38,3 +38,6 @@ google-services.json
 
 # 还原出来的旧 Key，禁止提交
 keys-recovered.txt
+
+# 构建工具在仓库根留下的 Berkeley DB 临时文件
+bc_*.db

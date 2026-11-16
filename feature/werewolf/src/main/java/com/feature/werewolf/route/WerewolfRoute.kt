@@ -12,23 +12,34 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.feature.werewolf.contract.WerewolfScreen
+import com.feature.werewolf.engine.HumanTurn
+import com.feature.werewolf.engine.MessageKind
 import com.feature.werewolf.engine.WerewolfUiState
+import com.feature.werewolf.game.DeathCause
 import com.feature.werewolf.game.Faction
 import com.feature.werewolf.game.Phase
 import com.feature.werewolf.game.WerewolfConfig
+import com.feature.werewolf.game.WerewolfGame
+import com.feature.werewolf.game.WerewolfPlayer
 import com.feature.werewolf.game.WerewolfRole
-import com.feature.werewolf.prompt.WerewolfPrompt
 import com.feature.werewolf.store.WerewolfGameSummary
 import com.feature.werewolf.vm.WerewolfMode
 import com.feature.werewolf.vm.WerewolfViewModel
-import com.ui.werewolf.UIWerewolfLiveScreen
 import com.ui.werewolf.UIWerewolfSetupScreen
+import com.ui.werewolf.UIWerewolfTableScreen
+import com.ui.werewolf.data.UIWerewolfFate
 import com.ui.werewolf.data.UIWerewolfFriend
+import com.ui.werewolf.data.UIWerewolfLine
+import com.ui.werewolf.data.UIWerewolfLineKind
 import com.ui.werewolf.data.UIWerewolfLive
 import com.ui.werewolf.data.UIWerewolfMode
 import com.ui.werewolf.data.UIWerewolfPreset
 import com.ui.werewolf.data.UIWerewolfRecord
 import com.ui.werewolf.data.UIWerewolfSeat
+import com.ui.werewolf.data.UIWerewolfSeatLive
+import com.ui.werewolf.data.UIWerewolfTarget
+import com.ui.werewolf.data.UIWerewolfTurn
+import com.ui.werewolf.data.UIWerewolfTurnKind
 
 /**
  * 狼人杀的入口。
@@ -45,6 +56,8 @@ fun WerewolfRoute(
     val summaries by viewModel.summaries.collectAsState()
     val state by viewModel.state.collectAsState()
     val error by viewModel.error.collectAsState()
+    val humanSeat by viewModel.humanSeat.collectAsState()
+    val humanTurn by viewModel.humanTurn.collectAsState()
 
     var screen by remember { mutableStateOf<WerewolfScreen>(WerewolfScreen.Setup) }
     var mode by remember { mutableStateOf(UIWerewolfMode.PLAY) }
@@ -63,6 +76,8 @@ fun WerewolfRoute(
     BackHandler { onExit() }
 
     val uiFriends = remember(friends) { friends.map { it.toUiFriend() } }
+    // 座位 → 好友头像。牌桌上认人主要靠头像，名字在 60dp 里会被截断。
+    val avatars = remember(friends) { friends.associate { it.id to it.avatarPath } }
     val records = remember(summaries) { summaries.take(5).map { it.toRecord() } }
     val unfinished = records.firstOrNull { !it.finished }
     val preset = PRESETS.firstOrNull { it.key == presetKey } ?: PRESETS.first()
@@ -112,9 +127,13 @@ fun WerewolfRoute(
             },
         )
 
-        WerewolfScreen.Table -> UIWerewolfLiveScreen(
-            live = state.toLive(),
+        WerewolfScreen.Table -> UIWerewolfTableScreen(
+            live = state.toLive(humanSeat = humanSeat, turn = humanTurn, avatars = avatars),
             onExit = onExit,
+            onSpeech = viewModel::submitSpeech,
+            onVote = { viewModel.submitTarget(it) },
+            onSeat = { viewModel.submitSeat(it) },
+            onWitch = { heal, poison -> viewModel.submitWitch(heal, poison) },
         )
     }
 }
@@ -239,11 +258,76 @@ private fun relativeTime(at: Long): String {
     }
 }
 
-private fun WerewolfUiState.toLive(): UIWerewolfLive {
+/**
+ * 把一局翻译成牌桌能直接画的东西。
+ *
+ * 三条规则：
+ *
+ * 1. **可见性在这一层过滤完**，界面不再判断。观战看全量（上帝视角，狼人夜聊也看得见），
+ *    参与看 `transcriptFor(我的座位)`。
+ * 2. **身份只在公开时给出**：观战，或者已经分出胜负。参与中的局里，别人的身份连 UI 都拿不到，
+ *    想从界面泄露也没有路径。
+ * 3. **「现在该我做什么」只看 `phase` 加本人身份**，不解析提示词。提示词是文案，
+ *    随时会改，拿它当协议早晚对不上。
+ */
+private fun WerewolfUiState.toLive(
+    humanSeat: Int?,
+    turn: HumanTurn?,
+    avatars: Map<String, String?>,
+): UIWerewolfLive {
+    val table = table
     val game = table?.game
+    val reveal = humanSeat == null || finished
+    val voteCounts = game?.ballots
+        ?.mapNotNull { it.targetSeat }
+        ?.groupingBy { it }
+        ?.eachCount()
+        .orEmpty()
+
+    val seats = game?.players?.map { player ->
+        UIWerewolfSeatLive(
+            seat = player.seat,
+            name = player.name,
+            avatarPath = avatars[player.id],
+            isSelf = player.seat == humanSeat,
+            alive = player.alive,
+            fate = player.deathCause?.toFate(),
+            roleLabel = if (reveal) player.role.displayName else null,
+            wolf = player.role == WerewolfRole.WEREWOLF,
+            active = progress?.seat == player.seat,
+            votes = voteCounts[player.seat],
+        )
+    }.orEmpty()
+
+    val visible = when {
+        table == null -> emptyList()
+        humanSeat == null -> table.transcript
+        else -> table.transcriptFor(humanSeat)
+    }
+
+    val lines = visible.mapIndexed { index, message ->
+        val speaker = message.seat?.let { seat -> game?.players?.firstOrNull { it.seat == seat } }
+        UIWerewolfLine(
+            index = index,
+            kind = when (message.kind) {
+                MessageKind.DIVINE -> UIWerewolfLineKind.DIVINE
+                MessageKind.SPEECH -> UIWerewolfLineKind.SPEECH
+                MessageKind.VOTE -> UIWerewolfLineKind.VOTE
+                MessageKind.WOLF_CHAT, MessageKind.NIGHT_ACT -> UIWerewolfLineKind.PRIVATE
+            },
+            seat = message.seat,
+            speaker = speaker?.name,
+            avatarPath = speaker?.id?.let { avatars[it] },
+            text = message.text,
+        )
+    }
+
+    val me = game?.players?.firstOrNull { it.seat == humanSeat }
+
     return UIWerewolfLive(
         day = game?.day ?: 1,
         phaseLabel = game?.phase?.displayName ?: "准备中",
+        night = game?.phase?.let { it.isNightPhase() } ?: false,
         running = running,
         finished = finished,
         winnerLabel = game?.winner?.let { "${it.displayName}胜" },
@@ -252,9 +336,123 @@ private fun WerewolfUiState.toLive(): UIWerewolfLive {
         progressFraction = progress?.let { p ->
             if (p.step > 0 && p.total > 0) p.step.toFloat() / p.total else null
         },
-        broadcasts = game?.history?.map { WerewolfPrompt.describe(it) }.orEmpty(),
+        seats = seats,
+        lines = lines,
+        selfSeat = humanSeat,
+        selfRoleLabel = me?.role?.displayName,
+        selfFactionLabel = me?.role?.faction?.displayName,
+        spectating = humanSeat == null,
+        turn = if (game != null) buildTurn(game, humanSeat, me, turn) else null,
         error = error,
     )
+}
+
+/**
+ * 现在轮到我做什么。
+ *
+ * 只认 `phase` + 本人身份。人类座位和 AI 座位共用同一条请求路径，
+ * 所以「该不该弹面板」不能靠 `turn != null` 判断——`turn` 只说明导演正在等这个座位。
+ */
+private fun buildTurn(
+    game: WerewolfGame,
+    humanSeat: Int?,
+    me: WerewolfPlayer?,
+    waiting: HumanTurn?,
+): UIWerewolfTurn? {
+    if (humanSeat == null || me == null || waiting == null) return null
+
+    val others = game.alivePlayers
+        .filter { it.seat != humanSeat }
+        .map { UIWerewolfTarget(seat = it.seat, name = it.name) }
+
+    return when (game.phase) {
+        Phase.DAY_DISCUSSION -> UIWerewolfTurn(
+            kind = UIWerewolfTurnKind.SPEECH,
+            seat = humanSeat,
+            title = "轮到你发言",
+            hint = "第 ${game.day} 天",
+        )
+
+        Phase.DAY_VOTE -> UIWerewolfTurn(
+            kind = UIWerewolfTurnKind.VOTE,
+            seat = humanSeat,
+            title = if (game.voteRound > 1) "平票，再投一次" else "投票放逐",
+            hint = if (game.voteCandidates != null) "只能投平票的人" else null,
+            targets = if (game.voteCandidates != null) {
+                others.filter { it.seat in game.voteCandidates }
+            } else {
+                others
+            },
+            canAbstain = true,
+        )
+
+        Phase.NIGHT_WOLF -> if (me.role == WerewolfRole.WEREWOLF) {
+            UIWerewolfTurn(
+                kind = UIWerewolfTurnKind.SEAT,
+                seat = humanSeat,
+                title = if (game.wolfVoteRound > 1) "重新商议：今晚刀谁" else "今晚刀谁",
+                targets = others.filter { target ->
+                    game.players.firstOrNull { it.seat == target.seat }?.role != WerewolfRole.WEREWOLF
+                },
+            )
+        } else {
+            null
+        }
+
+        Phase.NIGHT_SEER -> if (me.role == WerewolfRole.SEER) {
+            UIWerewolfTurn(
+                kind = UIWerewolfTurnKind.SEAT,
+                seat = humanSeat,
+                title = "查验谁",
+                hint = "只知道是好人还是狼",
+                targets = others,
+            )
+        } else {
+            null
+        }
+
+        Phase.NIGHT_WITCH -> if (me.role == WerewolfRole.WITCH) {
+            UIWerewolfTurn(
+                kind = UIWerewolfTurnKind.WITCH,
+                seat = humanSeat,
+                title = "女巫用药",
+                targets = others,
+                canHeal = game.witchCanHeal,
+                canPoison = game.witchCanPoison,
+                healTarget = game.tonightVictim?.let { "$it 号" },
+            )
+        } else {
+            null
+        }
+
+        Phase.HUNTER_SHOOT -> if (
+            me.role == WerewolfRole.HUNTER && game.pendingHunterSeat == humanSeat
+        ) {
+            UIWerewolfTurn(
+                kind = UIWerewolfTurnKind.SEAT,
+                seat = humanSeat,
+                title = "开枪带走一个人",
+                hint = "也可以不开",
+                targets = others,
+                canAbstain = true,
+            )
+        } else {
+            null
+        }
+
+        Phase.FINISHED -> null
+    }
+}
+
+/** 夜晚三段算夜。猎人开枪归到白天播报里，所以不算。 */
+private fun Phase.isNightPhase(): Boolean =
+    this == Phase.NIGHT_WOLF || this == Phase.NIGHT_SEER || this == Phase.NIGHT_WITCH
+
+private fun DeathCause.toFate(): UIWerewolfFate = when (this) {
+    DeathCause.WOLF_KILL -> UIWerewolfFate.WOLF_KILL
+    DeathCause.WITCH_POISON -> UIWerewolfFate.WITCH_POISON
+    DeathCause.EXILE -> UIWerewolfFate.EXILE
+    DeathCause.HUNTER_SHOOT -> UIWerewolfFate.HUNTER_SHOOT
 }
 
 /**
