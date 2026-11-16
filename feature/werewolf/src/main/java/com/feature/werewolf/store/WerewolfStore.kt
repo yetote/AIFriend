@@ -10,8 +10,11 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.feature.werewolf.engine.WerewolfTable
 import com.feature.werewolf.engine.persistence.WerewolfSnapshot
+import com.feature.werewolf.game.SELF_PLAYER_ID
 
 /**
  * 一局游戏的存档记录。
@@ -29,6 +32,10 @@ data class WerewolfGameEntity(
     val day: Int,
     val phase: String,
     val winner: String?,
+    /** 几人局。列表上一眼区分「6 人快局」和「12 人守卫局」。 */
+    val playerCount: Int,
+    /** 这一局我有没有坐进去。false 表示纯观战。 */
+    val withHuman: Boolean,
     /** 完整快照，见 [WerewolfSnapshot]。 */
     val snapshot: String,
 )
@@ -42,23 +49,22 @@ data class WerewolfGameSummary(
     val day: Int,
     val phase: String,
     val winner: String?,
+    /** 0 表示旧档升级上来的行，列表页不显示人数而不是显示「0 人」。 */
+    val playerCount: Int = 0,
+    val withHuman: Boolean = false,
 )
 
 @Dao
 interface WerewolfGameDao {
 
     @Query(
-        "SELECT id, createdAt, updatedAt, finished, day, phase, winner " +
+        "SELECT id, createdAt, updatedAt, finished, day, phase, winner, playerCount, withHuman " +
             "FROM werewolf_games ORDER BY updatedAt DESC"
     )
     suspend fun summaries(): List<WerewolfGameSummary>
 
     @Query("SELECT * FROM werewolf_games WHERE id = :id")
     suspend fun byId(id: String): WerewolfGameEntity?
-
-    /** 最近一局还没分出胜负的，用于「继续上一局」。 */
-    @Query("SELECT id FROM werewolf_games WHERE finished = 0 ORDER BY updatedAt DESC LIMIT 1")
-    suspend fun latestUnfinishedId(): String?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: WerewolfGameEntity)
@@ -83,9 +89,6 @@ interface WerewolfGameStore {
 
     suspend fun load(id: String): WerewolfTable?
 
-    /** 最近一局没打完的。没有则返回 null。 */
-    suspend fun latestUnfinished(): Pair<String, WerewolfTable>?
-
     suspend fun summaries(): List<WerewolfGameSummary>
 
     suspend fun delete(id: String)
@@ -100,13 +103,31 @@ interface WerewolfGameStore {
  *
  * 代价是两份库文件，但它们是独立的，任何一边出问题都不会牵连另一个。
  */
-@Database(entities = [WerewolfGameEntity::class], version = 1, exportSchema = false)
+@Database(entities = [WerewolfGameEntity::class], version = 2, exportSchema = false)
 abstract class WerewolfDatabase : RoomDatabase() {
 
     abstract fun gameDao(): WerewolfGameDao
 
     companion object {
         private const val DB_NAME = "werewolf.db"
+
+        /**
+         * v1 → v2：列表页要显示「几人局 / 我有没有上桌」。
+         *
+         * 旧行补 0 和 false 而不是去回解快照：那张表可能有几百行，
+         * 为了两列展示字段全量反序列化一遍太贵；0 在界面上表示「不知道」，
+         * 列表页据此不画人数，也不影响「接着打」——续档读的始终是快照。
+         */
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE werewolf_games ADD COLUMN playerCount INTEGER NOT NULL DEFAULT 0"
+                )
+                db.execSQL(
+                    "ALTER TABLE werewolf_games ADD COLUMN withHuman INTEGER NOT NULL DEFAULT 0"
+                )
+            }
+        }
 
         @Volatile
         private var instance: WerewolfDatabase? = null
@@ -117,7 +138,7 @@ abstract class WerewolfDatabase : RoomDatabase() {
                     context.applicationContext,
                     WerewolfDatabase::class.java,
                     DB_NAME,
-                ).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2).build().also { instance = it }
             }
     }
 }
@@ -151,6 +172,8 @@ class WerewolfStore(
                 day = table.game.day,
                 phase = table.game.phase.name,
                 winner = table.game.winner?.name,
+                playerCount = table.game.players.size,
+                withHuman = table.game.players.any { it.id == SELF_PLAYER_ID },
                 snapshot = WerewolfSnapshot.encode(table),
             )
         )
@@ -159,13 +182,6 @@ class WerewolfStore(
     /** 读一局。存档损坏或版本不匹配时返回 null，调用方当作没有存档处理。 */
     override suspend fun load(id: String): WerewolfTable? =
         dao.byId(id)?.let { WerewolfSnapshot.decode(it.snapshot) }
-
-    /** 最近一局没打完的。没有则返回 null。 */
-    override suspend fun latestUnfinished(): Pair<String, WerewolfTable>? {
-        val id = dao.latestUnfinishedId() ?: return null
-        val table = load(id) ?: return null
-        return id to table
-    }
 
     override suspend fun summaries(): List<WerewolfGameSummary> = dao.summaries()
 

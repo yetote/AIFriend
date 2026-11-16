@@ -59,7 +59,6 @@ import com.ui.common.theme.UIGlassStroke
 import com.ui.common.theme.UIGlassSurface
 import com.ui.common.theme.UIGlassSurfaceStrong
 import com.ui.common.theme.UIGradientBackground
-import com.ui.common.theme.UIHeroBrush
 import com.ui.common.theme.UIRadiusCard
 import com.ui.common.theme.UIRadiusControl
 import com.ui.common.theme.UITopBar
@@ -70,7 +69,6 @@ import com.ui.werewolf.data.UIWerewolfApiState
 import com.ui.werewolf.data.UIWerewolfFriend
 import com.ui.werewolf.data.UIWerewolfMode
 import com.ui.werewolf.data.UIWerewolfPreset
-import com.ui.werewolf.data.UIWerewolfRecord
 import com.ui.werewolf.data.UIWerewolfSeat
 
 /**
@@ -95,16 +93,12 @@ fun UIWerewolfSetupScreen(
     friends: List<UIWerewolfFriend>,
     selectedIds: Set<String>,
     seats: List<UIWerewolfSeat>,
-    records: List<UIWerewolfRecord>,
-    unfinished: UIWerewolfRecord?,
     error: String?,
     apiChecks: Map<String, UIWerewolfApiCheck>,
     checking: Boolean,
     onModeChange: (UIWerewolfMode) -> Unit,
     onPresetChange: (String) -> Unit,
     onToggleFriend: (String) -> Unit,
-    onResume: () -> Unit,
-    onAbandon: () -> Unit,
     onClearError: () -> Unit,
     onCheckApi: () -> Unit,
     onBack: () -> Unit,
@@ -134,7 +128,7 @@ fun UIWerewolfSetupScreen(
 
     UIGradientBackground(modifier = Modifier.pageInsetsTop()) {
         Column(modifier = Modifier.fillMaxSize()) {
-            UITopBar(title = "狼人杀", onBack = onBack) {
+            UITopBar(title = "新开一局", onBack = onBack) {
                 Text(
                     text = if (canStart) "可以开局" else "差 $missing 位",
                     modifier = Modifier.padding(end = 12.dp),
@@ -152,14 +146,6 @@ fun UIWerewolfSetupScreen(
                     .padding(top = 16.dp, bottom = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(18.dp)
             ) {
-                if (unfinished != null) {
-                    ResumeCard(
-                        record = unfinished,
-                        onResume = onResume,
-                        onAbandon = onAbandon
-                    )
-                }
-
                 if (error != null) {
                     ErrorBar(text = error, onDismiss = onClearError)
                 }
@@ -277,20 +263,6 @@ fun UIWerewolfSetupScreen(
                     }
                 }
 
-                if (records.isNotEmpty()) {
-                    SectionTitle(title = "最近对局", subtitle = "点一局可以说明当时打到哪")
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .uiCard(shape = RoundedCornerShape(UIRadiusCard))
-                            .padding(vertical = 4.dp)
-                    ) {
-                        records.forEach { record ->
-                            RecordRow(record = record)
-                        }
-                    }
-                }
-
                 Spacer(Modifier.height(4.dp))
             }
 
@@ -379,78 +351,6 @@ private fun CheckApiButton(
             fontWeight = FontWeight.Medium,
             color = color
         )
-    }
-}
-
-/**
- * 「继续上一局」用深色卡片。
- *
- * 它和下面的浅色区块不是同一类东西：下面在配置新局，这里在提醒一件已经发生的事。
- * 用重色块把它从流程里拎出来，才不会被当成又一个设置项划过去。
- */
-@Composable
-private fun ResumeCard(
-    record: UIWerewolfRecord,
-    onResume: () -> Unit,
-    onAbandon: () -> Unit,
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .shadow(
-                elevation = 14.dp,
-                shape = RoundedCornerShape(UIRadiusCard),
-                clip = false,
-                ambientColor = UIBlobBlue,
-                spotColor = UIBlobBlue
-            )
-            .clip(RoundedCornerShape(UIRadiusCard))
-            .background(UIHeroBrush)
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(
-                text = "有一局还没打完",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = Color.White
-            )
-            Text(
-                text = "第 ${record.day} 天 · ${record.phaseLabel} · ${record.timeLabel}",
-                fontSize = 12.sp,
-                color = Color.White.copy(alpha = 0.78f)
-            )
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(50))
-                    .background(Color.White)
-                    .clickable { onResume() }
-                    .padding(horizontal = 18.dp, vertical = 8.dp)
-            ) {
-                Text(
-                    text = "接着打",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = UIFriendBarTitleColor
-                )
-            }
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(50))
-                    .border(1.dp, Color.White.copy(alpha = 0.5f), RoundedCornerShape(50))
-                    .clickable { onAbandon() }
-                    .padding(horizontal = 18.dp, vertical = 8.dp)
-            ) {
-                Text(
-                    text = "放弃这一局",
-                    fontSize = 13.sp,
-                    color = Color.White.copy(alpha = 0.9f)
-                )
-            }
-        }
     }
 }
 
@@ -803,40 +703,6 @@ private fun FriendRow(
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun RecordRow(record: UIWerewolfRecord) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(
-                text = if (record.finished) {
-                    "第 ${record.day} 天 · ${record.winnerLabel ?: "已结束"}"
-                } else {
-                    "第 ${record.day} 天 · ${record.phaseLabel}"
-                },
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                color = UIFriendBarTitleColor
-            )
-            Text(
-                text = record.timeLabel,
-                fontSize = 11.sp,
-                color = UIFriendBarItemSubtitleColor
-            )
-        }
-        Text(
-            text = if (record.finished) "已结束" else "未完成",
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Medium,
-            color = if (record.finished) UIFriendBarItemSubtitleColor else UIFriendBarTagTextBlue
-        )
     }
 }
 

@@ -4,6 +4,7 @@ import com.core.ai.entity.IAI
 import com.core.ai.model.ChatMessage
 import com.feature.werewolf.game.RosterEntry
 import com.feature.werewolf.game.WerewolfConfig
+import com.feature.werewolf.game.SELF_PLAYER_ID
 import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.store.WerewolfGameStore
 import com.feature.werewolf.store.WerewolfGameSummary
@@ -40,11 +41,6 @@ class WerewolfControllerTest {
         override suspend fun load(id: String): WerewolfTable? =
             saves.lastOrNull { it.id == id }?.table
 
-        override suspend fun latestUnfinished(): Pair<String, WerewolfTable>? {
-            val last = saves.lastOrNull { !it.table.game.isFinished } ?: return null
-            return last.id to last.table
-        }
-
         override suspend fun summaries(): List<WerewolfGameSummary> =
             saves.groupBy { it.id }.map { (id, list) ->
                 val last = list.last().table
@@ -56,6 +52,8 @@ class WerewolfControllerTest {
                     day = last.game.day,
                     phase = last.game.phase.name,
                     winner = last.game.winner?.name,
+                    playerCount = last.game.players.size,
+                    withHuman = last.game.players.any { it.id == SELF_PLAYER_ID },
                 )
             }
 
@@ -202,6 +200,19 @@ class WerewolfControllerTest {
 
         assertEquals("结束的局不该再跑一遍", before + 1, store.saves.size)
         assertTrue(second.state.value.finished)
+    }
+
+    @Test
+    fun `删另一局不会动到手上的这一局`() = runBlocking {
+        val store = FakeStore()
+        val c = controller(store)
+        c.start("g1", WerewolfGame.deal(WerewolfConfig(), roster(8)))
+        c.start("g2", WerewolfGame.deal(WerewolfConfig(), roster(8)))
+
+        c.discard("g1")
+
+        assertEquals("只该删 g1", listOf("g2"), store.saves.map { it.id })
+        assertNotNull("当前局面不能被清掉", c.state.value.table)
     }
 
     @Test
