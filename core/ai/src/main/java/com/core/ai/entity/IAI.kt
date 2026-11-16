@@ -30,15 +30,27 @@ interface IAI {
         get() = ModelPrice.USD
 
     /**
+     * 该厂商是否支持 `response_format = {"type":"json_object"}`。
+     *
+     * 星火和 Gemini 的 OpenAI 兼容层不支持这个字段，硬发会被 400 拒掉。
+     * 返回 false 的厂商，[com.core.ai.structured.decide] 会自动降级成
+     * 「只靠提示词约束 + 解析兜底」——功能不变，只是模型跑偏的概率高一些。
+     */
+    val supportsJsonMode: Boolean
+        get() = true
+
+    /**
      * 多轮对话：传入完整历史（不含 system），由实现方按厂商协议补 system 并转换为请求体。
      * [enableThinking] 为 false 时尽量关闭深度思考（部分厂商只能降档或忽略）。
+     * [jsonMode] 为 true 时要求模型输出 JSON 对象，仅在 [supportsJsonMode] 为 true 时生效。
      * 未接入的厂商默认抛出异常，避免静默返回错误内容。
      */
     suspend fun chat(
         messages: List<ChatMessage>,
         model: String,
         systemPrompt: String? = null,
-        enableThinking: Boolean = true
+        enableThinking: Boolean = true,
+        jsonMode: Boolean = false
     ): String = throw UnsupportedOperationException("「$brandName」暂未接入对话")
 
     @Deprecated("改用 chat(messages, model, systemPrompt, enableThinking)")

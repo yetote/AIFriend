@@ -3,6 +3,7 @@ package com.core.ai.entity
 import com.core.ai.model.ChatCompletionRequest
 import com.core.ai.model.ChatCompletionResponse
 import com.core.ai.model.ChatMessage
+import com.core.ai.model.ResponseFormat
 import com.core.repository.ApiConfig
 import com.core.repository.WebRepository
 
@@ -27,7 +28,8 @@ abstract class OpenAICompatibleAI(
         messages: List<ChatMessage>,
         model: String,
         systemPrompt: String?,
-        enableThinking: Boolean
+        enableThinking: Boolean,
+        jsonMode: Boolean
     ): String {
         val apiMessages = buildList {
             if (!systemPrompt.isNullOrBlank()) {
@@ -37,6 +39,8 @@ abstract class OpenAICompatibleAI(
         }
         val request = ChatCompletionRequest(model = model, messages = apiMessages)
             .applyThinking(enableThinking)
+            // 厂商不支持就当作没开，宁可让模型自由发挥，也不要一个 400 把整轮对话打断
+            .applyJsonMode(jsonMode && supportsJsonMode)
 
         val response = WebRepository.instance
             .chat<ChatCompletionResponse>(config = config, body = request)
@@ -53,6 +57,14 @@ abstract class OpenAICompatibleAI(
     protected open fun ChatCompletionRequest.applyThinking(
         enableThinking: Boolean
     ): ChatCompletionRequest = this
+
+    /**
+     * 加上 `response_format`。子类如果要用别的字段名（个别厂商自己搞了一套），覆盖这里。
+     */
+    protected open fun ChatCompletionRequest.applyJsonMode(
+        jsonMode: Boolean
+    ): ChatCompletionRequest =
+        if (jsonMode) copy(responseFormat = ResponseFormat(ResponseFormat.JSON_OBJECT)) else this
 
     @Deprecated("改用 chat(messages, model, systemPrompt, enableThinking)")
     override suspend fun chat(message: String, model: String): String =

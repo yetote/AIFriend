@@ -11,4 +11,11 @@ class AISpark : OfficialAI(
     override suspend fun loadModels() {
         useFallbackModels()
     }
+
+    /**
+     * 星火的 OpenAI 兼容层不接受 `response_format`，硬发会被拒。
+     * 结构化输出只能靠提示词约束 + 解析兜底，所以这里直接声明不支持。
+     */
+    override val supportsJsonMode: Boolean
+        get() = false
 }
