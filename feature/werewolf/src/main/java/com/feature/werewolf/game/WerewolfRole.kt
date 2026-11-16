@@ -9,6 +9,14 @@ package com.feature.werewolf.game
 enum class Faction {
     WEREWOLF,
     GOOD,
+    ;
+
+    /** 中文名。上帝播报和提示词都要用，写在一处避免各写一份。 */
+    val displayName: String
+        get() = when (this) {
+            WEREWOLF -> "狼人"
+            GOOD -> "好人"
+        }
 }
 
 /**
