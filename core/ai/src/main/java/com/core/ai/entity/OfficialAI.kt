@@ -7,7 +7,7 @@ import com.core.repository.settings.AIProviderCatalog
 import com.core.repository.storage.AICredentials
 
 /**
- * 官方厂商（DeepSeek、豆包、智谱、Kimi、通义千问、星火、Gemini）的公共父类。
+ * 官方厂商（DeepSeek、豆包、智谱、Kimi、通义千问、混元、MiniMax、小米、星火、Gemini）的公共父类。
  *
  * 这些厂商的共同点：一家公司一个模型家族，baseUrl 固定，Key 由用户自己去
  * 各家开放平台申请。APK 里不带任何一把 Key —— 带了的后果是被反编译出来

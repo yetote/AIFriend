@@ -4,7 +4,10 @@ import com.core.ai.entity.AIDeepseek
 import com.core.ai.entity.AIDoubao
 import com.core.ai.entity.AIGateway
 import com.core.ai.entity.AIGemini
+import com.core.ai.entity.AIHunyuan
 import com.core.ai.entity.AIKimi
+import com.core.ai.entity.AIMiMo
+import com.core.ai.entity.AIMiniMax
 import com.core.ai.entity.AIQianwen
 import com.core.ai.entity.AISpark
 import com.core.ai.entity.AIZhipu
@@ -40,6 +43,9 @@ class AIFactory : IFactory {
             "智谱清言" to AIZhipu::class.java,
             "Kimi" to AIKimi::class.java,
             "通义千问" to AIQianwen::class.java,
+            "混元" to AIHunyuan::class.java,
+            "MiniMax" to AIMiniMax::class.java,
+            "小米" to AIMiMo::class.java,
             "星火" to AISpark::class.java,
         )
 

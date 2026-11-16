@@ -15,6 +15,20 @@ class VendorLabelTest {
 
     private val qianwen = "通义千问"
     private val doubao = "豆包"
+    private val hunyuan = "混元"
+
+    @Test
+    fun `hunyuan short ids stay in the self group`() {
+        // 混元在 TokenHub 上把自家模型改成了 hy4 / hy3 这种短 id，
+        // 名字里已经没有 hunyuan 字样。它们必须留在「混元」组里，
+        // 而不是因为没有厂商段被塞进「其他」。
+        assertEquals(hunyuan, vendorLabelOf("hy4", hunyuan))
+        assertEquals(hunyuan, vendorLabelOf("hy3", hunyuan))
+        assertEquals(hunyuan, vendorLabelOf("hy4-preview", hunyuan))
+        // TokenHub 同时代理别家，这些要照旧按牌子分组
+        assertEquals("DeepSeek", vendorLabelOf("deepseek-v4.1-flash-1017", hunyuan))
+        assertEquals("Kimi", vendorLabelOf("kimi-k3", hunyuan))
+    }
 
     @Test
     fun `own models stay in the self group`() {

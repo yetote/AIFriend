@@ -37,7 +37,9 @@ class AIZhipu : OfficialAI(
         enableThinking: Boolean
     ): ChatCompletionRequest {
         if (enableThinking) return this
-        return if (model.startsWith("glm-5")) {
+        // 大小写不敏感：/models 返回的 id 可能是 `GLM-5.3`。大小写敏感的话
+        // 大写 id 会被当成 GLM-4.x，对「始终思考」的 GLM-5 发 disabled 直接 400。
+        return if (model.startsWith("glm-5", ignoreCase = true)) {
             copy(reasoningEffort = "low")
         } else {
             copy(thinking = ThinkingConfig("disabled"))

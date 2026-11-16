@@ -33,7 +33,7 @@ data class AgentUiState(
      * 可选服务商。
      *
      * 初值是空的，不是 [DEFAULT_PROVIDERS]：Key 由用户自己填，
-     * 加载完成前谁都没配，先摆出 7 个官方厂商会闪一下又消失。
+     * 加载完成前谁都没配，先摆出一排官方厂商会闪一下又消失。
      */
     val providers: List<Provider> = emptyList(),
     val selectedBrand: String = "",

@@ -3,7 +3,10 @@ package com.core.repository.settings
 import com.core.network.URL_DEEPSEEK
 import com.core.network.URL_DOUBAO
 import com.core.network.URL_GEMINI
+import com.core.network.URL_HUNYUAN
 import com.core.network.URL_KIMI
+import com.core.network.URL_MINIMAX
+import com.core.network.URL_MIMO
 import com.core.network.URL_QIANWEN
 import com.core.network.URL_SPARK
 import com.core.network.URL_ZHIPU
@@ -133,10 +136,12 @@ object AIProviderCatalog {
     val Zhipu = AIProvider(
         id = "zhipu",
         name = "智谱清言",
-        description = "北京智谱华章，GLM 系列模型",
+        description = "智谱 GLM 系列，GLM-4.7-Flash 免费不限量",
         baseUrl = URL_ZHIPU,
         consoleUrl = "https://bigmodel.cn/usercenter/apikeys",
-        fallbackModels = listOf("glm-5.3-flash", "glm-5.3", "glm-5.2"),
+        // glm-4.7-flash 是官方定价页上标「输入免费/输出免费」的那一档（200K 上下文），
+        // 排最后是因为它能干的事最少；但在拉不到列表时，它是唯一不用充钱就能跑的选择
+        fallbackModels = listOf("glm-5.3-flash", "glm-5.3", "glm-5.2", "glm-4.7-flash"),
         company = "北京智谱华章"
     )
 
@@ -158,6 +163,40 @@ object AIProviderCatalog {
         consoleUrl = "https://bailian.console.aliyun.com/",
         fallbackModels = listOf("qwen3.8-flash", "qwen3.8-max", "qwen-plus"),
         company = "阿里巴巴"
+    )
+
+    val Hunyuan = AIProvider(
+        id = "hunyuan",
+        name = "混元",
+        description = "腾讯混元 Hy4，1M 上下文，带视觉和电脑操作",
+        baseUrl = URL_HUNYUAN,
+        consoleUrl = "https://console.cloud.tencent.com/tokenhub/apikey",
+        // Hy4 是 2026-11 的旗舰；Hy3 便宜、输出上限还更高（128K），留着当日常档
+        fallbackModels = listOf("hy4", "hy3"),
+        company = "腾讯"
+    )
+
+    val MiniMax = AIProvider(
+        id = "minimax",
+        name = "MiniMax",
+        description = "MiniMax 官方接口，多轮对话与角色扮演有专门优化",
+        baseUrl = URL_MINIMAX,
+        consoleUrl = "https://platform.minimaxi.com/user-center/basic-information/interface-key",
+        // M2-her 是专攻角色扮演和多轮对话的那一支，对好友场景比通用旗舰更对口
+        fallbackModels = listOf("MiniMax-M3.1-Flash", "MiniMax-M3", "M2-her"),
+        company = "MiniMax",
+        // M3.1-Flash 恒定思考，发 thinking:disabled 会被 400 拒掉，所以不给开关
+        thinkingSwitchable = false
+    )
+
+    val MiMo = AIProvider(
+        id = "mimo",
+        name = "小米",
+        description = "小米 MiMo，全模态、低成本，多角色并发首选",
+        baseUrl = URL_MIMO,
+        consoleUrl = "https://platform.xiaomimimo.com/",
+        fallbackModels = listOf("mimo-v2.6-flash", "mimo-v2.6-pro"),
+        company = "小米"
     )
 
     val Spark = AIProvider(
@@ -226,7 +265,7 @@ object AIProviderCatalog {
 
     /** 官方厂商，创建页和设置页里排在聚合平台前面。 */
     val official: List<AIProvider> = listOf(
-        Deepseek, Doubao, Zhipu, Kimi, Qianwen, Spark, Gemini
+        Deepseek, Doubao, Zhipu, Kimi, Qianwen, Hunyuan, MiniMax, MiMo, Spark, Gemini
     )
 
     /** 一把 Key 调多家的平台，自定义放最后。 */
