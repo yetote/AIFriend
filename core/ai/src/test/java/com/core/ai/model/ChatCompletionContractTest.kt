@@ -70,6 +70,26 @@ class ChatCompletionContractTest {
     }
 
     @Test
+    fun `response_format is omitted unless structured output is requested`() {
+        // 普通聊天：字段是默认值 null，encodeDefaults=false 会把它整个省掉，
+        // 报文和加这个功能之前完全一致——不能因为结构化决策把日常对话的发包改脏。
+        val plain = ChatCompletionRequest(
+            model = "deepseek-flash",
+            messages = listOf(ChatMessage.user("hi"))
+        )
+        val plainJson = Json.parseToJsonElement(json.encodeToString(plain)).jsonObject
+        assertEquals(null, plainJson["response_format"])
+
+        // 结构化决策：只有显式开启才会出现，且是 OpenAI 的 json_object 写法
+        val structured = plain.copy(responseFormat = ResponseFormat(ResponseFormat.JSON_OBJECT))
+        val structuredJson = Json.parseToJsonElement(json.encodeToString(structured)).jsonObject
+        assertEquals(
+            "json_object",
+            structuredJson["response_format"]!!.jsonObject["type"]!!.jsonPrimitive.content
+        )
+    }
+
+    @Test
     fun `response parses assistant content and reasoning`() {
         val raw = """
             {

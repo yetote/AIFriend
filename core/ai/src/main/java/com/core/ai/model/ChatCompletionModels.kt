@@ -19,8 +19,26 @@ data class ChatCompletionRequest(
     val enableThinking: Boolean? = null,
     /** 智谱 GLM-5 系列无法关闭思考，只能降档：low / high / max */
     @SerialName("reasoning_effort")
-    val reasoningEffort: String? = null
+    val reasoningEffort: String? = null,
+    /**
+     * 要求模型只输出一个 JSON 对象。
+     *
+     * 默认 null，配合 `explicitNulls = false` 不会出现在报文里——普通聊天一个字节都不变。
+     * 不支持这个字段的厂商（星火、Gemini 的兼容层）由
+     * [com.core.ai.entity.IAI.supportsJsonMode] 挡住，不会发出去被 400。
+     */
+    @SerialName("response_format")
+    val responseFormat: ResponseFormat? = null
 )
+
+@Serializable
+data class ResponseFormat(
+    val type: String
+) {
+    companion object {
+        const val JSON_OBJECT = "json_object"
+    }
+}
 
 @Serializable
 data class ThinkingConfig(
