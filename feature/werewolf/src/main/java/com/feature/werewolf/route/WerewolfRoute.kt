@@ -682,7 +682,16 @@ private fun WerewolfUiState.toLive(
             avatarPath = avatars[player.id],
             isSelf = player.seat == humanSeat,
             alive = player.alive,
-            fate = player.deathCause?.toFate(),
+            // 参与中的局不暴露刀/毒：那是 AI 玩家拿不到的私有信息。
+            // 只给一个中性的「夜」，让「他死了」这件事照常可见。
+            // 观战和已结束才显示真实死因——那时复盘本来就该看清。
+            fate = player.deathCause?.toFate()?.let { fate ->
+                if (!reveal && (fate == UIWerewolfFate.WOLF_KILL || fate == UIWerewolfFate.WITCH_POISON)) {
+                    UIWerewolfFate.NIGHT
+                } else {
+                    fate
+                }
+            },
             roleLabel = if (known) player.role.displayName else null,
             wolf = player.role == WerewolfRole.WEREWOLF,
             active = actorSeat == player.seat,

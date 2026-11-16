@@ -43,6 +43,16 @@ data class UIWerewolfSeatLive(
 enum class UIWerewolfFate(val short: String, val full: String) {
     WOLF_KILL("刀", "夜里被狼人刀了"),
     WITCH_POISON("毒", "被女巫毒死"),
+
+    /**
+     * 参与中的局看到的夜间出局：只知道「夜里死了」，不知道是刀还是毒。
+     *
+     * 刀口和用药是私有信息——AI 玩家拿到的 publicSituation 里只有座位号，
+     * 人类玩家要是能从牌桌徽标上读出「毒」，就等于拿到了 AI 没有的情报。
+     * 但也不能干脆不给标记：那会让人以为他还活着。观战和结束后显示真实死因。
+     */
+    NIGHT("夜", "夜里出局"),
+
     EXILE("票", "被投票放逐"),
     HUNTER_SHOOT("枪", "被猎人开枪带走"),
 

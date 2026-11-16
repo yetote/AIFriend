@@ -470,18 +470,21 @@ data class WerewolfGame(
         var next = copy(history = history + GameEvent.HunterShot(day, hunter, targetSeat))
         if (targetSeat != null) {
             next = next.applyDeaths(listOf(targetSeat to DeathCause.HUNTER_SHOOT))
-            // 被枪带走的人不留遗言（线下惯例），所以如果带走的是警长，警徽当场作废。
-            // 不在这里清的话，牌桌上会一直挂着一个死人名下的警徽。
-            next = next.dropDeadBadge()
-            val winnerFaction = next.evaluateWinner()
-            if (winnerFaction != null) {
-                return next.copy(
-                    phase = Phase.FINISHED,
-                    winner = winnerFaction,
-                    pendingHunterSeat = null,
-                    history = next.history + GameEvent.GameOver(next.day, winnerFaction),
-                )
-            }
+            // 枪可能带走的是警长：只清**被枪打死的那位**的警徽。
+            // 不能调用全局 dropDeadBadge()——开枪的猎人自己如果就是警长，
+            // 那样会在他还没说遗言之前先把徽吞掉，他想交也交不出去了。
+            if (next.sheriffSeat == targetSeat) next = next.dropDeadBadge()
+        }
+        // 开枪（或放弃）之后才判胜负：绑票局面下猎人那一枪可能刚好打断它。
+        // 放弃开枪同样要判——否则已绑票的局会照常回到白天，白演一天。
+        val winnerFaction = next.evaluateWinner()
+        if (winnerFaction != null) {
+            return next.copy(
+                phase = Phase.FINISHED,
+                winner = winnerFaction,
+                pendingHunterSeat = null,
+                history = next.history + GameEvent.GameOver(next.day, winnerFaction),
+            )
         }
         return next.afterHunter()
     }
@@ -630,6 +633,13 @@ data class WerewolfGame(
      *
      * 规则上自爆者不留遗言：他要说的那句「我自爆」本身就是交代。唯一的例外是他正好
      * 是警长——警徽得交出去，所以走一遍遗言。
+     *
+     * 两个容易漏的收尾：
+     * - **竞选发言里自爆**：选举当场中止，本局没有警长。必须按「无人上警」那样清掉
+     *   竞选名单、补一条 [GameEvent.SheriffVacant]，并置 [sheriffElectionDone]；
+     *   否则 `sheriffElectionDone` 还是 false，下一次 `dayOpening()` 会把游戏拽回上警。
+     * - **别人的遗言还在排队**：首夜死者（或警长）可能正在等遗言。自爆不能覆盖
+     *   那个队列，只能把自己的座位并进去——并完还要走完遗言再入夜。
      */
     fun wolfExplode(seat: Int): WerewolfGame {
         require(phase == Phase.DAY_DISCUSSION || phase == Phase.DAY_SHERIFF_SPEECH) {
@@ -639,8 +649,19 @@ data class WerewolfGame(
         require(player.alive) { "$seat 号已经出局" }
         require(player.role == WerewolfRole.WEREWOLF) { "只有狼人可以自爆" }
 
+        val wasCampaigning = phase == Phase.DAY_SHERIFF_SPEECH
         var next = applyDeaths(listOf(seat to DeathCause.SELF_EXPLODE))
         next = next.copy(history = next.history + GameEvent.WolfExploded(next.day, seat))
+
+        if (wasCampaigning) {
+            next = next.copy(
+                sheriffCandidates = emptyList(),
+                sheriffRunners = emptyList(),
+                sheriffRound = 1,
+                sheriffElectionDone = true,
+                history = next.history + GameEvent.SheriffVacant(next.day, "竞选发言时狼人自爆，选举中止"),
+            )
+        }
 
         val winnerFaction = next.evaluateWinner()
         if (winnerFaction != null) {
@@ -650,14 +671,21 @@ data class WerewolfGame(
                 history = next.history + GameEvent.GameOver(next.day, winnerFaction),
             )
         }
-        return if (next.sheriffSeat == seat) {
+
+        // 只把「需要交代警徽」的爆狼警长加进来，不动队列里原有的人。
+        // 入夜必须走完遗言，不能图省事直接 startNextNight()——那里会清空队列。
+        val pending = buildList {
+            addAll(next.pendingLastWords)
+            if (next.sheriffSeat == seat && seat !in this) add(seat)
+        }.sorted()
+        return if (pending.isEmpty()) {
+            next.startNextNight()
+        } else {
             next.copy(
                 phase = Phase.DAY_LAST_WORDS,
-                pendingLastWords = listOf(seat),
+                pendingLastWords = pending,
                 afterLastWordsPhase = Phase.NIGHT_WOLF,
             )
-        } else {
-            next.startNextNight()
         }
     }
 
@@ -727,8 +755,12 @@ data class WerewolfGame(
             ),
         )
 
+        // 胜负分两步判。狼人全灭是即时终局，好人不需要再等谁开枪；
+        // 但「绑票 / 屠边」这类狼方赢必须等天亮被刀的猎人开完枪——
+        // 他一枪可能带走最后一狼，把 2v2 的必败翻成 1v1 甚至好人赢。
+        // 在这里先判就把他那张枪牌吞了，和「猎人被狼刀可以开枪」直接冲突。
         val winnerFaction = next.evaluateWinner()
-        if (winnerFaction != null) {
+        if (winnerFaction == Faction.GOOD) {
             return next.copy(
                 phase = Phase.FINISHED,
                 winner = winnerFaction,
@@ -760,6 +792,15 @@ data class WerewolfGame(
                 pendingLastWords = lastWords,
             )
         } else {
+            // 没有猎人要开枪，狼方的胜负此刻就定了（狼全灭已在上面判过）。
+            // 不在这里判的话，绑票局面会照常走进白天，白演一轮注定投不出人的投票。
+            if (winnerFaction != null) {
+                return next.copy(
+                    phase = Phase.FINISHED,
+                    winner = winnerFaction,
+                    history = next.history + GameEvent.GameOver(next.day, winnerFaction),
+                )
+            }
             next.copy(pendingLastWords = lastWords).dayOpening()
         }
     }
@@ -793,8 +834,11 @@ data class WerewolfGame(
             .applyDeaths(listOf(exiled to DeathCause.EXILE))
         next = next.copy(history = next.history + GameEvent.Exiled(next.day, exiled, voteCount))
 
+        // 和 settleNight 同一条时序：好人赢（狼全灭）立即终局，
+        // 狼方赢要等被票出的猎人开完枪——他那一枪可能刚好打断绑票。
         val winnerFaction = next.evaluateWinner()
-        if (winnerFaction != null) {
+        val hunter = next.playerAt(exiled).role == WerewolfRole.HUNTER
+        if (winnerFaction != null && (winnerFaction == Faction.GOOD || !hunter)) {
             return next.copy(
                 phase = Phase.FINISHED,
                 winner = winnerFaction,
@@ -805,7 +849,7 @@ data class WerewolfGame(
         // 被放逐的人一定留遗言（这是他被冤枉后唯一能说话的机会）。
         // 如果他正好是猎人，顺序是**先遗言、再开枪**——枪是死前最后一张牌，
         // 先说两句再放，才解释得清他为什么带走这个人。
-        val hunter = next.playerAt(exiled).role == WerewolfRole.HUNTER
+        // 上面特意没在「狼方赢 + 待开枪猎人」时终局，就是为了走到这里。
         return next.copy(
             phase = Phase.DAY_LAST_WORDS,
             pendingLastWords = listOf(exiled),
@@ -976,7 +1020,17 @@ data class WerewolfGame(
         if (aliveWolfCount == 0) return Faction.GOOD
 
         val aliveGoodCount = players.count { it.alive && it.faction == Faction.GOOD }
-        if (aliveWolfCount >= aliveGoodCount) return Faction.WEREWOLF
+
+        // 绑票比的是**票权**，不是人头。警长一票算 1.5（半点单位里是 3 而不是 2），
+        // 活着的警长属于哪边，哪边就多半票：2 狼 2 好且警长是好人时是 4 点对 5 点，
+        // 好人能把狼投出去。按人头比会在这里提前判负，那张 1.5 票白白浪费。
+        // 死警长的警徽归属未定，不算在任何一边——他要先在遗言里决定交给谁。
+        val sheriff = aliveSheriffSeat
+        val sheriffIsWolf = sheriff != null && playerAt(sheriff).faction == Faction.WEREWOLF
+        val sheriffIsGood = sheriff != null && playerAt(sheriff).faction == Faction.GOOD
+        val wolfPoints = aliveWolfCount * 2 + if (sheriffIsWolf) 1 else 0
+        val goodPoints = aliveGoodCount * 2 + if (sheriffIsGood) 1 else 0
+        if (wolfPoints >= goodPoints) return Faction.WEREWOLF
 
         if (config.winRule == WinRule.SLAY_SIDE) {
             // 只看「开局存在过的那一类」，避免 8 人局里没有平民时误判村民全灭。
