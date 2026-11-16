@@ -25,11 +25,15 @@ import com.feature.werewolf.game.WerewolfRole
 import com.feature.werewolf.game.WinRule
 import com.feature.werewolf.game.VoteOutcome
 import com.feature.werewolf.store.WerewolfGameSummary
+import com.feature.werewolf.vm.ApiCheck
+import com.feature.werewolf.vm.ApiCheckState
 import com.feature.werewolf.vm.WerewolfMode
 import com.feature.werewolf.vm.WerewolfViewModel
 import com.ui.werewolf.UIWerewolfReviewScreen
 import com.ui.werewolf.UIWerewolfSetupScreen
 import com.ui.werewolf.UIWerewolfTableScreen
+import com.ui.werewolf.data.UIWerewolfApiCheck
+import com.ui.werewolf.data.UIWerewolfApiState
 import com.ui.werewolf.data.UIWerewolfBallotLine
 import com.ui.werewolf.data.UIWerewolfCheckReport
 import com.ui.werewolf.data.UIWerewolfDayReport
@@ -69,6 +73,8 @@ fun WerewolfRoute(
     val error by viewModel.error.collectAsState()
     val humanSeat by viewModel.humanSeat.collectAsState()
     val humanTurn by viewModel.humanTurn.collectAsState()
+    val apiChecks by viewModel.apiChecks.collectAsState()
+    val verifying by viewModel.verifying.collectAsState()
 
     var screen by remember { mutableStateOf<WerewolfScreen>(WerewolfScreen.Setup) }
     var showReview by remember { mutableStateOf(false) }
@@ -101,6 +107,7 @@ fun WerewolfRoute(
     val records = remember(summaries) { summaries.take(5).map { it.toRecord() } }
     val unfinished = records.firstOrNull { !it.finished }
     val preset = PRESETS.firstOrNull { it.key == presetKey } ?: PRESETS.first()
+    val uiApiChecks = remember(apiChecks) { apiChecks.mapValues { it.value.toUiCheck() } }
 
     when (screen) {
         WerewolfScreen.Setup -> UIWerewolfSetupScreen(
@@ -113,6 +120,8 @@ fun WerewolfRoute(
             records = records,
             unfinished = unfinished,
             error = error,
+            apiChecks = uiApiChecks,
+            checking = verifying,
             onModeChange = { next ->
                 mode = next
                 // 「我参与」比「纯观战」少要一位，切过去时多出来的人要放掉，
@@ -129,6 +138,9 @@ fun WerewolfRoute(
                 } else {
                     selectedIds + id
                 }
+                // 换人之后旧结论就失效了：上一条错误可能正是说「有几个座位连不上」，
+                // 留着会让用户以为刚取消的那个人还有问题
+                viewModel.clearError()
             },
             onResume = {
                 viewModel.resumeLatest()
@@ -137,12 +149,22 @@ fun WerewolfRoute(
                 viewModel.abandon()
             },
             onClearError = viewModel::clearError,
+            onCheckApi = { viewModel.checkApi(selectedIds) },
             onBack = onExit,
             onStart = {
                 viewModel.startGame(
                     mode = mode.toMode(),
                     friendIds = selectedIds.toList(),
                     config = configOf(presetKey),
+                )
+            },
+            onStartAnyway = {
+                viewModel.startGame(
+                    mode = mode.toMode(),
+                    friendIds = selectedIds.toList(),
+                    config = configOf(presetKey),
+                    // 走到这里说明用户已经看见红灯并选择继续，不必再拦一次
+                    skipCheck = true,
                 )
             },
         )
@@ -253,6 +275,16 @@ private fun com.core.ai.model.Friend.toUiFriend() = UIWerewolfFriend(
     avatarPath = avatarPath,
     role = role,
     model = model,
+)
+
+private fun ApiCheck.toUiCheck() = UIWerewolfApiCheck(
+    state = when (state) {
+        ApiCheckState.CHECKING -> UIWerewolfApiState.CHECKING
+        ApiCheckState.OK -> UIWerewolfApiState.OK
+        ApiCheckState.FAILED -> UIWerewolfApiState.FAILED
+    },
+    message = message,
+    elapsedMs = elapsedMs,
 )
 
 /**
