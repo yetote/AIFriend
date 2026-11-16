@@ -5,6 +5,9 @@ import androidx.lifecycle.viewModelScope
 import com.core.ai.entity.IAI
 import com.core.ai.factory.AIFactory
 import com.core.ai.model.ChatMessage
+import com.core.ai.model.Friend
+import com.core.ai.model.toFriend
+import com.core.ai.model.trimToBudget
 import com.core.common.BaseViewModel
 import com.core.repository.storage.AIProviderSettings
 import com.core.repository.storage.AvatarStore
@@ -12,9 +15,6 @@ import com.core.repository.storage.FriendRepository
 import com.core.repository.storage.LegacyMigration
 import com.core.repository.storage.ProfileRepository
 import com.core.repository.storage.RoomRepository
-import com.feature.agent.data.toFriend
-import com.feature.agent.data.trimToBudget
-import com.feature.agent.model.Friend
 import com.feature.room.contract.RoomUiState
 import com.feature.room.data.AutoChatPolicy
 import com.feature.room.data.RoomTopic

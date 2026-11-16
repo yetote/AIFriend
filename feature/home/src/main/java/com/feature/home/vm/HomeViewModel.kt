@@ -3,6 +3,7 @@ package com.feature.home.vm
 import android.app.Application
 import androidx.lifecycle.viewModelScope
 import com.core.ai.model.ModelPriceRefresher
+import com.core.ai.model.toFriend
 import com.core.common.BaseViewModel
 import com.core.repository.storage.AvatarStore
 import com.core.repository.storage.FriendRepository
@@ -10,7 +11,6 @@ import com.core.repository.storage.LegacyMigration
 import com.core.repository.storage.ProfileRepository
 import com.core.repository.storage.RoomRepository
 import com.core.repository.storage.StoredRoomMessage
-import com.feature.agent.data.toFriend
 import com.feature.home.contract.HomeScreen
 import com.feature.home.contract.HomeUiState
 import com.feature.room.data.toRoom

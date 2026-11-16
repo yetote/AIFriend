@@ -1,10 +1,12 @@
-package com.feature.agent.model
-
-import com.core.ai.model.ChatMessage
+package com.core.ai.model
 
 /**
  * 一个 AI 好友：展示信息 + 角色设定 + 绑定的厂商/模型 + 本地会话历史。
- * 目前只保存在内存里，进程被杀后会丢失（后续接 DataStore/Room）。
+ *
+ * 放在 core:ai 而不是 feature:agent：它是「一次 AI 会话的配置」，
+ * 聊天室、狼人杀这些不依赖 feature:agent 的模块也要读它（选成员、拼 system prompt）。
+ * 依赖方向上 core:ai 已经依赖 core:repository，反过来把 Friend 放进
+ * core:repository 会让后者必须引用 [ChatMessage]，形成环。
  */
 data class Friend(
     val id: String,

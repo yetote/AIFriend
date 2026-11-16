@@ -1,6 +1,4 @@
-package com.feature.agent.data
-
-import com.core.ai.model.ChatMessage
+package com.core.ai.model
 
 /**
  * 上下文预算：每次请求只发送最近的一部分历史，避免对话越长 token 越爆炸。
@@ -10,6 +8,10 @@ import com.core.ai.model.ChatMessage
  * - 只影响发给模型的内容，本地展示和持久化的历史不受影响
  * - 用字符估算而不是真实 tokenizer，是为了不引入各厂商的分词依赖；
  *   中文按 1 字 ≈ 1 token，英文按 4 字符 ≈ 1 token
+ *
+ * 放在 core:ai 而不是某个 feature 里：截断的对象就是 [ChatMessage]，
+ * 任何发起对话的模块（1:1、聊天室、狼人杀）都要用同一套规则，
+ * 否则同一条消息在不同页面占的预算不一样，问题很难复现。
  */
 object ContextBudget {
     const val MAX_HISTORY_TOKENS = 6_000

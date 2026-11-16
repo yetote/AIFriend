@@ -12,8 +12,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.feature.agent.data.estimateTokens
-import com.feature.agent.data.trimToBudget
+import com.core.ai.model.estimateTokens
+import com.core.ai.model.trimToBudget
 import com.feature.room.contract.RoomScreen
 import com.feature.room.data.buildRoomContext
 import com.feature.room.model.MAX_ROOM_MEMBERS
