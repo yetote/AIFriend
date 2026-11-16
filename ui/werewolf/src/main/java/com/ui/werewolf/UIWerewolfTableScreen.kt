@@ -12,7 +12,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -21,7 +20,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -53,6 +51,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -73,9 +72,6 @@ import com.ui.werewolf.data.UIWerewolfSeatLive
 import com.ui.werewolf.data.UIWerewolfTarget
 import com.ui.werewolf.data.UIWerewolfTurn
 import com.ui.werewolf.data.UIWerewolfTurnKind
-import kotlin.math.PI
-import kotlin.math.cos
-import kotlin.math.sin
 
 // ---------------------------------------------------------------------------
 // 配色
@@ -108,8 +104,12 @@ private val VoteRed = Color(0xFFE0564F)
  * 牌桌页。
  *
  * 一屏之内要同时交代四件事，优先级从上到下：
- * 我是谁（顶栏下一行）→ 场上有谁（座位环）→ 刚刚发生了什么（记录流）→ 现在要我做什么（底部）。
+ * 我是谁（顶栏下一行）→ 场上有谁（左右两列）→ 刚刚发生了什么（中间对话）→ 现在要我做什么（底部）。
  * 没有 tab、没有二级页：狼人杀的信息是连续的，切走再切回来就读不懂局势了。
+ *
+ * 座位从环形改成左右两列：环形在 10 人以上会缩成一圈看不清的小头像，中央只剩一条窄缝，
+ * 而左右两侧的空白完全用不上。竖排两列把宽度用满，头像和名字都能大一号，
+ * 中间那条留给对话——真正需要读的东西。
  */
 @Composable
 fun UIWerewolfTableScreen(
@@ -173,18 +173,13 @@ fun UIWerewolfTableScreen(
                 dimColor = dimColor
             )
 
-            TableStage(
-                live = live,
-                night = night,
-                textColor = textColor,
-                dimColor = dimColor
-            )
-
             if (live.error != null) {
                 ErrorStrip(message = live.error, night = night)
             }
 
-            Feed(
+            // 左右两列玩家夹住中间的对话流。中间拿 weight，屏幕再窄也优先保住说话的地方——
+            // 身份和出局状态挤一挤还能读，话被裁掉就完全看不懂局势了。
+            SeatColumns(
                 live = live,
                 night = night,
                 textColor = textColor,
@@ -385,93 +380,127 @@ private fun ThinkingDot(color: Color) {
 // ---------------------------------------------------------------------------
 
 /**
- * 座位环。
+ * 座位分列。
  *
- * 座位按椭圆排布而不是列表：狼人杀的空间关系本身就是信息——谁是邻座、
- * 谁发言在你前面，都在座次上。做成列表就把这层信息丢了。
+ * 从环改成两列，是因为环在 10 人以上会挤成一圈小点：中央留给「第几天」的地方被压扁，
+ * 头像缩到认不出人，而两侧大片空白根本用不上。竖排两列把同一屏的宽度用满，
+ * 头像反而能大一号。
  *
- * 中央留白给「第几天、什么阶段、正在等谁」，那是等待几十秒时唯一能看的东西。
+ * 分配按序号**从左到右、从上到下**：1 号在左列第一行，2 号在右列第一行，
+ * 3 号左列第二行……所以两列的号码是奇偶分开的。读起来仍是从小到大，
+ * 只是先看一行再往下走——和发言顺序一致的直觉。
  */
 @Composable
-private fun TableStage(
+private fun SeatColumns(
     live: UIWerewolfLive,
     night: Boolean,
     textColor: Color,
     dimColor: Color,
+    surface: Color,
+    modifier: Modifier = Modifier,
 ) {
-    BoxWithConstraints(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(284.dp)
-            .padding(horizontal = 6.dp)
-    ) {
-        // 桌面：一块比座位环略小的椭圆，白天是白瓷，夜里是深蓝绒布
-        Box(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .fillMaxWidth(0.82f)
-                .fillMaxHeight(0.76f)
-                .clip(CircleShape)
-                .background(if (night) Color(0xFF1A2334) else Color(0xFFEDF1FA))
-        )
+    // 座位号升序排一次再分栏。引擎给的是按座位排好的，但这里不依赖那个隐式约定
+    val ordered = remember(live.seats) { live.seats.sortedBy { it.seat } }
+    val left = remember(ordered) { ordered.filterIndexed { index, _ -> index % 2 == 0 } }
+    val right = remember(ordered) { ordered.filterIndexed { index, _ -> index % 2 == 1 } }
 
-        val seats = live.seats
-        if (seats.isNotEmpty()) {
-            val rx = maxWidth / 2 - 30.dp
-            val ry = maxHeight / 2 - 34.dp
-            val cx = maxWidth / 2
-            val cy = maxHeight / 2
-            val step = 2 * PI / seats.size
-            seats.forEachIndexed { index, seat ->
-                // 从正上方开始顺时针排：1 号在最上，和线下围桌的习惯一致
-                val angle = -PI / 2 + step * index
-                val x = cx + rx * cos(angle).toFloat()
-                val y = cy + ry * sin(angle).toFloat()
-                SeatChip(
-                    seat = seat,
-                    night = night,
-                    dimColor = dimColor,
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .offset(x = x - 30.dp, y = y - 32.dp)
-                )
-            }
-        }
-
-        CenterStatus(
-            live = live,
+    Row(modifier = modifier.fillMaxWidth()) {
+        SeatColumn(
+            seats = left,
             night = night,
             textColor = textColor,
             dimColor = dimColor,
-            modifier = Modifier
-                .align(Alignment.Center)
-                .width(168.dp)
+            modifier = Modifier.width(COLUMN_WIDTH).fillMaxHeight()
         )
+
+        Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
+            StatusStrip(live = live, night = night, textColor = textColor, dimColor = dimColor)
+            Feed(
+                live = live,
+                night = night,
+                textColor = textColor,
+                dimColor = dimColor,
+                surface = surface,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            )
+        }
+
+        SeatColumn(
+            seats = right,
+            night = night,
+            textColor = textColor,
+            dimColor = dimColor,
+            modifier = Modifier.width(COLUMN_WIDTH).fillMaxHeight()
+        )
+    }
+}
+
+/** 一列侧栏的宽度。62dp 放得下 4 个汉字的名字，再多中间就不够说话了。 */
+private val COLUMN_WIDTH = 62.dp
+
+/**
+ * 一列玩家。
+ *
+ * 每人占 `weight(1f)` 的一格，内容在格内居中：人数少的时候（6 人局只有 3 行）
+ * 自然铺开显得像「桌子两侧坐着人」，人数多的时候每格一起变矮，绝不会把最后一个人
+ * 挤出屏幕——`SpaceEvenly` 做不到这一点，它在内容超高时只会一路排到屏幕外面去。
+ */
+@Composable
+private fun SeatColumn(
+    seats: List<UIWerewolfSeatLive>,
+    night: Boolean,
+    textColor: Color,
+    dimColor: Color,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.padding(vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        seats.forEach { seat ->
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
+                SeatTile(
+                    seat = seat,
+                    night = night,
+                    textColor = textColor,
+                    dimColor = dimColor
+                )
+            }
+        }
     }
 }
 
 /**
  * 一枚座位。
  *
- * 出局的人不删、不灰到底、也不移出环：狼人杀的「谁死了」是和「谁还活着」一样重要的信息，
- * 移走之后就没法回头对照「他生前说了什么」。所以留着、压暗、再挂一个字说明怎么死的。
+ * 出局的人不删、不灰到底：狼人杀的「谁死了」和「谁还活着」一样重要，
+ * 移走之后就没办法回头对照「他生前说了什么」。所以留着、压暗、再挂一个字说明怎么死的。
  */
 @Composable
-private fun SeatChip(
+private fun SeatTile(
     seat: UIWerewolfSeatLive,
     night: Boolean,
+    textColor: Color,
     dimColor: Color,
-    modifier: Modifier = Modifier,
 ) {
     Column(
-        modifier = modifier.width(60.dp),
+        modifier = Modifier.width(COLUMN_WIDTH),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+        // 12 人局一列要放 6 个，一格里每一像素都在抢高度：头像 30 是认得出人的下限
+        Box(modifier = Modifier.size(38.dp), contentAlignment = Alignment.Center) {
             if (seat.active) {
+                // 正在发言/正在行动的人要有动静，静止的牌桌看不出轮到谁
                 val transition = rememberInfiniteTransition(label = "active")
                 val scale by transition.animateFloat(
-                    initialValue = 0.92f,
+                    initialValue = 0.90f,
                     targetValue = 1.0f,
                     animationSpec = infiniteRepeatable(
                         animation = tween(durationMillis = 800),
@@ -481,7 +510,7 @@ private fun SeatChip(
                 )
                 Box(
                     modifier = Modifier
-                        .size(46.dp)
+                        .size(36.dp)
                         .graphicsLayer {
                             scaleX = scale
                             scaleY = scale
@@ -498,7 +527,7 @@ private fun SeatChip(
             UIAvatar(
                 name = seat.name,
                 avatarPath = seat.avatarPath,
-                size = 36.dp,
+                size = 30.dp,
                 shape = CircleShape,
                 modifier = Modifier
                     .alpha(if (seat.alive) 1f else 0.34f)
@@ -517,13 +546,13 @@ private fun SeatChip(
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .size(17.dp)
+                        .size(15.dp)
                         .background(VoteRed, CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = votes.toString(),
-                        fontSize = 9.sp,
+                        fontSize = 8.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = Color.White
                     )
@@ -532,15 +561,15 @@ private fun SeatChip(
         }
 
         Text(
-            text = seat.name,
-            modifier = Modifier.padding(top = 2.dp),
-            fontSize = 10.sp,
+            text = "${seat.seat} ${seat.name}",
+            modifier = Modifier.padding(top = 1.dp),
+            fontSize = 9.sp,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             color = when {
-                !seat.alive -> dimColor.copy(alpha = 0.65f)
+                !seat.alive -> dimColor.copy(alpha = 0.6f)
                 seat.isSelf -> if (night) NightText else SelfBlue
-                else -> if (night) NightText else UIFriendBarTitleColor
+                else -> textColor
             }
         )
 
@@ -559,7 +588,7 @@ private fun SeatChip(
                             else -> Color(0x142B6BFF)
                         }
                     )
-                    .padding(horizontal = 5.dp, vertical = 0.5.dp),
+                    .padding(horizontal = 4.dp, vertical = 0.5.dp),
                 fontSize = 8.sp,
                 fontWeight = FontWeight.Medium,
                 color = when {
@@ -572,56 +601,57 @@ private fun SeatChip(
     }
 }
 
-/** 桌面中央：第几天、什么阶段、正在等谁。 */
+/**
+ * 中间栏的顶条：第几天、什么阶段、正在等谁。
+ *
+ * 原来这些字摆在牌桌正中央，现在中央让给了对话，它们退成一条窄带。
+ * 但不能删：等待模型的那几十秒里，「现在到谁了」是唯一能确认程序没卡死的东西。
+ */
 @Composable
-private fun CenterStatus(
+private fun StatusStrip(
     live: UIWerewolfLive,
     night: Boolean,
     textColor: Color,
     dimColor: Color,
-    modifier: Modifier = Modifier,
 ) {
-    Column(
-        modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         if (live.finished) {
             Text(
                 text = live.winnerLabel ?: "对局结束",
-                fontSize = 22.sp,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = textColor
+                color = textColor,
+                maxLines = 1
             )
-            Text(
-                text = "全部身份已公开",
-                modifier = Modifier.padding(top = 4.dp),
-                fontSize = 11.sp,
-                color = dimColor
-            )
-            return@Column
+            return@Row
         }
 
         Text(
             text = if (night) "第 ${live.day} 夜" else "第 ${live.day} 天",
-            fontSize = 11.sp,
+            fontSize = 10.sp,
             color = dimColor
         )
         Text(
             text = live.phaseLabel,
-            modifier = Modifier.padding(top = 2.dp),
-            fontSize = 18.sp,
+            fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
             color = textColor,
-            maxLines = 1
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
         val acting = live.seats.firstOrNull { it.active }
         if (acting != null) {
             Text(
-                text = "正在等 ${acting.seat} 号",
-                modifier = Modifier.padding(top = 3.dp),
-                fontSize = 11.sp,
-                color = if (night) Color(0xFF8FB0FF) else SelfBlue
+                text = "· 等 ${acting.seat} 号",
+                fontSize = 10.sp,
+                color = if (night) Color(0xFF8FB0FF) else SelfBlue,
+                maxLines = 1
             )
         }
     }
@@ -659,8 +689,11 @@ private fun Feed(
     if (live.lines.isEmpty()) {
         Box(modifier = modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
             Text(
-                text = "还没开始，等第一位开口",
-                fontSize = 12.sp,
+                text = "还没开始，\n等第一位开口",
+                modifier = Modifier.padding(horizontal = 10.dp),
+                fontSize = 11.sp,
+                lineHeight = 17.sp,
+                textAlign = TextAlign.Center,
                 color = dimColor
             )
         }
@@ -670,8 +703,8 @@ private fun Feed(
     LazyColumn(
         state = listState,
         modifier = modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         items(live.lines, key = { it.index }) { line ->
             LineRow(
@@ -703,10 +736,11 @@ private fun LineRow(
                 modifier = Modifier
                     .clip(RoundedCornerShape(50))
                     .background(if (night) Color(0x14FFFFFF) else Color(0x0D000000))
-                    .padding(horizontal = 10.dp, vertical = 4.dp),
-                fontSize = 11.sp,
+                    .padding(horizontal = 8.dp, vertical = 3.dp),
+                fontSize = 10.sp,
                 color = dimColor,
-                lineHeight = 16.sp
+                lineHeight = 15.sp,
+                textAlign = TextAlign.Center
             )
         }
 
@@ -716,8 +750,8 @@ private fun LineRow(
                 line.seat?.let { append(" " ) }
                 append(line.text)
             },
-            modifier = Modifier.padding(start = 40.dp),
-            fontSize = 11.sp,
+            modifier = Modifier.padding(start = 34.dp),
+            fontSize = 10.sp,
             color = dimColor
         )
 
@@ -749,31 +783,34 @@ private fun SpeechRow(
         UIAvatar(
             name = line.speaker ?: "?",
             avatarPath = line.avatarPath,
-            size = 30.dp,
+            size = 26.dp,
             shape = CircleShape
         )
-        Spacer(Modifier.width(9.dp))
+        Spacer(Modifier.width(7.dp))
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = line.speaker ?: "未知",
-                    fontSize = 12.sp,
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = textColor
+                    color = textColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 line.seat?.let {
                     Text(
                         text = " $it 号",
-                        fontSize = 10.sp,
-                        color = dimColor
+                        fontSize = 9.sp,
+                        color = dimColor,
+                        maxLines = 1
                     )
                 }
             }
             Text(
                 text = line.text,
-                modifier = Modifier.padding(top = 3.dp),
-                fontSize = 13.sp,
-                lineHeight = 20.sp,
+                modifier = Modifier.padding(top = 2.dp),
+                fontSize = 12.sp,
+                lineHeight = 18.sp,
                 color = textColor.copy(alpha = 0.92f)
             )
         }
@@ -792,19 +829,19 @@ private fun PrivateRow(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 20.dp)
+            .padding(start = 8.dp)
             .uiCard(
                 shape = RoundedCornerShape(UIRadiusControl),
                 color = if (night) Color(0xFF221D2E) else Color(0xFFFBF7EC),
                 borderColor = if (night) Color(0x33C8A24A) else Color(0x33B58B2A),
                 elevation = 0.dp
             )
-            .padding(horizontal = 12.dp, vertical = 9.dp)
+            .padding(horizontal = 10.dp, vertical = 8.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = "仅你可见",
-                fontSize = 10.sp,
+                fontSize = 9.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = if (night) Color(0xFFD9B563) else Color(0xFF9A7420)
             )
@@ -813,16 +850,18 @@ private fun PrivateRow(
             if (who.isNotBlank()) {
                 Text(
                     text = " · $who",
-                    fontSize = 10.sp,
-                    color = dimColor
+                    fontSize = 9.sp,
+                    color = dimColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
         Text(
             text = line.text,
-            modifier = Modifier.padding(top = 3.dp),
-            fontSize = 12.sp,
-            lineHeight = 18.sp,
+            modifier = Modifier.padding(top = 2.dp),
+            fontSize = 11.sp,
+            lineHeight = 17.sp,
             color = textColor.copy(alpha = 0.9f)
         )
     }
