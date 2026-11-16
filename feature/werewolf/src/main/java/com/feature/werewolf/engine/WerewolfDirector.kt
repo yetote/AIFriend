@@ -14,7 +14,9 @@ import com.feature.werewolf.game.WerewolfRole
 import com.feature.werewolf.prompt.WerewolfPrompt
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlin.random.Random
 
 /**
@@ -548,9 +550,41 @@ class WerewolfDirector(
             )
 
             val outcomes = coroutineScope {
-                voters.map { seat ->
-                    async { seat to askVote(current, seat, candidates) }
-                }.awaitAll()
+                // 每个座位投完就发一个完成信号，主协程逐个收、逐个报进度。
+                // 不在 async 里直接调 onProgress：那样并发写 StateFlow 虽然安全，
+                // 但到达顺序由调度决定，step 会 3、1、2 乱跳。收回这里报才严格单调。
+                // 信号里带 voters 的下标而非座位号：归位顺序要和改动前的
+                // `map{async}.awaitAll()` 逐字节一致，不依赖座位号恰好升序。
+                val finished = Channel<Result<Pair<Int, Pair<Int, StructuredOutcome<VoteChoice>>>>>(
+                    voters.size
+                )
+                voters.forEachIndexed { index, seat ->
+                    launch {
+                        // 异常必须随信号一起收回主协程再抛：若在这里直接抛，coroutineScope
+                        // 只会给上层一个 CancellationException，Controller 会误当成「用户退出」
+                        // 而不显示错误。也不能失败就不发信号——那样 receive 会永远挂起。
+                        finished.send(
+                            runCatching { index to (seat to askVote(current, seat, candidates)) }
+                        )
+                    }
+                }
+                val collected = arrayOfNulls<Pair<Int, StructuredOutcome<VoteChoice>>>(voters.size)
+                repeat(voters.size) { step ->
+                    // getOrThrow 把网络/Key 错误原样抛回 Controller 的 catch(t: Throwable)
+                    val (index, outcome) = finished.receive().getOrThrow()
+                    collected[index] = outcome
+                    onProgress(
+                        WerewolfProgress(
+                            day = game.day,
+                            phase = Phase.DAY_VOTE,
+                            step = step + 1,
+                            total = voters.size,
+                            note = if (rounds > 0) "平票，重新投票" else null,
+                        )
+                    )
+                }
+                // 按原始下标归位：票型顺序不能随模型返回快慢变化
+                collected.map { it!! }
             }
 
             onProgress(

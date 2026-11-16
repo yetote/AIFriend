@@ -173,6 +173,26 @@ class WerewolfProgressTest {
         assertEquals(9, events.last().total)
     }
 
+    @Test
+    fun `投票并发时每收齐一票就报一次，进度条不会干等`() = runBlocking {
+        // 回归点：曾经投票用 map{async}.awaitAll()，只在两端报 0 和 9，
+        // 中间 11 个人投完了界面还是「准备中」，看着像卡死。
+        // 现在每收到一票报一次，step 必须严格 1、2、3……单调推进，不能乱序。
+        val events = mutableListOf<WerewolfProgress>()
+        val agents = (1..9).associate { it to SeatAgent(ConstAI("""{"target": 1}"""), "test") }
+        val director = WerewolfDirector(agents, onProgress = { events += it })
+
+        director.vote(WerewolfTable(standard9().copy(phase = Phase.DAY_VOTE)))
+
+        val steps = events.map { it.step }
+        assertEquals(
+            "0 起步，逐票推进到 9，最后再报一次满格",
+            listOf(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 9),
+            steps,
+        )
+        assertNull("没有平票就不该有提示", events.first().note)
+    }
+
     // ------------------------------------------------------------------
     // 整局
     // ------------------------------------------------------------------
