@@ -336,12 +336,18 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
     /** 丢掉某一局存档。这一局若正在跑，会先停下来。 */
     fun discard(id: String) {
         viewModelScope.launch {
-            playJob?.cancelAndJoin()
-            playJob = null
+            // 只停「被删的这一局」的驱动。列表里删一条三周前的旧档，
+            // 手上那局不该跟着停——它既没被删，用户也没说要放弃它。
+            // 座位表同理：清掉之后当前这局的下一次请求会撞上「X 号没有模型」。
+            val isCurrent = id == state.value.gameId
+            if (isCurrent) {
+                playJob?.cancelAndJoin()
+                playJob = null
+                _humanSeat.value = null
+                agents = emptyMap()
+            }
             controller.discard(id)
             if (_record.value?.id == id) _record.value = null
-            _humanSeat.value = null
-            agents = emptyMap()
             refresh()
         }
     }

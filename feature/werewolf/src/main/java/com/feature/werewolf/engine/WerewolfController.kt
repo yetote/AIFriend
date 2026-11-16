@@ -17,6 +17,14 @@ import kotlin.random.Random
  * 后者是「阶段结束后的局面」。界面同时用：进度条看前者，牌桌看后者。
  */
 data class WerewolfUiState(
+    /**
+     * 当前这局的存档 id。null 表示手里没有局。
+     *
+     * 放在状态里而不是只留一个私有字段，是因为「手上这局是不是我要删的那局」
+     * 这个判断发生在界面层（列表里删档时）。让它去问控制器要 id，
+     * 就得再加一个访问器；而它本来就是状态的一部分。
+     */
+    val gameId: String? = null,
     val table: WerewolfTable? = null,
     val progress: WerewolfProgress? = null,
     val running: Boolean = false,
@@ -55,7 +63,7 @@ class WerewolfController(
     suspend fun start(id: String, table: WerewolfTable) {
         gameId = id
         createdAt = clock()
-        _state.value = WerewolfUiState(table = table, finished = table.game.isFinished)
+        _state.value = WerewolfUiState(gameId = id, table = table, finished = table.game.isFinished)
         store.save(id, table, createdAt)
     }
 
@@ -71,7 +79,7 @@ class WerewolfController(
         val table = store.load(id) ?: return false
         gameId = id
         createdAt = store.summaries().firstOrNull { it.id == id }?.createdAt ?: clock()
-        _state.value = WerewolfUiState(table = table, finished = table.game.isFinished)
+        _state.value = WerewolfUiState(gameId = id, table = table, finished = table.game.isFinished)
         return true
     }
 
