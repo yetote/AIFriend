@@ -36,6 +36,13 @@ import kotlin.random.Random
 class WerewolfDirector(
     private val agents: Map<Int, SeatAgent>,
     private val random: Random = Random.Default,
+    /**
+     * 每推进一步回调一次，用来给界面显示「现在在做什么、到第几个」。
+     *
+     * 和 `play()` 的 `onUpdate` 分工不同：`onUpdate` 是**阶段结束**时给一次快照，
+     * 这里给的是**阶段内部**的步进——白天 8 个人发言要发 8 次，没有它这中间就是几十秒的静止。
+     */
+    private val onProgress: suspend (WerewolfProgress) -> Unit = {},
 ) {
 
     // ---------------------------------------------------------------------
@@ -51,14 +58,27 @@ class WerewolfDirector(
     suspend fun nightWolf(table: WerewolfTable): WerewolfTable {
         var current = table
         var rounds = 0
-        while (current.game.phase == Phase.NIGHT_WOLF && rounds++ < WerewolfGame.MAX_WOLF_VOTE_ROUNDS) {
+        while (current.game.phase == Phase.NIGHT_WOLF && rounds < WerewolfGame.MAX_WOLF_VOTE_ROUNDS) {
             val game = current.game
             val wolves = game.aliveWolves()
             if (wolves.isEmpty()) break
 
+            onProgress(
+                WerewolfProgress(
+                    day = game.day,
+                    phase = Phase.NIGHT_WOLF,
+                    step = 0,
+                    total = wolves.size,
+                    note = if (rounds > 0) "平票，重新商定" else null,
+                )
+            )
+
             val outcomes = coroutineScope {
                 wolves.map { wolf -> async { wolf.seat to askWolf(current, wolf.seat) } }.awaitAll()
             }
+
+            // 并发阶段没有确定的「当前是谁」，所以到齐之后才报一次完成
+            onProgress(WerewolfProgress(game.day, Phase.NIGHT_WOLF, wolves.size, wolves.size))
 
             var next = current
             outcomes.forEach { (seat, outcome) ->
@@ -77,6 +97,7 @@ class WerewolfDirector(
             val votes = outcomes.associate { (seat, outcome) -> seat to outcome.value.target }
             val afterVote = game.wolfVote(votes)
             current = next.copy(game = afterVote).syncBroadcasts(game)
+            rounds++
         }
         return current
     }
@@ -87,6 +108,7 @@ class WerewolfDirector(
         if (game.phase != Phase.NIGHT_SEER) return table
         val seer = game.alivePlayers.firstOrNull { it.role == WerewolfRole.SEER } ?: return table
 
+        onProgress(WerewolfProgress(game.day, Phase.NIGHT_SEER, 1, 1, seat = seer.seat))
         val outcome = askSeer(table, seer.seat)
         val next = game.seerCheck(outcome.value.target)
         return table
@@ -113,6 +135,7 @@ class WerewolfDirector(
         if (game.phase != Phase.NIGHT_WITCH) return table
         val witch = game.alivePlayers.firstOrNull { it.role == WerewolfRole.WITCH } ?: return table
 
+        onProgress(WerewolfProgress(game.day, Phase.NIGHT_WITCH, 1, 1, seat = witch.seat))
         val outcome = askWitch(table, witch.seat)
         val choice = outcome.value
         val next = game.witchAct(heal = choice.heal, poisonTarget = choice.poison)
@@ -145,7 +168,17 @@ class WerewolfDirector(
         if (game.phase != Phase.DAY_DISCUSSION) return table
 
         var current = table
-        game.aliveSeats.sorted().forEach { seat ->
+        val speakers = game.aliveSeats.sorted()
+        speakers.forEachIndexed { index, seat ->
+            onProgress(
+                WerewolfProgress(
+                    day = game.day,
+                    phase = Phase.DAY_DISCUSSION,
+                    step = index + 1,
+                    total = speakers.size,
+                    seat = seat,
+                )
+            )
             val text = askSpeech(current, seat)
             current = current.append(
                 WerewolfMessage(
@@ -169,15 +202,29 @@ class WerewolfDirector(
     suspend fun vote(table: WerewolfTable): WerewolfTable {
         var current = table
         var rounds = 0
-        while (current.game.phase == Phase.DAY_VOTE && rounds++ < current.game.config.maxVoteRounds) {
+        while (current.game.phase == Phase.DAY_VOTE && rounds < current.game.config.maxVoteRounds) {
             val game = current.game
             val candidates = game.voteCandidates ?: game.aliveSeats
+
+            onProgress(
+                WerewolfProgress(
+                    day = game.day,
+                    phase = Phase.DAY_VOTE,
+                    step = 0,
+                    total = game.aliveSeats.size,
+                    note = if (rounds > 0) "平票，重新投票" else null,
+                )
+            )
 
             val outcomes = coroutineScope {
                 game.aliveSeats.map { seat ->
                     async { seat to askVote(current, seat, candidates) }
                 }.awaitAll()
             }
+
+            onProgress(
+                WerewolfProgress(game.day, Phase.DAY_VOTE, game.aliveSeats.size, game.aliveSeats.size)
+            )
 
             var next = current
             outcomes.forEach { (seat, outcome) ->
@@ -196,6 +243,7 @@ class WerewolfDirector(
             val votes = outcomes.associate { (seat, outcome) -> seat to outcome.value.target }
             val afterVote = game.castVotes(votes)
             current = next.copy(game = afterVote).syncBroadcasts(game)
+            rounds++
         }
         return current
     }
@@ -206,6 +254,7 @@ class WerewolfDirector(
         if (game.phase != Phase.HUNTER_SHOOT) return table
         val hunterSeat = game.pendingHunterSeat ?: return table
 
+        onProgress(WerewolfProgress(game.day, Phase.HUNTER_SHOOT, 1, 1, seat = hunterSeat))
         val outcome = askHunter(table, hunterSeat)
         val target = outcome.value.target
         val next = game.hunterShoot(target)
