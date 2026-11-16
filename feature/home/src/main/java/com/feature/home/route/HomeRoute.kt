@@ -24,6 +24,7 @@ import com.feature.home.contract.HomeScreen
 import com.feature.home.vm.HomeViewModel
 import com.feature.room.contract.RoomScreen
 import com.feature.room.route.RoomRoute
+import com.feature.werewolf.route.WerewolfRoute
 import com.ui.common.UIAvatarCropDialog
 import com.ui.common.UIGroupMember
 import com.ui.home.UIFriendPage
@@ -99,7 +100,8 @@ fun HomeRoute(viewModel: HomeViewModel = viewModel()) {
                 onTogglePin = { viewModel.toggleRoomPin(it) },
                 onEditFriend = { viewModel.startEditFriend(it) },
                 onPickUserAvatar = pickUserAvatar,
-                onOpenSettings = viewModel::openSettings
+                onOpenSettings = viewModel::openSettings,
+                onOpenWerewolf = viewModel::openWerewolf
             )
 
             HomeScreen.Create -> AgentRoute(
@@ -146,6 +148,13 @@ fun HomeRoute(viewModel: HomeViewModel = viewModel()) {
             )
 
             HomeScreen.Settings -> SettingsRoute(onExit = viewModel::back)
+
+            HomeScreen.Werewolf -> WerewolfRoute(
+                onExit = {
+                    viewModel.back()
+                    viewModel.refresh()
+                }
+            )
         }
     }
 }

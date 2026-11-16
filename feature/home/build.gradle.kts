@@ -16,6 +16,7 @@ dependencies {
     implementation(project(":core:repository"))
     implementation(project(":feature:agent"))
     implementation(project(":feature:room"))
+    implementation(project(":feature:werewolf"))
     implementation(project(":ui:common"))
     implementation(project(":ui:agent"))
     implementation(project(":ui:room"))

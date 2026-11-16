@@ -135,6 +135,10 @@ class HomeViewModel(application: Application) : BaseViewModel(application) {
         _uiState.update { it.copy(screen = HomeScreen.RoomChat(roomId)) }
     }
 
+    fun openWerewolf() {
+        _uiState.update { it.copy(screen = HomeScreen.Werewolf) }
+    }
+
     fun openSettings() {
         _uiState.update { it.copy(screen = HomeScreen.Settings) }
     }

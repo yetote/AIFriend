@@ -23,6 +23,7 @@ import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfPlayer
 import com.feature.werewolf.store.WerewolfGameSummary
 import com.feature.werewolf.store.WerewolfStore
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -91,6 +92,11 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
         refresh()
     }
 
+    /** 关掉配置页上的错误提示。 */
+    fun clearError() {
+        _error.value = null
+    }
+
     /** 刷新好友列表和战绩列表。 */
     fun refresh() {
         viewModelScope.launch {
@@ -112,35 +118,43 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
     fun startGame(mode: WerewolfMode, friendIds: List<String>, config: WerewolfConfig = WerewolfConfig()) {
         if (state.value.running) return
         viewModelScope.launch {
-            val friends = _friends.value.ifEmpty { friendRepository.load().map { it.toFriend() } }
-            val chosen = friendIds.mapNotNull { id -> friends.firstOrNull { it.id == id } }
+            try {
+                val friends = _friends.value.ifEmpty { friendRepository.load().map { it.toFriend() } }
+                val chosen = friendIds.mapNotNull { id -> friends.firstOrNull { it.id == id } }
 
-            val expected = config.playerCount - if (mode == WerewolfMode.PLAY) 1 else 0
-            if (chosen.size != expected) {
-                _error.value = "需要选 $expected 位好友，当前选了 ${chosen.size} 位"
-                return@launch
+                val expected = config.playerCount - if (mode == WerewolfMode.PLAY) 1 else 0
+                if (chosen.size != expected) {
+                    _error.value = "需要选 $expected 位好友，当前选了 ${chosen.size} 位"
+                    return@launch
+                }
+
+                val roster = chosen.map { RosterEntry(id = it.id, name = it.name) } +
+                    if (mode == WerewolfMode.PLAY) {
+                        listOf(RosterEntry(id = SELF_ID, name = "你"))
+                    } else {
+                        emptyList()
+                    }
+
+                val game = WerewolfGame.deal(config, roster, Random.Default)
+                val humanSeat = if (mode == WerewolfMode.PLAY) {
+                    game.players.first { it.id == SELF_ID }.seat
+                } else {
+                    null
+                }
+
+                _humanSeat.value = humanSeat
+                agents = buildAgents(game.players, chosen.associateBy { it.id }, humanSeat)
+                _error.value = null
+                controller.start(UUID.randomUUID().toString(), game)
+                controller.play()
+                refresh()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (t: Throwable) {
+                // 好友被删、厂商不支持、发牌校验不通过都会走到这里。
+                // 这些必须变成界面上的一句话，不能让它崩掉——否则用户点一次「开局」app 就没了
+                _error.value = t.message?.take(200) ?: "开局失败，请重试"
             }
-            if (mode == WerewolfMode.SPECTATE && chosen.size != config.playerCount) {
-                _error.value = "观战需要 $expected 位好友"
-                return@launch
-            }
-
-            val roster = chosen.map { RosterEntry(id = it.id, name = it.name) } +
-                if (mode == WerewolfMode.PLAY) listOf(RosterEntry(id = SELF_ID, name = "你")) else emptyList()
-
-            val game = WerewolfGame.deal(config, roster, Random.Default)
-            val humanSeat = if (mode == WerewolfMode.PLAY) {
-                game.players.first { it.id == SELF_ID }.seat
-            } else {
-                null
-            }
-
-            _humanSeat.value = humanSeat
-            agents = buildAgents(game.players, chosen.associateBy { it.id }, humanSeat)
-            _error.value = null
-            controller.start(UUID.randomUUID().toString(), game)
-            controller.play()
-            refresh()
         }
     }
 
@@ -148,19 +162,25 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
     fun resumeLatest() {
         if (state.value.running) return
         viewModelScope.launch {
-            val (id, table) = store.latestUnfinished() ?: run {
-                _error.value = "没有未完成的对局"
-                return@launch
-            }
-            val friends = _friends.value.ifEmpty { friendRepository.load().map { it.toFriend() } }
-            val humanSeat = table.game.players.firstOrNull { it.id == SELF_ID }?.seat
+            try {
+                val (id, table) = store.latestUnfinished() ?: run {
+                    _error.value = "没有未完成的对局"
+                    return@launch
+                }
+                val friends = _friends.value.ifEmpty { friendRepository.load().map { it.toFriend() } }
+                val humanSeat = table.game.players.firstOrNull { it.id == SELF_ID }?.seat
 
-            _humanSeat.value = humanSeat
-            agents = buildAgents(table.game.players, friends.associateBy { it.id }, humanSeat)
-            _error.value = null
-            controller.resume(id)
-            controller.play()
-            refresh()
+                _humanSeat.value = humanSeat
+                agents = buildAgents(table.game.players, friends.associateBy { it.id }, humanSeat)
+                _error.value = null
+                controller.resume(id)
+                controller.play()
+                refresh()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (t: Throwable) {
+                _error.value = t.message?.take(200) ?: "续档失败，请重试"
+            }
         }
     }
 

@@ -12,6 +12,9 @@ sealed interface HomeScreen {
     data object RoomCreate : HomeScreen
     data class RoomChat(val roomId: String) : HomeScreen
 
+    /** 狼人杀：开局配置与对局，自己持有一套页面状态，不参与这里的导航。 */
+    data object Werewolf : HomeScreen
+
     /** 模型与密钥设置，从首页右上角齿轮进入。 */
     data object Settings : HomeScreen
 }
