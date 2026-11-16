@@ -36,6 +36,7 @@ data class WerewolfProgress(
 
     private val action: String
         get() = when (phase) {
+            Phase.NIGHT_GUARD -> "守卫守护"
             Phase.NIGHT_WOLF -> "狼人商议"
             Phase.NIGHT_SEER -> "预言家查验"
             Phase.NIGHT_WITCH -> "女巫用药"
@@ -47,10 +48,11 @@ data class WerewolfProgress(
 }
 
 /**
- * 夜晚三个阶段算「夜」，其余都算「天」。
+ * 夜晚阶段算「夜」，其余都算「天」。守卫在狼人之前，所以第一个算进来。
  *
  * 猎人开枪两边都可能发生（天亮被刀之后、白天被票出之后），但按线下习惯
  * 都归到白天的播报里，所以算「天」。
  */
 val Phase.isNight: Boolean
-    get() = this == Phase.NIGHT_WOLF || this == Phase.NIGHT_SEER || this == Phase.NIGHT_WITCH
+    get() = this == Phase.NIGHT_GUARD || this == Phase.NIGHT_WOLF ||
+        this == Phase.NIGHT_SEER || this == Phase.NIGHT_WITCH

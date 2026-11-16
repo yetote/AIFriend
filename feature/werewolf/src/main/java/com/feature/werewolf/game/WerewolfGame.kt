@@ -31,6 +31,17 @@ data class WerewolfGame(
     val wolfVoteRound: Int = 1,
     /** 本夜狼人最终决定刀谁。null 表示空刀。 */
     val tonightVictim: Int? = null,
+    /** 本夜守卫守了谁。null 表示空守。 */
+    val tonightGuardedSeat: Int? = null,
+    /**
+     * 上一夜守卫守的人。
+     *
+     * 守卫不能连续两晚守同一个人，这个限制只能靠「记住昨夜」实现。放在状态里而不是
+     * 放在 [nights] 记录里，是因为它还活着的时候就要用来算候选，不能等复盘。
+     */
+    val lastGuardedSeat: Int? = null,
+    /** 白痴是否已经翻过牌。翻牌之后他没有投票权，也不能再被投。 */
+    val idiotRevealed: Boolean = false,
     /** 预言家历史查验，私有信息。 */
     val seerChecks: List<SeerCheck> = emptyList(),
     val voteRound: Int = 1,
@@ -87,9 +98,51 @@ data class WerewolfGame(
     val witchCanPoison: Boolean
         get() = witch.poisonAvailable && aliveSeats.size > 1
 
+    /**
+     * 守卫今晚能守的人：所有存活玩家，除了他昨夜守过的那一个。
+     *
+     * 允许守自己——线下规则如此，而且守卫守自己是「浪费一次守护」的常见判断，
+     * 不该由引擎替他决定。
+     */
+    val guardTargets: List<Int> get() = aliveSeats.filter { it != lastGuardedSeat }
+
+    /**
+     * 有资格投票的座位。
+     *
+     * 翻过牌的白痴不在里面：他已经亮明身份、不能再影响票数。**被投的候选也一并排除**，
+     * 否则会出现「投他→翻牌→再投他」的死循环，一个永远出不了局的座位会把白天拖住。
+     */
+    val votingSeats: List<Int>
+        get() = alivePlayers
+            .filter { !(it.role == WerewolfRole.IDIOT && idiotRevealed) }
+            .map { it.seat }
+
     // ---------------------------------------------------------------------
     // 夜晚
     // ---------------------------------------------------------------------
+
+    /**
+     * 守卫守护。先于狼人，所以他看不到刀口，只能盲守。
+     *
+     * [targetSeat] 为 null 表示空守——空守是合法动作，也是「这一夜没什么可守」时的正解，
+     * 不该强迫 AI 随便挑一个人。
+     */
+    fun guardProtect(targetSeat: Int?): WerewolfGame {
+        require(phase == Phase.NIGHT_GUARD) { "当前不是守卫行动阶段：$phase" }
+        check(hasAliveRole(WerewolfRole.GUARD)) { "没有存活的守卫" }
+        if (targetSeat != null) {
+            require(targetSeat in guardTargets) {
+                if (targetSeat == lastGuardedSeat) {
+                    "守卫不能连续两夜守同一个人（$targetSeat 号）"
+                } else {
+                    "只能守存活玩家，$targetSeat 号不在可守列表"
+                }
+            }
+        }
+        val next = copy(tonightGuardedSeat = targetSeat)
+        // 狼人一定在场上（判胜负会先把狼全灭的局结束掉），所以直接进狼人阶段
+        return next.copy(phase = Phase.NIGHT_WOLF)
+    }
 
     /**
      * 狼人投票。
@@ -137,7 +190,8 @@ data class WerewolfGame(
      * 女巫行动。返回时天已亮，死亡已结算。
      *
      * 规则：解药毒药各限一次，**同一夜不能同时使用**；解药不能救自己（第一夜按配置可例外）；
-     * 不能毒自己。
+     * 不能毒自己。守卫守中的人即使被刀也不会死，解药对他其实是浪费——但引擎不拦，
+     * 因为「女巫不知道守卫守了谁」本来就是信息不对称的一部分。
      */
     fun witchAct(heal: Boolean, poisonTarget: Int? = null): WerewolfGame {
         require(phase == Phase.NIGHT_WITCH) { "当前不是女巫行动阶段：$phase" }
@@ -161,8 +215,8 @@ data class WerewolfGame(
         }
 
         val deaths = buildList {
-            val victim = tonightVictim
-            if (victim != null && !heal) add(victim to DeathCause.WOLF_KILL)
+            wolfKillDeath(healed = heal)?.let { add(it) }
+            // 毒药无视守护：守卫挡的是刀，不是药
             if (poisonTarget != null) add(poisonTarget to DeathCause.WITCH_POISON)
         }
         val stock = WitchStock(
@@ -183,17 +237,17 @@ data class WerewolfGame(
     }
 
     /**
-     * 投票。存活玩家**全部**必须表态，弃票传 null。
+     * 投票。有投票权的玩家**全部**必须表态，弃票传 null。
      *
      * 平票时若还有加投额度，则把候选人收窄到平票的那几个人并留在 [Phase.DAY_VOTE]，
      * 调用方看到 `voteRound` 增加就知道要再收一轮票；额度用尽仍平票则无人出局。
      */
     fun castVotes(votes: Map<Int, Int?>): WerewolfGame {
         require(phase == Phase.DAY_VOTE) { "当前不是投票阶段：$phase" }
-        val living = aliveSeats.toSet()
-        require(votes.keys == living) { "所有存活玩家都要投票，弃票传 null。期望 $living，实际 ${votes.keys}" }
+        val living = votingSeats.toSet()
+        require(votes.keys == living) { "所有有投票权的玩家都要投票，弃票传 null。期望 $living，实际 ${votes.keys}" }
 
-        val candidates = (voteCandidates ?: aliveSeats).toSet()
+        val candidates = (voteCandidates ?: votingSeats).toSet()
         votes.forEach { (voter, target) ->
             if (target != null) {
                 require(target in candidates) { "$voter 号投给了不在候选范围的 $target 号" }
@@ -300,18 +354,32 @@ data class WerewolfGame(
         if (hasAliveRole(WerewolfRole.WITCH)) {
             copy(phase = Phase.NIGHT_WITCH)
         } else {
-            // 没有女巫：没人能救人，狼刀直接生效。
-            settleNight(
-                tonightVictim?.let { listOf(it to DeathCause.WOLF_KILL) } ?: emptyList(),
-                witch,
-            )
+            // 没有女巫：没人能用药，狼刀（扣掉守卫挡下的那一刀）直接生效。
+            settleNight(listOfNotNull(wolfKillDeath(healed = false)), witch)
         }
+
+    /**
+     * 这一夜的狼刀是否真的造成了死亡。
+     *
+     * 两种情况会让它落空：女巫用了解药、守卫守中了同一个人。
+     *
+     * **同守同救按「活下来」处理**，这是本引擎选择的简化规则：两种保护叠加时如果反而死，
+     * 玩家就得同时记住「谁能救」「谁和谁叠加会失效」两件事，AI 更难推理，而且这种死法
+     * 在播报里看起来和「守错了」一模一样，复盘也解释不清。所以宁可让它按直觉走。
+     */
+    private fun wolfKillDeath(healed: Boolean): Pair<Int, DeathCause>? {
+        val victim = tonightVictim ?: return null
+        if (healed) return null
+        if (victim == tonightGuardedSeat) return null
+        return victim to DeathCause.WOLF_KILL
+    }
 
     /**
      * 结算天亮。
      *
      * [healed] 必须由调用方传入，不能靠「刀口没死」反推：万一女巫毒的人和狼刀的人是同一个，
      * 那个人照样会死，反推就会把「用过解药」记成「没用」，复盘里那一夜就解释不通了。
+     * 同样的道理，[NightRecord.guarded] 也照抄本夜的守护，而不是「谁没死所以守对了」。
      */
     private fun settleNight(
         deaths: List<Pair<Int, DeathCause>>,
@@ -325,6 +393,7 @@ data class WerewolfGame(
             nights = nights + NightRecord(
                 day = day,
                 wolfTarget = tonightVictim,
+                guarded = tonightGuardedSeat,
                 healed = healed,
                 poisonTarget = deaths.firstOrNull { it.second == DeathCause.WITCH_POISON }?.first,
                 deaths = deadSeats,
@@ -370,6 +439,17 @@ data class WerewolfGame(
             ).startNextNight()
         }
 
+        // 白痴第一次被票：翻开身份，不死，但从这一刻起失去投票权。
+        // 这不是「免死一次」而是「票不死」——夜里被刀、被毒照样会死。
+        if (playerAt(exiled).role == WerewolfRole.IDIOT && !idiotRevealed) {
+            return copy(
+                ballots = recorded,
+                voteRounds = voteRounds + round.copy(outcome = VoteOutcome.IDIOT_REVEALED),
+                idiotRevealed = true,
+                history = history + GameEvent.IdiotRevealed(day, exiled, voteCount),
+            ).startNextNight()
+        }
+
         var next = copy(ballots = recorded, voteRounds = voteRounds + round)
             .applyDeaths(listOf(exiled to DeathCause.EXILE))
         next = next.copy(history = next.history + GameEvent.Exiled(next.day, exiled, voteCount))
@@ -403,7 +483,12 @@ data class WerewolfGame(
 
     private fun startNextNight(): WerewolfGame = copy(
         day = day + 1,
-        phase = Phase.NIGHT_WOLF,
+        // 有活着的守卫就先走守护阶段。守卫死了就不该再由他行动，
+        // 这个判断每夜现算，不能只看开局配置——否则守卫出局后全队会卡在一个永远不动的阶段
+        phase = if (hasAliveRole(WerewolfRole.GUARD)) Phase.NIGHT_GUARD else Phase.NIGHT_WOLF,
+        // 本夜的守护变成「昨夜」，用来限制守卫不能连守同一人；空守就等于没有限制
+        lastGuardedSeat = tonightGuardedSeat,
+        tonightGuardedSeat = null,
         wolfVotes = emptyMap(),
         wolfVoteRound = 1,
         tonightVictim = null,
@@ -459,7 +544,7 @@ data class WerewolfGame(
         const val MAX_WOLF_VOTE_ROUNDS = 2
 
         /**
-         * 洗牌发身份，开局。第一夜从狼人行动开始。
+         * 洗牌发身份，开局。有守卫的板子从守卫阶段开始，否则从狼人行动开始。
          *
          * 洗牌用的 [Random] 由外部传入，测试里传 `Random(seed)` 就能复现同一副牌。
          */
@@ -502,7 +587,9 @@ data class WerewolfGame(
             val players = roster.mapIndexed { index, entry ->
                 WerewolfPlayer(seat = index + 1, id = entry.id, name = entry.name, role = arranged[index])
             }
-            return WerewolfGame(config = config, players = players)
+            // 有守卫的板子从守护阶段入夜，否则狼人先动——守卫必须盲守，这是规则不是实现细节
+            val opening = if (config.has(WerewolfRole.GUARD)) Phase.NIGHT_GUARD else Phase.NIGHT_WOLF
+            return WerewolfGame(config = config, players = players, phase = opening)
         }
     }
 }

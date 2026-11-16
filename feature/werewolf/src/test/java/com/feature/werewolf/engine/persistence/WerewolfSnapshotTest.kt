@@ -129,7 +129,73 @@ class WerewolfSnapshotTest {
         return WerewolfTable(game = game, transcript = transcript)
     }
 
+    /**
+     * 守卫 + 白痴都在场的一局：把两个新身份的状态一次存全。
+     *
+     * 7 人自制板：2 狼 · 守卫 · 白痴 · 3 民。用自制板而不是 Guard12/Fool12，
+     * 是为了让守卫和白痴同时出现——两个字段都存丢了才看得出来。
+     */
+    private fun newRolesTable(): WerewolfTable {
+        val composition = mapOf(
+            WerewolfRole.WEREWOLF to 2,
+            WerewolfRole.GUARD to 1,
+            WerewolfRole.IDIOT to 1,
+            WerewolfRole.VILLAGER to 3,
+        )
+        val players = listOf(
+            WerewolfPlayer(1, "p1", "玩家1", WerewolfRole.WEREWOLF, alive = true),
+            WerewolfPlayer(2, "p2", "玩家2", WerewolfRole.WEREWOLF, alive = true),
+            WerewolfPlayer(3, "p3", "玩家3", WerewolfRole.GUARD, alive = true),
+            WerewolfPlayer(4, "p4", "玩家4", WerewolfRole.IDIOT, alive = true),
+            WerewolfPlayer(5, "p5", "玩家5", WerewolfRole.VILLAGER, alive = false, deathCause = DeathCause.WOLF_KILL, deathDay = 1),
+            WerewolfPlayer(6, "p6", "玩家6", WerewolfRole.VILLAGER, alive = true),
+            WerewolfPlayer(7, "p7", "玩家7", WerewolfRole.VILLAGER, alive = true),
+        )
+        val game = WerewolfGame(
+            config = WerewolfConfig(composition = composition),
+            players = players,
+            day = 2,
+            phase = Phase.NIGHT_GUARD,
+            // 上一夜守过 6 号，所以这一夜只能守别人
+            lastGuardedSeat = 6,
+            tonightGuardedSeat = null,
+            // 白痴已经在第一天翻过牌
+            idiotRevealed = true,
+            history = listOf(
+                GameEvent.Dawn(day = 1, deadSeats = listOf(5)),
+                GameEvent.IdiotRevealed(day = 1, seat = 4, voteCount = 4),
+            ),
+            nights = listOf(
+                NightRecord(day = 1, wolfTarget = 5, guarded = 6, healed = false, deaths = listOf(5)),
+            ),
+            voteRounds = listOf(
+                VoteRound(
+                    day = 1,
+                    round = 1,
+                    ballots = listOf(Ballot(1, 4), Ballot(2, 4), Ballot(3, 4), Ballot(6, 4)),
+                    outcome = VoteOutcome.IDIOT_REVEALED,
+                    exiledSeat = 4,
+                    exileVotes = 4,
+                ),
+            ),
+        )
+        return WerewolfTable(game = game)
+    }
+
     // ------------------------------------------------------------------
+
+    @Test
+    fun `守卫与白痴的状态也能原样存取`() {
+        val original = newRolesTable()
+        val restored = WerewolfSnapshot.decode(WerewolfSnapshot.encode(original))
+
+        assertEquals("整局必须完全相等", original, restored)
+        assertEquals(6, restored!!.game.lastGuardedSeat)
+        assertTrue(restored.game.idiotRevealed)
+        assertEquals(6, restored.game.nights.single().guarded)
+        assertEquals(VoteOutcome.IDIOT_REVEALED, restored.game.voteRounds.single().outcome)
+        assertTrue(restored.game.history.any { it is GameEvent.IdiotRevealed })
+    }
 
     @Test
     fun `整局存档再读出，和存档前一模一样`() {
@@ -182,7 +248,7 @@ class WerewolfSnapshotTest {
 
     @Test
     fun `上一版存档还能读`() {
-        // v2 只新增了两个带默认值的字段，语义没变，所以 v1 必须能继续续玩——
+        // v2/v3 相对前一代都只是新增带默认值的字段，语义没变，所以老档必须能继续续玩——
         // 升级一次就把玩家没打完的局丢掉，比缺一段复盘难受得多
         val legacy = richTable().let { it.copy(game = it.game.copy(nights = emptyList(), voteRounds = emptyList())) }
         val text = WerewolfSnapshot.encode(legacy)
@@ -193,6 +259,26 @@ class WerewolfSnapshotTest {
         assertTrue("老档没有夜间记录", restored!!.game.nights.isEmpty())
         assertTrue("老档没有票型历史", restored.game.voteRounds.isEmpty())
         assertEquals("除复盘数据外，局面必须一字不差", legacy, restored)
+    }
+
+    @Test
+    fun `v2 存档读出来时守卫和白痴取默认值`() {
+        // v2 里还没有这两个身份，所以老档里一定没有这几个键。
+        // 这里手动把它们从 JSON 里删掉，模拟一个真正的 v2 档，而不是只改版本号
+        val legacy = newRolesTable().let {
+            it.copy(game = it.game.copy(tonightGuardedSeat = null, lastGuardedSeat = null, idiotRevealed = false))
+        }
+        var text = WerewolfSnapshot.encode(legacy)
+            .replaceFirst("\"version\":${WerewolfSnapshot.VERSION}", "\"version\":2")
+        listOf("\"tonightGuardedSeat\":null,", "\"lastGuardedSeat\":null,", "\"idiotRevealed\":false,")
+            .forEach { field ->
+                assertTrue("构造 v2 档失败：$field 还在", text.contains(field))
+                text = text.replace(field, "")
+            }
+
+        val restored = WerewolfSnapshot.decode(text)
+        assertNotNull("v2 档应该还能续上", restored)
+        assertEquals("缺的字段按默认值补齐", legacy, restored)
     }
 
     @Test

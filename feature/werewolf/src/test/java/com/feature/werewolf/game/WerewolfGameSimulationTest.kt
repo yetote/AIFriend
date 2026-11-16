@@ -85,8 +85,45 @@ class WerewolfGameSimulationTest {
         return game
     }
 
+    /**
+     * 每一套板子都要能自走收敛。
+     *
+     * 新身份最容易出的问题不是算错，而是**卡住**：守卫阶段找不到活着的守卫、
+     * 白痴翻牌后投票人数没变导致永远平票、某个板子凑不出合法的候选人。
+     * 这些路径单测想不到，只能靠每套板子都真跑一遍。
+     */
+    @Test
+    fun `所有板子都能随机自走收敛`() {
+        val boards = listOf(
+            "6 人快局" to WerewolfConfig(composition = WerewolfConfig.Quick6),
+            "8 人标准局" to WerewolfConfig(),
+            "9 人标准局" to WerewolfConfig(composition = WerewolfConfig.Standard9),
+            "10 人守卫局" to WerewolfConfig(composition = WerewolfConfig.Guard10),
+            "12 人守卫局" to WerewolfConfig(composition = WerewolfConfig.Guard12),
+            "12 人白痴局" to WerewolfConfig(composition = WerewolfConfig.Fool12),
+        )
+        boards.forEach { (name, config) ->
+            repeat(30) { seed ->
+                val start = WerewolfGame.deal(config, roster(config.playerCount), Random(seed))
+                val end = runToEnd(start, Random(seed + 40_000))
+                assertNotNull("$name 种子 $seed 没有分出胜负", end.winner)
+                assertEquals("$name 种子 $seed 停在了 ${end.phase}", Phase.FINISHED, end.phase)
+                assertEquals("$name 的座位数", config.playerCount, end.players.size)
+                assertTrue(
+                    "$name 种子 $seed 没有任何天亮播报",
+                    end.history.any { it is GameEvent.Dawn },
+                )
+            }
+        }
+    }
+
     /** 随机挑一个合法行动推进一步。 */
     private fun step(game: WerewolfGame, rng: Random): WerewolfGame = when (game.phase) {
+        Phase.NIGHT_GUARD -> {
+            // 三分之一空守：空守是合法动作，也要被覆盖到
+            game.guardProtect(if (rng.nextInt(3) == 0) null else game.guardTargets.random(rng))
+        }
+
         Phase.NIGHT_WOLF -> {
             val target = game.aliveSeats.random(rng)
             game.wolfVote(game.aliveWolves().map { it.seat }.associateWith { target })
@@ -115,9 +152,10 @@ class WerewolfGameSimulationTest {
         Phase.DAY_DISCUSSION -> game.beginVote()
 
         Phase.DAY_VOTE -> {
-            val candidates = game.voteCandidates ?: game.aliveSeats
+            val voters = game.votingSeats
+            val candidates = game.voteCandidates ?: voters
             game.castVotes(
-                game.aliveSeats.associateWith { if (rng.nextInt(6) == 0) null else candidates.random(rng) },
+                voters.associateWith { if (rng.nextInt(6) == 0) null else candidates.random(rng) },
             )
         }
 
@@ -149,6 +187,12 @@ class WerewolfGameSimulationTest {
         if (game.phase == Phase.HUNTER_SHOOT) {
             assertNotNull("猎人阶段没有待开枪的猎人", game.pendingHunterSeat)
         }
+
+        // 有投票权的人必须都是活人：翻牌的白痴会被排除，但死人绝不能留在里面
+        assertTrue(
+            "投票名单里出现了已出局的人：${game.votingSeats}",
+            game.votingSeats.all { it in game.aliveSeats },
+        )
 
         if (!game.isFinished) {
             // 未结束就意味着双方都还有人在场；否则上一轮结算应该已经判出胜负。

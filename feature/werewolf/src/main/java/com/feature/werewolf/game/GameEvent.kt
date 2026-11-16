@@ -37,6 +37,19 @@ sealed interface GameEvent {
         override val day: Int,
     ) : GameEvent
 
+    /**
+     * 白痴翻牌：被票到最高票，翻开身份但不死。
+     *
+     * 这是 [Exiled] 之外的另一条出路，所以不能复用 [NoExile]——那天明明投出了结果，
+     * 说「无人被放逐」会让所有人以为自己看错了。翻牌之后身份是公开的，
+     * 因此这里可以（也应该）说出「白痴」两个字。
+     */
+    data class IdiotRevealed(
+        override val day: Int,
+        val seat: Int,
+        val voteCount: Int,
+    ) : GameEvent
+
     /** 猎人开枪。[targetSeat] 为 null 表示放弃开枪。 */
     data class HunterShot(
         override val day: Int,

@@ -533,7 +533,8 @@ private fun NightCard(nights: List<UIWerewolfNightReport>) {
                 )
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = listOfNotNull(night.wolfLine, night.witchLine).joinToString(" · "),
+                        text = listOfNotNull(night.wolfLine, night.guardLine, night.witchLine)
+                            .joinToString(" · "),
                         fontSize = 12.sp,
                         lineHeight = 17.sp,
                         color = ReviewBody

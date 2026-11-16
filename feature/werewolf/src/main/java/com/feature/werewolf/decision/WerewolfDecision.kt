@@ -95,9 +95,27 @@ object WerewolfDecisions {
         )
     }
 
+    /**
+     * 守卫守护。
+     *
+     * 候选里**包含自己**——守自己是常见选择，引擎不该替守卫排除。
+     * 允许空守，所以用 [VoteChoice]（target 可空）而不是 [SeatChoice]。
+     */
+    fun guardProtect(game: WerewolfGame, seat: Int): StructuredSpec<VoteChoice> {
+        val valid = game.guardTargets
+        return StructuredSpec(
+            instruction = "输出 {\"target\": 座位号或 null, \"reason\": \"一句话理由\"}。" +
+                "target 是你要守护的人，只能从 ${list(valid)} 中选（可以选你自己）；不想守任何人就填 null。" +
+                (game.lastGuardedSeat?.let { "你昨夜守的是 $it 号，不能连续两夜守同一个人。" } ?: "") +
+                "reason 用一句中文说明你的判断。",
+            serializer = VoteChoice.serializer(),
+            validate = { it.target == null || it.target in valid },
+        )
+    }
+
     /** 白天投票。[candidates] 由调用方传：平票加投时是收窄后的名单。 */
     fun vote(game: WerewolfGame, candidates: List<Int>): StructuredSpec<VoteChoice> {
-        val valid = candidates.filter { it in game.aliveSeats }
+        val valid = candidates.filter { it in game.votingSeats }
         return StructuredSpec(
             instruction = "输出 {\"target\": 座位号或 null, \"reason\": \"一句话理由\"}。" +
                 "target 是你要投的人，只能从 ${list(valid)} 中选；不想投任何人就填 null。" +
@@ -139,6 +157,16 @@ object WerewolfDecisions {
         val unchecked = game.aliveSeats.filter { it != seat && it !in checked }
         val candidates = unchecked.ifEmpty { game.aliveSeats.filter { it != seat } }
         return SeatChoice(pick(candidates, random) ?: seat, "我再确认一下自己的想法。")
+    }
+
+    /**
+     * 守卫兜底：从能守的人里随机挑一个。
+     *
+     * 刻意不兜底成空守：空守是「这一夜白过」，模型偶尔失灵不该让好人白丢一次保护。
+     */
+    fun fallbackGuard(game: WerewolfGame, random: Random): VoteChoice {
+        val target = pick(game.guardTargets, random)
+        return VoteChoice(target, "先守住场上最像会被刀的人。")
     }
 
     /** 投票兜底：随机投一个候选，尽量不投自己。 */

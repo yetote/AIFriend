@@ -89,6 +89,8 @@ data class UIWerewolfNightReport(
     val day: Int,
     /** 「狼刀 6 号」/「狼人空刀」。 */
     val wolfLine: String,
+    /** 「守卫守 6 号」。没有守卫、守卫出局或空守时为 null。 */
+    val guardLine: String? = null,
     /** 「女巫用解药救下」/「女巫毒 7 号」。没用则 null。 */
     val witchLine: String? = null,
     /** 「6 号出局」/「平安夜」。 */

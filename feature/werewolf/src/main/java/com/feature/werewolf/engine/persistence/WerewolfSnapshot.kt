@@ -38,7 +38,7 @@ import kotlinx.serialization.json.Json
 object WerewolfSnapshot {
 
     /** 当前存档格式版本。改动 DTO 结构时必须加一。 */
-    const val VERSION = 2
+    const val VERSION = 3
 
     private val json = Json {
         ignoreUnknownKeys = true   // 旧档多出来的字段不该让新版本读不出来
@@ -54,8 +54,8 @@ object WerewolfSnapshot {
      */
     fun decode(text: String): WerewolfTable? {
         val dto = runCatching { json.decodeFromString<TableSnapshot>(text) }.getOrNull() ?: return null
-        // v2 只**新增**了两个带默认值的字段，v1 的语义一个字都没改，所以 v1 可以直接读。
-        // 旧档读出来 `nights` / `voteRounds` 是空的：局面照常能续，只是复盘缺那一段。
+        // v2 相对 v1、v3 相对 v2，都只是**新增**带默认值的字段，语义一个字都没改，
+        // 所以旧档可以直接读：v1 缺复盘那两段，v2 缺守卫/白痴的状态（那时也没有这两个身份）。
         // 这比「一声不响把玩家没打完的局丢掉」要好。真正的语义变更才该拒绝旧档。
         if (dto.version !in MIN_SUPPORTED_VERSION..VERSION) return null
         return runCatching { dto.toTable() }.getOrNull()
@@ -82,6 +82,11 @@ internal data class TableSnapshot(
     val wolfVotes: Map<Int, Int> = emptyMap(),
     val wolfVoteRound: Int = 1,
     val tonightVictim: Int? = null,
+    /** v3 起：本夜守卫守的人，以及上一夜守的人（用于「不能连守」）。 */
+    val tonightGuardedSeat: Int? = null,
+    val lastGuardedSeat: Int? = null,
+    /** v3 起：白痴是否已翻牌。 */
+    val idiotRevealed: Boolean = false,
     val seerChecks: List<CheckSnapshot> = emptyList(),
     val voteRound: Int = 1,
     val voteCandidates: List<Int>? = null,
@@ -140,6 +145,8 @@ internal data class BallotSnapshot(
 internal data class NightSnapshot(
     val day: Int,
     val wolfTarget: Int? = null,
+    /** v3 起：这一夜守的人。旧档没有这一段，读出来是 null。 */
+    val guarded: Int? = null,
     val healed: Boolean = false,
     val poisonTarget: Int? = null,
     val deaths: List<Int> = emptyList(),
@@ -215,6 +222,9 @@ internal fun WerewolfTable.toSnapshot(): TableSnapshot {
         wolfVotes = game.wolfVotes,
         wolfVoteRound = game.wolfVoteRound,
         tonightVictim = game.tonightVictim,
+        tonightGuardedSeat = game.tonightGuardedSeat,
+        lastGuardedSeat = game.lastGuardedSeat,
+        idiotRevealed = game.idiotRevealed,
         seerChecks = game.seerChecks.map { CheckSnapshot(it.day, it.targetSeat, it.isWerewolf) },
         voteRound = game.voteRound,
         voteCandidates = game.voteCandidates,
@@ -227,6 +237,7 @@ internal fun WerewolfTable.toSnapshot(): TableSnapshot {
             NightSnapshot(
                 day = it.day,
                 wolfTarget = it.wolfTarget,
+                guarded = it.guarded,
                 healed = it.healed,
                 poisonTarget = it.poisonTarget,
                 deaths = it.deaths,
@@ -255,9 +266,12 @@ private fun VoteRound.toSnapshot(): VoteRoundSnapshot = VoteRoundSnapshot(
     exileVotes = exileVotes,
 )
 
-private fun GameEvent.toSnapshot(): EventSnapshot = when (this) {    is GameEvent.Dawn -> EventSnapshot(type = "DAWN", day = day, deadSeats = deadSeats)
+private fun GameEvent.toSnapshot(): EventSnapshot = when (this) {
+    is GameEvent.Dawn -> EventSnapshot(type = "DAWN", day = day, deadSeats = deadSeats)
     is GameEvent.Exiled -> EventSnapshot(type = "EXILED", day = day, seat = seat, voteCount = voteCount)
     is GameEvent.NoExile -> EventSnapshot(type = "NO_EXILE", day = day)
+    is GameEvent.IdiotRevealed ->
+        EventSnapshot(type = "IDIOT_REVEALED", day = day, seat = seat, voteCount = voteCount)
     is GameEvent.HunterShot ->
         EventSnapshot(type = "HUNTER_SHOT", day = day, hunterSeat = hunterSeat, targetSeat = targetSeat)
     is GameEvent.GameOver -> EventSnapshot(type = "GAME_OVER", day = day, winner = winner.name)
@@ -292,6 +306,9 @@ internal fun TableSnapshot.toTable(): WerewolfTable = WerewolfTable(
         wolfVotes = wolfVotes,
         wolfVoteRound = wolfVoteRound,
         tonightVictim = tonightVictim,
+        tonightGuardedSeat = tonightGuardedSeat,
+        lastGuardedSeat = lastGuardedSeat,
+        idiotRevealed = idiotRevealed,
         seerChecks = seerChecks.map { SeerCheck(it.day, it.targetSeat, it.isWerewolf) },
         voteRound = voteRound,
         voteCandidates = voteCandidates,
@@ -304,6 +321,7 @@ internal fun TableSnapshot.toTable(): WerewolfTable = WerewolfTable(
             NightRecord(
                 day = it.day,
                 wolfTarget = it.wolfTarget,
+                guarded = it.guarded,
                 healed = it.healed,
                 poisonTarget = it.poisonTarget,
                 deaths = it.deaths,
@@ -340,6 +358,11 @@ private fun EventSnapshot.toEvent(): GameEvent = when (type) {
         voteCount = requireNotNull(voteCount) { "EXILED 缺少 voteCount" },
     )
     "NO_EXILE" -> GameEvent.NoExile(day = day)
+    "IDIOT_REVEALED" -> GameEvent.IdiotRevealed(
+        day = day,
+        seat = requireNotNull(seat) { "IDIOT_REVEALED 缺少 seat" },
+        voteCount = requireNotNull(voteCount) { "IDIOT_REVEALED 缺少 voteCount" },
+    )
     "HUNTER_SHOT" -> GameEvent.HunterShot(
         day = day,
         hunterSeat = requireNotNull(hunterSeat) { "HUNTER_SHOT 缺少 hunterSeat" },

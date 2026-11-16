@@ -94,8 +94,15 @@ data class UIWerewolfTurn(
     val title: String,
     val hint: String? = null,
     val targets: List<UIWerewolfTarget> = emptyList(),
-    /** 能不能选择「不做」。投票弃票、猎人不开枪。 */
+    /** 能不能选择「不做」。投票弃票、猎人不开枪、守卫空守。 */
     val canAbstain: Boolean = false,
+    /**
+     * 「不做」那个按钮上的字。
+     *
+     * 必须逐阶段给：同一个 `SEAT` 面板，猎人写「不开枪」、守卫写「这晚不守」，
+     * 共用一个写死的文案会让守卫以为自己要开枪。
+     */
+    val abstainLabel: String? = null,
     /** 女巫：今晚的解药能不能用。 */
     val canHeal: Boolean = false,
     /** 女巫：毒药还在不在。 */
