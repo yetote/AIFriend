@@ -28,12 +28,33 @@ interface SpeechEngine {
      */
     val initialized: Boolean
 
-    fun speak(text: String, utteranceId: String, onDone: () -> Unit)
+    /**
+     * 读一句话。
+     *
+     * [voiceId] 是可选的云端音色；系统引擎忽略它，云端引擎用它选音色。
+     * [ttsConfigId] 指定用哪套 TTS 凭证（TTSProvider.id）；null = 默认配置。
+     * 两者都带默认值，让现有调用方（含测试替身）不用改签名。
+     */
+    fun speak(
+        text: String,
+        utteranceId: String,
+        onDone: () -> Unit,
+        voiceId: String? = null,
+        ttsConfigId: String? = null,
+    )
 
     /** 立即停止当前朗读。[onDone] 不会被调用，调用方应自行取消驱动循环。 */
     fun stop()
 
     fun release()
+
+    /**
+     * 重新初始化引擎。
+     *
+     * 系统 TTS 的异步绑定在国产 ROM 上偶发失败，失败后不重建就一直静音。
+     * 默认空实现——没有这种问题的引擎（含测试替身）不用管。
+     */
+    fun retry() = Unit
 }
 
 /** 没有语音包时的空实现：让界面能照常显示开关，只是不出声。 */
@@ -42,7 +63,13 @@ class NoopSpeechEngine : SpeechEngine {
     override val initialized: Boolean = true
     override var onReady: ((Boolean) -> Unit)? = null
         set(value) { field = value; value?.invoke(false) }
-    override fun speak(text: String, utteranceId: String, onDone: () -> Unit) = onDone()
+    override fun speak(
+        text: String,
+        utteranceId: String,
+        onDone: () -> Unit,
+        voiceId: String?,
+        ttsConfigId: String?,
+    ) = onDone()
     override fun stop() = Unit
     override fun release() = Unit
 }

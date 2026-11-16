@@ -37,7 +37,8 @@ interface FriendDao {
     @Query(
         "UPDATE friends SET name = :name, role = :role, prompt = :prompt, " +
             "brand = :brand, company = :company, model = :model, " +
-            "thinkingEnabled = :thinkingEnabled WHERE id = :id"
+            "thinkingEnabled = :thinkingEnabled, voiceId = :voiceId, " +
+            "ttsConfigId = :ttsConfigId WHERE id = :id"
     )
     suspend fun updateProfile(
         id: String,
@@ -47,7 +48,9 @@ interface FriendDao {
         brand: String,
         company: String,
         model: String,
-        thinkingEnabled: Boolean
+        thinkingEnabled: Boolean,
+        voiceId: String?,
+        ttsConfigId: String?
     ): Int
 
     /** 新建好友时才走插入。 */

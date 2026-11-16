@@ -354,18 +354,19 @@ private fun TableTopBar(
         }
         IconButton(
             onClick = onToggleSpeak,
-            enabled = speechReady,
+            // 不可用时不禁用：点一下会重试绑定引擎（国产 ROM 的 init 会偶发失败，
+            // 一旦失败不重建就永远灰着）。禁用反而断了唯一的恢复入口。
         ) {
             Icon(
                 imageVector = if (autoSpeak) Icons.Filled.VolumeUp else Icons.Filled.VolumeOff,
                 contentDescription = if (!speechReady) {
-                    "此设备没有中文语音包，无法朗读"
+                    "语音暂不可用，点此重试"
                 } else if (autoSpeak) {
                     "关闭自动朗读"
                 } else {
                     "开启自动朗读"
                 },
-                // 不可用时用暗色，别让开关看着能用、点了却没反应。
+                // 不可用时用暗色，但仍可点——点它会重试，而不是没反应。
                 tint = if (speechReady) textColor else dimColor,
             )
         }

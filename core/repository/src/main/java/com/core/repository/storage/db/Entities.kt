@@ -17,7 +17,11 @@ data class FriendEntity(
     val company: String,
     val model: String,
     val thinkingEnabled: Boolean,
-    val avatarPath: String?
+    val avatarPath: String?,
+    /** 朗读音色（MiniMax voice_id）；可空列，旧库 migration 直接加列。 */
+    val voiceId: String? = null,
+    /** 朗读用哪套 TTS 配置（TTSProvider.id）；可空列。 */
+    val ttsConfigId: String? = null
 )
 
 @Entity(

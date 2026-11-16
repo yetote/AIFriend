@@ -31,7 +31,9 @@ class FriendRepository(context: Context) {
             brand = entity.brand,
             company = entity.company,
             model = entity.model,
-            thinkingEnabled = entity.thinkingEnabled
+            thinkingEnabled = entity.thinkingEnabled,
+            voiceId = entity.voiceId,
+            ttsConfigId = entity.ttsConfigId
         )
         if (updated == 0) {
             dao.insertFriend(entity)

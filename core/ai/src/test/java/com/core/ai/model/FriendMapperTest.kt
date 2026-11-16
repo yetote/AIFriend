@@ -17,6 +17,8 @@ class FriendMapperTest {
             model = "deepseek-flash",
             thinkingEnabled = true,
             avatarPath = "/data/user/0/com.yetote.aifriend/files/avatars/friend-1_1.jpg",
+            voiceId = "female-yujie",
+            ttsConfigId = "custom",
             messages = listOf(
                 ChatMessage.user("帮我起个名字"),
                 ChatMessage.assistant("就叫「小谋」吧")

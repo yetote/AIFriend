@@ -79,6 +79,8 @@ import com.ui.common.theme.uiCard
 import com.ui.common.theme.uiControl
 import com.ui.common.theme.UIDialogButtons
 import com.ui.common.theme.UIIosDialog
+import com.core.ai.model.VoiceCatalog
+import com.core.ai.model.TTSServiceCatalog
 
 @Composable
 fun UIFriendCreateScreen(
@@ -90,7 +92,7 @@ fun UIFriendCreateScreen(
     isLoadingModels: Boolean,
     onModelSelect: (String) -> Unit,
     onCancel: () -> Unit,
-    onSubmit: (name: String, role: String, prompt: String, avatarBytes: ByteArray?, thinkingEnabled: Boolean) -> Unit,
+    onSubmit: (name: String, role: String, prompt: String, avatarBytes: ByteArray?, thinkingEnabled: Boolean, voiceId: String?, ttsConfigId: String?) -> Unit,
     title: String = "创建 AI 好友",
     submitLabel: String = "创建并开始聊天",
     initialName: String = "",
@@ -98,6 +100,8 @@ fun UIFriendCreateScreen(
     initialPrompt: String = "",
     initialAvatarPath: String? = null,
     initialThinking: Boolean = false,
+    initialVoiceId: String? = null,
+    initialTtsConfigId: String? = null,
     editing: Boolean = false,
     modelLabel: String? = null,
     thinkingSwitchable: Boolean = true,
@@ -127,6 +131,8 @@ fun UIFriendCreateScreen(
     var role by rememberSaveable(initialRole) { mutableStateOf(initialRole) }
     var prompt by rememberSaveable(initialPrompt) { mutableStateOf(initialPrompt) }
     var thinking by rememberSaveable(initialThinking) { mutableStateOf(initialThinking) }
+    var voiceId by rememberSaveable(initialVoiceId) { mutableStateOf(initialVoiceId) }
+    var ttsConfigId by rememberSaveable(initialTtsConfigId) { mutableStateOf(initialTtsConfigId) }
     var pickingPersona by remember { mutableStateOf(false) }
     var appliedPersonaId by rememberSaveable { mutableStateOf("") }
     var pendingPersona by remember { mutableStateOf<Persona?>(null) }
@@ -307,6 +313,82 @@ fun UIFriendCreateScreen(
                                 uncheckedBorderColor = Color.Transparent
                             )
                         )
+                    }
+                }
+
+                /*
+                 * 朗读设置也是好友级：狼人杀里每个角色用自己的服务和声音说话，
+                 * 一桌 8 个 AI 才分得清谁在发言。和深度思考一样放在模型列表前面，
+                 * 免得被几十个模型埋掉。只影响朗读，不影响模型本身。
+                 *
+                 * Key 不在这里填——统一在「设置 → 语音朗读」配好，这里只选哪一家的服务。
+                 */
+                SectionLabel(text = "朗读设置")
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .uiCard(shape = RoundedCornerShape(UIRadiusCard), elevation = 6.dp)
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                ) {
+                    Text(
+                        text = "狼人杀自动朗读时，这个角色用选定的声音发言",
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
+                        color = UIFriendBarItemMetaColor
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        text = "TTS 服务",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = UIFriendBarTitleColor
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(vertical = 2.dp)
+                    ) {
+                        items(TTSServiceCatalog.all) { option ->
+                            val selected = option.id == ttsConfigId
+                            Text(
+                                text = option.label,
+                                fontSize = 13.sp,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                color = if (selected) Color.White else UIFriendBarTitleColor,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(50))
+                                    .background(if (selected) UIActionBrush else SolidColor(Color(0xFFEEF1F6)))
+                                    .clickable { ttsConfigId = option.id }
+                                    .padding(horizontal = 14.dp, vertical = 8.dp)
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        text = "音色",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = UIFriendBarTitleColor
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(vertical = 2.dp)
+                    ) {
+                        items(VoiceCatalog.all) { option ->
+                            val selected = option.id == voiceId
+                            Text(
+                                text = option.label,
+                                fontSize = 13.sp,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                color = if (selected) Color.White else UIFriendBarTitleColor,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(50))
+                                    .background(if (selected) UIActionBrush else SolidColor(Color(0xFFEEF1F6)))
+                                    .clickable { voiceId = option.id }
+                                    .padding(horizontal = 14.dp, vertical = 8.dp)
+                            )
+                        }
                     }
                 }
 
@@ -492,7 +574,7 @@ fun UIFriendCreateScreen(
                             }
                         )
                         .clickable(enabled = canSubmit) {
-                            onSubmit(name, role, prompt, avatarBytes, thinking)
+                            onSubmit(name, role, prompt, avatarBytes, thinking, voiceId, ttsConfigId)
                         },
                     contentAlignment = Alignment.Center
                 ) {

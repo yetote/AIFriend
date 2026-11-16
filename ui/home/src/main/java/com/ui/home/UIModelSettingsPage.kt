@@ -87,7 +87,15 @@ fun UIModelSettingsPage(
     onSave: () -> Unit,
     onOpenConsole: (String) -> Unit = {},
     onClearKey: () -> Unit = {},
-    onRefreshPrice: () -> Unit = {}
+    onRefreshPrice: () -> Unit = {},
+    // TTS 配置区块（都有默认值，旧调用方不受影响）
+    onTtsProviderSelect: (String) -> Unit = {},
+    onTtsKeyChange: (String) -> Unit = {},
+    onTtsBaseUrlChange: (String) -> Unit = {},
+    onTtsToggleVisible: () -> Unit = {},
+    onTtsSave: () -> Unit = {},
+    onTtsClearKey: () -> Unit = {},
+    onTtsOpenConsole: (String) -> Unit = {},
 ) {
     var keyVisible by remember { mutableStateOf(false) }
 
@@ -276,8 +284,220 @@ fun UIModelSettingsPage(
                     color = UIFriendBarItemMetaColor,
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                // ---- 语音合成（TTS）配置 -----------------------------
+                // 和模型 Key 分开：语音权限通常要单独开通，放一起用户会以为共用一把。
+                Spacer(Modifier.height(24.dp))
+                TTSSection(
+                    state = state.tts,
+                    onProviderSelect = onTtsProviderSelect,
+                    onKeyChange = onTtsKeyChange,
+                    onBaseUrlChange = onTtsBaseUrlChange,
+                    onToggleVisible = onTtsToggleVisible,
+                    onSave = onTtsSave,
+                    onClearKey = onTtsClearKey,
+                    onOpenConsole = onTtsOpenConsole,
+                )
+
                 Spacer(Modifier.height(28.dp))
             }
+        }
+    }
+}
+
+/**
+ * 语音合成配置区块。
+ *
+ * 和模型 Key 分开一块：语音的 Key 通常要在服务商控制台单独开通权限，
+ * 混在模型 Key 那一栏里，用户会以为两把通用，出问题极难自查。
+ * 存下即生效——TTS 各家没有统一的探活接口，朗读失败会在日志里写明原因。
+ */
+@Composable
+private fun TTSSection(
+    state: UITTSState,
+    onProviderSelect: (String) -> Unit,
+    onKeyChange: (String) -> Unit,
+    onBaseUrlChange: (String) -> Unit,
+    onToggleVisible: () -> Unit,
+    onSave: () -> Unit,
+    onClearKey: () -> Unit,
+    onOpenConsole: (String) -> Unit,
+) {
+    SectionLabel("语音朗读（TTS）")
+    Spacer(Modifier.height(8.dp))
+    Text(
+        text = "狼人杀自动朗读用这里的 Key，和上面的模型 Key 分开。" +
+            "注意语音权限通常要在服务商控制台单独开通。",
+        fontSize = 11.sp,
+        color = UIFriendBarItemMetaColor,
+        lineHeight = 16.sp
+    )
+    Spacer(Modifier.height(10.dp))
+
+    state.providers.forEach { provider ->
+        val selected = provider.id == state.selectedId
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .uiCard(
+                    shape = RoundedCornerShape(UIRadiusCard),
+                    borderColor = if (selected) UIFriendBarCreateButtonText.copy(alpha = 0.35f) else UIGlassStroke
+                )
+                .clickable { onProviderSelect(provider.id) }
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = provider.name,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = UIFriendBarTitleColor
+                    )
+                    if (provider.hasKey) {
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = "已配置",
+                            fontSize = 10.sp,
+                            color = UIFriendBarTagTextBlue,
+                            modifier = Modifier
+                                .background(UIFriendBarTagBgBlue, RoundedCornerShape(4.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = provider.description,
+                    fontSize = 11.sp,
+                    color = UIFriendBarItemMetaColor
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            SelectionDot(selected)
+        }
+        Spacer(Modifier.height(8.dp))
+    }
+
+    val provider = state.selected
+    if (provider != null) {
+        Spacer(Modifier.height(4.dp))
+        SectionLabel("语音 API Key")
+        Spacer(Modifier.height(8.dp))
+        TtsKeyField(
+            value = state.keyInput,
+            onValueChange = onKeyChange,
+            visible = state.keyVisible,
+            onToggleVisible = onToggleVisible,
+            placeholder = if (provider.hasKey) {
+                "已保存 ${provider.maskedKey}，留空则保持不变"
+            } else {
+                "粘贴语音服务的 API Key"
+            }
+        )
+
+        if (provider.editableBaseUrl) {
+            Spacer(Modifier.height(10.dp))
+            SectionLabel("Base URL")
+            Spacer(Modifier.height(8.dp))
+            TtsKeyField(
+                value = state.baseUrlInput,
+                onValueChange = onBaseUrlChange,
+                visible = true,
+                onToggleVisible = {},
+                placeholder = "https://your-host/v1",
+                password = false
+            )
+        }
+
+        Spacer(Modifier.height(10.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (provider.hasKey) {
+                Text(
+                    text = "清除已保存的 Key",
+                    fontSize = 12.sp,
+                    color = UIFriendBarRed,
+                    modifier = Modifier.clickable { onClearKey() }
+                )
+            } else {
+                Spacer(Modifier.width(1.dp))
+            }
+            if (provider.name.contains("MiniMax")) {
+                Text(
+                    text = "去申请语音权限 →",
+                    fontSize = 12.sp,
+                    color = UIFriendBarCreateButtonText,
+                    modifier = Modifier.clickable { onOpenConsole(provider.id) }
+                )
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+        SaveButton(
+            enabled = state.canSave,
+            loading = false,
+            text = "保存语音 Key",
+            onClick = onSave
+        )
+
+        state.hint?.let { hint ->
+            Spacer(Modifier.height(8.dp))
+            Text(text = hint, fontSize = 12.sp, color = UIFriendBarItemMetaColor)
+        }
+    }
+}
+
+/** TTS 用的简单输入框，和模型页的 KeyField 同款但自包含（不耦合那边的 state）。 */
+@Composable
+private fun TtsKeyField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    visible: Boolean,
+    onToggleVisible: () -> Unit,
+    placeholder: String,
+    password: Boolean = true,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .uiControl(shape = RoundedCornerShape(UIRadiusControl))
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            singleLine = true,
+            textStyle = TextStyle(fontSize = 13.sp, color = UIFriendBarTitleColor),
+            cursorBrush = SolidColor(UIFriendBarCreateButtonText),
+            visualTransformation = if (password && !visible) PasswordVisualTransformation() else VisualTransformation.None,
+            keyboardOptions = KeyboardOptions(
+                keyboardType = if (password) KeyboardType.Password else KeyboardType.Uri,
+                imeAction = ImeAction.Done
+            ),
+            modifier = Modifier
+                .weight(1f)
+                .padding(vertical = 10.dp),
+            decorationBox = { inner ->
+                if (value.isEmpty()) {
+                    Text(text = placeholder, fontSize = 13.sp, color = UIFriendBarItemMetaColor)
+                }
+                inner()
+            }
+        )
+        if (password) {
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = if (visible) "隐藏" else "显示",
+                fontSize = 12.sp,
+                color = UIFriendBarTagTextBlue,
+                modifier = Modifier.clickable { onToggleVisible() }
+            )
         }
     }
 }
@@ -684,7 +904,8 @@ private fun settingsPriceToneColor(tone: UIPriceTone?): Color = when (tone) {
 private fun SaveButton(
     enabled: Boolean,
     loading: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    text: String = "测试并保存",
 ) {
     Box(
         modifier = Modifier
@@ -705,7 +926,7 @@ private fun SaveButton(
             )
         } else {
             Text(
-                text = "测试并保存",
+                text = text,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = if (enabled) Color.White else UIFriendBarItemSubtitleColor

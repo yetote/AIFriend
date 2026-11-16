@@ -11,17 +11,39 @@ class SpeechQueueTest {
         speakable.mapIndexed { index, can -> SpeechCandidate("第 $index 句", can) }
 
     @Test
-    fun `同一份消息流反复喂进来只读一次`() {
+    fun `音色和TTS配置跟着消息一起排队不丢`() {
+        val queue = SpeechQueue()
+        val all = listOf(
+            SpeechCandidate("甲说的", true, voiceId = "voice-a", ttsConfigId = "cfg-minimax"),
+            SpeechCandidate("乙说的", true, voiceId = "voice-b", ttsConfigId = "cfg-custom"),
+            SpeechCandidate("播报", false), // 没配的消息
+        )
+
+        queue.offer(all)
+
+        val a = queue.poll()
+        assertEquals("voice-a", a?.voiceId)
+        assertEquals("cfg-minimax", a?.ttsConfigId)
+        val b = queue.poll()
+        assertEquals("voice-b", b?.voiceId)
+        assertEquals("cfg-custom", b?.ttsConfigId)
+        val c = queue.poll()
+        assertEquals("没配的应为 null，交给引擎默认", null, c?.voiceId)
+        assertEquals("没配的应为 null，交给引擎默认", null, c?.ttsConfigId)
+    }
+
+    @Test
+    fun `同一份消息流反复喂进来只入队一次`() {
         val queue = SpeechQueue()
         val all = candidates(true, true, true)
 
         assertEquals(3, queue.offer(all).size)
-        assertTrue("整表重传不该再读", queue.offer(all).isEmpty())
-        assertTrue("第三次也不该读", queue.offer(all).isEmpty())
+        assertTrue("整表重传不该再入队", queue.offer(all).isEmpty())
+        assertTrue("第三次也不该入队", queue.offer(all).isEmpty())
     }
 
     @Test
-    fun `新增的消息接着上次往下读`() {
+    fun `新增的消息接着上次往下入队`() {
         val queue = SpeechQueue()
         queue.offer(candidates(true, true))
 
@@ -34,14 +56,15 @@ class SpeechQueueTest {
     }
 
     @Test
-    fun `不能读的消息占着下标但不入队`() {
+    fun `不该朗读的消息也入队 只是标记成不出声`() {
         val queue = SpeechQueue()
-        // 下标 1 是自己说的话，下标 2 是上帝播报：都不读，但下标不能跳过
+        // 下标 1 是自己说的话，下标 2 是上帝播报：都不读，但必须入队否则显示进度会卡住
         val added = queue.offer(candidates(true, false, false, true))
 
-        assertEquals(2, added.size)
-        assertEquals(0, added[0].index)
-        assertEquals(3, added[1].index)
+        assertEquals(4, added.size)
+        assertFalse(added[1].speakable)
+        assertFalse(added[2].speakable)
+        assertEquals(4, queue.size)
     }
 
     @Test
@@ -56,7 +79,44 @@ class SpeechQueueTest {
     }
 
     @Test
-    fun `换局时从当前长度重新开始 历史不补读`() {
+    fun `消费进度只跟 poll 走 不入队不推进`() {
+        val queue = SpeechQueue()
+        assertEquals("初始什么都没显示", -1, queue.revealedIndex)
+
+        queue.offer(candidates(true, true, true))
+        assertEquals("入队不代表显示", -1, queue.revealedIndex)
+
+        queue.poll()
+        assertEquals(0, queue.revealedIndex)
+        queue.poll()
+        assertEquals(1, queue.revealedIndex)
+    }
+
+    @Test
+    fun `不朗读的消息消费后也推进显示进度`() {
+        val queue = SpeechQueue()
+        queue.offer(candidates(true, false, false, true))
+
+        queue.poll() // 0：读出声
+        queue.poll() // 1：自己说的话，瞬间过
+        queue.poll() // 2：播报，瞬间过
+
+        assertEquals("不朗读的消息也不能卡住显示", 2, queue.revealedIndex)
+    }
+
+    @Test
+    fun `队列末尾的非朗读消息不会永远藏在闸门后`() {
+        val queue = SpeechQueue()
+        // 典型的一天：发言 → 投票 → 天亮播报。末尾两条都不朗读。
+        queue.offer(candidates(true, false, false))
+
+        while (!queue.isEmpty) queue.poll()
+
+        assertEquals("全部消费完，显示进度要到末尾", 2, queue.revealedIndex)
+    }
+
+    @Test
+    fun `换局时从当前长度重新开始 历史不补读但全显示`() {
         val queue = SpeechQueue()
         queue.offer(candidates(true, true, true))
         queue.poll()
@@ -65,6 +125,7 @@ class SpeechQueueTest {
         // 续档：消息流已经有 20 条历史，从 20 开始，不念昨天的发言
         queue.reset(fromIndex = 20)
         assertTrue("换局要清掉未读完的", queue.isEmpty)
+        assertEquals("历史全部显示", 19, queue.revealedIndex)
 
         val withHistory = (0 until 20).map { SpeechCandidate("历史 $it", true) }
         assertTrue(queue.offer(withHistory).isEmpty())
@@ -84,12 +145,12 @@ class SpeechQueueTest {
         val added = queue.offer(candidates(true))
         assertTrue(added.isEmpty())
 
-        // 再长回来时仍能正常读，不会因为游标卡在 4 而永远沉默
+        // 再长回来时仍能正常入队，不会因为游标卡在 4 而永远沉默
         assertEquals(1, queue.offer(candidates(true, true)).size)
     }
 
     @Test
-    fun `跳过关闭期间积下的发言 重开后不补念`() {
+    fun `跳过关闭期间积下的发言 重开后不补念也不补显示`() {
         val queue = SpeechQueue()
         queue.offer(candidates(true))
         assertEquals(1, queue.size)
@@ -97,6 +158,7 @@ class SpeechQueueTest {
         // 朗读关着的时候又来了三条，采集器没往里放；重开时直接跳到当前末尾
         queue.skipTo(index = 4)
         assertTrue(queue.isEmpty)
+        assertEquals("关着期间的消息全算已显示", 3, queue.revealedIndex)
 
         val all = candidates(true, true, true, true)
         assertTrue("关着时那三条不该被补念", queue.offer(all).isEmpty())

@@ -18,6 +18,10 @@ data class Friend(
     val model: String,
     val thinkingEnabled: Boolean = false,
     val avatarPath: String? = null,
+    /** 朗读音色（MiniMax voice_id）。null = 跟随引擎默认音色，见 [VoiceCatalog]。 */
+    val voiceId: String? = null,
+    /** 朗读用哪套 TTS 配置（TTSProvider.id）。null = 跟随默认配置。 */
+    val ttsConfigId: String? = null,
     val messages: List<ChatMessage> = emptyList()
 ) {
     /**

@@ -2,6 +2,18 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 <uses-permission android:name="android.permission.INTERNET"/>
+
+    <!--
+      Android 11 (API 30) 起限制了应用能看到的其他应用。targetSdk 36 下若不声明，
+      TextToSpeech 初始化时查不到系统的语音引擎，setLanguage 直接失败，
+      朗读会静默降级成无声（顶栏喇叭变灰）。必须显式声明才能绑定 TTS 服务。
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"

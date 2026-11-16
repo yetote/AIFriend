@@ -30,6 +30,10 @@ data class StoredFriend(
     val model: String,
     val thinkingEnabled: Boolean = false,
     val avatarPath: String? = null,
+    /** 朗读音色（MiniMax voice_id）。null = 引擎默认；@Serializable 默认值兼容旧 JSON。 */
+    val voiceId: String? = null,
+    /** 朗读用哪套 TTS 配置（TTSProvider.id）。null = 默认配置。 */
+    val ttsConfigId: String? = null,
     val messages: List<StoredMessage> = emptyList()
 )
 
@@ -70,7 +74,9 @@ internal fun StoredFriend.toEntity(): FriendEntity = FriendEntity(
     company = company,
     model = model,
     thinkingEnabled = thinkingEnabled,
-    avatarPath = avatarPath
+    avatarPath = avatarPath,
+    voiceId = voiceId,
+    ttsConfigId = ttsConfigId
 )
 
 internal fun StoredMessage.toEntity(friendId: String): FriendMessageEntity = FriendMessageEntity(
@@ -89,6 +95,8 @@ internal fun FriendWithMessages.toStored(): StoredFriend = StoredFriend(
     model = friend.model,
     thinkingEnabled = friend.thinkingEnabled,
     avatarPath = friend.avatarPath,
+    voiceId = friend.voiceId,
+    ttsConfigId = friend.ttsConfigId,
     messages = messages.sortedBy { it.id }.map { StoredMessage(role = it.role, content = it.content) }
 )
 

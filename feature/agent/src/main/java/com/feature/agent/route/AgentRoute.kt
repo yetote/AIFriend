@@ -85,13 +85,15 @@ fun AgentRoute(
                 isRefreshingPrice = state.isRefreshingPrice,
                 onRefreshPrice = viewModel::refreshPrice,
                 onOpenSettings = onOpenSettings,
-                onSubmit = { name, role, prompt, avatarBytes, thinking ->
+                onSubmit = { name, role, prompt, avatarBytes, thinking, voiceId, ttsConfigId ->
                     val friend = viewModel.createFriend(
                         name = name,
                         role = role,
                         prompt = prompt,
                         avatarBytes = avatarBytes,
-                        thinkingEnabled = thinking
+                        thinkingEnabled = thinking,
+                        voiceId = voiceId,
+                        ttsConfigId = ttsConfigId
                     )
                     if (friend != null) {
                         screen = AgentScreen.Chat(friend.id)
@@ -181,14 +183,16 @@ fun AgentRoute(
                     isLoadingModels = false,
                     onModelSelect = {},
                     onCancel = onExit,
-                    onSubmit = { name, role, prompt, avatarBytes, thinking ->
+                    onSubmit = { name, role, prompt, avatarBytes, thinking, voiceId, ttsConfigId ->
                         viewModel.saveFriendEdits(
                             friendId = friend.id,
                             name = name,
                             role = role,
                             prompt = prompt,
                             avatarBytes = avatarBytes,
-                            thinkingEnabled = thinking
+                            thinkingEnabled = thinking,
+                            voiceId = voiceId,
+                            ttsConfigId = ttsConfigId
                         )
                         onExit()
                     },
@@ -199,6 +203,8 @@ fun AgentRoute(
                     initialPrompt = friend.prompt,
                     initialAvatarPath = friend.avatarPath,
                     initialThinking = friend.thinkingEnabled,
+                    initialVoiceId = friend.voiceId,
+                    initialTtsConfigId = friend.ttsConfigId,
                     editing = true,
                     modelLabel = "${friend.brand} · ${friend.model}",
                     thinkingSwitchable = provider?.thinkingSwitchable ?: true,

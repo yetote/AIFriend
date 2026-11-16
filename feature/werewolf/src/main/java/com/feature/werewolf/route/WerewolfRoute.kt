@@ -81,6 +81,7 @@ fun WerewolfRoute(
     val recordView by viewModel.record.collectAsState()
     val autoSpeak by viewModel.autoSpeak.collectAsState()
     val speechReady by viewModel.speechReady.collectAsState()
+    val revealedIndex by viewModel.revealedIndex.collectAsState()
 
     // 入口是列表，不是配置页，更不是上次的牌桌
     var screen by remember { mutableStateOf<WerewolfScreen>(WerewolfScreen.History) }
@@ -260,6 +261,7 @@ fun WerewolfRoute(
                         avatars = avatars,
                         autoSpeak = autoSpeak,
                         speechReady = speechReady,
+                        revealedIndex = revealedIndex,
                     ),
                     // 牌桌左上角的返回 = 收起牌桌回列表，不是退出狼人杀
                     onExit = {
@@ -271,7 +273,11 @@ fun WerewolfRoute(
                     onSeat = { viewModel.submitSeat(it) },
                     onWitch = { heal, poison -> viewModel.submitWitch(heal, poison) },
                     onReview = if (review != null) ({ showReview = true }) else null,
-                    onToggleSpeak = { viewModel.setAutoSpeak(!autoSpeak) },
+                    // 喇叭可用时切换开关；灰着（引擎没绑上）时点它重试一次绑定。
+                    onToggleSpeak = {
+                        if (speechReady) viewModel.setAutoSpeak(!autoSpeak)
+                        else viewModel.retrySpeech()
+                    },
                 )
             }
         }
@@ -658,12 +664,32 @@ private fun finishReason(game: WerewolfGame, winner: Faction): String {
  * 3. **「现在该我做什么」只看 `phase` 加本人身份**，不解析提示词。提示词是文案，
  *    随时会改，拿它当协议早晚对不上。
  */
+/**
+ * 显示闸门：只放出前 [revealed] 条（含），再按视角过滤私有消息。
+ *
+ * 顺序是关键——必须先在**原始** transcript 上截断，再过滤：反过来做的话，
+ * 私有消息被剔掉后下标重排，拿旧下标去截会把别人的话放出来、把自己的话藏住。
+ * [revealed] 为 Int.MAX_VALUE 表示不设闸门（朗读关/无语音包/已结束），全文显示。
+ */
+internal fun emergedVisible(
+    transcript: List<com.feature.werewolf.engine.WerewolfMessage>,
+    revealed: Int,
+    humanSeat: Int?,
+): List<com.feature.werewolf.engine.WerewolfMessage> {
+    // 不能写 take(revealed + 1)：无闸门时 revealed 是 Int.MAX_VALUE，
+    // 加一溢出成负数，take(-2147483648) 直接抛异常。用 size 兜住上界。
+    val count = if (revealed >= transcript.lastIndex) transcript.size else revealed + 1
+    val emerged = transcript.take(count)
+    return if (humanSeat == null) emerged else emerged.filter { it.visibleTo(humanSeat) }
+}
+
 private fun WerewolfUiState.toLive(
     humanSeat: Int?,
     turn: HumanTurn?,
     avatars: Map<String, String?>,
     autoSpeak: Boolean = true,
     speechReady: Boolean = true,
+    revealedIndex: Int = Int.MAX_VALUE,
 ): UIWerewolfLive {
     val table = table
     val game = table?.game
@@ -712,11 +738,15 @@ private fun WerewolfUiState.toLive(
         )
     }.orEmpty()
 
-    val visible = when {
-        table == null -> emptyList()
-        humanSeat == null -> table.transcript
-        else -> table.transcriptFor(humanSeat)
-    }
+    // 显示闸门：朗读正在推进时，只放出队列消费到的那几条，让文字跟着语音一条条走。
+    // 关了朗读、没语音包、对局没在跑、已结束——这些情况一律全文显示，绝不能
+    // 让闸门把话永久藏住（否则用户关掉语音反而看不到任何发言）。
+    val gated = autoSpeak && speechReady && running && !finished
+    val revealed = if (gated) revealedIndex.coerceAtLeast(-1) else Int.MAX_VALUE
+    // 先在**原始** transcript 上截断，再按视角过滤私有消息。
+    // 顺序不能反：transcriptFor 会剔掉私有消息导致下标重排，拿过滤后的下标
+    // 去截原始进度会错位，把别人的话放出来或把自己的话藏住。
+    val visible = emergedVisible(table?.transcript.orEmpty(), revealed, humanSeat)
 
     val lines = visible.mapIndexed { index, message ->
         val speaker = message.seat?.let { seat -> game?.players?.firstOrNull { it.seat == seat } }

@@ -11,13 +11,18 @@ import com.core.repository.ApiConfig
 import com.core.repository.WebRepository
 import com.core.repository.settings.AIProvider
 import com.core.repository.settings.AIProviderCatalog
+import com.core.repository.settings.TTSProviderCatalog
 import com.core.repository.settings.validateBaseUrl
 import com.core.repository.storage.AICredential
 import com.core.repository.storage.AIProviderSettings
+import com.core.repository.storage.TTSCredential
+import com.core.repository.storage.TTSProviderSettings
 import com.feature.agent.data.toUITone
 import com.ui.home.UIProviderOption
 import com.ui.home.UIModelSettingsState
 import com.ui.home.UISettingsModel
+import com.ui.home.UITTSProviderOption
+import com.ui.home.UITTSState
 import com.ui.home.UIVerifyResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -38,6 +43,10 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
 
     private val settings = AIProviderSettings(application)
 
+    /** TTS 凭证独立存储，和模型 Key 完全分开。 */
+    private val ttsSettings = TTSProviderSettings(application)
+    private var savedTts: Map<String, TTSCredential> = emptyMap()
+
     private val priceRefresher = ModelPriceRefresher(application)
 
     private val _state = MutableStateFlow(UIModelSettingsState())
@@ -55,8 +64,26 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
     init {
         viewModelScope.launch {
             load()
+            loadTts()
             refreshPriceIfStale()
         }
+    }
+
+    /** 读 TTS 凭证，填进 TTS 区块。默认停在已配置的那家，否则 MiniMax。 */
+    private suspend fun loadTts() {
+        val credentials = withContext(Dispatchers.IO) { ttsSettings.load() }
+        savedTts = credentials.associateBy { it.providerId }
+        val selected = TTSProviderCatalog.all.firstOrNull {
+            savedTts[it.id]?.apiKey?.isNotBlank() == true
+        } ?: TTSProviderCatalog.default()
+        _state.value = _state.value.copy(
+            tts = UITTSState(
+                providers = TTSProviderCatalog.all.map { it.toTtsOption() },
+                selectedId = selected.id,
+                keyInput = "",
+                baseUrlInput = savedTts[selected.id]?.baseUrl.orEmpty(),
+            )
+        )
     }
 
     /**
@@ -411,6 +438,99 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
         if (key.length <= 10) return "••••"
         return "${key.take(4)}••••${key.takeLast(4)}"
     }
+
+    // ---- TTS 凭证配置 -------------------------------------------------
+
+    fun selectTtsProvider(id: String) {
+        val tts = _state.value.tts
+        _state.value = _state.value.copy(
+            tts = tts.copy(
+                selectedId = id,
+                keyInput = "",
+                baseUrlInput = savedTts[id]?.baseUrl.orEmpty(),
+                hint = null
+            )
+        )
+    }
+
+    fun setTtsKeyInput(value: String) {
+        _state.value = _state.value.copy(
+            tts = _state.value.tts.copy(keyInput = value.trim(), hint = null)
+        )
+    }
+
+    fun setTtsBaseUrlInput(value: String) {
+        _state.value = _state.value.copy(
+            tts = _state.value.tts.copy(baseUrlInput = value.trim(), hint = null)
+        )
+    }
+
+    fun toggleTtsKeyVisible() {
+        val tts = _state.value.tts
+        _state.value = _state.value.copy(tts = tts.copy(keyVisible = !tts.keyVisible))
+    }
+
+    fun clearTtsKey() {
+        val id = _state.value.tts.selectedId
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { ttsSettings.clear(id) }
+            savedTts = savedTts - id
+            _state.value = _state.value.copy(
+                tts = _state.value.tts.copy(
+                    providers = TTSProviderCatalog.all.map { it.toTtsOption() },
+                    keyInput = "",
+                    hint = "已清除该服务的 Key"
+                )
+            )
+        }
+    }
+
+    /**
+     * 保存 TTS 凭证。TTS 各家协议不同，这里不强行发一次探活请求
+     * （没有统一的 /models 可测），存下即生效，朗读失败会有明确日志。
+     */
+    fun saveTtsCredential() {
+        val tts = _state.value.tts
+        val provider = TTSProviderCatalog.byId(tts.selectedId) ?: return
+        val apiKey = tts.keyInput.ifBlank { savedTts[provider.id]?.apiKey.orEmpty() }
+        if (apiKey.isBlank()) {
+            _state.value = _state.value.copy(tts = tts.copy(hint = "请先填写 API Key"))
+            return
+        }
+        val baseUrl = tts.baseUrlInput.trim()
+            .ifBlank { savedTts[provider.id]?.baseUrl.orEmpty() }
+        if (provider.editableBaseUrl && baseUrl.isBlank()) {
+            _state.value = _state.value.copy(tts = tts.copy(hint = "请填写 Base URL"))
+            return
+        }
+        baseUrl.takeIf { it.isNotBlank() }?.let { validateBaseUrl(it) }?.let { problem ->
+            _state.value = _state.value.copy(tts = tts.copy(hint = problem))
+            return
+        }
+        viewModelScope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                ttsSettings.save(TTSCredential(provider.id, apiKey, baseUrl))
+            }
+            if (ok) savedTts = savedTts + (provider.id to TTSCredential(provider.id, apiKey, baseUrl))
+            _state.value = _state.value.copy(
+                tts = _state.value.tts.copy(
+                    providers = TTSProviderCatalog.all.map { it.toTtsOption() },
+                    keyInput = "",
+                    hint = if (ok) "已保存 ${provider.name} 的语音 Key" else "保存失败，请重试"
+                )
+            )
+        }
+    }
+
+    private fun com.core.repository.settings.TTSProvider.toTtsOption() = UITTSProviderOption(
+        id = id,
+        name = name,
+        description = description,
+        maskedKey = maskKey(savedTts[id]?.apiKey.orEmpty()),
+        hasKey = savedTts[id]?.apiKey?.isNotBlank() == true,
+        editableBaseUrl = this === TTSProviderCatalog.Custom,
+        baseUrl = savedTts[id]?.baseUrl.orEmpty(),
+    )
 
     private companion object {
         /** 刷新结果提示停留时长。 */

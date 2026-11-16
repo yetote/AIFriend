@@ -256,7 +256,9 @@ class AgentViewModel(application: Application) : BaseViewModel(application) {
         role: String,
         prompt: String,
         avatarBytes: ByteArray? = null,
-        thinkingEnabled: Boolean = false
+        thinkingEnabled: Boolean = false,
+        voiceId: String? = null,
+        ttsConfigId: String? = null,
     ): Friend? {
         val trimmedName = name.trim()
         if (trimmedName.isEmpty()) return null
@@ -271,7 +273,9 @@ class AgentViewModel(application: Application) : BaseViewModel(application) {
             brand = state.selectedBrand,
             company = provider?.company.orEmpty(),
             model = state.selectedModel.ifBlank { provider?.defaultModel.orEmpty() },
-            thinkingEnabled = thinkingEnabled
+            thinkingEnabled = thinkingEnabled,
+            voiceId = voiceId,
+            ttsConfigId = ttsConfigId
         )
         _uiState.update {
             it.copy(
@@ -299,7 +303,9 @@ class AgentViewModel(application: Application) : BaseViewModel(application) {
         role: String,
         prompt: String,
         avatarBytes: ByteArray?,
-        thinkingEnabled: Boolean
+        thinkingEnabled: Boolean,
+        voiceId: String?,
+        ttsConfigId: String?,
     ) {
         val trimmedName = name.trim()
         if (trimmedName.isEmpty()) return
@@ -312,7 +318,9 @@ class AgentViewModel(application: Application) : BaseViewModel(application) {
                             name = trimmedName,
                             role = role.trim(),
                             prompt = prompt.trim(),
-                            thinkingEnabled = thinkingEnabled
+                            thinkingEnabled = thinkingEnabled,
+                            voiceId = voiceId,
+                            ttsConfigId = ttsConfigId
                         )
                     } else {
                         friend

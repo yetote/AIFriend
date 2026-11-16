@@ -8,6 +8,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.core.repository.settings.AIProviderCatalog
+import com.core.repository.settings.TTSProviderCatalog
 import com.feature.home.vm.SettingsViewModel
 import com.ui.home.UIModelSettingsPage
 
@@ -38,14 +39,30 @@ fun SettingsRoute(
         onRefreshPrice = viewModel::refreshPrice,
         onOpenConsole = { providerId ->
             val url = AIProviderCatalog.byId(providerId)?.consoleUrl.orEmpty()
-            if (url.isNotBlank()) {
-                runCatching {
-                    context.startActivity(
-                        Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    )
-                }
-            }
+            openUrl(context, url)
+        },
+        // TTS 配置区块
+        onTtsProviderSelect = viewModel::selectTtsProvider,
+        onTtsKeyChange = viewModel::setTtsKeyInput,
+        onTtsBaseUrlChange = viewModel::setTtsBaseUrlInput,
+        onTtsToggleVisible = viewModel::toggleTtsKeyVisible,
+        onTtsSave = viewModel::saveTtsCredential,
+        onTtsClearKey = viewModel::clearTtsKey,
+        onTtsOpenConsole = { providerId ->
+            val url = TTSProviderCatalog.byId(providerId)?.consoleUrl.orEmpty()
+            openUrl(context, url)
         }
     )
+
+}
+
+private fun openUrl(context: android.content.Context, url: String) {
+    if (url.isNotBlank()) {
+        runCatching {
+            context.startActivity(
+                Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        }
+    }
 }

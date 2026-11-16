@@ -59,7 +59,9 @@ data class UIModelSettingsState(
     val canRefreshPrice: Boolean = false,
     /** 测试连接的结果，null 表示还没测。 */
     val verifyResult: UIVerifyResult? = null,
-    val error: String? = null
+    val error: String? = null,
+    /** 语音合成配置（独立于模型 Key）。 */
+    val tts: UITTSState = UITTSState()
 ) {
     val selectedProvider: UIProviderOption?
         get() = providers.firstOrNull { it.id == selectedProviderId }
@@ -83,4 +85,37 @@ data class UIModelSettingsState(
 sealed interface UIVerifyResult {
     data class Success(val modelCount: Int) : UIVerifyResult
     data class Failure(val message: String) : UIVerifyResult
+}
+
+/** 设置页里一个 TTS 服务商的展示数据。和 [UIProviderOption] 同构，只是不含模型。 */
+data class UITTSProviderOption(
+    val id: String,
+    val name: String,
+    val description: String,
+    val maskedKey: String,
+    val hasKey: Boolean,
+    val editableBaseUrl: Boolean = false,
+    val baseUrl: String = "",
+)
+
+/** TTS 配置区块的状态，独立于模型 Key 的一套。 */
+data class UITTSState(
+    val providers: List<UITTSProviderOption> = emptyList(),
+    val selectedId: String = "",
+    val keyInput: String = "",
+    val baseUrlInput: String = "",
+    val keyVisible: Boolean = false,
+    /** 保存结果提示（成功/失败各一句），null 不显示。 */
+    val hint: String? = null,
+) {
+    val selected: UITTSProviderOption?
+        get() = providers.firstOrNull { it.id == selectedId }
+
+    val canSave: Boolean
+        get() {
+            val p = selected ?: return false
+            if (keyInput.isBlank() && !p.hasKey) return false
+            if (p.editableBaseUrl && baseUrlInput.isBlank() && p.baseUrl.isBlank()) return false
+            return true
+        }
 }
