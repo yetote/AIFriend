@@ -68,7 +68,9 @@ class WerewolfProgressTest {
 
     @Test
     fun `标签按阶段和昼夜拼接`() {
-        assertEquals("第 2 夜 · 狼人商议 1/3", WerewolfProgress(2, Phase.NIGHT_WOLF, 1, 3).label)
+        assertEquals("第 2 夜 · 狼人商议 1/3", WerewolfProgress(2, Phase.NIGHT_WOLF_CHAT, 1, 3).label)
+        // 商议和下刀是两个阶段，标签不能都叫「商议」，否则玩家分不清现在是在说话还是在动手
+        assertEquals("第 2 夜 · 狼人下刀 1/3", WerewolfProgress(2, Phase.NIGHT_WOLF, 1, 3).label)
         assertEquals("第 2 天 · 发言 3/8", WerewolfProgress(2, Phase.DAY_DISCUSSION, 3, 8).label)
         assertEquals("第 1 夜 · 预言家查验", WerewolfProgress(1, Phase.NIGHT_SEER, 1, 1).label)
         assertEquals("第 3 天 · 投票 准备中", WerewolfProgress(3, Phase.DAY_VOTE, 0, 9).label)
@@ -99,7 +101,7 @@ class WerewolfProgressTest {
     // ------------------------------------------------------------------
 
     @Test
-    fun `狼人商议先报准备中，再报完成`() = runBlocking {
+    fun `狼人定刀先报准备中，再报完成`() = runBlocking {
         val events = mutableListOf<WerewolfProgress>()
         val agents = mapOf(
             1 to SeatAgent(ConstAI("""{"target": 7}"""), "test"),
@@ -108,13 +110,27 @@ class WerewolfProgressTest {
         )
         val director = WerewolfDirector(agents, onProgress = { events += it })
 
-        director.nightWolf(WerewolfTable(standard9()))
+        director.nightWolf(WerewolfTable(standard9().beginWolfVote()))
 
         assertEquals("一轮两条：开始 + 完成", 2, events.size)
         assertEquals(0, events[0].step)
         assertEquals(3, events[0].total)
         assertEquals(3, events[1].step)
         assertNull("没平票就不该有提示", events[0].note)
+    }
+
+    @Test
+    fun `商议按座位报进度，一个一个来`() = runBlocking {
+        // 和定刀的「开始 + 完成」不同：商议是串行的，每只狼开口时报一次，
+        // 界面才能显示「等 2 号说话」而不是干等一圈
+        val events = mutableListOf<WerewolfProgress>()
+        val agents = (1..3).associate { it to SeatAgent(ConstAI(), "test") }
+        val director = WerewolfDirector(agents, onProgress = { events += it })
+
+        director.nightWolfChat(WerewolfTable(standard9()))
+
+        assertEquals(listOf(1, 2, 3), events.map { it.seat })
+        assertTrue("都属于商议阶段", events.all { it.phase == Phase.NIGHT_WOLF_CHAT })
     }
 
     @Test
@@ -127,12 +143,15 @@ class WerewolfProgressTest {
         )
         val director = WerewolfDirector(agents, onProgress = { events += it })
 
-        director.nightWolf(WerewolfTable(standard9()))
+        director.nightWolf(WerewolfTable(standard9().beginWolfVote()))
 
-        // 第一轮 0/3、3/3，第二轮 0/3（带平票提示）、3/3
-        assertEquals(4, events.size)
+        // 一轮：定刀 开始 + 完成（2 条）→ 平票回到商议（3 条，按座位）
+        // → 再定刀（2 条，开头那句带「平票，重新定刀」）
+        assertEquals(7, events.size)
         assertNull(events[0].note)
-        assertEquals("平票，重新商定", events[2].note)
+        assertEquals("平票之后先回到商议，不是直接再投一次", Phase.NIGHT_WOLF_CHAT, events[2].phase)
+        assertEquals("平票，再商一次", events[2].note)
+        assertEquals("平票，重新定刀", events[5].note)
     }
 
     // ------------------------------------------------------------------

@@ -26,7 +26,12 @@ class WerewolfReplayTest {
         config = WerewolfConfig(composition = roles.groupingBy { it }.eachCount()),
         roster = roles.indices.map { RosterEntry(id = "p${it + 1}", name = "${it + 1}号") },
         roles = roles,
-    )
+    ).atWolfVote()
+
+
+/** 这些用例验的是规则，不验「今晚先商量再下刀」，所以直接从下刀阶段起手。 */
+private fun WerewolfGame.atWolfVote(): WerewolfGame =
+    if (phase == Phase.NIGHT_WOLF_CHAT) beginWolfVote() else this
 
     /** 打完一整夜：狼全体刀 [victim]，预言家验 [checkTarget]，女巫按参数用药。 */
     private fun playNight(
@@ -36,7 +41,7 @@ class WerewolfReplayTest {
         heal: Boolean = false,
         poison: Int? = null,
     ): WerewolfGame {
-        var next = game.wolfVote(game.aliveWolves().associate { it.seat to victim })
+        var next = game.atWolfVote().wolfVote(game.aliveWolves().associate { it.seat to victim })
         if (next.phase == Phase.NIGHT_SEER) next = next.seerCheck(checkTarget)
         if (next.phase == Phase.NIGHT_WITCH) next = next.witchAct(heal = heal, poisonTarget = poison)
         return next

@@ -158,8 +158,16 @@ class WerewolfPromptTest {
     fun `任务随阶段变化，且带出可选目标`() {
         val game = standardGame()
 
+        val chatTask = WerewolfPrompt.task(game.copy(phase = Phase.NIGHT_WOLF_CHAT), seat = 1)
+        assertTrue(chatTask.contains("商量"))
+        // 商议阶段只要一句话，不能要 JSON——那会把「说」和「定」又揉回一步
+        assertTrue(chatTask.contains("不要输出 JSON"))
+        assertFalse(chatTask.contains("1 号、"))
+        assertFalse(chatTask.contains("2 号、"))
+        assertTrue(chatTask.contains("3 号"))
+
         val wolfTask = WerewolfPrompt.task(game.copy(phase = Phase.NIGHT_WOLF), seat = 1)
-        assertTrue(wolfTask.contains("狼人商议"))
+        assertTrue(wolfTask.contains("定刀"))
         // 可选目标里不能出现自己或队友
         assertFalse(wolfTask.contains("1 号、"))
         assertFalse(wolfTask.contains("2 号、"))

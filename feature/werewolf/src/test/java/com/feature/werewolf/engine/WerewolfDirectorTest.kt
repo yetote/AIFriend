@@ -2,6 +2,7 @@ package com.feature.werewolf.engine
 
 import com.core.ai.entity.IAI
 import com.core.ai.model.ChatMessage
+import com.feature.werewolf.game.GameEvent
 import com.feature.werewolf.game.Phase
 import com.feature.werewolf.game.RosterEntry
 import com.feature.werewolf.game.WerewolfConfig
@@ -12,6 +13,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.random.Random
@@ -165,7 +167,8 @@ class WerewolfDirectorTest {
         val wolfC = ScriptedAI(listOf("""{"target": 8, "reason": "8 号太急了。"}"""))
         val director = WerewolfDirector(agentsOf(1 to wolfA, 2 to wolfB, 3 to wolfC))
 
-        val result = director.nightWolf(WerewolfTable(standard9()))
+        // 从下刀阶段起手：这一段验的是「并发 + 多数决」，商议另有专门用例
+        val result = director.nightWolf(WerewolfTable(standard9().beginWolfVote()))
 
         assertEquals("两票对一票，7 号被刀", 7, result.game.tonightVictim)
         assertEquals(Phase.NIGHT_SEER, result.game.phase)
@@ -182,7 +185,7 @@ class WerewolfDirectorTest {
             )
         )
 
-        val result = director.nightWolf(WerewolfTable(standard9()))
+        val result = director.nightWolf(WerewolfTable(standard9().beginWolfVote()))
 
         assertEquals(2, result.game.wolfVoteRound)
         assertEquals(7, result.game.tonightVictim)
@@ -190,21 +193,48 @@ class WerewolfDirectorTest {
     }
 
     @Test
-    fun `狼人夜聊只给狼人看`() = runBlocking {
+    fun `狼人商议按座位串行，且只给狼人看`() = runBlocking {
         val director = WerewolfDirector(
-            agentsOf(
-                1 to ScriptedAI(listOf("""{"target": 7, "reason": "7 号像预言家。"}""")),
-                2 to ScriptedAI(listOf("""{"target": 7, "reason": "同意。"}""")),
-                3 to ScriptedAI(listOf("""{"target": 7, "reason": "跟上。"}""")),
-            )
+            agentsOf(1 to AutoAI(), 2 to AutoAI(), 3 to AutoAI())
         )
 
-        val result = director.nightWolf(WerewolfTable(standard9()))
+        val result = director.nightWolfChat(WerewolfTable(standard9()))
 
-        val wolfView = result.transcriptFor(1)
-        val goodView = result.transcriptFor(4)
-        assertEquals("狼人能看到 3 条夜聊", 3, wolfView.count { it.kind == MessageKind.WOLF_CHAT })
-        assertEquals("好人一条都看不到", 0, goodView.count { it.kind == MessageKind.WOLF_CHAT })
+        // 商议完全身就该自己去定刀，不能停在商议阶段——那会让整局卡在这里
+        assertEquals("商议完自动进入下刀", Phase.NIGHT_WOLF, result.game.phase)
+        assertEquals(1, result.game.wolfVoteRound)
+
+        val wolves = result.transcriptFor(1).filter { it.kind == MessageKind.WOLF_CHAT }
+        assertEquals("三只狼各说一句", listOf(1, 2, 3), wolves.map { it.seat })
+        assertEquals("好人一条都看不到", 0, result.transcriptFor(4).count { it.kind == MessageKind.WOLF_CHAT })
+    }
+
+    @Test
+    fun `商议是串行的，后说的狼能看见队友已经说了什么`() = runBlocking {
+        // 这条锁的是「商量」这件事本身：并发收集的话每只狼都在对着空白表态，
+        // 各说各的，等于没商量，第一夜就必然分票
+        val seat1 = ScriptedAI(listOf("我倾向 7 号。"))
+        val seat2 = ScriptedAI(listOf("我跟 1 号，刀 7 号。"))
+        val seat3 = ScriptedAI(listOf("那就 7 号。"))
+        val director = WerewolfDirector(agentsOf(1 to seat1, 2 to seat2, 3 to seat3))
+
+        director.nightWolfChat(WerewolfTable(standard9()))
+
+        assertTrue("1 号先开口，没有前文", seat1.calls.single().userText.contains("现在只有你们狼人醒着"))
+        assertTrue("2 号必须看到 1 号说了什么", seat2.calls.single().userText.contains("我倾向 7 号。"))
+        assertTrue("3 号要看到前两位", seat3.calls.single().userText.contains("我跟 1 号，刀 7 号。"))
+    }
+
+    @Test
+    fun `商议阶段不改局面，刀口只在定刀之后才有`() = runBlocking {
+        val director = WerewolfDirector(
+            agentsOf(1 to AutoAI(), 2 to AutoAI(), 3 to AutoAI())
+        )
+
+        val afterTalk = director.nightWolfChat(WerewolfTable(standard9()))
+
+        assertNull("只是说话，不该产生刀口", afterTalk.game.tonightVictim)
+        assertTrue("也不该产生死讯", afterTalk.game.history.none { it is GameEvent.Dawn })
     }
 
     // ------------------------------------------------------------------
@@ -368,7 +398,7 @@ class WerewolfDirectorTest {
             agentsOf(1 to garbage, 2 to garbage, 3 to garbage)
         )
 
-        val result = director.nightWolf(WerewolfTable(standard9()))
+        val result = director.nightWolf(WerewolfTable(standard9().beginWolfVote()))
 
         assertNotEquals("必须离开狼人阶段", Phase.NIGHT_WOLF, result.game.phase)
         // 每个狼人至少被问了一次，格式不对会重试
@@ -405,7 +435,9 @@ class WerewolfDirectorTest {
     fun `没有配置模型的座位会明确报错，而不是静默跳过`() = runBlocking {
         val director = WerewolfDirector(agentsOf(1 to ScriptedAI(listOf("""{"target": 7}"""))))
 
-        val error = runCatching { director.nightWolf(WerewolfTable(standard9())) }.exceptionOrNull()
+        val error = runCatching {
+            director.nightWolf(WerewolfTable(standard9().beginWolfVote()))
+        }.exceptionOrNull()
 
         assertNotNull("缺模型必须报错", error)
         assertTrue(error!!.message.orEmpty().contains("没有配置模型"))

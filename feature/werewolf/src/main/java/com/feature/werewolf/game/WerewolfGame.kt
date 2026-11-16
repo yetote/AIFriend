@@ -140,8 +140,31 @@ data class WerewolfGame(
             }
         }
         val next = copy(tonightGuardedSeat = targetSeat)
-        // 狼人一定在场上（判胜负会先把狼全灭的局结束掉），所以直接进狼人阶段
-        return next.copy(phase = Phase.NIGHT_WOLF)
+        // 狼人一定在场上（判胜负会先把狼全灭的局结束掉），所以直接进狼人商议
+        return next.copy(phase = Phase.NIGHT_WOLF_CHAT)
+    }
+
+    /**
+     * 商议结束，开始下刀。
+     *
+     * 之所以要显式一步而不是「商议里说完就自动进下刀」：商议阶段每只狼都可能只表态
+     * 不改状态，把阶段推进交给编排层，存档读回来时才知道该从哪一步接着走。
+     */
+    fun beginWolfVote(): WerewolfGame {
+        require(phase == Phase.NIGHT_WOLF_CHAT) { "当前不是狼人商议阶段：$phase" }
+        return copy(phase = Phase.NIGHT_WOLF)
+    }
+
+    /**
+     * 平票之后回到商议。
+     *
+     * 是真的把阶段退回去，而不是留在下刀阶段再问一次：提示词、进度文案、
+     * 界面上的阶段条全都跟着 `phase` 走，只把话问出去而不退阶段，
+     * 模型会看到「现在定刀」的指令和「再商量一次」的问题，两句话互相打架。
+     */
+    fun reopenWolfChat(): WerewolfGame {
+        require(phase == Phase.NIGHT_WOLF) { "当前不是狼人下刀阶段：$phase" }
+        return copy(phase = Phase.NIGHT_WOLF_CHAT)
     }
 
     /**
@@ -485,7 +508,7 @@ data class WerewolfGame(
         day = day + 1,
         // 有活着的守卫就先走守护阶段。守卫死了就不该再由他行动，
         // 这个判断每夜现算，不能只看开局配置——否则守卫出局后全队会卡在一个永远不动的阶段
-        phase = if (hasAliveRole(WerewolfRole.GUARD)) Phase.NIGHT_GUARD else Phase.NIGHT_WOLF,
+        phase = if (hasAliveRole(WerewolfRole.GUARD)) Phase.NIGHT_GUARD else Phase.NIGHT_WOLF_CHAT,
         // 本夜的守护变成「昨夜」，用来限制守卫不能连守同一人；空守就等于没有限制
         lastGuardedSeat = tonightGuardedSeat,
         tonightGuardedSeat = null,
@@ -588,7 +611,11 @@ data class WerewolfGame(
                 WerewolfPlayer(seat = index + 1, id = entry.id, name = entry.name, role = arranged[index])
             }
             // 有守卫的板子从守护阶段入夜，否则狼人先动——守卫必须盲守，这是规则不是实现细节
-            val opening = if (config.has(WerewolfRole.GUARD)) Phase.NIGHT_GUARD else Phase.NIGHT_WOLF
+            val opening = if (config.has(WerewolfRole.GUARD)) {
+                Phase.NIGHT_GUARD
+            } else {
+                Phase.NIGHT_WOLF_CHAT
+            }
             return WerewolfGame(config = config, players = players, phase = opening)
         }
     }

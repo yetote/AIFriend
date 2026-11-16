@@ -124,6 +124,9 @@ class WerewolfGameSimulationTest {
             game.guardProtect(if (rng.nextInt(3) == 0) null else game.guardTargets.random(rng))
         }
 
+        // 商议阶段不改局面，只管往下走；真正的分歧留给下刀那一步
+        Phase.NIGHT_WOLF_CHAT -> game.beginWolfVote()
+
         Phase.NIGHT_WOLF -> {
             val target = game.aliveSeats.random(rng)
             game.wolfVote(game.aliveWolves().map { it.seat }.associateWith { target })

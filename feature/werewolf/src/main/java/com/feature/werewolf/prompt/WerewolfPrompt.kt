@@ -165,6 +165,13 @@ object WerewolfPrompt {
                     }
                 }
                 lines += "白天不要暴露自己是狼人，也不要直接说出队友的名字。"
+                if (game.phase == Phase.NIGHT_WOLF_CHAT) {
+                    lines += "现在只有你们狼人醒着。你说的话队友听得见，白天没有人知道——" +
+                        "所以可以直接说要刀谁、为什么，也可以反驳队友。"
+                }
+                if (game.phase == Phase.NIGHT_WOLF) {
+                    lines += "商议已经结束，现在各自动手：只要有一只狼指了别人，今晚就可能空刀。"
+                }
                 if (game.wolfVoteRound > 1 && game.wolfVotes.isNotEmpty()) {
                     lines += "上一轮你们没能统一意见：" +
                         game.wolfVotes.entries.sortedBy { it.key }
@@ -281,11 +288,24 @@ object WerewolfPrompt {
                     append("先用一句话说明你为什么守他，再给出座位号。")
                 }
 
+                Phase.NIGHT_WOLF_CHAT -> {
+                    val targets = game.aliveSeats.filter { it != seat && !game.isWerewolf(it) }
+                    append("第 ${game.day} 夜，狼人睁眼。先和队友商量今晚刀谁。")
+                    append("可选目标：").append(seats(targets)).append("。")
+                    append("用 1-2 句中文说出你想刀谁、为什么；队友已经先说了，就先回应他。")
+                    append("这一步只是商量，不要输出 JSON，也别说「好的」这种没有信息的话。")
+                }
+
                 Phase.NIGHT_WOLF -> {
                     val targets = game.aliveSeats.filter { it != seat && !game.isWerewolf(it) }
-                    append("第 ${game.day} 夜，狼人商议今晚刀谁。")
+                    append("第 ${game.day} 夜，现在定刀。")
+                    if (game.wolfVoteRound > 1) {
+                        append("上一轮你们指了不同的人，这一轮必须统一——再谈不拢今晚就空刀。")
+                    } else {
+                        append("刚才已经商量过，现在各自定下目标：所有狼必须指同一个人，否则今晚空刀。")
+                    }
                     append("可选目标：").append(seats(targets)).append("。")
-                    append("先用一句话说出你的想法，再给出目标座位号。")
+                    append("先一句话说明理由，再给出目标座位号。")
                 }
 
                 Phase.NIGHT_SEER -> {
