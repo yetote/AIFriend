@@ -37,6 +37,8 @@ class WerewolfReviewMappingTest {
                     if (rng.nextInt(4) == 0) null else game.guardTargets.random(rng),
                 )
 
+                Phase.NIGHT_WOLF_CHAT -> game.beginWolfVote()
+
                 Phase.NIGHT_WOLF -> {
                     val target = game.aliveSeats.random(rng)
                     game.wolfVote(game.aliveWolves().associate { it.seat to target })

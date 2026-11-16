@@ -22,9 +22,10 @@ import kotlin.random.Random
  *
  * 这里只做调度，不做判定——谁死谁赢全部交给状态机。三条调度原则：
  *
- * 1. **发言串行，决策并发。** 白天讨论必须一个人说完另一个人接（后一位要能接上前一位的话）；
- *    而夜里狼人刀谁、白天大家投票，必须是**同时收集、互相看不到对方的选择**。
+ * 1. **发言串行，决策并发。** 白天讨论、以及夜里的狼人商议，必须一个人说完另一个人接
+ *    （后一位要能接上前一位的话）；而白天投票必须是**同时收集、互相看不到对方的选择**。
  *    串行收集投票会让后面的 AI 看见前面的票型，等于公开投暗票。
+ *    狼人下刀虽然也是并发，但在此之前已经有一轮公开商议，所以并发的只是最后那一下。
  * 2. **身份每轮现拼。** 每调一次模型都重新生成 system prompt，不缓存、不依赖历史长度。
  *    这是「上下文被裁掉之后 AI 忘了自己是狼」的唯一解法。
  * 3. **可见性跟着消息走。** 夜间消息自带 [WerewolfMessage.audience]，
@@ -87,10 +88,30 @@ class WerewolfDirector(
     }
 
     /**
-     * 狼人商议。存活狼人**并发**给出目标，再交给状态机多数决。
+     * 狼人商议。按座位顺序**串行**说，说完一句就推给界面。
      *
-     * 平票时状态机会停在 [Phase.NIGHT_WOLF] 并把 `wolfVoteRound` 加一，
-     * 这里看到阶段没变就再收一轮——第二轮仍然平票，状态机自己会空刀，循环自然结束。
+     * 两个决定：
+     *
+     * 1. **串行**。商议的意义就是「听到队友说什么再回应」。并发收集的话每只狼都是
+     *    对着一片空白表态，各说各的等于没商量——这正是第一夜最容易空刀的地方。
+     * 2. **单独成阶段**，不和下刀合并。合成一个请求的话，模型会一边说一边把目标定了，
+     *    嘴上说「刀 3 号」、JSON 里填 5 号，而它自己也不觉得矛盾。
+     */
+    suspend fun nightWolfChat(table: WerewolfTable): WerewolfTable {
+        val game = table.game
+        if (game.phase != Phase.NIGHT_WOLF_CHAT) return table
+        val spoken = talkRound(table, note = null)
+        return spoken.copy(game = spoken.game.beginWolfVote())
+    }
+
+    /**
+     * 狼人下刀。存活狼人**并发**给出目标，再交给状态机多数决。
+     *
+     * 并发而不是串行：商议已经公开说过一轮了，到定刀这一步再让后一只狼看见前一只的
+     * 具体选择，它就只是在抄答案，狼队等于只有一只狼在思考。
+     *
+     * 平票时**回到商议**再谈一轮，而不是直接空刀：谈不拢说明话没说透，
+     * 那就把分歧摆出来再说一次——这一步才是第一夜空刀的正解。
      */
     suspend fun nightWolf(table: WerewolfTable): WerewolfTable {
         var current = table
@@ -106,7 +127,7 @@ class WerewolfDirector(
                     phase = Phase.NIGHT_WOLF,
                     step = 0,
                     total = wolves.size,
-                    note = if (rounds > 0) "平票，重新商定" else null,
+                    note = if (rounds > 0) "平票，重新定刀" else null,
                 )
             )
 
@@ -125,7 +146,7 @@ class WerewolfDirector(
                         phase = Phase.NIGHT_WOLF,
                         seat = seat,
                         kind = MessageKind.WOLF_CHAT,
-                        text = outcome.value.reason.ifBlank { "我想刀 ${outcome.value.target} 号。" },
+                        text = "我定 ${outcome.value.target} 号。" + outcome.value.reason,
                         audience = wolves.map { it.seat }.toSet(),
                     )
                 )
@@ -134,7 +155,67 @@ class WerewolfDirector(
             val votes = outcomes.associate { (seat, outcome) -> seat to outcome.value.target }
             val afterVote = game.wolfVote(votes)
             current = next.copy(game = afterVote).syncBroadcasts(game)
+            // 定刀结果也推一次：平票时界面要能立刻看到「谁指了谁」，
+            // 否则下一轮商议的发言会显得凭空多出来一段
+            onTranscript(current)
+
+            if (current.game.phase == Phase.NIGHT_WOLF) {
+                // 平票。把阶段真的退回商议，提示词里那句「现在定刀」才不会和
+                // 「再商量一次」打架
+                val reopened = current.copy(game = current.game.reopenWolfChat())
+                val talked = talkRound(reopened, note = "平票，再商一次")
+                current = talked.copy(game = talked.game.beginWolfVote())
+            }
             rounds++
+        }
+        return current
+    }
+
+    /**
+     * 一轮狼人商议：按座位顺序各说一句，说完立刻推给界面。
+     *
+     * 只追加消息、不碰 [WerewolfGame]——阶段推进由调用方决定。
+     * 这样「第一次商议」和「平票后再商一次」能共用同一段逻辑。
+     */
+    private suspend fun talkRound(table: WerewolfTable, note: String?): WerewolfTable {
+        val game = table.game
+        val wolves = game.aliveWolves().sortedBy { it.seat }
+        if (wolves.isEmpty()) return table
+
+        val audience = wolves.map { it.seat }.toSet()
+        var current = table
+        wolves.forEachIndexed { index, wolf ->
+            onProgress(
+                WerewolfProgress(
+                    day = game.day,
+                    phase = Phase.NIGHT_WOLF_CHAT,
+                    step = index + 1,
+                    total = wolves.size,
+                    seat = wolf.seat,
+                    note = note,
+                )
+            )
+            val text = askSpeech(
+                current,
+                wolf.seat,
+                task = if (note == null) {
+                    "现在只有你们狼人醒着。说一句你想刀谁、为什么。"
+                } else {
+                    "上一轮你们指了不同的人。说清楚这轮想刀谁，别再分票。"
+                },
+            )
+            current = current.append(
+                WerewolfMessage(
+                    day = game.day,
+                    phase = Phase.NIGHT_WOLF_CHAT,
+                    seat = wolf.seat,
+                    kind = MessageKind.WOLF_CHAT,
+                    text = text,
+                    audience = audience,
+                )
+            )
+            // 说一句推一次：界面上一个一个冒出来，看得出来现在轮到谁在想
+            onTranscript(current)
         }
         return current
     }
@@ -336,6 +417,7 @@ class WerewolfDirector(
             check(steps++ < MAX_STEPS) { "编排没有收敛，停在 ${current.game.phase}" }
             current = when (current.game.phase) {
                 Phase.NIGHT_GUARD -> nightGuard(current)
+                Phase.NIGHT_WOLF_CHAT -> nightWolfChat(current)
                 Phase.NIGHT_WOLF -> nightWolf(current)
                 Phase.NIGHT_SEER -> nightSeer(current)
                 Phase.NIGHT_WITCH -> nightWitch(current)
@@ -429,12 +511,16 @@ class WerewolfDirector(
         )
     }
 
-    /** 自由发言走普通 chat，不需要 JSON。 */
-    private suspend fun askSpeech(table: WerewolfTable, seat: Int): String {
+    /** 自由发言走普通 chat，不需要 JSON。狼人商议也走这条路。 */
+    private suspend fun askSpeech(
+        table: WerewolfTable,
+        seat: Int,
+        task: String = "现在轮到你发言。",
+    ): String {
         val agent = agentOf(seat)
         val game = table.game
         val raw = agent.ai.chat(
-            messages = listOf(ChatMessage.user(context(table, seat, "现在轮到你发言。"))),
+            messages = listOf(ChatMessage.user(context(table, seat, task))),
             model = agent.model,
             systemPrompt = WerewolfPrompt.systemPrompt(game, seat, agent.persona),
             enableThinking = agent.thinkingEnabled,

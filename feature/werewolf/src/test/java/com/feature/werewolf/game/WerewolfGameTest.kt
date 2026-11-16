@@ -35,7 +35,17 @@ class WerewolfGameTest {
         config = config,
         roster = roles.indices.map { RosterEntry(id = "p${it + 1}", name = "${it + 1}号") },
         roles = roles,
-    )
+    ).let {
+        // 绝大多数用例关心的是规则本身（多数决、平票、女巫用药），
+        // 不关心「今晚先商量再下刀」这一步，所以直接从下刀阶段起手。
+        // 商量那一步在 DirectorTest 里单独验
+        if (it.phase == Phase.NIGHT_WOLF_CHAT) it.beginWolfVote() else it
+    }
+
+
+/** 这些用例验的是规则，不验「今晚先商量再下刀」，所以直接从下刀阶段起手。 */
+private fun WerewolfGame.atWolfVote(): WerewolfGame =
+    if (phase == Phase.NIGHT_WOLF_CHAT) beginWolfVote() else this
 
     /**
      * 打完一整夜。狼人全体刀 [victim]，预言家验 [checkTarget]，女巫按参数用药。
@@ -49,7 +59,7 @@ class WerewolfGameTest {
         poison: Int? = null,
     ): WerewolfGame {
         val wolfSeats = game.aliveWolves().map { it.seat }
-        var next = game.wolfVote(wolfSeats.associateWith { victim })
+        var next = game.atWolfVote().wolfVote(wolfSeats.associateWith { victim })
         if (next.phase == Phase.NIGHT_SEER) next = next.seerCheck(checkTarget)
         if (next.phase == Phase.NIGHT_WITCH) next = next.witchAct(heal = heal, poisonTarget = poison)
         return next
@@ -74,7 +84,7 @@ class WerewolfGameTest {
         assertEquals(2, dealt.players.count { it.role == WEREWOLF })
         assertEquals(1, dealt.players.count { it.role == SEER })
         assertEquals(3, dealt.players.count { it.role == VILLAGER })
-        assertEquals(Phase.NIGHT_WOLF, dealt.phase)
+        assertEquals(Phase.NIGHT_WOLF_CHAT, dealt.phase)
         assertEquals(1, dealt.day)
         assertTrue(dealt.players.all { it.alive })
     }
@@ -210,7 +220,7 @@ class WerewolfGameTest {
     @Test
     fun `女巫第一夜可以自救`() {
         var mode = game(standard9)
-        mode = mode.wolfVote(mapOf(1 to 5, 2 to 5, 3 to 5))
+        mode = mode.atWolfVote().wolfVote(mapOf(1 to 5, 2 to 5, 3 to 5))
         mode = mode.seerCheck(1)
         mode = mode.witchAct(heal = true)
 
@@ -225,7 +235,7 @@ class WerewolfGameTest {
         mode = skipDay(mode)
         assertEquals(2, mode.day)
 
-        mode = mode.wolfVote(mapOf(1 to 5, 2 to 5, 3 to 5))
+        mode = mode.atWolfVote().wolfVote(mapOf(1 to 5, 2 to 5, 3 to 5))
         mode = mode.seerCheck(1)
 
         val night2 = mode
@@ -239,7 +249,7 @@ class WerewolfGameTest {
         assertFalse(mode.witch.antidoteAvailable)
 
         mode = skipDay(mode)
-        mode = mode.wolfVote(mapOf(1 to 6, 2 to 6, 3 to 6))
+        mode = mode.atWolfVote().wolfVote(mapOf(1 to 6, 2 to 6, 3 to 6))
         mode = mode.seerCheck(1)
 
         val night2 = mode
@@ -285,7 +295,7 @@ class WerewolfGameTest {
         assertEquals(Phase.NIGHT_WOLF, mode.afterHunterPhase)
 
         mode = mode.hunterShoot(null)
-        assertEquals(Phase.NIGHT_WOLF, mode.phase)
+        assertEquals("下一夜从商议开始", Phase.NIGHT_WOLF_CHAT, mode.phase)
         assertEquals(2, mode.day)
     }
 
@@ -368,7 +378,7 @@ class WerewolfGameTest {
         mode = mode.castVotes(mapOf(1 to 3, 2 to null, 3 to 1, 4 to null, 6 to null))
         assertTrue(mode.history.any { it is GameEvent.NoExile })
         assertEquals(2, mode.day)
-        assertEquals(Phase.NIGHT_WOLF, mode.phase)
+        assertEquals("平票无人出局后翻下一夜，从商议开始", Phase.NIGHT_WOLF_CHAT, mode.phase)
     }
 
     @Test

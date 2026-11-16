@@ -626,6 +626,15 @@ private fun WerewolfUiState.toLive(
         ?.eachCount()
         .orEmpty()
 
+    val me = game?.players?.firstOrNull { it.seat == humanSeat }
+
+    // 夜里「现在轮到谁」本身就是隐私：狼人商议挨个开口，守卫、预言家、女巫也都只有一个座位
+    // 在动。把这个人亮在牌桌上，等于把身份直接摊给好人看。观战和本人轮到时照常亮。
+    val actorSeat = progress?.seat?.takeIf { seat ->
+        reveal || !progress.phase.hidesActor || seat == humanSeat ||
+            (me?.role == WerewolfRole.WEREWOLF && progress.phase == Phase.NIGHT_WOLF_CHAT)
+    }
+
     val seats = game?.players?.map { player ->
         // 翻过牌的白痴身份是公开的：牌桌上必须给所有人看见，
         // 否则会留下一个「没有身份标记却还活着」的座位，读起来自相矛盾
@@ -639,7 +648,7 @@ private fun WerewolfUiState.toLive(
             fate = player.deathCause?.toFate(),
             roleLabel = if (known) player.role.displayName else null,
             wolf = player.role == WerewolfRole.WEREWOLF,
-            active = progress?.seat == player.seat,
+            active = actorSeat == player.seat,
             votes = voteCounts[player.seat],
         )
     }.orEmpty()
@@ -666,8 +675,6 @@ private fun WerewolfUiState.toLive(
             text = message.text,
         )
     }
-
-    val me = game?.players?.firstOrNull { it.seat == humanSeat }
 
     return UIWerewolfLive(
         day = game?.day ?: 1,
@@ -749,11 +756,24 @@ private fun buildTurn(
             null
         }
 
+        // 狼队内部商量。人也要能开口：他这一句队友看得见，下一步定刀才谈得拢。
+        // 没人说话也能过——真正的决定在下一个阶段
+        Phase.NIGHT_WOLF_CHAT -> if (me.role == WerewolfRole.WEREWOLF) {
+            UIWerewolfTurn(
+                kind = UIWerewolfTurnKind.SPEECH,
+                seat = humanSeat,
+                title = "和队友商量今晚刀谁",
+                hint = "只有狼看得到",
+            )
+        } else {
+            null
+        }
+
         Phase.NIGHT_WOLF -> if (me.role == WerewolfRole.WEREWOLF) {
             UIWerewolfTurn(
                 kind = UIWerewolfTurnKind.SEAT,
                 seat = humanSeat,
-                title = if (game.wolfVoteRound > 1) "重新商议：今晚刀谁" else "今晚刀谁",
+                title = if (game.wolfVoteRound > 1) "平票，重新定刀" else "今晚刀谁",
                 targets = others.filter { target ->
                     game.players.firstOrNull { it.seat == target.seat }?.role != WerewolfRole.WEREWOLF
                 },
@@ -809,9 +829,18 @@ private fun buildTurn(
 }
 
 /** 夜晚几个阶段算夜。猎人开枪归到白天播报里，所以不算。 */
+/**
+ * 这个阶段「谁在行动」是不是隐私。
+ *
+ * 白天发言、投票、猎人开枪都是公开的；夜里那些阶段一次只有一个座位能动，
+ * 亮出来就等于把身份说穿。狼人下刀本来就是并发的，没有「当前是谁」，单独排除。
+ */
+private val Phase.hidesActor: Boolean
+    get() = isNightPhase() && this != Phase.NIGHT_WOLF
+
 private fun Phase.isNightPhase(): Boolean =
-    this == Phase.NIGHT_GUARD || this == Phase.NIGHT_WOLF ||
-        this == Phase.NIGHT_SEER || this == Phase.NIGHT_WITCH
+    this == Phase.NIGHT_GUARD || this == Phase.NIGHT_WOLF_CHAT ||
+        this == Phase.NIGHT_WOLF || this == Phase.NIGHT_SEER || this == Phase.NIGHT_WITCH
 
 private fun DeathCause.toFate(): UIWerewolfFate = when (this) {
     DeathCause.WOLF_KILL -> UIWerewolfFate.WOLF_KILL

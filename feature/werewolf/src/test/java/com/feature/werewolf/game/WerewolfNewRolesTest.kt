@@ -45,6 +45,11 @@ class WerewolfNewRolesTest {
         roles = roles,
     )
 
+
+/** 这些用例验的是规则，不验「今晚先商量再下刀」，所以直接从下刀阶段起手。 */
+private fun WerewolfGame.atWolfVote(): WerewolfGame =
+    if (phase == Phase.NIGHT_WOLF_CHAT) beginWolfVote() else this
+
     /**
      * 打完一整夜：守卫按 [guard] 守人（有守卫阶段时），狼全体刀 [victim]，
      * 预言家验一个无关的人，女巫按参数用药。
@@ -57,7 +62,7 @@ class WerewolfNewRolesTest {
         poison: Int? = null,
     ): WerewolfGame {
         var next = if (game.phase == Phase.NIGHT_GUARD) game.guardProtect(guard) else game
-        next = next.wolfVote(next.aliveWolves().map { it.seat }.associateWith { victim })
+        next = next.atWolfVote().wolfVote(next.aliveWolves().map { it.seat }.associateWith { victim })
         if (next.phase == Phase.NIGHT_SEER) {
             val seer = next.alivePlayers.first { it.role == SEER }
             next = next.seerCheck(next.aliveSeats.first { it != seer.seat })
@@ -82,7 +87,7 @@ class WerewolfNewRolesTest {
     @Test
     fun `有守卫的板子从守卫阶段入夜，没有的仍从狼人开始`() {
         assertEquals(Phase.NIGHT_GUARD, game(guard10).phase)
-        assertEquals(Phase.NIGHT_WOLF, game(fool12).phase)
+        assertEquals(Phase.NIGHT_WOLF_CHAT, game(fool12).phase)
     }
 
     @Test
@@ -114,7 +119,7 @@ class WerewolfNewRolesTest {
         val guarded = game(guard10).guardProtect(7)
 
         assertEquals(7, guarded.tonightGuardedSeat)
-        assertEquals(Phase.NIGHT_WOLF, guarded.phase)
+        assertEquals(Phase.NIGHT_WOLF_CHAT, guarded.phase)
     }
 
     @Test
@@ -129,7 +134,7 @@ class WerewolfNewRolesTest {
         // 空守不算「守过」，所以下一夜又可以守 8 号了
         val afterEmpty = secondNight.guardProtect(null)
         assertNull(afterEmpty.tonightGuardedSeat)
-        assertEquals(Phase.NIGHT_WOLF, afterEmpty.phase)
+        assertEquals(Phase.NIGHT_WOLF_CHAT, afterEmpty.phase)
     }
 
     @Test
@@ -139,7 +144,7 @@ class WerewolfNewRolesTest {
         assertFalse(morning.playerAt(7).alive)
 
         val nextNight = skipDay(morning)
-        assertEquals("守卫死了就该直接进狼人阶段", Phase.NIGHT_WOLF, nextNight.phase)
+        assertEquals("守卫死了就直接进狼人商议", Phase.NIGHT_WOLF_CHAT, nextNight.phase)
     }
 
     @Test
@@ -189,7 +194,7 @@ class WerewolfNewRolesTest {
         assertEquals(VoteOutcome.IDIOT_REVEALED, round.outcome)
 
         // 翻牌之后直接进下一夜，白天的流程不会因为「没人出局」而重投
-        assertEquals(Phase.NIGHT_WOLF, voted.phase)
+        assertEquals(Phase.NIGHT_WOLF_CHAT, voted.phase)
         assertEquals(2, voted.day)
     }
 

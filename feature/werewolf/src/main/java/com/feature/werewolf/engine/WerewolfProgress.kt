@@ -37,7 +37,8 @@ data class WerewolfProgress(
     private val action: String
         get() = when (phase) {
             Phase.NIGHT_GUARD -> "守卫守护"
-            Phase.NIGHT_WOLF -> "狼人商议"
+            Phase.NIGHT_WOLF_CHAT -> "狼人商议"
+            Phase.NIGHT_WOLF -> "狼人下刀"
             Phase.NIGHT_SEER -> "预言家查验"
             Phase.NIGHT_WITCH -> "女巫用药"
             Phase.DAY_DISCUSSION -> "发言"
@@ -54,5 +55,5 @@ data class WerewolfProgress(
  * 都归到白天的播报里，所以算「天」。
  */
 val Phase.isNight: Boolean
-    get() = this == Phase.NIGHT_GUARD || this == Phase.NIGHT_WOLF ||
-        this == Phase.NIGHT_SEER || this == Phase.NIGHT_WITCH
+    get() = this == Phase.NIGHT_GUARD || this == Phase.NIGHT_WOLF_CHAT ||
+        this == Phase.NIGHT_WOLF || this == Phase.NIGHT_SEER || this == Phase.NIGHT_WITCH
