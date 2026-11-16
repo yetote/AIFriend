@@ -53,6 +53,10 @@ class AIGateway(
     override val isGateway: Boolean
         get() = true
 
+    /** 不需要 Key 的平台（本地 Ollama 之类）永远算配好了。 */
+    override fun hasCredentials(): Boolean =
+        !provider.requiresKey || AICredentials.apiKeyOf(provider.id).isNotBlank()
+
     override val priceCurrency: String
         get() = ModelPrices.currencyOf(provider.id)
 

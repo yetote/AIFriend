@@ -22,13 +22,20 @@ class ApiProbeTest {
 
     /** 只负责按剧本回话或抛错的最小 IAI。 */
     private class FakeAI(
+        private val configured: Boolean = true,
+        // 放在最后保持尾随 lambda 的写法：`FakeAI { "OK" }`
         private val respond: suspend () -> String,
     ) : IAI {
+        /** 记录真正发出过几次请求，用来断言「没 Key 时一次都不该发」。 */
+        var chatCalls: Int = 0
+
         override var modelSet: MutableSet<String> = mutableSetOf()
         override var brandName: String = "Fake"
         override var company: String = "Fake"
 
         override suspend fun requestModel() = Unit
+
+        override fun hasCredentials(): Boolean = configured
 
         override suspend fun chat(
             messages: List<ChatMessage>,
@@ -36,7 +43,10 @@ class ApiProbeTest {
             systemPrompt: String?,
             enableThinking: Boolean,
             jsonMode: Boolean,
-        ): String = respond()
+        ): String {
+            chatCalls++
+            return respond()
+        }
 
         override suspend fun chat(message: String, model: String): String = respond()
     }
@@ -57,6 +67,21 @@ class ApiProbeTest {
         val result = FakeAI { "" }.probe("m")
 
         assertTrue(result.ok)
+    }
+
+    @Test
+    fun `没配 Key 时直接判失败，一个请求都不发`() = runBlocking {
+        // 发出去必然 401，回来写的是「API Key 无效」——用户根本没填过，
+        // 提示他「Key 无效」只会让他去怀疑一个还不存在的东西
+        val ai = FakeAI(configured = false) { "OK" }
+        val result = ai.probe("m")
+
+        assertFalse(result.ok)
+        assertEquals(0, ai.chatCalls)
+        assertTrue(
+            "要说明是没配 Key：${result.message}",
+            result.message.orEmpty().contains("API Key"),
+        )
     }
 
     @Test

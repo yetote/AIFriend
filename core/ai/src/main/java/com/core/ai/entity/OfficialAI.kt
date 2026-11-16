@@ -56,6 +56,8 @@ abstract class OfficialAI(
             )
         }
 
+    override fun hasCredentials(): Boolean = AICredentials.apiKeyOf(providerId).isNotBlank()
+
     /**
      * 拉模型列表。
      *

@@ -60,6 +60,16 @@ suspend fun IAI.probe(
     val startedAt = System.currentTimeMillis()
     fun elapsed() = System.currentTimeMillis() - startedAt
 
+    // 没有 Key 就不发：这一发必然 401，拿回来的「Key 无效」会把人引到错的方向，
+    // 他要么以为自己填错了，要么以为 Key 过期了，实际上只是还没填
+    if (!hasCredentials()) {
+        return ApiProbeResult(
+            ok = false,
+            elapsedMs = 0,
+            message = "还没有配置这个厂商的 API Key",
+        )
+    }
+
     return try {
         withTimeout(timeoutMs) {
             chat(
