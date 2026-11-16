@@ -25,6 +25,15 @@ interface IAI {
     val isGateway: Boolean
         get() = false
 
+    /**
+     * 现在能不能真的发出请求：Key 之类的前置条件是否齐了。
+     *
+     * 只在「发请求前拦一下」的场景用（探活、开局检查）。没有 Key 还去发，
+     * 拿回来的一定是 401，用户看到「API Key 无效」——可他压根没填过，
+     * 该说的是「还没配 Key」。两者的处理动作完全不同。
+     */
+    fun hasCredentials(): Boolean = true
+
     /** 价格标注用的货币符号，默认美元。 */
     val priceCurrency: String
         get() = ModelPrice.USD

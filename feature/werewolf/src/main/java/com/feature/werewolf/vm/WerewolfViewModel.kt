@@ -9,6 +9,7 @@ import com.core.ai.model.Friend
 import com.core.ai.model.toFriend
 import com.core.ai.probe.ApiProbeResult
 import com.core.ai.probe.probe
+import com.core.repository.storage.AIProviderSettings
 import com.core.repository.storage.FriendRepository
 import com.feature.werewolf.decision.SeatChoice
 import com.feature.werewolf.decision.VoteChoice
@@ -27,6 +28,7 @@ import com.feature.werewolf.game.WerewolfPlayer
 import com.feature.werewolf.store.WerewolfGameSummary
 import com.feature.werewolf.store.WerewolfStore
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -39,6 +41,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import java.util.UUID
 import kotlin.random.Random
@@ -78,12 +81,25 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
 
     private val store = WerewolfStore(application)
     private val friendRepository = FriendRepository(application)
+    /**
+     * 模型服务的 Key / baseUrl。
+     *
+     * 必须在这里主动加载一次：`AICredentials` 只是 DataStore 的内存快照，
+     * 只有调过 [AIProviderSettings.load] 才会被填上。聊天室和新建伙伴页都在自己的
+     * init 里做了这件事，狼人杀当时漏了 —— 从首页直接进来的进程快照是空的，
+     * 于是每个厂商都「没有 Key」，探活请求不带 Authorization，全部 401。
+     */
+    private val providerSettings = AIProviderSettings(application)
     private val aiFactory = AIFactory()
 
     /** 厂商 → 实例。同一厂商的多个座位共用一个实例，和聊天室的做法一致。 */
     private val ais = mutableMapOf<String, IAI>()
 
     private val human = HumanSeatAI()
+
+    init {
+        viewModelScope.launch { runCatching { providerSettings.load() } }
+    }
 
     private val json = Json { encodeDefaults = true }
 
@@ -395,6 +411,10 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
      */
     private suspend fun runProbe(chosen: List<Friend>, force: Boolean): Boolean = probeLock.withLock {
         if (chosen.isEmpty()) return@withLock true
+
+        // 每次检测前重读一次凭证：用户完全可能刚在设置页换了 Key，
+        // 内存快照里还是旧的，测出来的红点会让他以为新 Key 也不行
+        withContext(Dispatchers.IO) { runCatching { providerSettings.load() } }
 
         val tasks = planProbes(
             targets = chosen.toProbeTargets(),
