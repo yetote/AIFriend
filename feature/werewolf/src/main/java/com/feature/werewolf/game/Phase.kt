@@ -9,25 +9,25 @@ package com.feature.werewolf.game
  * 刻意没有 DAWN 阶段：天亮结算（谁死了、猎人能不能开枪）是一次性同步完成的，
  * 中间态对外不可见，多一个阶段只会让编排层多一次无意义的等待。
  */
-enum class Phase {
+enum class Phase(val displayName: String) {
     /** 狼人选择今晚要刀的人。存活狼人全部投票，多数决。 */
-    NIGHT_WOLF,
+    NIGHT_WOLF("狼人行动"),
 
     /** 预言家查验。 */
-    NIGHT_SEER,
+    NIGHT_SEER("预言家查验"),
 
     /** 女巫决定是否用解药 / 毒药，每次行动结束后立即结算天亮。 */
-    NIGHT_WITCH,
+    NIGHT_WITCH("女巫用药"),
 
     /** 白天讨论。规则上不做任何判定，由编排层按座位顺序驱动发言。 */
-    DAY_DISCUSSION,
+    DAY_DISCUSSION("白天讨论"),
 
     /** 白天投票。 */
-    DAY_VOTE,
+    DAY_VOTE("白天投票"),
 
     /** 等待猎人开枪（或不开）。 */
-    HUNTER_SHOOT,
+    HUNTER_SHOOT("猎人开枪"),
 
     /** 分出胜负，游戏结束。 */
-    FINISHED,
+    FINISHED("游戏结束"),
 }

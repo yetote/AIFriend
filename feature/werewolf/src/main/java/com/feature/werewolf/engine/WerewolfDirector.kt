@@ -1,0 +1,447 @@
+package com.feature.werewolf.engine
+
+import com.core.ai.model.ChatMessage
+import com.core.ai.structured.StructuredOutcome
+import com.core.ai.structured.StructuredSpec
+import com.core.ai.structured.decide
+import com.feature.werewolf.decision.SeatChoice
+import com.feature.werewolf.decision.VoteChoice
+import com.feature.werewolf.decision.WerewolfDecisions
+import com.feature.werewolf.decision.WitchChoice
+import com.feature.werewolf.game.Phase
+import com.feature.werewolf.game.WerewolfGame
+import com.feature.werewolf.game.WerewolfRole
+import com.feature.werewolf.prompt.WerewolfPrompt
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlin.random.Random
+
+/**
+ * 把 [WerewolfGame] 的规则状态和真实模型接起来。
+ *
+ * 这里只做调度，不做判定——谁死谁赢全部交给状态机。三条调度原则：
+ *
+ * 1. **发言串行，决策并发。** 白天讨论必须一个人说完另一个人接（后一位要能接上前一位的话）；
+ *    而夜里狼人刀谁、白天大家投票，必须是**同时收集、互相看不到对方的选择**。
+ *    串行收集投票会让后面的 AI 看见前面的票型，等于公开投暗票。
+ * 2. **身份每轮现拼。** 每调一次模型都重新生成 system prompt，不缓存、不依赖历史长度。
+ *    这是「上下文被裁掉之后 AI 忘了自己是狼」的唯一解法。
+ * 3. **可见性跟着消息走。** 夜间消息自带 [WerewolfMessage.audience]，
+ *    拼上下文时按座位过滤，不靠调用方记得「这里是狼人视角」。
+ *
+ * 调度本身不抛业务异常：模型输出跑偏由 `decide()` 重试并兜底，规则非法由校验挡住。
+ * 只有传输层错误（网络、Key）会往上抛，那类问题重试没意义，也不该被伪装成「AI 乱投票」。
+ */
+class WerewolfDirector(
+    private val agents: Map<Int, SeatAgent>,
+    private val random: Random = Random.Default,
+) {
+
+    // ---------------------------------------------------------------------
+    // 夜晚
+    // ---------------------------------------------------------------------
+
+    /**
+     * 狼人商议。存活狼人**并发**给出目标，再交给状态机多数决。
+     *
+     * 平票时状态机会停在 [Phase.NIGHT_WOLF] 并把 `wolfVoteRound` 加一，
+     * 这里看到阶段没变就再收一轮——第二轮仍然平票，状态机自己会空刀，循环自然结束。
+     */
+    suspend fun nightWolf(table: WerewolfTable): WerewolfTable {
+        var current = table
+        var rounds = 0
+        while (current.game.phase == Phase.NIGHT_WOLF && rounds++ < WerewolfGame.MAX_WOLF_VOTE_ROUNDS) {
+            val game = current.game
+            val wolves = game.aliveWolves()
+            if (wolves.isEmpty()) break
+
+            val outcomes = coroutineScope {
+                wolves.map { wolf -> async { wolf.seat to askWolf(current, wolf.seat) } }.awaitAll()
+            }
+
+            var next = current
+            outcomes.forEach { (seat, outcome) ->
+                next = next.append(
+                    WerewolfMessage(
+                        day = game.day,
+                        phase = Phase.NIGHT_WOLF,
+                        seat = seat,
+                        kind = MessageKind.WOLF_CHAT,
+                        text = outcome.value.reason.ifBlank { "我想刀 ${outcome.value.target} 号。" },
+                        audience = wolves.map { it.seat }.toSet(),
+                    )
+                )
+            }
+
+            val votes = outcomes.associate { (seat, outcome) -> seat to outcome.value.target }
+            val afterVote = game.wolfVote(votes)
+            current = next.copy(game = afterVote).syncBroadcasts(game)
+        }
+        return current
+    }
+
+    /** 预言家查验。结果只进私有记录，播报里不会出现。 */
+    suspend fun nightSeer(table: WerewolfTable): WerewolfTable {
+        val game = table.game
+        if (game.phase != Phase.NIGHT_SEER) return table
+        val seer = game.alivePlayers.firstOrNull { it.role == WerewolfRole.SEER } ?: return table
+
+        val outcome = askSeer(table, seer.seat)
+        val next = game.seerCheck(outcome.value.target)
+        return table
+            .append(
+                WerewolfMessage(
+                    day = game.day,
+                    phase = Phase.NIGHT_SEER,
+                    seat = seer.seat,
+                    kind = MessageKind.NIGHT_ACT,
+                    text = "查验 ${outcome.value.target} 号。" + outcome.value.reason,
+                    audience = setOf(seer.seat),
+                )
+            )
+            .let { it.copy(game = next).syncBroadcasts(game) }
+    }
+
+    /**
+     * 女巫用药。行动结束后天已经亮了，[WerewolfTable.game] 回来时是白天阶段。
+     *
+     * 女巫说了什么、救没救、毒了谁，全都是秘密，所以这条消息只给女巫本人。
+     */
+    suspend fun nightWitch(table: WerewolfTable): WerewolfTable {
+        val game = table.game
+        if (game.phase != Phase.NIGHT_WITCH) return table
+        val witch = game.alivePlayers.firstOrNull { it.role == WerewolfRole.WITCH } ?: return table
+
+        val outcome = askWitch(table, witch.seat)
+        val choice = outcome.value
+        val next = game.witchAct(heal = choice.heal, poisonTarget = choice.poison)
+        return table
+            .append(
+                WerewolfMessage(
+                    day = game.day,
+                    phase = Phase.NIGHT_WITCH,
+                    seat = witch.seat,
+                    kind = MessageKind.NIGHT_ACT,
+                    text = describeWitchChoice(choice.heal, choice.poison) + choice.reason,
+                    audience = setOf(witch.seat),
+                )
+            )
+            .let { it.copy(game = next).syncBroadcasts(game) }
+    }
+
+    // ---------------------------------------------------------------------
+    // 白天
+    // ---------------------------------------------------------------------
+
+    /**
+     * 白天讨论，按座位顺序**串行**发言。
+     *
+     * 必须是串行：后一位要能接上前一位的话，否则一圈下来像各说各的。
+     * 每说完一条就追加到 [WerewolfTable.transcript]，下一位拼上下文时自然就能看到。
+     */
+    suspend fun discussion(table: WerewolfTable): WerewolfTable {
+        val game = table.game
+        if (game.phase != Phase.DAY_DISCUSSION) return table
+
+        var current = table
+        game.aliveSeats.sorted().forEach { seat ->
+            val text = askSpeech(current, seat)
+            current = current.append(
+                WerewolfMessage(
+                    day = game.day,
+                    phase = Phase.DAY_DISCUSSION,
+                    seat = seat,
+                    kind = MessageKind.SPEECH,
+                    text = text,
+                )
+            )
+        }
+        return current
+    }
+
+    /**
+     * 白天投票。所有存活玩家**并发**投票，互相看不到。
+     *
+     * 平票时状态机把候选人收窄并停在 [Phase.DAY_VOTE]，这里再收一轮，
+     * 额度用尽后状态机自己判「无人出局」。
+     */
+    suspend fun vote(table: WerewolfTable): WerewolfTable {
+        var current = table
+        var rounds = 0
+        while (current.game.phase == Phase.DAY_VOTE && rounds++ < current.game.config.maxVoteRounds) {
+            val game = current.game
+            val candidates = game.voteCandidates ?: game.aliveSeats
+
+            val outcomes = coroutineScope {
+                game.aliveSeats.map { seat ->
+                    async { seat to askVote(current, seat, candidates) }
+                }.awaitAll()
+            }
+
+            var next = current
+            outcomes.forEach { (seat, outcome) ->
+                val target = outcome.value.target
+                next = next.append(
+                    WerewolfMessage(
+                        day = game.day,
+                        phase = Phase.DAY_VOTE,
+                        seat = seat,
+                        kind = MessageKind.VOTE,
+                        text = voteText(target, outcome.value.reason),
+                    )
+                )
+            }
+
+            val votes = outcomes.associate { (seat, outcome) -> seat to outcome.value.target }
+            val afterVote = game.castVotes(votes)
+            current = next.copy(game = afterVote).syncBroadcasts(game)
+        }
+        return current
+    }
+
+    /** 猎人开枪。此时猎人已经出局，开枪宣言所有人都能看到。 */
+    suspend fun hunterShoot(table: WerewolfTable): WerewolfTable {
+        val game = table.game
+        if (game.phase != Phase.HUNTER_SHOOT) return table
+        val hunterSeat = game.pendingHunterSeat ?: return table
+
+        val outcome = askHunter(table, hunterSeat)
+        val target = outcome.value.target
+        val next = game.hunterShoot(target)
+        return table
+            .append(
+                WerewolfMessage(
+                    day = game.day,
+                    phase = Phase.HUNTER_SHOOT,
+                    seat = hunterSeat,
+                    kind = MessageKind.SPEECH,
+                    text = if (target == null) "我不开枪。" + outcome.value.reason
+                    else "我开枪带走 $target 号。" + outcome.value.reason,
+                )
+            )
+            .let { it.copy(game = next).syncBroadcasts(game) }
+    }
+
+    // ---------------------------------------------------------------------
+    // 整局
+    // ---------------------------------------------------------------------
+
+    /**
+     * 从头跑到分出胜负。
+     *
+     * [onUpdate] 每完成一个阶段回调一次，UI 拿它做流式展示。注意它拿到的是快照，
+     * 不要在里面改状态。
+     */
+    suspend fun play(
+        table: WerewolfTable,
+        onUpdate: suspend (WerewolfTable) -> Unit = {},
+    ): WerewolfTable {
+        var current = table
+        var steps = 0
+        while (!current.game.isFinished) {
+            check(steps++ < MAX_STEPS) { "编排没有收敛，停在 ${current.game.phase}" }
+            current = when (current.game.phase) {
+                Phase.NIGHT_WOLF -> nightWolf(current)
+                Phase.NIGHT_SEER -> nightSeer(current)
+                Phase.NIGHT_WITCH -> nightWitch(current)
+                Phase.DAY_DISCUSSION -> {
+                    val discussed = discussion(current)
+                    discussed.copy(game = discussed.game.beginVote())
+                }
+                Phase.DAY_VOTE -> vote(current)
+                Phase.HUNTER_SHOOT -> hunterShoot(current)
+                // 只有 winner 非空才会是 FINISHED，循环条件已经挡住
+                Phase.FINISHED -> current
+            }
+            onUpdate(current)
+        }
+        return current
+    }
+
+    // ---------------------------------------------------------------------
+    // 单个请求
+    // ---------------------------------------------------------------------
+
+    private suspend fun askWolf(table: WerewolfTable, seat: Int): StructuredOutcome<SeatChoice> {
+        val game = table.game
+        return ask(
+            table = table,
+            seat = seat,
+            spec = WerewolfDecisions.wolfKill(game, seat),
+            fallback = { WerewolfDecisions.fallbackWolfKill(game, seat, random) },
+            task = "请给出你今晚想刀的目标。",
+        )
+    }
+
+    private suspend fun askSeer(table: WerewolfTable, seat: Int): StructuredOutcome<SeatChoice> {
+        val game = table.game
+        return ask(
+            table = table,
+            seat = seat,
+            spec = WerewolfDecisions.seerCheck(game, seat),
+            fallback = { WerewolfDecisions.fallbackSeerCheck(game, seat, random) },
+            task = "请给出你今晚要查验的人。",
+        )
+    }
+
+    private suspend fun askWitch(table: WerewolfTable, seat: Int): StructuredOutcome<WitchChoice> {
+        val game = table.game
+        return ask(
+            table = table,
+            seat = seat,
+            spec = WerewolfDecisions.witch(game, seat),
+            // 不用药永远合法，所以兜底就选它。宁可这晚白过，也不能让游戏卡死。
+            fallback = { WitchChoice() },
+            task = "请给出你今晚的用药决定。",
+        )
+    }
+
+    private suspend fun askVote(
+        table: WerewolfTable,
+        seat: Int,
+        candidates: List<Int>,
+    ): StructuredOutcome<VoteChoice> {
+        val game = table.game
+        return ask(
+            table = table,
+            seat = seat,
+            spec = WerewolfDecisions.vote(game, candidates),
+            fallback = { WerewolfDecisions.fallbackVote(game, seat, candidates, random) },
+            task = "请给出你的投票。",
+        )
+    }
+
+    private suspend fun askHunter(table: WerewolfTable, seat: Int): StructuredOutcome<VoteChoice> {
+        val game = table.game
+        return ask(
+            table = table,
+            seat = seat,
+            spec = WerewolfDecisions.hunterShoot(game),
+            // 不开枪永远合法
+            fallback = { VoteChoice(target = null) },
+            task = "请决定是否开枪，以及带走谁。",
+        )
+    }
+
+    /** 自由发言走普通 chat，不需要 JSON。 */
+    private suspend fun askSpeech(table: WerewolfTable, seat: Int): String {
+        val agent = agentOf(seat)
+        val game = table.game
+        val raw = agent.ai.chat(
+            messages = listOf(ChatMessage.user(context(table, seat, "现在轮到你发言。"))),
+            model = agent.model,
+            systemPrompt = WerewolfPrompt.systemPrompt(game, seat, agent.persona),
+            enableThinking = agent.thinkingEnabled,
+        )
+        return sanitize(raw, seat, game.playerAt(seat).name)
+    }
+
+    private suspend fun <T> ask(
+        table: WerewolfTable,
+        seat: Int,
+        spec: StructuredSpec<T>,
+        fallback: () -> T,
+        task: String,
+    ): StructuredOutcome<T> {
+        val agent = agentOf(seat)
+        return agent.ai.decide(
+            messages = listOf(ChatMessage.user(context(table, seat, task))),
+            model = agent.model,
+            spec = spec,
+            fallback = fallback,
+            systemPrompt = WerewolfPrompt.systemPrompt(table.game, seat, agent.persona),
+            enableThinking = agent.thinkingEnabled,
+        )
+    }
+
+    // ---------------------------------------------------------------------
+    // 辅助
+    // ---------------------------------------------------------------------
+
+    private fun agentOf(seat: Int): SeatAgent =
+        agents[seat] ?: throw IllegalStateException("$seat 号没有配置模型，无法行动")
+
+    /**
+     * 拼本次请求的 user 消息：当天进程 + 交付给模型的任务。
+     *
+     * 只取当天的消息，因为跨天的信息已经写进 system 的公开播报了；
+     * 再取最近若干条，避免夜聊越攒越长把当天的发言挤出去。
+     */
+    private fun context(table: WerewolfTable, seat: Int, task: String): String = buildString {
+        val recent = table.transcriptFor(seat)
+            .filter { it.day == table.game.day }
+            .takeLast(MAX_CONTEXT_MESSAGES)
+        if (recent.isNotEmpty()) {
+            append("【本日进程】\n")
+            recent.forEach { message ->
+                append(if (message.seat == null) "上帝" else "${message.seat} 号")
+                append("：")
+                append(message.text)
+                append("\n")
+            }
+            append("\n")
+        }
+        append(task)
+    }
+
+    /**
+     * 把阶段推进产生的新播报补成消息。
+     *
+     * 用「history 的长度差」判断新增，而不是让每个阶段自己记得播报什么——
+     * 播报文案只有 [WerewolfPrompt.describe] 一处，规则改了不用同步改第二个地方。
+     */
+    private fun WerewolfTable.syncBroadcasts(previous: WerewolfGame): WerewolfTable {
+        val fresh = game.history.drop(previous.history.size)
+        if (fresh.isEmpty()) return this
+        var next = this
+        fresh.forEach { event ->
+            next = next.append(
+                WerewolfMessage(
+                    day = event.day,
+                    phase = game.phase,
+                    seat = null,
+                    kind = MessageKind.DIVINE,
+                    text = WerewolfPrompt.describe(event),
+                )
+            )
+        }
+        return next
+    }
+
+    /**
+     * 剥掉模型爱加的前缀。
+     *
+     * 「3号：」「小明：」这类前缀在 UI 里会重复显示（座位和头像已经表明是谁），
+     * 不剥掉读起来很出戏。
+     */
+    private fun sanitize(raw: String, seat: Int, name: String): String {
+        var text = raw.trim().removeSurrounding("\"")
+        listOf("$seat 号：", "${seat}号：", "「$name」：", "$name：").forEach { prefix ->
+            if (text.startsWith(prefix)) text = text.removePrefix(prefix).trim()
+        }
+        return text.take(MAX_SPEECH_LENGTH)
+    }
+
+    private fun describeWitchChoice(heal: Boolean, poison: Int?): String = when {
+        heal -> "我用解药。"
+        poison != null -> "我用毒药毒 $poison 号。"
+        else -> "这晚我先不用药。"
+    }
+
+    private fun voteText(target: Int?, reason: String): String {
+        val head = if (target == null) "我弃票。" else "我投 $target 号。"
+        return head + reason
+    }
+
+    private companion object {
+        /** 单次请求带几条当天消息。够接上前文，又不会把上下文撑太长。 */
+        const val MAX_CONTEXT_MESSAGES = 24
+
+        /** 一句发言的长度上限。模型偶尔会写一整段小作文。 */
+        const val MAX_SPEECH_LENGTH = 200
+
+        /** 整局的调度步数上限，防止某处状态不推进导致死循环。 */
+        const val MAX_STEPS = 500
+    }
+}
