@@ -60,9 +60,12 @@ class WerewolfController(
     }
 
     /**
-     * 续上没打完的一局。
+     * 续上某一局。
      *
      * 开局的 createdAt 从存档里读，不要拿当前时间顶替——那会让「按开局时间排序」失效。
+     *
+     * 返回 false 表示这条存档读不出来（损坏、版本太旧，或已经被删）。
+     * 这时**不能**动当前状态：用户可能正看着另一局，读档失败不该把那一局也清掉。
      */
     suspend fun resume(id: String): Boolean {
         val table = store.load(id) ?: return false
@@ -115,9 +118,26 @@ class WerewolfController(
 
     /** 清掉当前这局（比如玩家主动放弃）。 */
     suspend fun abandon() {
-        gameId?.let { store.delete(it) }
-        gameId = null
-        createdAt = 0L
-        _state.value = WerewolfUiState()
+        val id = gameId
+        if (id == null) {
+            _state.value = WerewolfUiState()
+            return
+        }
+        discard(id)
+    }
+
+    /**
+     * 丢掉某一局存档。
+     *
+     * 列表页可以删任意一局，不一定是当前这局——所以「清状态」必须按 id 判断：
+     * 用户在列表里删掉一条三周前的旧档，不该把手上正打着的局也从屏幕上抹掉。
+     */
+    suspend fun discard(id: String) {
+        if (id == gameId) {
+            gameId = null
+            createdAt = 0L
+            _state.value = WerewolfUiState()
+        }
+        store.delete(id)
     }
 }

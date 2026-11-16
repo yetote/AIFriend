@@ -46,3 +46,12 @@ data class RosterEntry(
     val id: String,
     val name: String,
 )
+
+/**
+ * 人类座位的固定 id。
+ *
+ * 它落在存档里，是「这一局我坐在桌上」的唯一凭据——列表页要靠它分辨
+ * 一局是「我参与的」还是「纯观战的」，续档时也要靠它找回自己的座位。
+ * 放在领域层而不是 ViewModel 里，是因为读存档的一方（存档层）也需要它。
+ */
+const val SELF_PLAYER_ID = "__self__"

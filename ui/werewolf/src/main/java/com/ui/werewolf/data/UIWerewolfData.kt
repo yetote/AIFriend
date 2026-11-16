@@ -41,7 +41,23 @@ data class UIWerewolfRecord(
     val winnerLabel: String?,
     /** 例如「3 分钟前」。 */
     val timeLabel: String,
-)
+    /** 几人局。0 表示旧档升级上来的行，说不清人数，列表不显示。 */
+    val playerCount: Int = 0,
+    /** 这一局我坐在桌上。false 表示纯观战。 */
+    val withHuman: Boolean = false,
+) {
+    /**
+     * 一行的身份摘要，例如「8 人 · 你参与了」。
+     *
+     * 拼在这里而不是让界面各写一遍：未完成的卡、已结束的行、复盘入口
+     * 三处都要这一行字，各写一遍迟早有一处忘了改。
+     */
+    val metaLabel: String
+        get() = buildList {
+            if (playerCount > 0) add("$playerCount 人")
+            add(if (withHuman) "你参与了" else "纯观战")
+        }.joinToString(" · ")
+}
 
 /** 玩法：自己坐一个座位，或纯观战。 */
 enum class UIWerewolfMode(val label: String, val hint: String) {

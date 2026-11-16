@@ -29,6 +29,7 @@ import com.feature.werewolf.vm.ApiCheck
 import com.feature.werewolf.vm.ApiCheckState
 import com.feature.werewolf.vm.WerewolfMode
 import com.feature.werewolf.vm.WerewolfViewModel
+import com.ui.werewolf.UIWerewolfHistoryScreen
 import com.ui.werewolf.UIWerewolfReviewScreen
 import com.ui.werewolf.UIWerewolfSetupScreen
 import com.ui.werewolf.UIWerewolfTableScreen
@@ -59,7 +60,7 @@ import com.ui.werewolf.data.UIWerewolfTurnKind
 /**
  * 狼人杀的入口。
  *
- * 只做三件事：把领域数据翻成展示模型、把界面操作翻回 ViewModel、在「配置」和「对局」
+ * 只做三件事：把领域数据翻成展示模型、把界面操作翻回 ViewModel、在「列表 / 配置 / 对局」
  * 之间切换。规则、请求调度、存档都在更下层，这一层不出现任何判定逻辑。
  */
 @Composable
@@ -75,20 +76,45 @@ fun WerewolfRoute(
     val humanTurn by viewModel.humanTurn.collectAsState()
     val apiChecks by viewModel.apiChecks.collectAsState()
     val verifying by viewModel.verifying.collectAsState()
+    val recordView by viewModel.record.collectAsState()
 
-    var screen by remember { mutableStateOf<WerewolfScreen>(WerewolfScreen.Setup) }
+    // 入口是列表，不是配置页，更不是上次的牌桌
+    var screen by remember { mutableStateOf<WerewolfScreen>(WerewolfScreen.History) }
     var showReview by remember { mutableStateOf(false) }
     var mode by remember { mutableStateOf(UIWerewolfMode.PLAY) }
     var presetKey by remember { mutableStateOf(PRESET_STANDARD_8) }
+
+    /**
+     * 「用户刚点了接着打或新开一局」。
+     *
+     * 不能只凭 `state.table != null` 进牌桌：ViewModel 活在 Activity 上，退出页面时
+     * 上一局的局面还在里面，一重新进来就会被自动扔回那张牌桌——这正是要修掉的行为。
+     * 局面还在是事实，「用户想看它」不是，只有点过按钮才算。
+     */
+    var pendingEnter by remember { mutableStateOf(false) }
+
+    /** 正在为哪一局做准备（探活 + 重建座位）。列表上那一张卡据此显示「连接中…」。 */
+    var resumingId by remember { mutableStateOf<String?>(null) }
     var selectedIds by rememberSaveable(saver = SelectedIdsSaver) { mutableStateOf(emptySet<String>()) }
 
     LaunchedEffect(Unit) { viewModel.refresh() }
 
-    // 开局（或续档）之后局面就出现了，直接进对局页。
-    // 用 table 而不是 running 判断：断点续玩恢复出来的局面 running 还是 false。
-    // 已经分出胜负的局不切过去——重进页面时应该看到配置页，而不是上一局的结束画面。
-    LaunchedEffect(state.table, state.finished) {
-        if (state.table != null && !state.finished) screen = WerewolfScreen.Table
+    // 真正开始跑了才进对局页。
+    //
+    // 判断条件里带 running 而不是只看 table 非空：续档要先探活，这一步可能来回几秒，
+    // 期间 table 还是上一次的旧局面。只看 table 会在探活还没回来时就把人推到牌桌上，
+    // 牌桌上一动不动，看着像卡死。
+    LaunchedEffect(state.table, state.running, pendingEnter) {
+        if (pendingEnter && state.running && state.table != null) {
+            screen = WerewolfScreen.Table
+            pendingEnter = false
+            resumingId = null
+        }
+    }
+
+    // 续档失败（连不上、存档坏了）由 ViewModel 写成一条错误，卡片要跟着退出「连接中…」
+    LaunchedEffect(error) {
+        if (error != null) resumingId = null
     }
 
     // 新的一局开始了，复盘必须收起来，否则会盖在还没打完的牌桌上
@@ -96,20 +122,65 @@ fun WerewolfRoute(
         if (!state.finished) showReview = false
     }
 
-    // 返回键先关复盘、再退出页面。复盘是盖在牌桌上的一层，不是另一个目的地。
+    // 返回键逐层退：列表翻开的复盘 → 牌桌上的复盘 → 牌桌 → 配置页 → 列表 → 退出
     BackHandler {
-        if (showReview) showReview = false else onExit()
+        when {
+            recordView != null -> viewModel.closeRecord()
+            screen == WerewolfScreen.Table && showReview -> showReview = false
+            screen == WerewolfScreen.Table -> {
+                // 回列表要真的停下：留在后台继续跑，用户在看列表，AI 却在替他打牌
+                viewModel.pause()
+                screen = WerewolfScreen.History
+            }
+            screen == WerewolfScreen.Setup -> screen = WerewolfScreen.History
+            else -> onExit()
+        }
     }
 
     val uiFriends = remember(friends) { friends.map { it.toUiFriend() } }
     // 座位 → 好友头像。牌桌上认人主要靠头像，名字在 60dp 里会被截断。
     val avatars = remember(friends) { friends.associate { it.id to it.avatarPath } }
-    val records = remember(summaries) { summaries.take(5).map { it.toRecord() } }
-    val unfinished = records.firstOrNull { !it.finished }
+    val records = remember(summaries) { summaries.map { it.toRecord() } }
     val preset = PRESETS.firstOrNull { it.key == presetKey } ?: PRESETS.first()
     val uiApiChecks = remember(apiChecks) { apiChecks.mapValues { it.value.toUiCheck() } }
 
+    // 从列表点开的那一局。它和「正在打的这一局」是两件事，所以单独一层盖在最上面。
+    val recordReview = remember(recordView, avatars) {
+        recordView?.let { view ->
+            WerewolfUiState(table = view.table, finished = true).toReview(view.humanSeat, avatars)
+        }
+    }
+
+    if (recordReview != null) {
+        UIWerewolfReviewScreen(
+            review = recordReview,
+            onBack = viewModel::closeRecord,
+            onRestart = {
+                viewModel.closeRecord()
+                screen = WerewolfScreen.Setup
+            },
+        )
+        return
+    }
+
     when (screen) {
+        WerewolfScreen.History -> UIWerewolfHistoryScreen(
+            records = records,
+            resumingId = resumingId,
+            error = error,
+            onClearError = viewModel::clearError,
+            onResume = { id ->
+                pendingEnter = true
+                resumingId = id
+                viewModel.resume(id)
+            },
+            onOpenRecord = { id -> viewModel.openRecord(id) },
+            onDiscard = { id -> viewModel.discard(id) },
+            onClearFinished = viewModel::clearFinished,
+            onNewGame = { screen = WerewolfScreen.Setup },
+            onBack = onExit,
+        )
+
         WerewolfScreen.Setup -> UIWerewolfSetupScreen(
             mode = mode,
             presets = PRESETS,
@@ -117,8 +188,6 @@ fun WerewolfRoute(
             friends = uiFriends,
             selectedIds = selectedIds,
             seats = buildSeats(uiFriends, selectedIds, mode, preset.playerCount),
-            records = records,
-            unfinished = unfinished,
             error = error,
             apiChecks = uiApiChecks,
             checking = verifying,
@@ -142,16 +211,12 @@ fun WerewolfRoute(
                 // 留着会让用户以为刚取消的那个人还有问题
                 viewModel.clearError()
             },
-            onResume = {
-                viewModel.resumeLatest()
-            },
-            onAbandon = {
-                viewModel.abandon()
-            },
             onClearError = viewModel::clearError,
             onCheckApi = { viewModel.checkApi(selectedIds) },
-            onBack = onExit,
+            // 回列表而不是退出页面：配置页是从列表进来的，退出去等于多按一次
+            onBack = { screen = WerewolfScreen.History },
             onStart = {
+                pendingEnter = true
                 viewModel.startGame(
                     mode = mode.toMode(),
                     friendIds = selectedIds.toList(),
@@ -159,6 +224,7 @@ fun WerewolfRoute(
                 )
             },
             onStartAnyway = {
+                pendingEnter = true
                 viewModel.startGame(
                     mode = mode.toMode(),
                     friendIds = selectedIds.toList(),
@@ -185,7 +251,11 @@ fun WerewolfRoute(
             } else {
                 UIWerewolfTableScreen(
                     live = state.toLive(humanSeat = humanSeat, turn = humanTurn, avatars = avatars),
-                    onExit = onExit,
+                    // 牌桌左上角的返回 = 收起牌桌回列表，不是退出狼人杀
+                    onExit = {
+                        viewModel.pause()
+                        screen = WerewolfScreen.History
+                    },
                     onSpeech = viewModel::submitSpeech,
                     onVote = { viewModel.submitTarget(it) },
                     onSeat = { viewModel.submitSeat(it) },
@@ -337,6 +407,8 @@ private fun WerewolfGameSummary.toRecord(): UIWerewolfRecord = UIWerewolfRecord(
         Faction.entries.firstOrNull { it.name == name }?.let { "${it.displayName}胜" }
     },
     timeLabel = relativeTime(updatedAt),
+    playerCount = playerCount,
+    withHuman = withHuman,
 )
 
 /** 相对时间。绝对时间在战绩列表里没有意义，玩家关心的是「上一局是不是刚才那一局」。 */

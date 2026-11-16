@@ -20,14 +20,17 @@ import com.feature.werewolf.engine.WerewolfController
 import com.feature.werewolf.engine.WerewolfTable
 import com.feature.werewolf.engine.WerewolfUiState
 import com.feature.werewolf.game.RosterEntry
+import com.feature.werewolf.game.SELF_PLAYER_ID
 import com.feature.werewolf.game.WerewolfConfig
 import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfPlayer
 import com.feature.werewolf.store.WerewolfGameSummary
 import com.feature.werewolf.store.WerewolfStore
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -48,6 +51,21 @@ enum class WerewolfMode {
     /** 纯观战：8 个 AI 自己打，你看全局。 */
     SPECTATE,
 }
+
+/**
+ * 从列表里翻出来看的一局。
+ *
+ * 单独拿一个类型而不是复用 `WerewolfUiState`：这是**只读的**回顾，
+ * 它不在控制器里，也不是「当前这一局」——混进 `state` 的话，
+ * 「有没有在打」这件事就得靠别处再判断一次，很容易出现
+ * 「明明在看上周的复盘，牌桌却以为自己有局在跑」。
+ */
+data class WerewolfRecordView(
+    val id: String,
+    val table: WerewolfTable,
+    /** 那一局我是几号；纯观战为 null。 */
+    val humanSeat: Int?,
+)
 
 /**
  * 狼人杀界面的 ViewModel。
@@ -112,6 +130,19 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
      */
     private val probeLock = Mutex()
 
+    /**
+     * 正在打的那一局的驱动协程。
+     *
+     * 有它才能「暂停」：`controller.play()` 是个长循环，取消这个协程就停在了
+     * 最近一个阶段边界上（每个阶段都已落档），回到列表页不会继续偷偷烧钱。
+     */
+    private var playJob: Job? = null
+
+    private val _record = MutableStateFlow<WerewolfRecordView?>(null)
+
+    /** 从列表里点开的一局（只读）。非空时界面展示它的复盘。 */
+    val record: StateFlow<WerewolfRecordView?> = _record.asStateFlow()
+
     init {
         refresh()
     }
@@ -167,8 +198,11 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
         config: WerewolfConfig = WerewolfConfig(),
         skipCheck: Boolean = false,
     ) {
-        if (state.value.running) return
-        viewModelScope.launch {
+        val previous = playJob
+        playJob = viewModelScope.launch {
+            // 上一局如果是「暂停」状态，它的协程可能还停在最后一次落档里；
+            // 等它真的结束再开新局，免得两边同时写库
+            previous?.cancelAndJoin()
             try {
                 val friends = _friends.value.ifEmpty { friendRepository.load().map { it.toFriend() } }
                 val chosen = friendIds.mapNotNull { id -> friends.firstOrNull { it.id == id } }
@@ -185,14 +219,14 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
 
                 val roster = chosen.map { RosterEntry(id = it.id, name = it.name) } +
                     if (mode == WerewolfMode.PLAY) {
-                        listOf(RosterEntry(id = SELF_ID, name = "你"))
+                        listOf(RosterEntry(id = SELF_PLAYER_ID, name = "你"))
                     } else {
                         emptyList()
                     }
 
                 val game = WerewolfGame.deal(config, roster, Random.Default)
                 val humanSeat = if (mode == WerewolfMode.PLAY) {
-                    game.players.first { it.id == SELF_ID }.seat
+                    game.players.first { it.id == SELF_PLAYER_ID }.seat
                 } else {
                     null
                 }
@@ -213,17 +247,23 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    /** 续上最近一局没打完的。 */
-    fun resumeLatest() {
-        if (state.value.running) return
-        viewModelScope.launch {
+    /**
+     * 续上指定的某一局。
+     *
+     * 以前只认「最近一局没打完的」，现在列表能摆出好几局，点哪一局就该续哪一局。
+     */
+    fun resume(id: String) {
+        val previous = playJob
+        playJob = viewModelScope.launch {
+            // 上一局可能刚「暂停」、协程还没真的停下（取消是异步的），等它收尾
+            previous?.cancelAndJoin()
             try {
-                val (id, table) = store.latestUnfinished() ?: run {
-                    _error.value = "没有未完成的对局"
+                val table = store.load(id) ?: run {
+                    _error.value = "这条存档读不出来，可能已经损坏"
                     return@launch
                 }
                 val friends = _friends.value.ifEmpty { friendRepository.load().map { it.toFriend() } }
-                val humanSeat = table.game.players.firstOrNull { it.id == SELF_ID }?.seat
+                val humanSeat = table.game.players.firstOrNull { it.id == SELF_PLAYER_ID }?.seat
 
                 // 续档也要检：这一局可能是昨天开的，Key 过期、模型下线都在这中间发生过
                 val participants = table.game.players
@@ -231,10 +271,15 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
                     .mapNotNull { player -> friends.firstOrNull { it.id == player.id } }
                 if (!verifyReachable(participants)) return@launch
 
-                _humanSeat.value = humanSeat
+                // 先备好座位再让控制器接手：座位表没建好就 resume，
+                // 一旦 play() 起来会立刻撞上「X 号没有模型」
                 agents = buildAgents(table.game.players, friends.associateBy { it.id }, humanSeat)
+                if (!controller.resume(id)) {
+                    _error.value = "这条存档读不出来，可能已经损坏"
+                    return@launch
+                }
+                _humanSeat.value = humanSeat
                 _error.value = null
-                controller.resume(id)
                 controller.play()
                 refresh()
             } catch (cancelled: CancellationException) {
@@ -245,9 +290,69 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    /**
+     * 停下手上的这一局，回到列表。
+     *
+     * 取消协程而不是丢弃局面：每个阶段都已落档，用户下次点「接着打」就从
+     * 当前阶段重新开始。留在后台继续跑才是错的——他在看列表，AI 却在替他打牌。
+     */
+    fun pause() {
+        playJob?.cancel()
+        // 存档是按阶段写的，这一瞬间可能刚写进一条，刷新一次让列表跟上
+        refresh()
+    }
+
+    /** 清掉所有已结束的对局，未完成的留下。存档只增不减迟早会堆成几百条。 */
+    fun clearFinished() {
+        viewModelScope.launch {
+            store.deleteFinished()
+            refresh()
+        }
+    }
+
+    /** 丢掉某一局存档。这一局若正在跑，会先停下来。 */
+    fun discard(id: String) {
+        viewModelScope.launch {
+            playJob?.cancelAndJoin()
+            playJob = null
+            controller.discard(id)
+            if (_record.value?.id == id) _record.value = null
+            _humanSeat.value = null
+            agents = emptyMap()
+            refresh()
+        }
+    }
+
+    /**
+     * 打开一条历史对局看复盘。
+     *
+     * 只读：不碰控制器。否则看完上周那局再回去，手上的局已经被顶掉了。
+     */
+    fun openRecord(id: String) {
+        viewModelScope.launch {
+            val table = store.load(id)
+            if (table == null) {
+                _error.value = "这条存档读不出来，可能已经损坏"
+                return@launch
+            }
+            _record.value = WerewolfRecordView(
+                id = id,
+                table = table,
+                humanSeat = table.game.players.firstOrNull { it.id == SELF_PLAYER_ID }?.seat,
+            )
+        }
+    }
+
+    /** 关掉复盘，回列表。 */
+    fun closeRecord() {
+        _record.value = null
+    }
+
     /** 放弃当前这局，存档一并删掉。 */
     fun abandon() {
         viewModelScope.launch {
+            playJob?.cancelAndJoin()
+            playJob = null
             controller.abandon()
             _humanSeat.value = null
             agents = emptyMap()
@@ -423,10 +528,5 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
         val created = aiFactory.createAI(brand) ?: return null
         ais[brand] = created
         return created
-    }
-
-    private companion object {
-        /** 人类座位的固定 id。存档里靠它认出「哪个座位是我」。 */
-        const val SELF_ID = "__self__"
     }
 }
