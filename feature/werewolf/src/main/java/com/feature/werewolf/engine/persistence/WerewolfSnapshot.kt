@@ -38,7 +38,7 @@ import kotlinx.serialization.json.Json
 object WerewolfSnapshot {
 
     /** 当前存档格式版本。改动 DTO 结构时必须加一。 */
-    const val VERSION = 4
+    const val VERSION = 5
 
     private val json = Json {
         ignoreUnknownKeys = true   // 旧档多出来的字段不该让新版本读不出来
@@ -198,6 +198,8 @@ internal data class EventSnapshot(
     val reason: String? = null,
     /** v4 起：警徽是谁交出来的。 */
     val fromSeat: Int? = null,
+    /** v5 起：开枪者的称呼（猎人 / 狼王）。老档没有这一项，按猎人读。 */
+    val shooterLabel: String? = null,
 )
 
 @Serializable
@@ -299,8 +301,14 @@ private fun GameEvent.toSnapshot(): EventSnapshot = when (this) {
     is GameEvent.NoExile -> EventSnapshot(type = "NO_EXILE", day = day)
     is GameEvent.IdiotRevealed ->
         EventSnapshot(type = "IDIOT_REVEALED", day = day, seat = seat, voteCount = voteCount)
-    is GameEvent.HunterShot ->
-        EventSnapshot(type = "HUNTER_SHOT", day = day, hunterSeat = hunterSeat, targetSeat = targetSeat)
+    is GameEvent.HunterShot -> EventSnapshot(
+        type = "HUNTER_SHOT",
+        day = day,
+        hunterSeat = hunterSeat,
+        targetSeat = targetSeat,
+        shooterLabel = shooterLabel,
+    )
+    is GameEvent.BearRoar -> EventSnapshot(type = "BEAR_ROAR", day = day, seat = seat)
     is GameEvent.WolfExploded -> EventSnapshot(type = "WOLF_EXPLODED", day = day, seat = seat)
     is GameEvent.SheriffElected ->
         EventSnapshot(type = "SHERIFF_ELECTED", day = day, seat = seat, voteCount = votes.toDouble())
@@ -409,6 +417,11 @@ private fun EventSnapshot.toEvent(): GameEvent = when (type) {
         day = day,
         hunterSeat = requireNotNull(hunterSeat) { "HUNTER_SHOT 缺少 hunterSeat" },
         targetSeat = targetSeat,
+        shooterLabel = shooterLabel ?: "猎人",
+    )
+    "BEAR_ROAR" -> GameEvent.BearRoar(
+        day = day,
+        seat = requireNotNull(seat) { "BEAR_ROAR 缺少 seat" },
     )
     "WOLF_EXPLODED" -> GameEvent.WolfExploded(
         day = day,

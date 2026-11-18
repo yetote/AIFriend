@@ -27,6 +27,13 @@ data class WerewolfUiState(
     val gameId: String? = null,
     val table: WerewolfTable? = null,
     val progress: WerewolfProgress? = null,
+    /**
+     * 有位 AI 此刻正在逐字说话。说完了就回到 null。
+     *
+     * 单独一个字段而不是往 [table] 里塞半句话：table 是要落档的权威局面，
+     * 半句话一旦进去，存档里就会留一句没说完的话，续档之后所有人都看得见。
+     */
+    val live: WerewolfLive? = null,
     val running: Boolean = false,
     val finished: Boolean = false,
     val error: String? = null,
@@ -102,6 +109,8 @@ class WerewolfController(
             // 只刷界面，不落档。落档还是每阶段一次：一个阶段十来条消息，
             // 每条都写库既慢又没必要——真正需要「不丢」的边界是阶段
             onTranscript = { snapshot -> _state.update { it.copy(table = snapshot) } },
+            // 流式发言同样只刷界面。它比 onTranscript 更细：一条消息还没成型就先显示半句
+            onLive = { live -> _state.update { it.copy(live = live) } },
         )
 
         _state.update { it.copy(running = true, error = null) }
@@ -111,18 +120,23 @@ class WerewolfController(
                 store.save(id, snapshot, createdAt)
             }
             _state.update {
-                it.copy(table = result, running = false, finished = true, progress = null)
+                it.copy(table = result, running = false, finished = true, progress = null, live = null)
             }
             store.save(id, result, createdAt)
         } catch (cancelled: CancellationException) {
-            // 用户退出页面：局面已经按阶段存过了，这里只需要收起 running
-            _state.update { it.copy(running = false) }
+            // 用户退出页面：局面已经按阶段存过了，这里只需要收起 running。
+            // live 必须一起清掉——半句话不属于任何存档，留着会让下次进来先看到一个鬼影
+            _state.update { it.copy(running = false, live = null) }
             throw cancelled
         } catch (t: Throwable) {
             // 网络/Key 这类传输层问题会走到这里。局面原样保留，
             // 用户可以稍后点「继续」从当前阶段接着打
             _state.update {
-                it.copy(running = false, error = t.message?.take(200) ?: "对局中断，请重试")
+                it.copy(
+                    running = false,
+                    live = null,
+                    error = t.message?.take(200) ?: "对局中断，请重试",
+                )
             }
         }
     }

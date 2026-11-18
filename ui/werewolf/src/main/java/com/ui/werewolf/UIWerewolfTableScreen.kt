@@ -71,6 +71,7 @@ import com.ui.werewolf.data.UIWerewolfLine
 import com.ui.werewolf.data.UIWerewolfLineKind
 import com.ui.werewolf.data.UIWerewolfLive
 import com.ui.werewolf.data.UIWerewolfSeatLive
+import com.ui.werewolf.data.UIWerewolfStreaming
 import com.ui.werewolf.data.UIWerewolfTarget
 import com.ui.werewolf.data.UIWerewolfTurn
 import com.ui.werewolf.data.UIWerewolfTurnKind
@@ -120,6 +121,13 @@ private val FsSeatName = 11.sp
 
 /** 身份/死因徽标。压在名字下面，再小就认不出「刀」「票」两个字了。 */
 private val FsBadge = 9.5.sp
+
+/**
+ * 流式发言每长出这么多字就往下贴一次底。
+ *
+ * 太少会每个增量都滚一次（抖动），太多则一句长发言的后半截会跑出屏幕。
+ */
+private const val STREAM_SCROLL_CHARS = 60
 
 // ---------------------------------------------------------------------------
 // 配色
@@ -803,22 +811,30 @@ private fun Feed(
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
-    // 轮到某位 AI 时在末尾挂一条「正在组织语言」。别看只是三个点：
-    // 一轮八个人要等一分多钟，中间没有任何东西在动的话，界面看着就是卡死的
-    val thinkingSeat = if (live.running && live.turn == null) {
+    // 轮到某位 AI 时：
+    // - 他已经在开口，就让半句话本身占着末尾（StreamingLine）；
+    // - 还没有任何输出（投票、夜间决策这种返回 JSON 的步骤），退回三个点。
+    // 别看三个点不起眼：一轮八个人要等一分多钟，中间没有任何东西在动的话，
+    // 界面看着就是卡死的
+    val streaming = if (live.running && live.turn == null) live.streaming else null
+    val thinkingSeat = if (live.running && live.turn == null && streaming == null) {
         live.seats.firstOrNull { it.active }
     } else {
         null
     }
-    LaunchedEffect(live.lines.size, thinkingSeat?.seat) {
-        val last = live.lines.lastIndex + if (thinkingSeat != null) 1 else 0
+    // 长发言会超出一屏，光靠「开始说话」滚一次不够。按字数分段滚：
+    // 每 60 字贴一次底，既跟得上，又不会每个增量都触发一次滚动
+    val streamBucket = (streaming?.text?.length ?: 0) / STREAM_SCROLL_CHARS
+    LaunchedEffect(live.lines.size, thinkingSeat?.seat, streaming?.seat, streamBucket) {
+        val extra = if (thinkingSeat != null || streaming != null) 1 else 0
+        val last = live.lines.lastIndex + extra
         if (last >= 0) {
-            // 新消息贴底：中途抬头看「刚刚谁说了什么」必须落在最后一条
-            listState.animateScrollToItem(last)
+            // 贴底用瞬时滚动：流式每几秒就来一次，动画排起队来反而永远追不上
+            listState.scrollToItem(last)
         }
     }
 
-    if (live.lines.isEmpty() && thinkingSeat == null) {
+    if (live.lines.isEmpty() && thinkingSeat == null && streaming == null) {
         Box(modifier = modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
             Text(
                 text = "还没开始，\n等第一位开口",
@@ -847,10 +863,147 @@ private fun Feed(
                 surface = surface
             )
         }
-        if (thinkingSeat != null) {
+        if (streaming != null) {
+            item(key = "streaming") {
+                StreamingLine(
+                    stream = streaming,
+                    night = night,
+                    textColor = textColor,
+                    dimColor = dimColor
+                )
+            }
+        } else if (thinkingSeat != null) {
             item(key = "thinking") {
                 ThinkingLine(seat = thinkingSeat, dimColor = dimColor)
             }
+        }
+    }
+}
+
+/**
+ * 「某人正在说」的一行，逐字长出来。
+ *
+ * 长得和一条普通发言一模一样（头像 + 名字 + 正文），只多了三样东西：
+ * 末尾一个光标、语气淡一点、以及可折叠的思考过程。刻意不做卡片、不做边框——
+ * 等这句话说完，它会变成上面那条普通记录，两者长得一样才不会「跳一下」。
+ */
+@Composable
+private fun StreamingLine(
+    stream: UIWerewolfStreaming,
+    night: Boolean,
+    textColor: Color,
+    dimColor: Color,
+) {
+    Row(modifier = Modifier.fillMaxWidth()) {
+        UIAvatar(
+            name = stream.speaker ?: "?",
+            avatarPath = stream.avatarPath,
+            size = 30.dp,
+            shape = CircleShape
+        )
+        Spacer(Modifier.width(8.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = stream.speaker ?: "未知",
+                    fontSize = FsName,
+                    fontWeight = FontWeight.SemiBold,
+                    color = textColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = " ${stream.seat} 号",
+                    fontSize = 12.sp,
+                    color = dimColor,
+                    maxLines = 1
+                )
+            }
+            if (stream.reasoning.isNotBlank()) {
+                Spacer(Modifier.height(4.dp))
+                StreamThought(
+                    // 换人说话时重置折叠状态：上一位摊开的思考不该跟到下一位身上
+                    key = stream.seat,
+                    reasoning = stream.reasoning,
+                    // 还没开口时摊开，否则这一行只有一个折叠条，看着像空了一块
+                    expandedByDefault = stream.text.isBlank(),
+                    thinking = stream.text.isBlank(),
+                    night = night,
+                    dimColor = dimColor
+                )
+            }
+            if (stream.text.isNotBlank()) {
+                Text(
+                    text = stream.text + "▌",
+                    modifier = Modifier.padding(top = 2.dp),
+                    fontSize = FsSpeech,
+                    lineHeight = FsSpeechLine,
+                    color = textColor.copy(alpha = 0.92f)
+                )
+            } else if (stream.reasoning.isBlank()) {
+                Row(
+                    modifier = Modifier.padding(top = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(text = "正在组织语言", fontSize = FsName, color = dimColor)
+                    Spacer(Modifier.width(6.dp))
+                    ThinkingDot(color = dimColor)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 流式发言里的思考过程。
+ *
+ * 折叠条用灰字而不是强调色：思考是「还没说出口的东西」，在牌桌上它的地位比正文低，
+ * 一旦和正文一样显眼，用户会先读心再听话，反而看不懂这局在争什么。
+ */
+@Composable
+private fun StreamThought(
+    key: Int,
+    reasoning: String,
+    expandedByDefault: Boolean,
+    thinking: Boolean,
+    night: Boolean,
+    dimColor: Color,
+) {
+    var expanded by remember(key) { mutableStateOf(expandedByDefault) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (night) Color(0x14FFFFFF) else Color(0x0A000000))
+            .padding(horizontal = 9.dp, vertical = 6.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded },
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = if (thinking) "正在思考…" else "思考过程",
+                modifier = Modifier.weight(1f),
+                fontSize = FsMeta,
+                color = dimColor
+            )
+            Text(
+                text = if (expanded) "收起" else "展开",
+                fontSize = 10.sp,
+                color = dimColor.copy(alpha = 0.8f)
+            )
+        }
+        if (expanded) {
+            Spacer(Modifier.height(5.dp))
+            Text(
+                text = reasoning,
+                fontSize = 11.5.sp,
+                lineHeight = 17.sp,
+                color = dimColor
+            )
         }
     }
 }

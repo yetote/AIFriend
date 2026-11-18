@@ -24,6 +24,13 @@ data class UIWerewolfReview(
     val days: List<UIWerewolfDayReport> = emptyList(),
     /** 逐夜行动，按夜正序。 */
     val nights: List<UIWerewolfNightReport> = emptyList(),
+    /**
+     * 逐日对话，按天正序。
+     *
+     * 这是唯一按「谁说了什么」组织的部分：票型和夜间行动回答「结果怎么来的」，
+     * 对话回答「他当时是怎么说的」。旧档没有逐条消息，这里为空。
+     */
+    val dialogues: List<UIWerewolfDialogueDay> = emptyList(),
     /** 预言家查验记录。 */
     val checks: List<UIWerewolfCheckReport> = emptyList(),
     /**
@@ -102,4 +109,40 @@ data class UIWerewolfCheckReport(
     val day: Int,
     val target: Int,
     val isWolf: Boolean,
+)
+
+/**
+ * 一天的对话。
+ *
+ * 这一天从**当夜**开始算：第 1 天包含第一夜的狼人商议、天亮的播报、白天的发言和投票。
+ * 和复盘里「第 N 天」的其他说法保持一致，不另起一套编号。
+ */
+data class UIWerewolfDialogueDay(
+    val day: Int,
+    /** 按发生顺序排好的全部消息，公开与私密混在一起，靠 [UIWerewolfSpeechLine.secret] 区分。 */
+    val lines: List<UIWerewolfSpeechLine> = emptyList(),
+) {
+    /** 全员可见的部分。复盘默认只给这些。 */
+    val open: List<UIWerewolfSpeechLine> get() = lines.filterNot { it.secret }
+
+    /** 这一天有没有当时只有少数人能看的内容（狼人夜聊、查验、用药）。 */
+    val hasSecret: Boolean get() = lines.any { it.secret }
+}
+
+/**
+ * 对话里的一句话。
+ *
+ * [secret] 不是「敏感」而是**当时的可见性**：狼人夜聊、神职夜间行动在局中只有个别人
+ * 看得到，复盘时可以公开，但需要玩家主动打开——一进来就把那一夜的密谋摊开，
+ * 「原来他们那晚在商量这个」这个发现过程就没了。
+ */
+data class UIWerewolfSpeechLine(
+    /** 发言座位。上帝播报没有座位，为 null。 */
+    val seat: Int?,
+    val speaker: String,
+    val avatarPath: String? = null,
+    /** 「发言」「投票」「狼人夜聊」「查验」「播报」——这句话的性质。 */
+    val label: String,
+    val text: String,
+    val secret: Boolean = false,
 )

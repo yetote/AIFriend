@@ -10,6 +10,7 @@ import com.core.ai.model.toFriend
 import com.core.ai.probe.ApiProbeResult
 import com.core.ai.probe.probe
 import com.core.repository.storage.AIProviderSettings
+import com.core.repository.settings.TTSProviderCatalog
 import com.core.repository.storage.FriendRepository
 import com.core.repository.storage.TTSProviderSettings
 import com.core.repository.storage.WerewolfSettings
@@ -24,6 +25,7 @@ import com.feature.werewolf.decision.WitchChoice
 import com.feature.werewolf.engine.HumanSeatAI
 import com.feature.werewolf.engine.HumanTurn
 import com.feature.werewolf.engine.SeatAgent
+import com.feature.werewolf.engine.SeatVoices
 import com.feature.werewolf.engine.MessageKind
 import com.feature.werewolf.engine.WerewolfController
 import com.feature.werewolf.engine.WerewolfTable
@@ -441,7 +443,7 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
                 stopSpeech(clearQueue = true)
                 _humanSeat.value = humanSeat
                 agents = buildAgents(game.players, friendsById, humanSeat)
-                seatVoiceIds = buildSeatVoiceIds(game.players, friendsById)
+                seatVoiceIds = buildSeatVoiceIds(game.players, friendsById, humanSeat)
                 seatTtsConfigIds = buildSeatTtsConfigIds(game.players, friendsById)
                 _error.value = null
                 // 全新开局：消息流是空的，从第 0 条开始读。
@@ -489,7 +491,7 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
                 // 一旦 play() 起来会立刻撞上「X 号没有模型」
                 val friendsById = friends.associateBy { it.id }
                 agents = buildAgents(table.game.players, friendsById, humanSeat)
-                seatVoiceIds = buildSeatVoiceIds(table.game.players, friendsById)
+                seatVoiceIds = buildSeatVoiceIds(table.game.players, friendsById, humanSeat)
                 seatTtsConfigIds = buildSeatTtsConfigIds(table.game.players, friendsById)
                 stopSpeech(clearQueue = true)
                 _humanSeat.value = humanSeat
@@ -738,15 +740,26 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
     // ---------------------------------------------------------------------
 
     /**
-     * 按座位取朗读音色：好友配了就用配的，没配（null）留给引擎走默认音色。
-     * 人类座位虽然也在这个表里，但自己的话本来就不朗读，取到也用不上。
+     * 按座位取朗读音色：好友配了就用配的，没配的从这家服务商里挑一个**还没被占用**的。
+     *
+     * 分配逻辑在 [SeatVoices]（纯函数、有单测），这里只负责把「好友资料」翻成它的入参：
+     * 好友的 `ttsConfigId` 决定这个座位实际走哪家 TTS，回落规则必须和
+     * `CloudSpeechEngine` 保持一致（`byId(id) ?: default()`），否则会拿 A 家的音色去 B 家合成。
      */
     private fun buildSeatVoiceIds(
         players: List<WerewolfPlayer>,
         friendsById: Map<String, Friend>,
-    ): Map<Int, String?> = players.associate { player ->
-        player.seat to friendsById[player.id]?.voiceId
-    }
+        humanSeat: Int?,
+    ): Map<Int, String?> = SeatVoices.assign(
+        seats = players.map { it.seat },
+        humanSeat = humanSeat,
+        explicit = players.associate { player -> player.seat to friendsById[player.id]?.voiceId },
+        providerOf = { seat ->
+            val configId = players.firstOrNull { it.seat == seat }
+                ?.let { friendsById[it.id]?.ttsConfigId }
+            (TTSProviderCatalog.byId(configId) ?: TTSProviderCatalog.default()).id
+        },
+    )
 
     /** 按座位取朗读配置：好友配了就用配的，没配（null）走默认配置。 */
     private fun buildSeatTtsConfigIds(

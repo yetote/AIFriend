@@ -1,5 +1,7 @@
 package com.feature.werewolf.route
 
+import com.feature.werewolf.engine.MessageKind
+import com.feature.werewolf.engine.WerewolfMessage
 import com.feature.werewolf.engine.WerewolfTable
 import com.feature.werewolf.engine.WerewolfUiState
 import com.feature.werewolf.game.Phase
@@ -160,7 +162,69 @@ class WerewolfReviewMappingTest {
         assertTrue("缺数据就要说缺数据", review!!.incomplete)
         assertTrue(review.nights.isEmpty())
         assertTrue(review.days.isEmpty())
+        // v1 存档连逐条消息也没有，复盘不能凭空造出对话
+        assertTrue(review.dialogues.isEmpty())
         // 但没有记录也不能丢掉底牌
         assertEquals(8, review.groups.flatMap { it.members }.size)
+    }
+
+    @Test
+    fun `复盘把局内原话按天摊开，密谈不混进公开部分`() {
+        val game = playOut(WerewolfGame.deal(WerewolfConfig(), roster(8), Random(9)), Random(23))
+        val table = WerewolfTable(
+            game = game,
+            transcript = listOf(
+                WerewolfMessage(
+                    day = 1,
+                    phase = Phase.NIGHT_WOLF_CHAT,
+                    seat = 3,
+                    kind = MessageKind.WOLF_CHAT,
+                    text = "今晚刀 5 号",
+                    audience = setOf(3, 4),
+                ),
+                WerewolfMessage(
+                    day = 1,
+                    phase = Phase.DAY_DISCUSSION,
+                    seat = 1,
+                    kind = MessageKind.SPEECH,
+                    text = "我是好人，先听 3 号怎么说。",
+                ),
+                WerewolfMessage(
+                    day = 1,
+                    phase = Phase.NIGHT_WOLF_CHAT,
+                    seat = null,
+                    kind = MessageKind.DIVINE,
+                    text = "天亮了，5 号出局",
+                ),
+            ),
+        )
+        // 头像按好友 id 查，不是按座位：这里取 1 号实际绑的那个 id，别假设座位顺序
+        val selfId = game.players.first { it.seat == 1 }.id
+        val review = WerewolfUiState(table = table, finished = true)
+            .toReview(humanSeat = 1, avatars = mapOf(selfId to "/tmp/a.png"))
+
+        assertNotNull(review)
+        // 同一天的消息合成一段，顺序沿用 transcript 的先后
+        assertEquals(1, review!!.dialogues.size)
+        val day = review.dialogues.first()
+        assertEquals(1, day.day)
+        assertEquals(listOf("今晚刀 5 号", "我是好人，先听 3 号怎么说。", "天亮了，5 号出局"), day.lines.map { it.text })
+        assertTrue("这一天有密谈", day.hasSecret)
+        // 公开部分不能漏出狼人夜聊
+        assertEquals(listOf("我是好人，先听 3 号怎么说。", "天亮了，5 号出局"), day.open.map { it.text })
+
+        val wolfChat = day.lines.first()
+        assertTrue("密谈要标出来", wolfChat.secret)
+        assertEquals("狼人夜聊", wolfChat.label)
+        assertEquals(3, wolfChat.seat)
+        assertTrue("要带上座位号：${wolfChat.speaker}", wolfChat.speaker.contains("3 号"))
+
+        val speech = day.open.first()
+        assertFalse(speech.secret)
+        assertEquals("/tmp/a.png", speech.avatarPath)
+
+        // 上帝播报没有座位，界面上居中显示
+        assertNull(day.open.last().seat)
+        assertEquals("上帝", day.open.last().speaker)
     }
 }

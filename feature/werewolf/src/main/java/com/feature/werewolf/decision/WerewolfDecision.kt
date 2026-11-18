@@ -219,9 +219,9 @@ object WerewolfDecisions {
         return VoteChoice(target, if (target == null) "这轮我先不投。" else "我跟一下大家的判断。")
     }
 
-    /** 与 [WerewolfGame.wolves] 对应的身份判断，供 UI 复用时省一次手写。 */
+    /** 与 [WerewolfGame.wolves] 对应的身份判断，狼王也算狼。 */
     fun isWolf(game: WerewolfGame, seat: Int): Boolean =
-        game.playerAt(seat).role == WerewolfRole.WEREWOLF
+        game.playerAt(seat).role.isWerewolf
 
     private fun list(seats: List<Int>): String =
         if (seats.isEmpty()) "空（没有可选目标）" else seats.sorted().joinToString("、") { "$it 号" }

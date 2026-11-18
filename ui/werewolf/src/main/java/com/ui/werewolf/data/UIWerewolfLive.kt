@@ -54,7 +54,7 @@ enum class UIWerewolfFate(val short: String, val full: String) {
     NIGHT("夜", "夜里出局"),
 
     EXILE("票", "被投票放逐"),
-    HUNTER_SHOOT("枪", "被猎人开枪带走"),
+    HUNTER_SHOOT("枪", "被开枪带走（猎人 / 狼王）"),
 
     /** 自爆：狼人自己结束的白天。字形用「爆」，和「票」区分得开。 */
     SELF_EXPLODE("爆", "狼人自爆，白天就此结束"),
@@ -83,6 +83,26 @@ data class UIWerewolfLine(
     val speaker: String? = null,
     val avatarPath: String? = null,
     val text: String,
+)
+
+/**
+ * 某位 AI 正在逐字说、但还没说完的一段话。
+ *
+ * 它**不是** [UIWerewolfLine]：记录流里的条目是「已经发生的事」，这一条是「正在发生的事」。
+ * 混进去会让列表长度不断变化（半句话每次都要改文本），滚动位置会跟着抖；
+ * 而且它会污染「总共说了多少条」这个判断（朗读闸门按 index 推进）。
+ *
+ * [isSelf] 为 true 时说明是「我」在说——那不可能是模型在打字，而是界面在等自己输入，
+ * 这时不该显示「正在组织语言」，所以映射时就置空。
+ */
+data class UIWerewolfStreaming(
+    val seat: Int,
+    val speaker: String?,
+    val avatarPath: String? = null,
+    /** 已经生成的正文。为空表示还在思考，一个字都没说。 */
+    val text: String = "",
+    /** 思考过程。参与中的局一律为空——别人的心里话听到了就是作弊。 */
+    val reasoning: String = "",
 )
 
 /** 轮到人类时要做的事。UI 按这个决定弹哪种输入面板。 */
@@ -155,6 +175,13 @@ data class UIWerewolfLive(
     val seats: List<UIWerewolfSeatLive> = emptyList(),
     /** 记录流，时间正序，最后一条最新。可见性已按视角过滤，界面不再判断。 */
     val lines: List<UIWerewolfLine> = emptyList(),
+    /**
+     * 此刻正在生成的一段话。null 表示没人正在开口。
+     *
+     * 放在 [lines] 之外：它是「正在发生」而不是「已经发生」，两者排版、滚动、
+     * 朗读的处理都不一样。可见性在这里已经过滤过，隐私阶段不会漏出来。
+     */
+    val streaming: UIWerewolfStreaming? = null,
     /** 你的座位。观战为 null。 */
     val selfSeat: Int? = null,
     /** 你的身份，例如「女巫」。观战时为 null。 */

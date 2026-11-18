@@ -55,11 +55,28 @@ sealed interface GameEvent {
         val voteCount: Double,
     ) : GameEvent
 
-    /** 猎人开枪。[targetSeat] 为 null 表示放弃开枪。 */
+    /**
+     * 开枪。[targetSeat] 为 null 表示放弃。
+     *
+     * [shooterLabel] 只决定播报里的称呼（「猎人」或「狼王」），不参与规则判定。
+     * 开枪之后身份已经公开，所以这里可以说出身份，不必像死亡播报那样只报座位。
+     */
     data class HunterShot(
         override val day: Int,
         val hunterSeat: Int,
         val targetSeat: Int?,
+        val shooterLabel: String = "猎人",
+    ) : GameEvent
+
+    /**
+     * 熊咆哮：天亮时熊还活着，且左右邻座里有存活狼人。
+     *
+     * 这是公开线索，和 [Dawn] 一起宣布。没有咆哮**不**代表两边都是好人——
+     * 熊可能已经死了，这是这条信息最容易被误读的地方，播报文案要说清楚。
+     */
+    data class BearRoar(
+        override val day: Int,
+        val seat: Int,
     ) : GameEvent
 
     /**

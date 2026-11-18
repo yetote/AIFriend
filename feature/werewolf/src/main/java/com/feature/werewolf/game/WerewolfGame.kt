@@ -48,7 +48,7 @@ data class WerewolfGame(
     /** 平票加投时只允许投给平票的这几个人。null 表示全员可投。 */
     val voteCandidates: List<Int>? = null,
     val ballots: List<Ballot> = emptyList(),
-    /** 待开枪的猎人座位。非 null 时 [phase] 必为 [Phase.HUNTER_SHOOT]。 */
+    /** 待开枪的座位（猎人或狼王）。非 null 时 [phase] 必为 [Phase.HUNTER_SHOOT]。 */
     val pendingHunterSeat: Int? = null,
     /**
      * 警长座位。null 表示此刻没有警长：没开警长、还没选出来，或者警徽已经流失。
@@ -87,12 +87,12 @@ data class WerewolfGame(
      * 遗言结束后去哪。
      *
      * 三种去处：天亮死者的遗言之后是白天讨论；被放逐者的遗言之后是黑夜；
-     * 被放逐的猎人先遗言、再开枪，所以也可能是 [Phase.HUNTER_SHOOT]。
+     * 被放逐的猎人 / 狼王先遗言、再开枪，所以也可能是 [Phase.HUNTER_SHOOT]。
      * 用一个字段而不是按阶段现推，是因为「遗言说完了」这件事本身不携带信息。
      */
     val afterLastWordsPhase: Phase = Phase.DAY_DISCUSSION,
     /**
-     * 猎人开枪结算完之后去哪。天亮时猎人被刀，后面接着白天讨论；
+     * 开枪结算完之后去哪。天亮时被刀，后面接着白天讨论；
      * 白天被票出，后面直接进入下一夜。两者不能用同一个默认值。
      */
     val afterHunterPhase: Phase = Phase.NIGHT_WOLF,
@@ -121,12 +121,12 @@ data class WerewolfGame(
     fun playerAt(seat: Int): WerewolfPlayer =
         players.firstOrNull { it.seat == seat } ?: throw IllegalArgumentException("没有 $seat 号玩家")
 
-    fun isWerewolf(seat: Int): Boolean = playerAt(seat).role == WerewolfRole.WEREWOLF
+    fun isWerewolf(seat: Int): Boolean = playerAt(seat).role.isWerewolf
 
-    /** 全部狼人，含已出局的。判胜负时用 [aliveWolves]。 */
-    fun wolves(): List<WerewolfPlayer> = players.filter { it.role == WerewolfRole.WEREWOLF }
+    /** 全部狼人，含已出局的。判胜负时用 [aliveWolves]。狼王也算狼。 */
+    fun wolves(): List<WerewolfPlayer> = players.filter { it.role.isWerewolf }
 
-    fun aliveWolves(): List<WerewolfPlayer> = alivePlayers.filter { it.role == WerewolfRole.WEREWOLF }
+    fun aliveWolves(): List<WerewolfPlayer> = alivePlayers.filter { it.role.isWerewolf }
 
     /**
      * 女巫此刻能否使用解药。药还在、并且今晚确实有人被刀，两个条件都满足才行。
@@ -211,11 +211,11 @@ data class WerewolfGame(
     /** 此刻还有没有遗言没说完。 */
     val hasPendingLastWords: Boolean get() = pendingLastWords.isNotEmpty()
 
-    /** 这个座位此刻能不能自爆：白天的发言环节、活着、且是狼。 */
+    /** 这个座位此刻能不能自爆：白天的发言环节、活着、且是狼（狼王同样可以）。 */
     fun canExplode(seat: Int): Boolean =
         (phase == Phase.DAY_DISCUSSION || phase == Phase.DAY_SHERIFF_SPEECH) &&
             playerAt(seat).alive &&
-            playerAt(seat).role == WerewolfRole.WEREWOLF
+            playerAt(seat).role.isWerewolf
 
     /**
      * 警长此刻能不能移交警徽：必须正在办遗言，并且说话的人就是那位已出局的警长。
@@ -459,15 +459,23 @@ data class WerewolfGame(
         exileVotes = exileVotes,
     )
 
-    /** 猎人决定是否开枪。[targetSeat] 为 null 表示放弃。 */
+    /** 猎人 / 狼王决定是否开枪。[targetSeat] 为 null 表示放弃。 */
     fun hunterShoot(targetSeat: Int?): WerewolfGame {
-        require(phase == Phase.HUNTER_SHOOT) { "当前不是猎人开枪阶段：$phase" }
-        val hunter = pendingHunterSeat ?: throw IllegalStateException("没有待开枪的猎人")
+        require(phase == Phase.HUNTER_SHOOT) { "当前不是开枪阶段：$phase" }
+        val shooter = pendingHunterSeat ?: throw IllegalStateException("没有待开枪的玩家")
+        check(playerAt(shooter).role.canShootOnDeath) { "待开枪的座位不是猎人 / 狼王" }
         if (targetSeat != null) {
             require(targetSeat in aliveSeats) { "只能带走存活玩家，$targetSeat 号不在存活列表" }
         }
 
-        var next = copy(history = history + GameEvent.HunterShot(day, hunter, targetSeat))
+        var next = copy(
+            history = history + GameEvent.HunterShot(
+                day = day,
+                hunterSeat = shooter,
+                targetSeat = targetSeat,
+                shooterLabel = playerAt(shooter).role.displayName,
+            )
+        )
         if (targetSeat != null) {
             next = next.applyDeaths(listOf(targetSeat to DeathCause.HUNTER_SHOOT))
             // 枪可能带走的是警长：只清**被枪打死的那位**的警徽。
@@ -475,9 +483,11 @@ data class WerewolfGame(
             // 那样会在他还没说遗言之前先把徽吞掉，他想交也交不出去了。
             if (next.sheriffSeat == targetSeat) next = next.dropDeadBadge()
         }
-        // 开枪（或放弃）之后才判胜负：绑票局面下猎人那一枪可能刚好打断它。
+        // 开枪（或放弃）之后才判胜负：猎人那一枪可能打断绑票，
+        // 狼王那一枪则可能在狼队全灭后靠屠边翻盘。
         // 放弃开枪同样要判——否则已绑票的局会照常回到白天，白演一天。
-        val winnerFaction = next.evaluateWinner()
+        val shooterIsWolfKing = playerAt(shooter).role == WerewolfRole.WEREWOLF_KING
+        val winnerFaction = next.evaluateWinner(allowWolfWinWithNoWolves = shooterIsWolfKing)
         if (winnerFaction != null) {
             return next.copy(
                 phase = Phase.FINISHED,
@@ -647,7 +657,7 @@ data class WerewolfGame(
         }
         val player = playerAt(seat)
         require(player.alive) { "$seat 号已经出局" }
-        require(player.role == WerewolfRole.WEREWOLF) { "只有狼人可以自爆" }
+        require(player.role.isWerewolf) { "只有狼人可以自爆" }
 
         val wasCampaigning = phase == Phase.DAY_SHERIFF_SPEECH
         var next = applyDeaths(listOf(seat to DeathCause.SELF_EXPLODE))
@@ -743,8 +753,15 @@ data class WerewolfGame(
         val merged = mergeDeaths(deaths)
         var next = copy(witch = stock).applyDeaths(merged)
         val deadSeats = merged.map { it.first }.sorted()
+        // 熊在结算完之后判断：他可能刚死，左右邻居也可能刚死。只看天亮那一刻的存活状态，
+        // 所以「今天没咆哮」并不等于「两边都是好人」——这条区别要写进播报文案。
+        val bearRoar = next.bearRoarSeat()?.let { GameEvent.BearRoar(next.day, it) }
         next = next.copy(
-            history = next.history + GameEvent.Dawn(next.day, deadSeats),
+            history = buildList {
+                addAll(next.history)
+                add(GameEvent.Dawn(next.day, deadSeats))
+                if (bearRoar != null) add(bearRoar)
+            },
             nights = nights + NightRecord(
                 day = day,
                 wolfTarget = tonightVictim,
@@ -768,11 +785,12 @@ data class WerewolfGame(
             )
         }
 
-        // 只有被狼刀死的猎人可以开枪，被毒的不能。这里必须读合并后的死因，
-        // 不能读入参：入参里他可能同时有刀和毒两条记录，那样会和 applyDeaths
-        // 写进 player.deathCause 的结论打架。
+        // 只有被狼刀死、且能开枪的身份（目前只有猎人）可以开枪，被毒的不能。
+        // 狼王是狼人阵营，不会被自己人刀，所以这里实际只会命中猎人。
+        // 这里必须读合并后的死因，不能读入参：入参里他可能同时有刀和毒两条记录，
+        // 那样会和 applyDeaths 写进 player.deathCause 的结论打架。
         val fallenHunter = merged.firstOrNull { (seat, cause) ->
-            cause == DeathCause.WOLF_KILL && next.playerAt(seat).role == WerewolfRole.HUNTER
+            cause == DeathCause.WOLF_KILL && next.playerAt(seat).role.canShootOnDeath
         }?.first
 
         // 首夜死者留遗言（线下惯例：第二夜起，夜里死的人不再发言）。
@@ -834,11 +852,13 @@ data class WerewolfGame(
             .applyDeaths(listOf(exiled to DeathCause.EXILE))
         next = next.copy(history = next.history + GameEvent.Exiled(next.day, exiled, voteCount))
 
-        // 和 settleNight 同一条时序：好人赢（狼全灭）立即终局，
-        // 狼方赢要等被票出的猎人开完枪——他那一枪可能刚好打断绑票。
+        // 和 settleNight 同一条时序，但要多等一种情况：
+        // 好人赢（狼全灭）通常立即终局，可如果出局的是狼王，他那最后一枪可能带走
+        // 最后一神 / 最后一民，当场把胜负翻过来——所以开枪者存在时无论哪边赢都要等枪响。
         val winnerFaction = next.evaluateWinner()
-        val hunter = next.playerAt(exiled).role == WerewolfRole.HUNTER
-        if (winnerFaction != null && (winnerFaction == Faction.GOOD || !hunter)) {
+        val shooterRole = next.playerAt(exiled).role
+        val canShoot = shooterRole.canShootOnDeath
+        if (winnerFaction != null && !canShoot) {
             return next.copy(
                 phase = Phase.FINISHED,
                 winner = winnerFaction,
@@ -847,14 +867,14 @@ data class WerewolfGame(
         }
 
         // 被放逐的人一定留遗言（这是他被冤枉后唯一能说话的机会）。
-        // 如果他正好是猎人，顺序是**先遗言、再开枪**——枪是死前最后一张牌，
+        // 如果他能开枪，顺序是**先遗言、再开枪**——枪是死前最后一张牌，
         // 先说两句再放，才解释得清他为什么带走这个人。
-        // 上面特意没在「狼方赢 + 待开枪猎人」时终局，就是为了走到这里。
+        // 上面特意没在有开枪者时终局，就是为了走到这里。
         return next.copy(
             phase = Phase.DAY_LAST_WORDS,
             pendingLastWords = listOf(exiled),
-            afterLastWordsPhase = if (hunter) Phase.HUNTER_SHOOT else Phase.NIGHT_WOLF,
-            pendingHunterSeat = if (hunter) exiled else null,
+            afterLastWordsPhase = if (canShoot) Phase.HUNTER_SHOOT else Phase.NIGHT_WOLF,
+            pendingHunterSeat = if (canShoot) exiled else null,
             afterHunterPhase = Phase.NIGHT_WOLF,
         )
     }
@@ -1007,6 +1027,7 @@ data class WerewolfGame(
 
     /**
      * 判胜负。狼人全灭优先于一切——哪怕同一刻神职也全死了，也应该判好人赢。
+     * 唯一例外是狼王的最后一枪：[allowWolfWinWithNoWolves] 时允许狼队零存活仍按屠边翻盘。
      *
      * 第二条是**绑票**：存活狼人数 >= 存活好人数就判狼人胜，不分屠边屠城。
      *
@@ -1015,9 +1036,9 @@ data class WerewolfGame(
      * （[WerewolfConfig.maxVoteRounds] 默认 1），平票就是当天无人出局，夜里狼人再刀一个，
      * 好人只会更少。所以 2 狼 2 好人这一刻胜负已经定了，再演一整轮白天也只能演到同一个结局。
      */
-    private fun evaluateWinner(): Faction? {
-        val aliveWolfCount = players.count { it.alive && it.role == WerewolfRole.WEREWOLF }
-        if (aliveWolfCount == 0) return Faction.GOOD
+    private fun evaluateWinner(allowWolfWinWithNoWolves: Boolean = false): Faction? {
+        val aliveWolfCount = players.count { it.alive && it.role.isWerewolf }
+        if (aliveWolfCount == 0 && !allowWolfWinWithNoWolves) return Faction.GOOD
 
         val aliveGoodCount = players.count { it.alive && it.faction == Faction.GOOD }
 
@@ -1040,11 +1061,30 @@ data class WerewolfGame(
             val villagersAlive = players.any { it.alive && it.role == WerewolfRole.VILLAGER }
             if ((hadGods && !godsAlive) || (hadVillagers && !villagersAlive)) return Faction.WEREWOLF
         }
-        // 屠城走到这里说明人数还占着优，接着打
-        return null
+        // 狼王那一枪没打穿屠边，狼队又已经全灭——好人照常获胜。
+        // 普通判定时 aliveWolfCount 一定是正数，这里直接返回 null 保持原行为。
+        return if (aliveWolfCount == 0) Faction.GOOD else null
     }
 
     private fun hasAliveRole(role: WerewolfRole): Boolean = alivePlayers.any { it.role == role }
+
+    /**
+     * 天亮时熊是否该咆哮。邻居按座位号**绕圈**取：1 号的左邻是最大号，
+     * 不能把他当成没有左邻——12 人局里 1 号和 12 号是坐在一起的。
+     *
+     * 熊死了就不咆哮；邻居死了也不算——夜里有人出局时咆哮可能突然停止，
+     * 这本身就是白天可以拿来盘的信息。
+     */
+    private fun bearRoarSeat(): Int? {
+        val bear = alivePlayers.firstOrNull { it.role == WerewolfRole.BEAR } ?: return null
+        val seats = players.map { it.seat }.sorted()
+        val index = seats.indexOf(bear.seat)
+        val neighbors = listOf(
+            seats[(index - 1 + seats.size) % seats.size],
+            seats[(index + 1) % seats.size],
+        )
+        return bear.seat.takeIf { neighbors.any { seat -> playerAt(seat).alive && isWerewolf(seat) } }
+    }
 
     companion object {
         /** 狼人平票后最多商议几轮。第二轮再平票就空刀。 */

@@ -26,12 +26,17 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -48,11 +53,13 @@ import com.ui.common.theme.uiCard
 import com.ui.werewolf.data.UIWerewolfBallotLine
 import com.ui.werewolf.data.UIWerewolfCheckReport
 import com.ui.werewolf.data.UIWerewolfDayReport
+import com.ui.werewolf.data.UIWerewolfDialogueDay
 import com.ui.werewolf.data.UIWerewolfGroupKind
 import com.ui.werewolf.data.UIWerewolfNightReport
 import com.ui.werewolf.data.UIWerewolfReview
 import com.ui.werewolf.data.UIWerewolfRevealedSeat
 import com.ui.werewolf.data.UIWerewolfRoleGroup
+import com.ui.werewolf.data.UIWerewolfSpeechLine
 
 // ---------------------------------------------------------------------------
 // 配色
@@ -89,6 +96,14 @@ fun UIWerewolfReviewScreen(
     onBack: () -> Unit,
     onRestart: (() -> Unit)? = null,
 ) {
+    // 「上帝视角」默认关闭：狼人夜聊、查验这些当时只有个别人看得到的内容，
+    // 需要玩家主动打开。默认摊开的话，「原来那一夜他们商量的是这个」就没得发现了。
+    var godView by rememberSaveable { mutableStateOf(false) }
+    // 这一天在当前视角下有没有可读的内容。只有密谈的一天在关掉上帝视角时不占位置，
+    // 否则会留下一张点开也空空的卡片
+    val dialogueDays = review.dialogues.filter { godView || it.open.isNotEmpty() }
+    val hasSecret = review.dialogues.any { it.hasSecret }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -129,6 +144,21 @@ fun UIWerewolfReviewScreen(
                 if (review.checks.isNotEmpty()) {
                     item { SectionTitle(title = "预言家查验", hint = "当时只有他自己知道") }
                     item { CheckCard(review.checks) }
+                }
+
+                if (review.dialogues.isNotEmpty()) {
+                    item {
+                        DialogueHeader(
+                            godView = godView,
+                            hasSecret = hasSecret,
+                            onToggleGodView = { godView = it },
+                        )
+                    }
+                    dialogueDays.forEach { day ->
+                        item(key = "dialogue-${day.day}") {
+                            DialogueDayCard(day = day, showSecret = godView)
+                        }
+                    }
                 }
 
                 if (review.incomplete) {
@@ -602,6 +632,205 @@ private fun CheckCard(checks: List<UIWerewolfCheckReport>) {
 }
 
 /**
+ * 逐日对话的标题行。
+ *
+ * 单开一个组件而不是复用 [SectionTitle]，是因为这一行右边要多一个开关。
+ * 没有密谈的局（比如人机教学局）不显示开关——一个永远没有内容的按钮比没有按钮更糟。
+ */
+@Composable
+private fun DialogueHeader(
+    godView: Boolean,
+    hasSecret: Boolean,
+    onToggleGodView: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(width = 3.dp, height = 13.dp)
+                .background(ReviewTitle, RoundedCornerShape(2.dp))
+        )
+        Spacer(Modifier.width(7.dp))
+        Text(
+            text = "逐日对话",
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = ReviewTitle
+        )
+        Text(
+            text = "  当时的原话",
+            modifier = Modifier.weight(1f),
+            fontSize = 10.sp,
+            color = ReviewDim,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        if (hasSecret) {
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(if (godView) Color(0x142B5FD9) else UIFieldFill)
+                    .border(
+                        0.5.dp,
+                        if (godView) Color(0x442B5FD9) else Color.Transparent,
+                        RoundedCornerShape(50)
+                    )
+                    .clickable { onToggleGodView(!godView) }
+                    .padding(horizontal = 9.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(6.dp)
+                        .background(if (godView) GodBlue else ReviewDim, CircleShape)
+                )
+                Spacer(Modifier.width(5.dp))
+                Text(
+                    text = "上帝视角",
+                    fontSize = 10.sp,
+                    fontWeight = if (godView) FontWeight.Medium else FontWeight.Normal,
+                    color = if (godView) GodBlue else ReviewDim
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 一天的对话。默认收起。
+ *
+ * 一局十二人局有几十上百句，全摊开会让复盘页长得没法翻；而对话又是「想起来再去看」的东西，
+ * 不是第一眼要看的结论。收起时把条数写在标题上，玩家能判断值不值得点开。
+ */
+@Composable
+private fun DialogueDayCard(day: UIWerewolfDialogueDay, showSecret: Boolean) {
+    var expanded by rememberSaveable(day.day) { mutableStateOf(false) }
+    val lines = if (showSecret) day.lines else day.open
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .uiCard(shape = RoundedCornerShape(UIRadiusCard), elevation = 0.dp)
+            .padding(horizontal = 14.dp, vertical = 12.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded },
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "第 ${day.day} 天",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = ReviewTitle
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = "${lines.size} 条",
+                fontSize = 10.sp,
+                color = ReviewDim
+            )
+            if (day.hasSecret && !showSecret) {
+                Text(
+                    text = " · 另有密谈",
+                    fontSize = 10.sp,
+                    color = ReviewDim.copy(alpha = 0.85f)
+                )
+            }
+            Spacer(Modifier.weight(1f))
+            Text(
+                text = if (expanded) "收起" else "展开",
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Medium,
+                color = if (expanded) ReviewDim else GodBlue
+            )
+        }
+
+        if (expanded) {
+            Spacer(Modifier.height(4.dp))
+            lines.forEach { line -> DialogueLine(line) }
+        }
+    }
+}
+
+/**
+ * 一句话。
+ *
+ * 上帝播报没有头像也没有座位，居中排一行，当作「这一天的分隔」用；
+ * 密谈（狼人夜聊、查验、用药）铺一层极淡的红底并把性质标红，免得它和公开发言读串。
+ */
+@Composable
+private fun DialogueLine(line: UIWerewolfSpeechLine) {
+    if (line.seat == null) {
+        Text(
+            text = line.text,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 5.dp, horizontal = 4.dp),
+            fontSize = 10.sp,
+            lineHeight = 15.sp,
+            color = ReviewDim,
+            textAlign = TextAlign.Center
+        )
+        return
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp)
+            .then(
+                if (line.secret) {
+                    Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0x0FB7312B))
+                        .padding(horizontal = 6.dp, vertical = 5.dp)
+                } else {
+                    Modifier.padding(horizontal = 2.dp, vertical = 5.dp)
+                }
+            ),
+        verticalAlignment = Alignment.Top
+    ) {
+        UIAvatar(
+            name = line.speaker,
+            avatarPath = line.avatarPath,
+            size = 22.dp,
+            shape = CircleShape
+        )
+        Spacer(Modifier.width(8.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = line.speaker,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = if (line.secret) WolfRed else ReviewBody,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "  ${line.label}",
+                    fontSize = 9.sp,
+                    color = if (line.secret) WolfRed.copy(alpha = 0.8f) else ReviewDim
+                )
+            }
+            Text(
+                text = line.text,
+                modifier = Modifier.padding(top = 2.dp),
+                fontSize = 12.sp,
+                lineHeight = 17.sp,
+                color = ReviewBody
+            )
+        }
+    }
+}
+
+/**
  * 数据缺失说明。
  *
  * 旧版存档续下来的局，没有夜间行动和票型。这里明说缺什么，不用「暂无记录」糊过去——
@@ -610,7 +839,7 @@ private fun CheckCard(checks: List<UIWerewolfCheckReport>) {
 @Composable
 private fun IncompleteNote() {
     Text(
-        text = "这一局是从旧版存档续下来的，当时还没记夜间行动和票型，所以上面少了那两段。" +
+        text = "这一局是从旧版存档续下来的，当时还没记夜间行动、票型和逐条发言，所以上面少了那几段。" +
             "下一局开始就会有了。",
         modifier = Modifier
             .fillMaxWidth()

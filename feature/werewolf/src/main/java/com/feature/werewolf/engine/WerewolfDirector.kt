@@ -12,11 +12,14 @@ import com.feature.werewolf.game.Phase
 import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfRole
 import com.feature.werewolf.prompt.WerewolfPrompt
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.random.Random
 
 /**
@@ -54,6 +57,23 @@ class WerewolfDirector(
      * 看着像卡死。这个回调只更新界面，不落档（落档仍然是每阶段一次）。
      */
     private val onTranscript: suspend (WerewolfTable) -> Unit = {},
+    /**
+     * 有位 AI 正在逐字开口时回调，说完了给 null 收尾。
+     *
+     * 只在**发言**这条路径上触发（[askSpeech]）。投票、查验、用药这些决策返回的是一段
+     * JSON，逐字吐出来的中间态既没法解析也没法显示；而发言本来就是给人听的话，
+     * 让它一个字一个字地出现，牌桌才像有人真的在说话，而不是等十几秒后整段蹦出来。
+     *
+     * 回调的是**半句话**：调用方只能拿去显示，不能落档、不能进上下文、不能被朗读。
+     */
+    private val onLive: suspend (WerewolfLive?) -> Unit = {},
+    /**
+     * 两次 [onLive] 之间的最小间隔。
+     *
+     * 模型一秒能吐几十个片段，每片都刷一次界面纯属浪费——牌桌一次重排要重建整张记录流。
+     * 80ms 是「看得出在打字」和「不要每帧都重组」之间的折中。测试里传 0 才能断言每次增量。
+     */
+    private val streamIntervalMs: Long = STREAM_PUSH_MS,
 ) {
 
     // ---------------------------------------------------------------------
@@ -613,7 +633,7 @@ class WerewolfDirector(
         return current
     }
 
-    /** 猎人开枪。此时猎人已经出局，开枪宣言所有人都能看到。 */
+    /** 开枪。此时猎人或狼王已经出局，开枪宣言所有人都能看到。 */
     suspend fun hunterShoot(table: WerewolfTable): WerewolfTable {
         val game = table.game
         if (game.phase != Phase.HUNTER_SHOOT) return table
@@ -799,7 +819,19 @@ class WerewolfDirector(
         )
     }
 
-    /** 自由发言走普通 chat，不需要 JSON。狼人商议也走这条路。 */
+    /**
+     * 自由发言走**流式** chat，不需要 JSON。狼人商议也走这条路。
+     *
+     * 为什么只有这里流式：[decide] 拿回来的是一段 JSON，它的价值全在解析完的那个对象上，
+     * 中间态既不能显示也不能用；而发言就是最终产物本身，边生成边显示对用户才是「有人在说话」。
+     *
+     * [onLive] 推的是**累计**后的当前文本，不是增量：界面只做整体替换，
+     * 不需要自己维护拼接状态——一旦中途重连或重试，增量拼接会出现重复的半句。
+     *
+     * 无论正常说完、报错还是被取消，`finally` 都会把「正在说话」收回。
+     * 用 [NonCancellable] 是因为取消时调用挂起函数会立刻再抛一次，
+     * 那样牌桌上会永久留着半句话和闪烁的光标。
+     */
     private suspend fun askSpeech(
         table: WerewolfTable,
         seat: Int,
@@ -807,12 +839,53 @@ class WerewolfDirector(
     ): String {
         val agent = agentOf(seat)
         val game = table.game
-        val raw = agent.ai.chat(
-            messages = listOf(ChatMessage.user(context(table, seat, task))),
-            model = agent.model,
-            systemPrompt = WerewolfPrompt.systemPrompt(game, seat, agent.persona),
-            enableThinking = agent.thinkingEnabled,
-        )
+        val messages = listOf(ChatMessage.user(context(table, seat, task)))
+        val system = WerewolfPrompt.systemPrompt(game, seat, agent.persona)
+        val content = StringBuilder()
+        val reasoning = StringBuilder()
+        var lastPush = 0L
+        var pushed = false
+
+        try {
+            agent.ai.chatStream(
+                messages = messages,
+                model = agent.model,
+                systemPrompt = system,
+                enableThinking = agent.thinkingEnabled,
+            ).collect { delta ->
+                if (delta.content.isEmpty() && delta.reasoning.isEmpty()) return@collect
+                content.append(delta.content)
+                reasoning.append(delta.reasoning)
+                val now = System.currentTimeMillis()
+                if (!pushed || now - lastPush >= streamIntervalMs) {
+                    lastPush = now
+                    pushed = true
+                    onLive(
+                        WerewolfLive(
+                            seat = seat,
+                            phase = game.phase,
+                            text = content.toString(),
+                            reasoning = reasoning.toString(),
+                        )
+                    )
+                }
+            }
+        } finally {
+            withContext(NonCancellable) { onLive(null) }
+        }
+
+        // 流式一个片段都没收到（厂商没实现 SSE，或者返回了空流）时补一次普通请求。
+        // 不补的话这句话会变成空白，后面所有人都会看到「3 号：」后面什么都没有
+        val raw = if (content.isEmpty()) {
+            agent.ai.chat(
+                messages = messages,
+                model = agent.model,
+                systemPrompt = system,
+                enableThinking = agent.thinkingEnabled,
+            )
+        } else {
+            content.toString()
+        }
         return sanitize(raw, seat, game.playerAt(seat).name)
     }
 
@@ -1048,5 +1121,8 @@ class WerewolfDirector(
 
         /** 整局的调度步数上限，防止某处状态不推进导致死循环。 */
         const val MAX_STEPS = 500
+
+        /** 流式发言的推送间隔，见 [WerewolfDirector.streamIntervalMs]。 */
+        const val STREAM_PUSH_MS = 80L
     }
 }

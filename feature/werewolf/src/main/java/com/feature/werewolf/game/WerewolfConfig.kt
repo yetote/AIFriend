@@ -51,18 +51,20 @@ data class WerewolfConfig(
         composition.forEach { (role, count) ->
             require(count >= 0) { "${role.displayName} 数量不能为负：$count" }
         }
-        require((composition[WerewolfRole.WEREWOLF] ?: 0) >= 1) { "至少要有一名狼人" }
+        require(composition.filterKeys { it.isWerewolf }.values.sum() >= 1) { "至少要有一名狼人" }
         require((composition[WerewolfRole.VILLAGER] ?: 0) + composition.filterKeys { it.isGod }.values.sum() >= 1) {
             "至少要有一名好人"
         }
         // 引擎按「场上有唯一一个行动者」实现夜晚阶段：两个预言家同场，查验结果该给谁说不清，
         // 两个守卫的守护怎么叠加也说不清。所以这一组身份一律最多 1 名。
         listOf(
+            WerewolfRole.WEREWOLF_KING,
             WerewolfRole.SEER,
             WerewolfRole.WITCH,
             WerewolfRole.HUNTER,
             WerewolfRole.GUARD,
             WerewolfRole.IDIOT,
+            WerewolfRole.BEAR,
         ).forEach { role ->
             require((composition[role] ?: 0) <= 1) { "${role.displayName} 最多 1 名" }
         }
@@ -139,6 +141,39 @@ data class WerewolfConfig(
             WerewolfRole.HUNTER to 1,
             WerewolfRole.IDIOT to 1,
             WerewolfRole.VILLAGER to 4,
+        )
+
+        /**
+         * 10 人狼王守卫局：狼王 + 2 狼 + 预女猎守 + 3 民。
+         *
+         * 狼王让狼队在「已经输了」的时候还有一次翻盘机会：被票出去的那一枪
+         * 如果带走最后一神，胜负会当场倒过来。守卫同时给好人留一层容错，
+         * 不然狼王那一枪太容易一击定局。
+         */
+        val King10: Map<WerewolfRole, Int> = mapOf(
+            WerewolfRole.WEREWOLF_KING to 1,
+            WerewolfRole.WEREWOLF to 2,
+            WerewolfRole.SEER to 1,
+            WerewolfRole.WITCH to 1,
+            WerewolfRole.HUNTER to 1,
+            WerewolfRole.GUARD to 1,
+            WerewolfRole.VILLAGER to 3,
+        )
+
+        /**
+         * 12 人熊局：4 狼 + 预女猎白熊 + 3 民。
+         *
+         * 熊不升级也不下刀，它只提供一条稳定公开的线索：左右邻座有狼就咆哮。
+         * 和白痴同桌时，好人多了一层「错了也不立刻输」的余量，适合慢慢盘逻辑。
+         */
+        val Bear12: Map<WerewolfRole, Int> = mapOf(
+            WerewolfRole.WEREWOLF to 4,
+            WerewolfRole.SEER to 1,
+            WerewolfRole.WITCH to 1,
+            WerewolfRole.HUNTER to 1,
+            WerewolfRole.IDIOT to 1,
+            WerewolfRole.BEAR to 1,
+            WerewolfRole.VILLAGER to 3,
         )
     }
 }

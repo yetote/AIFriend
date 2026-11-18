@@ -47,7 +47,7 @@ data class WerewolfProgress(
             Phase.DAY_DISCUSSION -> "发言"
             Phase.DAY_VOTE -> "投票"
             Phase.DAY_LAST_WORDS -> "遗言"
-            Phase.HUNTER_SHOOT -> "猎人开枪"
+            Phase.HUNTER_SHOOT -> "开枪"
             Phase.FINISHED -> "结算"
         }
 }

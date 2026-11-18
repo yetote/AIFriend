@@ -65,8 +65,11 @@ enum class Phase(val displayName: String) {
      */
     DAY_LAST_WORDS("遗言"),
 
-    /** 等待猎人开枪（或不开）。 */
-    HUNTER_SHOOT("猎人开枪"),
+    /**
+     * 等待开枪（或不开）。猎人和狼王共用这个相位——两者被票出 / 被刀时的结算顺序完全一样，
+     * 只是公开播报里的称呼不同。
+     */
+    HUNTER_SHOOT("开枪"),
 
     /** 分出胜负，游戏结束。 */
     FINISHED("游戏结束"),

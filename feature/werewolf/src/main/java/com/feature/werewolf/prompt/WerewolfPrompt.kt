@@ -141,10 +141,12 @@ object WerewolfPrompt {
         is GameEvent.IdiotRevealed -> "${event.seat} 号翻牌是白痴，没有出局"
 
         is GameEvent.HunterShot -> if (event.targetSeat == null) {
-            "猎人 ${event.hunterSeat} 号没开枪"
+            "${event.shooterLabel} ${event.hunterSeat} 号没开枪"
         } else {
-            "猎人 ${event.hunterSeat} 号开枪带走 ${event.targetSeat} 号"
+            "${event.shooterLabel} ${event.hunterSeat} 号开枪带走 ${event.targetSeat} 号"
         }
+
+        is GameEvent.BearRoar -> "熊 ${event.seat} 号在咆哮（左右邻座有狼）"
 
         is GameEvent.WolfExploded -> "${event.seat} 号狼人自爆，当天直接入夜"
 
@@ -194,10 +196,14 @@ object WerewolfPrompt {
                 "翻开是白痴，没有出局，此后失去投票权"
 
         is GameEvent.HunterShot -> if (event.targetSeat == null) {
-            "第${event.day}天：猎人 ${event.hunterSeat} 号出局，没有开枪"
+            "第${event.day}天：${event.shooterLabel} ${event.hunterSeat} 号出局，没有开枪"
         } else {
-            "第${event.day}天：猎人 ${event.hunterSeat} 号开枪带走了 ${event.targetSeat} 号"
+            "第${event.day}天：${event.shooterLabel} ${event.hunterSeat} 号开枪带走了 ${event.targetSeat} 号"
         }
+
+        is GameEvent.BearRoar ->
+            "第${event.day}天 天亮：熊 ${event.seat} 号在咆哮！" +
+                "这说明他的左右邻座至少有一个狼人；今天没咆哮并不能证明邻座都是好人，因为熊可能已经死了"
 
         is GameEvent.WolfExploded ->
             "第${event.day}天：${event.seat} 号狼人自爆，这一天就此结束，" +
@@ -250,6 +256,15 @@ object WerewolfPrompt {
         if (config.has(WerewolfRole.IDIOT)) {
             append("白痴被投票放逐时翻开身份，不会死，但从此不能再投票、也不能再被投；夜里被刀或被毒照常会死。\n")
         }
+        if (config.has(WerewolfRole.WEREWOLF_KING)) {
+            append("狼王是狼人：夜里照常参与商议和下刀；白天被投票放逐时可以开枪带走一个人，" +
+                "那一枪即使在狼队已经全灭后也照样有效，可能直接改写胜负。" +
+                "狼王被毒死或被猎人带走时不能开枪。\n")
+        }
+        if (config.has(WerewolfRole.BEAR)) {
+            append("熊是好人神职，夜里不行动。每天天亮时只要熊还活着、左右邻座有存活狼人，" +
+                "上帝就会公开宣布熊在咆哮；没咆哮不代表邻座一定都是好人，熊死了也不会咆哮。\n")
+        }
         if (config.hasSheriff) {
             append(
                 "本局有警长：第 1 天天亮先竞选——想当的人上警、各说一段，再由**没上警的人**投票选出。" +
@@ -273,7 +288,11 @@ object WerewolfPrompt {
         val lines = mutableListOf<String>()
 
         when (player.role) {
-            WerewolfRole.WEREWOLF -> {
+            WerewolfRole.WEREWOLF, WerewolfRole.WEREWOLF_KING -> {
+                if (player.role == WerewolfRole.WEREWOLF_KING) {
+                    lines += "你是狼王：夜里和普通狼一样行动，白天被投票放逐时可以开枪带走一个人。" +
+                        "那一枪即使在队友已经全灭之后也有效，别轻易放弃。"
+                }
                 val mates = game.wolves().filter { it.seat != seat }
                 lines += if (mates.isEmpty()) {
                     "你是唯一的狼人。"
@@ -356,6 +375,12 @@ object WerewolfPrompt {
                 }
             }
 
+            WerewolfRole.BEAR -> {
+                lines += "你是熊：夜里不行动。天亮时只要你活着、左右邻座有存活狼人，" +
+                    "上帝就会公开宣布你咆哮。这是所有人都能听到的线索，不是你的私聊。"
+                lines += "你不用急着自报身份——让别人先从咆哮里推，你一旦报了，狼人就会先刀你。"
+            }
+
             WerewolfRole.VILLAGER -> {
                 // 平民确实没有私有信息。明确写出来，比留一段空白好——
                 // 空白会让模型自己脑补「我是不是漏了什么」，进而编出不存在的信息。
@@ -385,6 +410,10 @@ object WerewolfPrompt {
                 WerewolfRole.VILLAGER -> Unit
                 WerewolfRole.HUNTER ->
                     append("你的猎人身份不要主动说出来，除非你已经开枪——开枪之后就藏不住了。")
+                WerewolfRole.WEREWOLF_KING ->
+                    append("狼王身份也要藏住；一旦被票出去，记得这最后一枪可能直接决定胜负。")
+                WerewolfRole.BEAR ->
+                    append("不要主动说自己是熊——咆哮本身已经给了好人线索，报身份只会让狼人先刀你。")
                 WerewolfRole.IDIOT ->
                     append("不要在白天主动说自己是白痴：翻牌虽然不死，但你会立刻失去投票权，狼人也就不必再怕你。")
                 else -> append("以上信息不能在白天直接说出来。")
@@ -501,7 +530,7 @@ object WerewolfPrompt {
                     )
                     // 自爆只对狼有意义。写给所有人等于向好人泄露「这局的狼会自爆」，
                     // 虽然规则公开可查，但提示词里不该出现一句只对狼有用的话
-                    if (player.role == WerewolfRole.WEREWOLF) {
+                    if (player.role.isWerewolf) {
                         append(
                             "如果你判断自爆能打断一次已经成形的放逐（比如队友马上就要被投出去），" +
                                 "就在发言开头写「【自爆】」，后面写你的自爆发言——" +
@@ -523,7 +552,10 @@ object WerewolfPrompt {
 
                 Phase.HUNTER_SHOOT -> {
                     val targets = game.aliveSeats
-                    append("你出局了，身份是猎人，现在可以开枪带走一个人，也可以放弃。")
+                    append(
+                        "你出局了，身份是${player.role.displayName}，现在可以开枪带走一个人，也可以放弃。" +
+                            "这一枪会先结算，然后才判定胜负——即使队友已经全灭也还有翻盘机会。"
+                    )
                     if (targets.isNotEmpty()) {
                         append("可选目标：").append(seats(targets)).append("。")
                     }
