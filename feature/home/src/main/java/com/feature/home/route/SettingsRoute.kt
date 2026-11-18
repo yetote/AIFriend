@@ -44,6 +44,8 @@ fun SettingsRoute(
         // TTS 配置区块
         onTtsProviderSelect = viewModel::selectTtsProvider,
         onTtsKeyChange = viewModel::setTtsKeyInput,
+        onTtsSecretChange = viewModel::setTtsSecretInput,
+        onTtsAppIdChange = viewModel::setTtsAppIdInput,
         onTtsBaseUrlChange = viewModel::setTtsBaseUrlInput,
         onTtsToggleVisible = viewModel::toggleTtsKeyVisible,
         onTtsSave = viewModel::saveTtsCredential,

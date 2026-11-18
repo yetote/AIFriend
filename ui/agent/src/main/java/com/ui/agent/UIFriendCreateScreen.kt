@@ -358,7 +358,13 @@ fun UIFriendCreateScreen(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(50))
                                     .background(if (selected) UIActionBrush else SolidColor(Color(0xFFEEF1F6)))
-                                    .clickable { ttsConfigId = option.id }
+                                    // 切换服务时清掉旧音色：各家音色 id 不通用，留着会合成失败。
+                                    .clickable {
+                                        if (ttsConfigId != option.id) {
+                                            ttsConfigId = option.id
+                                            voiceId = null
+                                        }
+                                    }
                                     .padding(horizontal = 14.dp, vertical = 8.dp)
                             )
                         }
@@ -375,7 +381,8 @@ fun UIFriendCreateScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         contentPadding = PaddingValues(vertical = 2.dp)
                     ) {
-                        items(VoiceCatalog.all) { option ->
+                        // 音色按选中的服务分组：各家 id 不通用，混在一起会选到用不了的音色。
+                        items(VoiceCatalog.forProvider(ttsConfigId)) { option ->
                             val selected = option.id == voiceId
                             Text(
                                 text = option.label,

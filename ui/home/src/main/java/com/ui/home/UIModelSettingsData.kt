@@ -96,6 +96,12 @@ data class UITTSProviderOption(
     val hasKey: Boolean,
     val editableBaseUrl: Boolean = false,
     val baseUrl: String = "",
+    /** 第一凭证的输入框标签（API Key / SecretId / Access Token…）。 */
+    val keyLabel: String = "API Key",
+    /** 第二凭证标签；null 表示这家不用（目前只有腾讯云要 SecretKey）。 */
+    val secretLabel: String? = null,
+    /** AppID 标签；null 表示这家不用（讯飞、火山要）。 */
+    val appIdLabel: String? = null,
 )
 
 /** TTS 配置区块的状态，独立于模型 Key 的一套。 */
@@ -103,6 +109,8 @@ data class UITTSState(
     val providers: List<UITTSProviderOption> = emptyList(),
     val selectedId: String = "",
     val keyInput: String = "",
+    val secretInput: String = "",
+    val appIdInput: String = "",
     val baseUrlInput: String = "",
     val keyVisible: Boolean = false,
     /** 保存结果提示（成功/失败各一句），null 不显示。 */
@@ -115,6 +123,9 @@ data class UITTSState(
         get() {
             val p = selected ?: return false
             if (keyInput.isBlank() && !p.hasKey) return false
+            // 腾讯云要 SecretKey、讯飞火山要 AppID，缺了不让存。
+            if (p.secretLabel != null && secretInput.isBlank()) return false
+            if (p.appIdLabel != null && appIdInput.isBlank()) return false
             if (p.editableBaseUrl && baseUrlInput.isBlank() && p.baseUrl.isBlank()) return false
             return true
         }

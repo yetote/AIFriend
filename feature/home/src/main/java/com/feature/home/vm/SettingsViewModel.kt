@@ -81,6 +81,8 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
                 providers = TTSProviderCatalog.all.map { it.toTtsOption() },
                 selectedId = selected.id,
                 keyInput = "",
+                secretInput = "",
+                appIdInput = savedTts[selected.id]?.appId.orEmpty(),
                 baseUrlInput = savedTts[selected.id]?.baseUrl.orEmpty(),
             )
         )
@@ -443,11 +445,14 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
 
     fun selectTtsProvider(id: String) {
         val tts = _state.value.tts
+        val saved = savedTts[id]
         _state.value = _state.value.copy(
             tts = tts.copy(
                 selectedId = id,
                 keyInput = "",
-                baseUrlInput = savedTts[id]?.baseUrl.orEmpty(),
+                secretInput = "",
+                appIdInput = saved?.appId.orEmpty(),
+                baseUrlInput = saved?.baseUrl.orEmpty(),
                 hint = null
             )
         )
@@ -456,6 +461,18 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
     fun setTtsKeyInput(value: String) {
         _state.value = _state.value.copy(
             tts = _state.value.tts.copy(keyInput = value.trim(), hint = null)
+        )
+    }
+
+    fun setTtsSecretInput(value: String) {
+        _state.value = _state.value.copy(
+            tts = _state.value.tts.copy(secretInput = value.trim(), hint = null)
+        )
+    }
+
+    fun setTtsAppIdInput(value: String) {
+        _state.value = _state.value.copy(
+            tts = _state.value.tts.copy(appIdInput = value.trim(), hint = null)
         )
     }
 
@@ -479,7 +496,9 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
                 tts = _state.value.tts.copy(
                     providers = TTSProviderCatalog.all.map { it.toTtsOption() },
                     keyInput = "",
-                    hint = "已清除该服务的 Key"
+                    secretInput = "",
+                    appIdInput = "",
+                    hint = "已清除该服务的凭证"
                 )
             )
         }
@@ -492,13 +511,25 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
     fun saveTtsCredential() {
         val tts = _state.value.tts
         val provider = TTSProviderCatalog.byId(tts.selectedId) ?: return
-        val apiKey = tts.keyInput.ifBlank { savedTts[provider.id]?.apiKey.orEmpty() }
+        val existing = savedTts[provider.id]
+        val apiKey = tts.keyInput.ifBlank { existing?.apiKey.orEmpty() }
         if (apiKey.isBlank()) {
-            _state.value = _state.value.copy(tts = tts.copy(hint = "请先填写 API Key"))
+            _state.value = _state.value.copy(tts = tts.copy(hint = "请先填写 ${provider.keyLabel}"))
+            return
+        }
+        // 第二凭证 / AppID：留空表示沿用已保存的值，没有旧值就拦一下。
+        val secret = tts.secretInput.ifBlank { existing?.apiSecret.orEmpty() }
+        if (provider.secretLabel != null && secret.isBlank()) {
+            _state.value = _state.value.copy(tts = tts.copy(hint = "请先填写 ${provider.secretLabel}"))
+            return
+        }
+        val appId = tts.appIdInput.ifBlank { existing?.appId.orEmpty() }
+        if (provider.appIdLabel != null && appId.isBlank()) {
+            _state.value = _state.value.copy(tts = tts.copy(hint = "请先填写 ${provider.appIdLabel}"))
             return
         }
         val baseUrl = tts.baseUrlInput.trim()
-            .ifBlank { savedTts[provider.id]?.baseUrl.orEmpty() }
+            .ifBlank { existing?.baseUrl.orEmpty() }
         if (provider.editableBaseUrl && baseUrl.isBlank()) {
             _state.value = _state.value.copy(tts = tts.copy(hint = "请填写 Base URL"))
             return
@@ -507,16 +538,16 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
             _state.value = _state.value.copy(tts = tts.copy(hint = problem))
             return
         }
+        val credential = TTSCredential(provider.id, apiKey, baseUrl, secret, appId)
         viewModelScope.launch {
-            val ok = withContext(Dispatchers.IO) {
-                ttsSettings.save(TTSCredential(provider.id, apiKey, baseUrl))
-            }
-            if (ok) savedTts = savedTts + (provider.id to TTSCredential(provider.id, apiKey, baseUrl))
+            val ok = withContext(Dispatchers.IO) { ttsSettings.save(credential) }
+            if (ok) savedTts = savedTts + (provider.id to credential)
             _state.value = _state.value.copy(
                 tts = _state.value.tts.copy(
                     providers = TTSProviderCatalog.all.map { it.toTtsOption() },
                     keyInput = "",
-                    hint = if (ok) "已保存 ${provider.name} 的语音 Key" else "保存失败，请重试"
+                    secretInput = "",
+                    hint = if (ok) "已保存 ${provider.name} 的凭证" else "保存失败，请重试"
                 )
             )
         }
@@ -530,6 +561,9 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
         hasKey = savedTts[id]?.apiKey?.isNotBlank() == true,
         editableBaseUrl = this === TTSProviderCatalog.Custom,
         baseUrl = savedTts[id]?.baseUrl.orEmpty(),
+        keyLabel = keyLabel,
+        secretLabel = secretLabel,
+        appIdLabel = appIdLabel,
     )
 
     private companion object {

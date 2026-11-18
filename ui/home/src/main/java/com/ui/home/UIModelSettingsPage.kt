@@ -91,6 +91,8 @@ fun UIModelSettingsPage(
     // TTS 配置区块（都有默认值，旧调用方不受影响）
     onTtsProviderSelect: (String) -> Unit = {},
     onTtsKeyChange: (String) -> Unit = {},
+    onTtsSecretChange: (String) -> Unit = {},
+    onTtsAppIdChange: (String) -> Unit = {},
     onTtsBaseUrlChange: (String) -> Unit = {},
     onTtsToggleVisible: () -> Unit = {},
     onTtsSave: () -> Unit = {},
@@ -292,6 +294,8 @@ fun UIModelSettingsPage(
                     state = state.tts,
                     onProviderSelect = onTtsProviderSelect,
                     onKeyChange = onTtsKeyChange,
+                    onSecretChange = onTtsSecretChange,
+                    onAppIdChange = onTtsAppIdChange,
                     onBaseUrlChange = onTtsBaseUrlChange,
                     onToggleVisible = onTtsToggleVisible,
                     onSave = onTtsSave,
@@ -317,6 +321,8 @@ private fun TTSSection(
     state: UITTSState,
     onProviderSelect: (String) -> Unit,
     onKeyChange: (String) -> Unit,
+    onSecretChange: (String) -> Unit,
+    onAppIdChange: (String) -> Unit,
     onBaseUrlChange: (String) -> Unit,
     onToggleVisible: () -> Unit,
     onSave: () -> Unit,
@@ -383,7 +389,7 @@ private fun TTSSection(
     val provider = state.selected
     if (provider != null) {
         Spacer(Modifier.height(4.dp))
-        SectionLabel("语音 API Key")
+        SectionLabel(provider.keyLabel)
         Spacer(Modifier.height(8.dp))
         TtsKeyField(
             value = state.keyInput,
@@ -393,9 +399,36 @@ private fun TTSSection(
             placeholder = if (provider.hasKey) {
                 "已保存 ${provider.maskedKey}，留空则保持不变"
             } else {
-                "粘贴语音服务的 API Key"
+                "粘贴 ${provider.keyLabel}"
             }
         )
+
+        if (provider.appIdLabel != null) {
+            Spacer(Modifier.height(10.dp))
+            SectionLabel(provider.appIdLabel)
+            Spacer(Modifier.height(8.dp))
+            TtsKeyField(
+                value = state.appIdInput,
+                onValueChange = onAppIdChange,
+                visible = true,
+                onToggleVisible = {},
+                placeholder = "填写 ${provider.appIdLabel}",
+                password = false
+            )
+        }
+
+        if (provider.secretLabel != null) {
+            Spacer(Modifier.height(10.dp))
+            SectionLabel(provider.secretLabel)
+            Spacer(Modifier.height(8.dp))
+            TtsKeyField(
+                value = state.secretInput,
+                onValueChange = onSecretChange,
+                visible = state.keyVisible,
+                onToggleVisible = onToggleVisible,
+                placeholder = "填写 ${provider.secretLabel}（留空沿用已保存值）"
+            )
+        }
 
         if (provider.editableBaseUrl) {
             Spacer(Modifier.height(10.dp))
@@ -434,6 +467,13 @@ private fun TTSSection(
                     color = UIFriendBarCreateButtonText,
                     modifier = Modifier.clickable { onOpenConsole(provider.id) }
                 )
+            } else if (provider.description.isNotBlank() && provider.name != "自定义（MiniMax 兼容）") {
+                Text(
+                    text = "去控制台 →",
+                    fontSize = 12.sp,
+                    color = UIFriendBarCreateButtonText,
+                    modifier = Modifier.clickable { onOpenConsole(provider.id) }
+                )
             }
         }
 
@@ -441,7 +481,7 @@ private fun TTSSection(
         SaveButton(
             enabled = state.canSave,
             loading = false,
-            text = "保存语音 Key",
+            text = "保存语音凭证",
             onClick = onSave
         )
 
