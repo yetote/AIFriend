@@ -33,6 +33,22 @@ class SpeechQueueTest {
     }
 
     @Test
+    fun `座位号跟着消息走 界面靠它点亮正在说话的人`() {
+        val queue = SpeechQueue()
+        queue.offer(
+            listOf(
+                SpeechCandidate("3 号说的", true, seat = 3),
+                SpeechCandidate("上帝播报", false, seat = null),
+                SpeechCandidate("5 号说的", true, seat = 5),
+            )
+        )
+
+        assertEquals(3, queue.poll()?.seat)
+        assertEquals("播报没有座位", null, queue.poll()?.seat)
+        assertEquals(5, queue.poll()?.seat)
+    }
+
+    @Test
     fun `同一份消息流反复喂进来只入队一次`() {
         val queue = SpeechQueue()
         val all = candidates(true, true, true)

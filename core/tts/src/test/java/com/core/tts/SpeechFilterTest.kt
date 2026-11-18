@@ -38,10 +38,74 @@ class SpeechFilterTest {
         assertFalse(speakable(isPublicSpeech = true, speakerSeat = 3, selfSeat = 1, text = "  "))
     }
 
+    @Test
+    fun `上帝视角下狼人夜聊也读`() {
+        // 纯观战时牌桌上本来就没有秘密：夜聊、查验、用药全在屏幕上，
+        // 只念公开发言等于把剧情念丢一半
+        assertTrue(
+            speakable(
+                isPublicSpeech = false,
+                speakerSeat = 3,
+                selfSeat = null,
+                readEverything = true,
+            )
+        )
+    }
+
+    @Test
+    fun `上帝视角下上帝播报也读`() {
+        // 播报没有座位，普通视角下要跳过；观战时要照着念出来
+        assertTrue(
+            speakable(
+                isPublicSpeech = false,
+                speakerSeat = null,
+                selfSeat = null,
+                text = "第1天 天亮：熊 11 号在咆哮",
+                readEverything = true,
+            )
+        )
+    }
+
+    @Test
+    fun `上帝视角下投票表态也读`() {
+        assertTrue(
+            speakable(isPublicSpeech = true, speakerSeat = 5, selfSeat = null, readEverything = true)
+        )
+    }
+
+    @Test
+    fun `上帝视角下仍然不读空白`() {
+        // 队列是按条消费的，空文本会让喇叭停一次，听起来像卡带
+        assertFalse(
+            speakable(
+                isPublicSpeech = true,
+                speakerSeat = 5,
+                selfSeat = null,
+                text = "",
+                readEverything = true,
+            )
+        )
+    }
+
+    @Test
+    fun `上帝视角下也不读自己的话`() {
+        // 目前观战拿不到人类座位，这条是防御：将来若允许「参与 + 上帝视角」，
+        // 自己的话也不该被念一遍
+        assertFalse(
+            speakable(
+                isPublicSpeech = true,
+                speakerSeat = 1,
+                selfSeat = 1,
+                readEverything = true,
+            )
+        )
+    }
+
     private fun speakable(
         isPublicSpeech: Boolean,
         speakerSeat: Int?,
         selfSeat: Int?,
         text: String = "我怀疑 3 号",
-    ) = SpeechFilter.speakable(isPublicSpeech, speakerSeat, selfSeat, text)
+        readEverything: Boolean = false,
+    ) = SpeechFilter.speakable(isPublicSpeech, speakerSeat, selfSeat, text, readEverything)
 }

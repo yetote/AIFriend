@@ -110,25 +110,46 @@ internal object TTSProtocols {
         if (req.apiSecret.isBlank()) {
             throw TTSException("讯飞缺少 API Secret（新版流式接口必需，请在设置页补填）")
         }
+        val voice = req.voiceId.ifBlank { "xiaoyan" }
         val url = iflytekAuthUrl(req.apiKey, req.apiSecret, System.currentTimeMillis())
+        // 文本一律 UTF-8 再 base64（和官方 demo 的 TEXT.getBytes(UTF_8) 一致）。
+        // 别改成 UTF-16LE：那是小语种配 tte=unicode 才用的，中文走它会被念成乱码。
+        val textBase64 = Base64.encodeToString(req.text.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
         val frame = buildJsonObject {
             put("common", buildJsonObject { put("app_id", req.appId) })
             put("business", buildJsonObject {
-                put("aue", "lame")       // mp3
-                put("sfl", 1)            // aue=lame 时必须开启流式返回
-                put("vcn", req.voiceId.ifBlank { "xiaoyan" })
+                // 用裸 PCM，**不用** aue=lame。这不是音质选择，是正确性问题：
+                // aue=lame 必须配 sfl=1（流式返回），而那种返回的不是「一条码流切成几块」，
+                // 而是**一片片各自独立可播的 mp3**，每片都带自己的 LAME 头。
+                // 实测一句话的分片拼起来有 24～401 个 LAME 头：MediaPlayer 每碰到
+                // 一个片头就重置解码器，头里那些字节还会被当音频数据播出去。
+                // 听感就是「叽里咕噜听不懂」，很容易被当成方言或乱码。
+                // PCM 拼接天然连续，只要最后补一个 WAV 头就能播。
+                put("aue", "raw")
+                // 官方 demo（WebTtsWs.java）里**没有** auf：raw 的采样率本来就固定 16000，
+                // 显式传 auf 等于多给自己一个变量。曾经怀疑过采样率对不上导致「变速变调」，
+                // 与其猜参数，不如跟 demo 一模一样。
+                put("tte", "UTF8")   // 文本编码，默认就是 UTF8；小语种要改成 UNICODE
+                put("ent", "intp65") // 英文按单词读（demo 原样）
+                put("vcn", voice)
                 put("speed", 50)
                 put("volume", 50)
                 put("pitch", 50)
             })
             put("data", buildJsonObject {
                 put("status", 2)         // 流式合成文本只能一次性上传，固定为 2
-                put("text", Base64.encodeToString(req.text.toByteArray(Charsets.UTF_8), Base64.NO_WRAP))
+                put("text", textBase64)
             })
         }.toString()
 
         val audio = java.io.ByteArrayOutputStream()
         var finished = false
+        var frames = 0
+        var minChunk = Int.MAX_VALUE
+        var maxChunk = 0
+        var oddChunks = 0
+        log("讯飞请求 vcn=$voice aue=raw tte=UTF8 文本 ${req.text.length} 字：${req.text.take(30)}")
+        log("讯飞 data.text base64 前 24 字符：${textBase64.take(24)}")
         KtorClient.instance.client.webSocket(url) {
             send(Frame.Text(frame))
             for (packet in incoming) {
@@ -139,17 +160,38 @@ internal object TTSProtocols {
                             ?: throw TTSException("讯飞响应不是 JSON: ${text.take(160)}")
                         val code = int(root, "code") ?: -1
                         if (code != 0) {
+                            log("讯飞帧 code=$code ${safeJson(text)}")
                             throw TTSException("讯飞合成失败 code=$code: ${str(root, "message").orEmpty()}")
                         }
                         obj(root, "data")?.let { data ->
                             str(data, "audio")?.let { b64 ->
-                                runCatching { Base64.decode(b64, Base64.DEFAULT) }
-                                    .getOrNull()?.let { audio.write(it) }
+                                val decoded = runCatching { Base64.decode(b64, Base64.DEFAULT) }.getOrNull()
+                                if (decoded != null) {
+                                    audio.write(decoded)
+                                    frames++
+                                    minChunk = minOf(minChunk, decoded.size)
+                                    maxChunk = maxOf(maxChunk, decoded.size)
+                                    // 奇数长度的分片会让后面所有 16bit 样本错开半个字节，
+                                    // 拼起来就是「有节奏的噪声」——记下来，别再靠猜。
+                                    if (decoded.size % 2 != 0) oddChunks++
+                                }
+                                log(
+                                    "讯飞帧 code=$code status=${int(data, "status")} " +
+                                        "base64=${b64.length} → ${decoded?.size ?: -1} 字节"
+                                )
                             }
                             if ((int(data, "status") ?: -1) == 2) finished = true
                         }
                     }
-                    is Frame.Binary -> audio.write(packet.readBytes())
+                    is Frame.Binary -> {
+                        val chunk = packet.readBytes()
+                        audio.write(chunk)
+                        frames++
+                        minChunk = minOf(minChunk, chunk.size)
+                        maxChunk = maxOf(maxChunk, chunk.size)
+                        if (chunk.size % 2 != 0) oddChunks++
+                        log("讯飞二进制帧 ${chunk.size} 字节")
+                    }
                     else -> Unit
                 }
                 if (finished) break
@@ -157,7 +199,108 @@ internal object TTSProtocols {
         }
         val bytes = audio.toByteArray()
         if (bytes.isEmpty()) throw TTSException("讯飞返回空音频（请确认 AppID/APIKey/APISecret 与发音人权限）")
-        return bytes
+        log(
+            "讯飞完成 帧数=$frames PCM=${bytes.size} 字节（约 ${"%.2f".format(bytes.size / 32_000.0)} 秒）" +
+                " 帧长 ${if (frames == 0) 0 else minChunk}~$maxChunk 奇数长度帧=$oddChunks" +
+                " 峰值=${peakOfPcm16(bytes)} 跳变比=${jumpRatio(bytes)}" +
+                " 前16字节=${bytes.take(16).joinToString("") { "%02x".format(it) }}"
+        )
+        // 服务端回的是裸 PCM（s16le / 16kHz / 单声道），补个头才能交给 MediaPlayer。
+        return wavHeader(bytes.size) + bytes
+    }
+
+    /**
+     * 相邻样本平均跳变 / 峰值，用来判断字节序。
+     *
+     * 小端语音是平滑波形，相邻样本差得很小，比值一般 0.05～0.15；
+     * 如果服务端其实发的是大端而按小端读，每个样本的高低字节被颠倒，
+     * 波形会变成锯齿，比值直接冲到 0.5 以上——比「听着怪」这种话好判断得多。
+     */
+    private fun jumpRatio(pcm: ByteArray): String {
+        var peak = 0
+        var sum = 0L
+        var count = 0
+        var prev: Int? = null
+        var i = 0
+        while (i + 1 < pcm.size) {
+            val s = ((pcm[i + 1].toInt() shl 8) or (pcm[i].toInt() and 0xFF)).toShort().toInt()
+            val abs = if (s == Short.MIN_VALUE.toInt()) 32767 else kotlin.math.abs(s)
+            if (abs > peak) peak = abs
+            prev?.let { sum += kotlin.math.abs(s - it); count++ }
+            prev = s
+            i += 2
+        }
+        if (peak == 0 || count == 0) return "n/a"
+        return "%.3f".format(sum.toDouble() / count / peak)
+    }
+
+    /** 裸 PCM 的峰值，用来一眼看出「是近乎静音」还是「满量程削波」。 */
+    private fun peakOfPcm16(pcm: ByteArray): Int {
+        var peak = 0
+        var i = 0
+        while (i + 1 < pcm.size) {
+            val sample = ((pcm[i + 1].toInt() shl 8) or (pcm[i].toInt() and 0xFF)).toShort().toInt()
+            val abs = if (sample == Short.MIN_VALUE.toInt()) 32767 else kotlin.math.abs(sample)
+            if (abs > peak) peak = abs
+            i += 2
+        }
+        return peak
+    }
+
+    /** 响应 JSON 里的 audio 是整段 base64，原样打进日志会把有用的行全冲掉。 */
+    private fun safeJson(text: String): String =
+        AUDIO_FIELD.replace(text) { m -> "\"audio\":\"<${m.groupValues[1].length} 字符 base64>\"" }
+            .take(300)
+
+    private val AUDIO_FIELD = Regex("\"audio\"\\s*:\\s*\"([^\"]*)\"")
+
+    private fun log(message: String) {
+        // 单测跑在 JVM 上，android.util.Log 是 stub，不包住会抛「not mocked」
+        runCatching { android.util.Log.d(TAG, message) }
+    }
+
+    private const val TAG = "TTSSynth"
+
+    /**
+     * 给裸 PCM 套一个 44 字节的 WAV 头（RIFF/WAVE，PCM，16kHz 单声道 16bit）。
+     *
+     * WAV 规定所有多字节字段都是小端，所以这里逐字节手写——`ByteBuffer` 在单测里
+     * 也能用，但显式写下每个字段的偏移更好核对，出错时一眼看得出是哪一栏错了。
+     */
+    internal fun wavHeader(dataSize: Int): ByteArray {
+        val sampleRate = 16_000
+        val channels = 1
+        val bitsPerSample = 16
+        val byteRate = sampleRate * channels * bitsPerSample / 8
+        val blockAlign = channels * bitsPerSample / 8
+        val out = ByteArray(44)
+        fun ascii(offset: Int, text: String) {
+            text.forEachIndexed { i, c -> out[offset + i] = c.code.toByte() }
+        }
+        fun le32(offset: Int, value: Int) {
+            out[offset] = (value and 0xFF).toByte()
+            out[offset + 1] = (value shr 8 and 0xFF).toByte()
+            out[offset + 2] = (value shr 16 and 0xFF).toByte()
+            out[offset + 3] = (value shr 24 and 0xFF).toByte()
+        }
+        fun le16(offset: Int, value: Int) {
+            out[offset] = (value and 0xFF).toByte()
+            out[offset + 1] = (value shr 8 and 0xFF).toByte()
+        }
+        ascii(0, "RIFF")
+        le32(4, 36 + dataSize)   // 之后的全部字节数
+        ascii(8, "WAVE")
+        ascii(12, "fmt ")
+        le32(16, 16)             // fmt 块长度
+        le16(20, 1)              // 1 = PCM
+        le16(22, channels)
+        le32(24, sampleRate)
+        le32(28, byteRate)
+        le16(32, blockAlign)
+        le16(34, bitsPerSample)
+        ascii(36, "data")
+        le32(40, dataSize)
+        return out
     }
 
     /**

@@ -104,54 +104,133 @@ object VoiceCatalog {
     private val byProvider: Map<String, List<VoiceOption>> = mapOf(
         "minimax" to minimaxVoices,
         "custom" to minimaxVoices,
-        // xiaoyan/xiaolin/xiaomeng/xiaoyu 是「在线语音合成」最常用的四个发音人，
+        // xiaoyan/xiaoyu 是「在线语音合成」最常用的两个普通话发音人，
         // ais* 那几个是同一控制台里的其它发音人（需在页面里勾选开通）。
+        //
+        // xiaolin 曾经被标成「小林（男）」并放进男声组，是个实打实的事故：
+        // 讯飞官方发音人列表里它是**「晓琳，青年女声，台湾普通话」**，属于方言类。
+        // 结果就是「给剑道部主将配了个台湾腔女声」，听感上还会被误判成音频坏了。
+        // 方言类音色一律进 DIALECT 组（不按性别分）——找粤语的人不会先去翻女声列表。
         "iflytek" to listOf(
             VoiceOption(null, "默认音色"),
             VoiceOption("xiaoyan", "小燕（女）", VoiceGroup.FEMALE),
-            VoiceOption("xiaolin", "小林（男）", VoiceGroup.MALE),
-            VoiceOption("xiaomeng", "小梦（女）", VoiceGroup.FEMALE),
             VoiceOption("xiaoyu", "小宇（男）", VoiceGroup.MALE),
+            VoiceOption("xiaomeng", "小梦（女）", VoiceGroup.FEMALE),
             VoiceOption("aisjiuxu", "许久（男）", VoiceGroup.MALE),
             VoiceOption("aisxping", "小萍（女）", VoiceGroup.FEMALE),
             VoiceOption("aisjinger", "小婧（女）", VoiceGroup.FEMALE),
             VoiceOption("aisbabyxu", "许小宝（童）", VoiceGroup.CHILD),
+            VoiceOption("xiaolin", "晓琳（台湾腔女声）", VoiceGroup.DIALECT),
         ),
         // 火山：2.0（`_uranus_bigtts`）走 seed-tts-2.0，音质明显好于 1.0，是现在的默认。
         // 标「2.0 / 1.0」是因为两者计费商品不同、账号要分别开通，混在一起用户分不清为什么
         // 有的音色一点就报错。resource id 由协议层按音色 ID 后缀推断（见 TTSProtocols）。
         "volcengine" to listOf(
             VoiceOption(null, "默认音色"),
-            // ---- 2.0 ----
+            // ---- 2.0 · 通用场景 ----
+            // 2.0（`_uranus_bigtts`）走 seed-tts-2.0，音质明显好于 1.0，是现在的默认。
+            // 标「2.0 / 1.0」是因为两者是分开计费的商品，账号要分别开通，
+            // 混在一起用户分不清为什么有的音色一点就报「音色不存在」。resource id 由协议层
+            // 按音色 ID 后缀推断（见 TTSProtocols）。
             VoiceOption("zh_female_xiaohe_uranus_bigtts", "小何 2.0（通用女声）", VoiceGroup.FEMALE),
+            VoiceOption("zh_male_m191_uranus_bigtts", "云舟 2.0（通用男声）", VoiceGroup.MALE),
             VoiceOption("zh_female_vv_uranus_bigtts", "Vivi 2.0（多语种女声）", VoiceGroup.FEMALE),
+            VoiceOption("zh_male_taocheng_uranus_bigtts", "小天 2.0（年轻男声）", VoiceGroup.MALE),
+            VoiceOption("zh_male_liufei_uranus_bigtts", "刘飞 2.0", VoiceGroup.MALE),
+            VoiceOption("zh_female_sophie_uranus_bigtts", "魅力苏菲 2.0", VoiceGroup.FEMALE),
             VoiceOption("zh_female_qingxinnvsheng_uranus_bigtts", "清新女声 2.0", VoiceGroup.FEMALE),
             VoiceOption("zh_female_tianmeixiaoyuan_uranus_bigtts", "甜美小源 2.0", VoiceGroup.FEMALE),
             VoiceOption("zh_female_tianmeitaozi_uranus_bigtts", "甜美桃子 2.0", VoiceGroup.FEMALE),
+            VoiceOption("zh_female_tianmeiyueyue_uranus_bigtts", "甜美悦悦 2.0", VoiceGroup.FEMALE),
             VoiceOption("zh_female_shuangkuaisisi_uranus_bigtts", "爽快思思 2.0", VoiceGroup.FEMALE),
             VoiceOption("zh_female_linjianvhai_uranus_bigtts", "邻家女孩 2.0", VoiceGroup.FEMALE),
+            VoiceOption("zh_male_linjiananhai_uranus_bigtts", "邻家男孩 2.0", VoiceGroup.MALE),
             VoiceOption("zh_female_meilinvyou_uranus_bigtts", "魅力女友 2.0", VoiceGroup.FEMALE),
-            VoiceOption("zh_female_liuchangnv_uranus_bigtts", "流畅女声 2.0", VoiceGroup.FEMALE),
-            VoiceOption("zh_female_cancan_uranus_bigtts", "知性灿灿 2.0", VoiceGroup.FEMALE),
-            VoiceOption("zh_female_sajiaoxuemei_uranus_bigtts", "撒娇学妹 2.0", VoiceGroup.FEMALE),
-            VoiceOption("zh_female_kefunvsheng_uranus_bigtts", "暖阳女声 2.0", VoiceGroup.FEMALE),
-            VoiceOption("zh_female_jitangnv_uranus_bigtts", "鸡汤女 2.0", VoiceGroup.FEMALE),
+            VoiceOption("zh_female_roumeinvyou_uranus_bigtts", "柔美女友 2.0", VoiceGroup.FEMALE),
+            VoiceOption("zh_female_wenroumama_uranus_bigtts", "温柔妈妈 2.0", VoiceGroup.FEMALE),
+            VoiceOption("zh_female_wenroushunv_uranus_bigtts", "温柔淑女 2.0", VoiceGroup.FEMALE),
+            VoiceOption("zh_female_wenrouxiaoya_uranus_bigtts", "温柔小雅 2.0", VoiceGroup.FEMALE),
+            VoiceOption("zh_male_wenrouxiaoge_uranus_bigtts", "温柔小哥 2.0", VoiceGroup.MALE),
+            VoiceOption("zh_female_qinqienv_uranus_bigtts", "亲切女声 2.0", VoiceGroup.FEMALE),
+            VoiceOption("zh_female_kailangjiejie_uranus_bigtts", "开朗姐姐 2.0", VoiceGroup.FEMALE),
+            VoiceOption("zh_male_kailangxuezhang_uranus_bigtts", "开朗学长 2.0", VoiceGroup.MALE),
+            VoiceOption("zh_female_zhixingnv_uranus_bigtts", "知性女声 2.0", VoiceGroup.FEMALE),
+            VoiceOption("zh_male_ruyaqingnian_uranus_bigtts", "儒雅青年 2.0", VoiceGroup.MALE),
+            VoiceOption("zh_male_youyoujunzi_uranus_bigtts", "悠悠君子 2.0", VoiceGroup.MALE),
+            VoiceOption("zh_male_yangguangqingnian_uranus_bigtts", "阳光青年 2.0", VoiceGroup.MALE),
+            VoiceOption("zh_male_huolixiaoge_uranus_bigtts", "活力小哥 2.0", VoiceGroup.MALE),
+            VoiceOption("zh_male_kuailexiaodong_uranus_bigtts", "快乐小东 2.0", VoiceGroup.MALE),
+            VoiceOption("zh_male_qingshuangnanda_uranus_bigtts", "清爽男大 2.0", VoiceGroup.MALE),
+            VoiceOption("zh_male_fanjuanqingnian_uranus_bigtts", "反卷青年 2.0", VoiceGroup.MALE),
             VoiceOption("zh_female_gaolengyujie_uranus_bigtts", "高冷御姐 2.0", VoiceGroup.FEMALE),
-            VoiceOption("zh_female_yingyujiaoxue_uranus_bigtts", "Tina 老师 2.0", VoiceGroup.FEMALE),
-            VoiceOption("zh_male_m191_uranus_bigtts", "云舟 2.0（通用男声）", VoiceGroup.MALE),
-            VoiceOption("zh_male_taocheng_uranus_bigtts", "小天 2.0（年轻男声）", VoiceGroup.MALE),
-            VoiceOption("zh_male_liufei_uranus_bigtts", "刘飞 2.0", VoiceGroup.MALE),
-            VoiceOption("zh_male_sophie_uranus_bigtts", "魅力苏菲 2.0", VoiceGroup.MALE),
-            VoiceOption("zh_male_shaonianzixin_uranus_bigtts", "少年梓辛 2.0", VoiceGroup.MALE),
-            VoiceOption("zh_male_ruyayichen_uranus_bigtts", "儒雅逸辰 2.0", VoiceGroup.MALE),
+            VoiceOption("zh_male_gaolengchenwen_uranus_bigtts", "高冷沉稳 2.0", VoiceGroup.MALE),
+            VoiceOption("zh_male_aojiaobazong_uranus_bigtts", "傲娇霸总 2.0", VoiceGroup.MALE),
+            VoiceOption("zh_male_baqiqingshu_uranus_bigtts", "霸气青叔 2.0", VoiceGroup.MALE),
+            VoiceOption("zh_male_yuanboxiaoshu_uranus_bigtts", "渊博小叔 2.0", VoiceGroup.MALE),
+            VoiceOption("zh_male_dongfanghaoran_uranus_bigtts", "东方浩然 2.0", VoiceGroup.MALE),
+            VoiceOption("zh_female_gufengshaoyu_uranus_bigtts", "古风少御 2.0", VoiceGroup.FEMALE),
+            VoiceOption("zh_female_popo_uranus_bigtts", "婆婆 2.0", VoiceGroup.FEMALE),
+            VoiceOption("zh_female_qiaopinv_uranus_bigtts", "俏皮女声 2.0", VoiceGroup.FEMALE),
+            VoiceOption("zh_female_qingchezizi_uranus_bigtts", "清澈梓梓 2.0", VoiceGroup.FEMALE),
+            VoiceOption("zh_female_wenjingmaomao_uranus_bigtts", "文静毛毛 2.0", VoiceGroup.FEMALE),
+            VoiceOption("zh_female_xinlingjitang_uranus_bigtts", "心灵鸡汤 2.0", VoiceGroup.FEMALE),
+            VoiceOption("zh_female_jitangmei_uranus_bigtts", "鸡汤妹妹 2.0", VoiceGroup.FEMALE),
+            VoiceOption("zh_female_tiexinnvsheng_uranus_bigtts", "贴心女声 2.0", VoiceGroup.FEMALE),
+            VoiceOption("zh_female_mengyatou_uranus_bigtts", "萌丫头 2.0", VoiceGroup.FEMALE),
+            VoiceOption("zh_female_jiaochuannv_uranus_bigtts", "娇喘女声 2.0", VoiceGroup.FEMALE),
+            VoiceOption("zh_male_lanyinmianbao_uranus_bigtts", "懒音绵宝 2.0", VoiceGroup.MALE),
+            VoiceOption("zh_male_cixingjieshuonan_uranus_bigtts", "磁性解说男声 2.0", VoiceGroup.MALE),
+            VoiceOption("zh_male_jieshuoxiaoming_uranus_bigtts", "解说小明 2.0", VoiceGroup.MALE),
+            VoiceOption("zh_male_xuanyijieshuo_uranus_bigtts", "悬疑解说 2.0", VoiceGroup.MALE),
+            VoiceOption("zh_male_shengyeboke_uranus_bigtts", "深夜播客 2.0", VoiceGroup.MALE),
+            VoiceOption("zh_male_yizhipiannan_uranus_bigtts", "译制片男 2.0", VoiceGroup.MALE),
+            VoiceOption("zh_female_tvbnv_uranus_bigtts", "TVB 女声 2.0", VoiceGroup.FEMALE),
+            VoiceOption("zh_male_naiqimengwa_uranus_bigtts", "奶气萌娃 2.0", VoiceGroup.CHILD),
+            VoiceOption("zh_male_tiancaitongsheng_uranus_bigtts", "天才童声 2.0", VoiceGroup.CHILD),
+            VoiceOption("zh_male_liangsangmengzai_uranus_bigtts", "亮嗓萌仔 2.0", VoiceGroup.CHILD),
+
+            // ---- 2.0 · 角色扮演 ----
+            // 这一组是「有角色感」的声音：熊二、唐僧、猪八戒这类。做 AI 好友比通用音色有意思得多，
+            // 但风格强烈，配错人设会出戏——所以没混进上面的通用列表。
+            VoiceOption("zh_female_cancan_uranus_bigtts", "知性灿灿 2.0（角色扮演）", VoiceGroup.FEMALE),
+            VoiceOption("zh_female_sajiaoxuemei_uranus_bigtts", "撒娇学妹 2.0", VoiceGroup.FEMALE),
+            VoiceOption("zh_female_zhishuaiyingzi_uranus_bigtts", "直率英子 2.0", VoiceGroup.FEMALE),
+            VoiceOption("zh_female_lingling_uranus_bigtts", "玲玲姐姐 2.0", VoiceGroup.FEMALE),
+            VoiceOption("zh_female_linxiao_uranus_bigtts", "林潇 2.0", VoiceGroup.FEMALE),
+            VoiceOption("zh_female_chunribu_uranus_bigtts", "春日部姐姐 2.0", VoiceGroup.FEMALE),
+            VoiceOption("zh_female_ganmaodianyin_uranus_bigtts", "感冒电音姐姐 2.0", VoiceGroup.FEMALE),
+            VoiceOption("zh_female_nvleishen_uranus_bigtts", "女雷神 2.0", VoiceGroup.FEMALE),
+            VoiceOption("zh_female_yingtaowanzi_uranus_bigtts", "樱桃丸子 2.0", VoiceGroup.CHILD),
+            VoiceOption("zh_male_silang_uranus_bigtts", "四郎 2.0", VoiceGroup.MALE),
+            VoiceOption("zh_male_qingcang_uranus_bigtts", "擎苍 2.0", VoiceGroup.MALE),
+            VoiceOption("zh_male_xionger_uranus_bigtts", "熊二 2.0", VoiceGroup.MALE),
+            VoiceOption("zh_male_tangseng_uranus_bigtts", "唐僧 2.0", VoiceGroup.MALE),
+            VoiceOption("zh_male_zhuangzhou_uranus_bigtts", "庄周 2.0", VoiceGroup.MALE),
+            VoiceOption("zh_male_zhubajie_uranus_bigtts", "猪八戒 2.0", VoiceGroup.MALE),
+            VoiceOption("zh_male_lubanqihao_uranus_bigtts", "鲁班七号 2.0", VoiceGroup.CHILD),
+
+            // ---- 2.0 · 视频配音 ----
+            VoiceOption("zh_female_liuchangnv_uranus_bigtts", "流畅女声 2.0", VoiceGroup.FEMALE),
+            VoiceOption("zh_female_jitangnv_uranus_bigtts", "鸡汤女 2.0", VoiceGroup.FEMALE),
+            VoiceOption("zh_female_mizai_uranus_bigtts", "黑猫侦探社咪仔 2.0", VoiceGroup.FEMALE),
+            VoiceOption("zh_female_wuzetian_uranus_bigtts", "武则天 2.0", VoiceGroup.FEMALE),
+            VoiceOption("zh_female_gujie_uranus_bigtts", "顾姐 2.0", VoiceGroup.FEMALE),
+            VoiceOption("zh_female_shaoergushi_uranus_bigtts", "少儿故事 2.0", VoiceGroup.CHILD),
+            VoiceOption("zh_female_peiqi_uranus_bigtts", "佩奇猪 2.0", VoiceGroup.CHILD),
             VoiceOption("zh_male_sunwukong_uranus_bigtts", "猴哥 2.0", VoiceGroup.MALE),
             VoiceOption("zh_male_dayi_uranus_bigtts", "大壹 2.0", VoiceGroup.MALE),
-            VoiceOption("zh_female_xiaoxue_uranus_bigtts", "儿童绘本 2.0", VoiceGroup.CHILD),
-            VoiceOption("zh_female_peiqi_uranus_bigtts", "佩奇猪 2.0", VoiceGroup.CHILD),
-            VoiceOption("zh_female_mizai_uranus_bigtts", "黑猫侦探社咪仔 2.0", VoiceGroup.CHILD),
+            VoiceOption("zh_male_ruyayichen_uranus_bigtts", "儒雅逸辰 2.0", VoiceGroup.MALE),
+            VoiceOption("zh_male_guanggaojieshuo_uranus_bigtts", "广告解说 2.0", VoiceGroup.MALE),
+
+            // ---- 2.0 · 多语种 ----
             VoiceOption("en_male_tim_uranus_bigtts", "Tim（英文男声）", VoiceGroup.MALE),
             VoiceOption("en_female_dacey_uranus_bigtts", "Dacey（英文女声）", VoiceGroup.FEMALE),
             VoiceOption("en_female_stokie_uranus_bigtts", "Stokie（英文女声）", VoiceGroup.FEMALE),
+            VoiceOption("ja_female_bv024_uranus_bigtts", "Bonnie（日语女声）", VoiceGroup.FEMALE),
+            VoiceOption("ja_male_bv524_uranus_bigtts", "Ken（日语男声）", VoiceGroup.MALE),
+            VoiceOption("ko_male_bv545_uranus_bigtts", "Jay（韩语男声）", VoiceGroup.MALE),
+            VoiceOption("ko_female_bv546_uranus_bigtts", "Momo（韩语女声）", VoiceGroup.FEMALE),
+
             // ---- 1.0 ----
             VoiceOption("zh_female_qingxin", "清新女声（1.0）", VoiceGroup.FEMALE),
             VoiceOption("zh_male_zhixing", "知性男声（1.0）", VoiceGroup.MALE),

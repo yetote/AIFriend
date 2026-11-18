@@ -17,6 +17,13 @@ data class SpeechLine(
     val voiceId: String? = null,
     /** 该句用哪套 TTS 凭证（TTSProvider.id）；null 表示默认配置。 */
     val ttsConfigId: String? = null,
+    /**
+     * 说话人座位。null 表示系统侧的消息（上帝播报、投票汇总）。
+     *
+     * 牌桌靠它把「正在说话的人」亮起来——音色已经按座位带了，
+     * 但界面上还得知道此刻喇叭里是谁的声音。
+     */
+    val seat: Int? = null,
 )
 
 /**
@@ -73,6 +80,7 @@ class SpeechQueue {
                 speakable = candidate.speakable,
                 voiceId = candidate.voiceId,
                 ttsConfigId = candidate.ttsConfigId,
+                seat = candidate.seat,
             )
             cursor++
             pending.addLast(line)
@@ -135,4 +143,6 @@ data class SpeechCandidate(
     val speakable: Boolean,
     val voiceId: String? = null,
     val ttsConfigId: String? = null,
+    /** 说话人座位，供界面把「正在说话的人」亮起来；系统消息为 null。 */
+    val seat: Int? = null,
 )

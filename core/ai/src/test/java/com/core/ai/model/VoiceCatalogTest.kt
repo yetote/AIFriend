@@ -114,10 +114,25 @@ class VoiceCatalogTest {
 
     @Test
     fun `空分组不出现`() {
-        // 讯飞没有方言音色，面板上就不该多一个点进去什么都没有的「方言」分类
-        val groups = VoiceCatalog.grouped("iflytek").map { it.first }
-        assertFalse(groups.contains(VoiceGroup.DIALECT))
-        assertTrue(VoiceCatalog.grouped("tencent").map { it.first }.contains(VoiceGroup.DIALECT))
+        // 空组只会让面板上多一个点进去什么都没有的分类。逐家逐组检查，
+        // 别只盯讯飞——讯飞现在是有方言音色的（见下一条）。
+        listOf("minimax", "iflytek", "volcengine", "alibaba", "tencent").forEach { provider ->
+            VoiceCatalog.grouped(provider).forEach { (group, voices) ->
+                assertTrue("$provider 的「${group.label}」组是空的", voices.isNotEmpty())
+            }
+        }
+    }
+
+    @Test
+    fun `讯飞 xiaolin 是台湾腔女声，不许再标成男声`() {
+        // 官方发音人列表：xiaolin = 晓琳，青年女声，台湾普通话。
+        // 早先写成「小林（男）」放进男声组，批量建角色时给剑道部主将配了它，
+        // 听感就是台湾腔女声，被当成「TTS 音频乱码」查了两轮。
+        val voice = VoiceCatalog.forProvider("iflytek").first { it.id == "xiaolin" }
+
+        assertEquals(VoiceGroup.DIALECT, voice.group)
+        assertTrue(voice.label, voice.label.contains("台湾"))
+        assertFalse(voice.label, voice.label.contains("男"))
     }
 
     @Test
