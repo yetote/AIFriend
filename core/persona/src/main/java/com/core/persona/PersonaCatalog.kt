@@ -24,6 +24,19 @@ data class Persona(
     val category: PersonaCategory,
     val tags: List<String> = emptyList()
 ) {
+    /**
+     * 用来判断角色性别的那段文字。
+     *
+     * 把身份、设定、标签拼在一起，是因为性别线索可能出现在任何一处：
+     * 「名门千金」在 role 里，「三无少女」在 role 里，
+     * 而「千金」「少女」也可能只出现在 tags 里。
+     */
+    val descriptionText: String
+        get() = buildString {
+            append(role).append('\n').append(prompt)
+            if (tags.isNotEmpty()) append('\n').append(tags.joinToString("、"))
+        }
+
     /** 关键词匹配昵称、角色和标签，用于模板搜索。 */
     fun matches(keyword: String): Boolean {
         val key = keyword.trim().lowercase()

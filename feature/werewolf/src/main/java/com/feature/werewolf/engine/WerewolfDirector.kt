@@ -122,7 +122,12 @@ class WerewolfDirector(
     suspend fun nightWolfChat(table: WerewolfTable): WerewolfTable {
         val game = table.game
         if (game.phase != Phase.NIGHT_WOLF_CHAT) return table
-        val spoken = talkRound(table, note = null)
+        // 每晚随机指定一名头狼：没有指挥，四只狼就是四份互不相干的上下文，
+        // 夜里各说各的、白天各跳各的。随机而不是固定给某个座位（第一个发言的、
+        // 或者模型最强的），是为了让每局都有变化，也避免永远有人背这个角色。
+        val head = game.aliveWolves().randomOrNull(random)?.seat
+        val prepared = if (head == null) table else table.copy(game = game.copy(nightHead = head))
+        val spoken = talkRound(prepared, note = null)
         return spoken.copy(game = spoken.game.beginWolfVote())
     }
 
@@ -224,9 +229,19 @@ class WerewolfDirector(
         val wolves = game.aliveWolves().sortedBy { it.seat }
         if (wolves.isEmpty()) return table
 
+        // 发言顺序：**头狼先**，其余按座位。头狼是这一夜的指挥，
+        // 他先说战术，后面的人才有「执行还是反对」的对象——顺序反了，
+        // 先发言的人只能说自己的计划，后发言的人听到一堆互不相干的方案。
+        val head = game.nightHead
+        val ordered = if (head == null) {
+            wolves
+        } else {
+            wolves.sortedBy { if (it.seat == head) 0 else 1 }
+        }
+
         val audience = wolves.map { it.seat }.toSet()
         var current = table
-        wolves.forEachIndexed { index, wolf ->
+        ordered.forEachIndexed { index, wolf ->
             onProgress(
                 WerewolfProgress(
                     day = game.day,
@@ -237,13 +252,18 @@ class WerewolfDirector(
                     note = note,
                 )
             )
+            val isHead = wolf.seat == head
             val text = askSpeech(
                 current,
                 wolf.seat,
-                task = if (note == null) {
-                    "现在只有你们狼人醒着。说一句你想刀谁、为什么。"
-                } else {
-                    "上一轮你们指了不同的人。说清楚这轮想刀谁，别再分票。"
+                task = when {
+                    isHead -> "你是今晚的头狼（狼队指挥），你先说。安排今晚的战术：" +
+                        "刀谁、为什么；白天谁跳预言家、谁负责冲锋、谁负责划水。" +
+                        "说成一条能执行的方案，别写成各说各的。"
+                    note == null -> "头狼已经安排好了战术（见上文）。" +
+                        "你要么照着执行并补一句理由，要么明确反对并给出你的刀口——" +
+                        "别说「同意」「都行」这种空话。"
+                    else -> "上一轮你们指了不同的人。说清楚这轮想刀谁，别再分票。"
                 },
             )
             current = current.append(
@@ -257,6 +277,12 @@ class WerewolfDirector(
                     audience = audience,
                 )
             )
+            // 头狼的战术原文单独存一份。白天的上下文只喂公开消息，
+            // 夜聊在白天是看不见的——不存这一份，昨晚的安排等于没说过，
+            // 白天每只狼还是各跳各的。
+            if (isHead) {
+                current = current.copy(game = current.game.copy(wolfPlan = text.text))
+            }
             // 说一句推一次：界面上一个一个冒出来，看得出来现在轮到谁在想
             onTranscript(current)
         }

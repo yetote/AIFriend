@@ -2,6 +2,7 @@ package com.feature.agent.batch
 
 import com.core.ai.model.ModelCost
 import com.core.ai.model.ModelCosts
+import com.core.ai.model.VoiceGroup
 import com.core.persona.Persona
 import com.core.persona.PersonaCategory
 import com.feature.agent.model.Provider
@@ -388,6 +389,69 @@ class BatchRosterTest {
         prompt = "设定",
         category = PersonaCategory.CHAT
     )
+
+    @Test
+    fun `音色按角色性别分配`() {
+        // 「大小姐」配一把男声：用户一进语音就听出来，而列表上完全看不出问题。
+        // 音色目录本来就按性别分组，所以分配时要按分组挑。
+        val voices = listOf("male-1", "male-2", "female-1", "female-2")
+        val groups = mapOf(
+            "male-1" to VoiceGroup.MALE,
+            "male-2" to VoiceGroup.MALE,
+            "female-1" to VoiceGroup.FEMALE,
+            "female-2" to VoiceGroup.FEMALE,
+        )
+        val plan = BatchRoster.plan(
+            personas = listOf(persona("p1", "大小姐"), persona("p2", "审哥")),
+            count = 2,
+            providers = listOf(provider("DeepSeek", listOf("deepseek-chat"))),
+            modelsOf = { listOf("deepseek-chat") },
+            voicesOf = { voices },
+            voiceGroupOf = { _, id -> groups[id] },
+            ttsIds = setOf("minimax"),
+            random = Random(7),
+        )
+
+        val lady = plan.first { it.name.startsWith("大小姐") }
+        val bro = plan.first { it.name.startsWith("审哥") }
+        assertTrue("女角色要配女声，实际 ${lady.voiceId}", lady.voiceId!!.startsWith("female"))
+        assertTrue("男角色要配男声，实际 ${bro.voiceId}", bro.voiceId!!.startsWith("male"))
+    }
+
+    @Test
+    fun `没有同性别音色时退回全池，而不是不配音`() {
+        // 只有男声可选时，给一把男声也好过没有声音
+        val plan = BatchRoster.plan(
+            personas = listOf(persona("p1", "大小姐")),
+            count = 1,
+            providers = listOf(provider("DeepSeek", listOf("deepseek-chat"))),
+            modelsOf = { listOf("deepseek-chat") },
+            voicesOf = { listOf("male-1") },
+            voiceGroupOf = { _, _ -> VoiceGroup.MALE },
+            ttsIds = setOf("minimax"),
+            random = Random(7),
+        )
+
+        assertEquals("male-1", plan.single().voiceId)
+    }
+
+    @Test
+    fun `判断不出性别时不强行挑组`() {
+        // 工具型角色（记账管家、面试官）本来就没有性别，
+        // 硬猜只会配错，保持原来的随机分配
+        val plan = BatchRoster.plan(
+            personas = listOf(persona("p1", "账本")),
+            count = 1,
+            providers = listOf(provider("DeepSeek", listOf("deepseek-chat"))),
+            modelsOf = { listOf("deepseek-chat") },
+            voicesOf = { listOf("male-1", "female-1") },
+            voiceGroupOf = { _, id -> if (id == "male-1") VoiceGroup.MALE else VoiceGroup.FEMALE },
+            ttsIds = setOf("minimax"),
+            random = Random(7),
+        )
+
+        assertTrue(plan.single().voiceId in listOf("male-1", "female-1"))
+    }
 
     private fun provider(brand: String, models: List<String>) = Provider(
         brand = brand,

@@ -52,6 +52,7 @@ import com.ui.werewolf.data.UIWerewolfLineKind
 import com.ui.werewolf.data.UIWerewolfLive
 import com.ui.werewolf.data.UIWerewolfMode
 import com.ui.werewolf.data.UIWerewolfNightReport
+import com.ui.werewolf.data.UIWerewolfNightDetail
 import com.ui.werewolf.data.UIWerewolfPreset
 import com.ui.werewolf.data.UIWerewolfRecord
 import com.ui.werewolf.data.UIWerewolfReview
@@ -466,6 +467,18 @@ private fun relativeTime(at: Long): String {
 }
 
 /**
+ * 取一句话的头：到第一个句号为止。
+ *
+ * 夜间行动的原文是「我守 5 号。他昨晚发言少。」这种「结论 + 理由」的结构，
+ * 摘要只取结论那一句，理由留给下面的原话——两处都写，摘要就变长了。
+ */
+private fun headSentence(text: String, limit: Int = 48): String {
+    val trimmed = text.trim()
+    val head = trimmed.substringBefore('。').trim().ifEmpty { trimmed }
+    return if (head.length > limit) head.take(limit) + "…" else head
+}
+
+/**
  * 把一局结束的局面翻成复盘页。
  *
  * 这里可以放心地把所有私有信息都摊开：局已经完了，看不懂的部分唯一的意义就是「原来是这样」。
@@ -644,6 +657,46 @@ internal fun WerewolfUiState.toReview(
         )
     }
 
+    // 逐夜明细：夜里每个人做了什么、为什么。
+    //
+    // 数据来自 transcript 里的**夜间阶段消息**，不是从状态反推：
+    // 引擎记下的原话里就有「我守 5 号」「查验 2 号」和它们的理由，
+    // 反推只能得到「守了 5 号」，理由那一半就没了。
+    val nightPhases = setOf(
+        Phase.NIGHT_GUARD,
+        Phase.NIGHT_WOLF_CHAT,
+        Phase.NIGHT_WOLF,
+        Phase.NIGHT_SEER,
+        Phase.NIGHT_WITCH,
+    )
+    val nightDetails = table.transcript
+        .filter { it.phase in nightPhases }
+        .groupBy { it.day }
+        .toSortedMap()
+        .map { (day, messages) ->
+            fun firstOf(phase: Phase, kind: MessageKind? = null): String? = messages
+                .firstOrNull { it.phase == phase && (kind == null || it.kind == kind) }
+                ?.text
+                ?.let(::headSentence)
+
+            val seerCheck = game.seerChecks.firstOrNull { it.day == day }
+            UIWerewolfNightDetail(
+                day = day,
+                wolfPlan = firstOf(Phase.NIGHT_WOLF),
+                guardPlan = firstOf(Phase.NIGHT_GUARD),
+                seerPlan = firstOf(Phase.NIGHT_SEER)?.let { head ->
+                    if (seerCheck == null) {
+                        head
+                    } else {
+                        "$head → " + if (seerCheck.isWerewolf) "狼人" else "好人"
+                    }
+                },
+                witchPlan = firstOf(Phase.NIGHT_WITCH),
+                lines = messages.mapNotNull { toSpeechLine(it) },
+            )
+        }
+        .filter { it.lines.isNotEmpty() }
+
     val dialogues = table.transcript
         .groupBy { it.day }
         .toSortedMap()
@@ -676,6 +729,7 @@ internal fun WerewolfUiState.toReview(
         groups = groups,
         days = days,
         nights = nights,
+        nightDetails = nightDetails,
         dialogues = dialogues,
         checks = game.seerChecks.map { UIWerewolfCheckReport(it.day, it.targetSeat, it.isWerewolf) },
         // 每局至少有一夜，一条夜间记录都没有只可能是旧档

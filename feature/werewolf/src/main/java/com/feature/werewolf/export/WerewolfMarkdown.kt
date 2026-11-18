@@ -75,6 +75,31 @@ object WerewolfMarkdown {
             }
         }
 
+        if (review.nightDetails.isNotEmpty()) {
+            append("\n## 夜间明细\n")
+            append("\n> 夜里每个人做了什么、为什么——这些内容在局中只有当事人知道。\n")
+            review.nightDetails.forEach { detail ->
+                append("\n### 第 ").append(detail.day).append(" 夜\n\n")
+                listOfNotNull(
+                    detail.wolfPlan?.let { "狼队" to it },
+                    detail.guardPlan?.let { "守卫" to it },
+                    detail.seerPlan?.let { "预言家" to it },
+                    detail.witchPlan?.let { "女巫" to it },
+                ).forEach { (who, what) ->
+                    append("- **").append(who).append("**：").append(what).append("\n")
+                }
+                if (detail.lines.isNotEmpty()) {
+                    append("\n")
+                    detail.lines.forEach { line ->
+                        append("**").append(line.speaker).append("**")
+                        line.roleLabel?.let { append("（").append(it).append("）") }
+                        append(" · ").append(line.label).append("\n")
+                        quote(line.text)
+                    }
+                }
+            }
+        }
+
         if (review.checks.isNotEmpty()) {
             append("\n## 预言家查验\n\n")
             review.checks.forEach { check ->

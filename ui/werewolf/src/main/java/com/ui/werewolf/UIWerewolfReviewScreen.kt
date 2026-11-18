@@ -56,6 +56,7 @@ import com.ui.werewolf.data.UIWerewolfDayReport
 import com.ui.werewolf.data.UIWerewolfDialogueDay
 import com.ui.werewolf.data.UIWerewolfGroupKind
 import com.ui.werewolf.data.UIWerewolfNightReport
+import com.ui.werewolf.data.UIWerewolfNightDetail
 import com.ui.werewolf.data.UIWerewolfReview
 import com.ui.werewolf.data.UIWerewolfRevealedSeat
 import com.ui.werewolf.data.UIWerewolfRoleGroup
@@ -141,6 +142,13 @@ fun UIWerewolfReviewScreen(
                 if (review.nights.isNotEmpty()) {
                     item { SectionTitle(title = "夜间行动", hint = "当时只有上帝知道") }
                     item { NightCard(review.nights) }
+                }
+
+                if (review.nightDetails.isNotEmpty()) {
+                    item { SectionTitle(title = "夜间明细", hint = "谁做了什么、为什么") }
+                    review.nightDetails.forEach { detail ->
+                        item(key = "night-detail-${detail.day}") { NightDetailCard(detail) }
+                    }
                 }
 
                 if (review.checks.isNotEmpty()) {
@@ -547,6 +555,87 @@ private fun BallotChip(ballot: UIWerewolfBallotLine) {
 // ---------------------------------------------------------------------------
 // 夜间
 // ---------------------------------------------------------------------------
+
+/**
+ * 一夜的明细卡。
+ *
+ * 上面四行是摘要（狼队定刀 / 守卫 / 预言家 / 女巫），不空才显示；
+ * 下面折起来的「夜里他们说了什么」是原话，默认收起——
+ * 一局十几夜，每夜好几句，全摊开复盘页就翻不动了。
+ */
+@Composable
+private fun NightDetailCard(detail: UIWerewolfNightDetail) {
+    var expanded by rememberSaveable(detail.day) { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .uiCard(shape = RoundedCornerShape(UIRadiusCard), elevation = 0.dp)
+            .padding(horizontal = 14.dp, vertical = 10.dp)
+    ) {
+        Text(
+            text = "第 ${detail.day} 夜",
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = ReviewTitle
+        )
+        listOfNotNull(
+            detail.wolfPlan?.let { "狼队" to it },
+            detail.guardPlan?.let { "守卫" to it },
+            detail.seerPlan?.let { "预言家" to it },
+            detail.witchPlan?.let { "女巫" to it },
+        ).forEach { (who, what) ->
+            Row(
+                modifier = Modifier.padding(top = 4.dp),
+                verticalAlignment = Alignment.Top
+            ) {
+                Text(
+                    text = who,
+                    modifier = Modifier.width(40.dp),
+                    fontSize = 10.sp,
+                    color = ReviewDim
+                )
+                Text(
+                    text = what,
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp,
+                    color = ReviewBody
+                )
+            }
+        }
+
+        if (detail.lines.isNotEmpty()) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = if (expanded) "收起夜里的话" else "夜里他们说了什么（${detail.lines.size} 条）",
+                modifier = Modifier.clickable { expanded = !expanded },
+                fontSize = 10.sp,
+                color = GodBlue
+            )
+            if (expanded) {
+                detail.lines.forEach { line ->
+                    Column(modifier = Modifier.padding(top = 6.dp)) {
+                        Text(
+                            text = buildString {
+                                append(line.speaker)
+                                line.roleLabel?.let { append("（").append(it).append("）") }
+                                append(" · ").append(line.label)
+                            },
+                            fontSize = 10.sp,
+                            color = ReviewDim
+                        )
+                        Text(
+                            text = line.text,
+                            fontSize = 11.sp,
+                            lineHeight = 16.sp,
+                            color = ReviewBody
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
 
 @Composable
 private fun NightCard(nights: List<UIWerewolfNightReport>) {

@@ -2,6 +2,9 @@ package com.feature.agent.batch
 
 import com.core.ai.model.ModelCost
 import com.core.ai.model.ModelCosts
+import com.core.ai.model.VoiceGroup
+import com.core.persona.CharacterGender
+import com.core.persona.GenderGuess
 import com.core.persona.Persona
 import com.feature.agent.model.Provider
 import kotlin.random.Random
@@ -47,6 +50,14 @@ object BatchRoster {
         modelsOf: (String) -> List<String>,
         /** 某 TTS 服务的音色池，**不含**「跟随默认」那一项。 */
         voicesOf: (String) -> List<String>,
+        /**
+         * 某个音色的分组（女声 / 男声 / 童声…）。返回 null 表示这个音色没有分组信息。
+         *
+         * 有了它才能按性别配音色：音色目录里女声男声是分开的，
+         * 不看分组就随机挑，「大小姐」会配一把男声——用户在语音里一听就出戏，
+         * 而列表上完全看不出来哪里不对。
+         */
+        voiceGroupOf: (ttsId: String, voiceId: String) -> VoiceGroup? = { _, _ -> null },
         /** 允许分配音色的 TTS 服务（已配凭证的）。 */
         ttsIds: Set<String>,
         /** 已有好友的名字：新角色不能和它们重名。 */
@@ -92,7 +103,18 @@ object BatchRoster {
 
             val ttsId = ttsOrder.takeIf { it.isNotEmpty() }?.let { it[index % it.size] }
             val voicePool = ttsId?.let { voicesOf(it) }.orEmpty()
-            val voice = pickFree(voicePool, usedVoices, { "$ttsId|$it" }, random)
+            // 按性别挑音色：先在同性别分组里挑，挑不到再退回全池。
+            // 退回而不是报错——没有女声可选时，给一把男声也好过没有声音。
+            val preferred = when (GenderGuess.of(persona.name, persona.descriptionText)) {
+                CharacterGender.FEMALE -> VoiceGroup.FEMALE
+                CharacterGender.MALE -> VoiceGroup.MALE
+                CharacterGender.UNKNOWN -> null
+            }
+            val matched = preferred?.let { group ->
+                ttsId?.let { id -> voicePool.filter { voiceGroupOf(id, it) == group } }
+            }.orEmpty()
+            val pool = matched.ifEmpty { voicePool }
+            val voice = pickFree(pool, usedVoices, { "$ttsId|$it" }, random)
 
             BatchSlot(
                 persona = persona,

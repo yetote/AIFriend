@@ -34,6 +34,22 @@ data class WerewolfGame(
     /** 本夜守卫守了谁。null 表示空守。 */
     val tonightGuardedSeat: Int? = null,
     /**
+     * 头狼昨晚定的战术原文（刀口、白天谁跳预言家、谁冲锋）。
+     *
+     * 必须单独记一份：白天的上下文只喂公开消息，夜聊原文在白天是看不到的
+     * （不然狼人会在白天当众说漏「昨夜我们」）。不存一份的话，战术安排等于没说过——
+     * 白天每只狼还是各跳各的。
+     */
+    val wolfPlan: String? = null,
+    /**
+     * 本夜的头狼（狼队指挥）。
+     *
+     * 每晚随机指定，由他第一个发言并安排战术（刀口、谁跳预言家、谁冲锋）。
+     * 没有它的话，四只狼是四份互不相干的上下文，夜里说出来的话必然各说各话，
+     * 白天各跳各的，一盘散沙。null 表示本夜还没指定（还没进入夜谈）。
+     */
+    val nightHead: Int? = null,
+    /**
      * 上一夜守卫守的人。
      *
      * 守卫不能连续两晚守同一个人，这个限制只能靠「记住昨夜」实现。放在状态里而不是
@@ -913,6 +929,11 @@ data class WerewolfGame(
         wolfVotes = emptyMap(),
         wolfVoteRound = 1,
         tonightVictim = null,
+        // 头狼每晚重选：上一夜的头狼下一夜就该换人，否则他一个人扛所有战术，
+        // 其他狼永远只是附和
+        nightHead = null,
+        // 上一夜的战术到这儿就作废了，新的一夜由新的头狼重排
+        wolfPlan = null,
         voteRound = 1,
         voteCandidates = null,
         ballots = emptyList(),

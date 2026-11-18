@@ -38,7 +38,7 @@ import kotlinx.serialization.json.Json
 object WerewolfSnapshot {
 
     /** 当前存档格式版本。改动 DTO 结构时必须加一。 */
-    const val VERSION = 6
+    const val VERSION = 8
 
     private val json = Json {
         ignoreUnknownKeys = true   // 旧档多出来的字段不该让新版本读不出来
@@ -85,6 +85,10 @@ internal data class TableSnapshot(
     /** v3 起：本夜守卫守的人，以及上一夜守的人（用于「不能连守」）。 */
     val tonightGuardedSeat: Int? = null,
     val lastGuardedSeat: Int? = null,
+    /** v8 起：本夜的头狼（狼队指挥）。旧档没有这一项。 */
+    val nightHead: Int? = null,
+    /** v8 起：头狼定的战术原文。旧档没有这一项。 */
+    val wolfPlan: String? = null,
     /** v3 起：白痴是否已翻牌。 */
     val idiotRevealed: Boolean = false,
     val seerChecks: List<CheckSnapshot> = emptyList(),
@@ -211,7 +215,7 @@ internal data class MessageSnapshot(
     val text: String,
     /** null 表示全员可见。 */
     val audience: List<Int>? = null,
-    /** v7 起：发言时的思考过程，只在复盘展示。旧档没有，默认空。 */
+    /** v6 起：发言时的思考过程，只在复盘展示。旧档没有，默认空。 */
     val reasoning: String = "",
 )
 
@@ -248,6 +252,8 @@ internal fun WerewolfTable.toSnapshot(): TableSnapshot {
         tonightVictim = game.tonightVictim,
         tonightGuardedSeat = game.tonightGuardedSeat,
         lastGuardedSeat = game.lastGuardedSeat,
+        nightHead = game.nightHead,
+        wolfPlan = game.wolfPlan,
         idiotRevealed = game.idiotRevealed,
         seerChecks = game.seerChecks.map { CheckSnapshot(it.day, it.targetSeat, it.isWerewolf) },
         voteRound = game.voteRound,
@@ -356,6 +362,8 @@ internal fun TableSnapshot.toTable(): WerewolfTable = WerewolfTable(
         tonightVictim = tonightVictim,
         tonightGuardedSeat = tonightGuardedSeat,
         lastGuardedSeat = lastGuardedSeat,
+        nightHead = nightHead,
+        wolfPlan = wolfPlan,
         idiotRevealed = idiotRevealed,
         seerChecks = seerChecks.map { SeerCheck(it.day, it.targetSeat, it.isWerewolf) },
         voteRound = voteRound,

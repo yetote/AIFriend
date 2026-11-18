@@ -5,6 +5,7 @@ import com.ui.werewolf.data.UIWerewolfCheckReport
 import com.ui.werewolf.data.UIWerewolfDayReport
 import com.ui.werewolf.data.UIWerewolfDialogueDay
 import com.ui.werewolf.data.UIWerewolfGroupKind
+import com.ui.werewolf.data.UIWerewolfNightDetail
 import com.ui.werewolf.data.UIWerewolfNightReport
 import com.ui.werewolf.data.UIWerewolfReview
 import com.ui.werewolf.data.UIWerewolfRevealedSeat
@@ -74,6 +75,26 @@ class WerewolfMarkdownTest {
             ),
         ),
         checks = listOf(UIWerewolfCheckReport(day = 1, target = 3, isWolf = true)),
+        nightDetails = listOf(
+            UIWerewolfNightDetail(
+                day = 1,
+                wolfPlan = "我们定刀 5 号",
+                guardPlan = "我守 5 号",
+                seerPlan = "查验 5 号 → 狼人",
+                witchPlan = "我用解药",
+                lines = listOf(
+                    UIWerewolfSpeechLine(
+                        seat = 3,
+                        speaker = "3 号 张三",
+                        label = "狼人夜聊",
+                        text = "刀 5 号。",
+                        secret = true,
+                        roleLabel = "狼人",
+                        roleKind = UIWerewolfGroupKind.WOLF,
+                    ),
+                ),
+            ),
+        ),
         dialogues = listOf(
             UIWerewolfDialogueDay(
                 day = 1,
@@ -129,6 +150,11 @@ class WerewolfMarkdownTest {
             "## 夜间行动",
             "| 夜 | 狼刀 | 守卫 | 女巫 | 结果 |",
             "| 第 1 夜 | 狼刀 6 号 | 守卫守 6 号 | — | 平安夜 |",
+            "## 夜间明细",
+            "- **狼队**：我们定刀 5 号",
+            "- **守卫**：我守 5 号",
+            "- **预言家**：查验 5 号 → 狼人",
+            "- **女巫**：我用解药",
             "## 预言家查验",
             "- 第 1 夜 · 验 3 号 → 狼人",
             "## 逐日对话",

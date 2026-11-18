@@ -170,6 +170,59 @@ class WerewolfReviewMappingTest {
     }
 
     @Test
+    fun `复盘里有每一夜的明细：谁做了什么、为什么`() {
+        // 只给结果（「狼刀 5 号」）的复盘等于一张死亡表，看不出这一局输在哪一步。
+        // 明细要来自夜间阶段消息的**原话**，理由那一半不能丢。
+        val game = playOut(WerewolfGame.deal(WerewolfConfig(), roster(8), Random(9)), Random(23))
+        val table = WerewolfTable(
+            game = game,
+            transcript = listOf(
+                WerewolfMessage(
+                    day = 1, phase = Phase.NIGHT_WOLF, seat = 3, kind = MessageKind.WOLF_CHAT,
+                    text = "我们定刀 5 号。5 号是女巫，昨晚交了解药。",
+                    audience = setOf(3, 4),
+                ),
+                WerewolfMessage(
+                    day = 1, phase = Phase.NIGHT_GUARD, seat = 6, kind = MessageKind.NIGHT_ACT,
+                    text = "我守 5 号。他昨晚发言少。",
+                    audience = setOf(6),
+                ),
+                WerewolfMessage(
+                    day = 1, phase = Phase.NIGHT_SEER, seat = 2, kind = MessageKind.NIGHT_ACT,
+                    text = "查验 5 号。他发言不像好人。",
+                    audience = setOf(2),
+                ),
+                WerewolfMessage(
+                    day = 1, phase = Phase.NIGHT_WITCH, seat = 7, kind = MessageKind.NIGHT_ACT,
+                    text = "我用解药。救下 5 号。",
+                    audience = setOf(7),
+                ),
+            ),
+        )
+        val review = WerewolfUiState(table = table, finished = true)
+            .toReview(humanSeat = 1, avatars = emptyMap())
+
+        assertNotNull(review)
+        val detail = review!!.nightDetails.single()
+        assertEquals(1, detail.day)
+        assertTrue("狼队定刀：${detail.wolfPlan}", detail.wolfPlan!!.contains("我们定刀 5 号"))
+        assertEquals("我守 5 号", detail.guardPlan)
+        assertTrue("预言家验人：${detail.seerPlan}", detail.seerPlan!!.contains("查验 5 号"))
+        assertTrue("女巫用药：${detail.witchPlan}", detail.witchPlan!!.contains("我用解药"))
+        // 原话也要留着，理由在摘要之外
+        assertEquals(4, detail.lines.size)
+        assertTrue(detail.lines.any { it.text.contains("5 号是女巫") })
+    }
+
+    @Test
+    fun `没有夜间消息时不要摆空明细`() {
+        val game = playOut(WerewolfGame.deal(WerewolfConfig(), roster(8), Random(5)), Random(19))
+        val review = reviewOf(game, humanSeat = null)
+        assertNotNull(review)
+        assertTrue(review!!.nightDetails.isEmpty())
+    }
+
+    @Test
     fun `复盘把局内原话按天摊开，密谈不混进公开部分`() {
         val game = playOut(WerewolfGame.deal(WerewolfConfig(), roster(8), Random(9)), Random(23))
         val table = WerewolfTable(

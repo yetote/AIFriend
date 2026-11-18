@@ -9,6 +9,7 @@ import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfRole
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -120,16 +121,19 @@ class WerewolfProgressTest {
     }
 
     @Test
-    fun `商议按座位报进度，一个一个来`() = runBlocking {
+    fun `商议按座位报进度，头狼先来`() = runBlocking {
         // 和定刀的「开始 + 完成」不同：商议是串行的，每只狼开口时报一次，
         // 界面才能显示「等 2 号说话」而不是干等一圈
         val events = mutableListOf<WerewolfProgress>()
         val agents = (1..3).associate { it to SeatAgent(ConstAI(), "test") }
         val director = WerewolfDirector(agents, onProgress = { events += it })
 
-        director.nightWolfChat(WerewolfTable(standard9()))
+        val result = director.nightWolfChat(WerewolfTable(standard9()))
 
-        assertEquals(listOf(1, 2, 3), events.map { it.seat })
+        val head = result.game.nightHead
+        assertNotNull("每晚都要指定头狼", head)
+        assertEquals("头狼先报进度", head, events.first().seat)
+        assertEquals("其余按座位", listOf(1, 2, 3).filter { it != head }, events.drop(1).map { it.seat })
         assertTrue("都属于商议阶段", events.all { it.phase == Phase.NIGHT_WOLF_CHAT })
     }
 

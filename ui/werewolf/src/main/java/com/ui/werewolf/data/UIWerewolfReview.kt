@@ -25,6 +25,14 @@ data class UIWerewolfReview(
     /** 逐夜行动，按夜正序。 */
     val nights: List<UIWerewolfNightReport> = emptyList(),
     /**
+     * 逐夜明细：那一夜**每个人做了什么、为什么**。
+     *
+     * [nights] 给的是结果（「狼刀 6 号」「平安夜」），这里给的是过程：
+     * 狼队为什么刀他、守卫守了谁、预言家验出了什么、女巫用没用药。
+     * 只看结果的复盘等于一张死亡表，看不出这一局输在哪一步。
+     */
+    val nightDetails: List<UIWerewolfNightDetail> = emptyList(),
+    /**
      * 逐日对话，按天正序。
      *
      * 这是唯一按「谁说了什么」组织的部分：票型和夜间行动回答「结果怎么来的」，
@@ -102,6 +110,29 @@ data class UIWerewolfNightReport(
     val witchLine: String? = null,
     /** 「6 号出局」/「平安夜」。 */
     val deathLine: String,
+)
+
+/**
+ * 一夜的明细。
+ *
+ * 摘要（[wolfPlan] 等）是这一夜发生的事，一句一句；[lines] 是原话——
+ * 狼队怎么商量的、守卫为什么守那个人、预言家为什么验他。
+ *
+ * 摘要直接取原话的第一句，不重新概括：复盘最怕「换个说法」，
+ * 概括会把「他刀 2 号是因为 2 号昨晚发言少」压成「刀 2 号」，理由就丢了。
+ */
+data class UIWerewolfNightDetail(
+    val day: Int,
+    /** 「我们定刀 6 号」。没有狼队参与（没有存活狼）时为 null。 */
+    val wolfPlan: String? = null,
+    /** 「我守 5 号」。 */
+    val guardPlan: String? = null,
+    /** 「查验 2 号」+ 验人结论。 */
+    val seerPlan: String? = null,
+    /** 「我用解药」。 */
+    val witchPlan: String? = null,
+    /** 这一夜的原话：夜聊与各人的夜间行动理由。 */
+    val lines: List<UIWerewolfSpeechLine> = emptyList(),
 )
 
 /** 一次查验。复盘时它从私有信息变成公开信息，这正是复盘最有意思的部分。 */

@@ -250,7 +250,7 @@ class WerewolfDirectorTest {
     }
 
     @Test
-    fun `狼人商议按座位串行，且只给狼人看`() = runBlocking {
+    fun `狼人商议头狼先说，其余按座位，且只给狼人看`() = runBlocking {
         val director = WerewolfDirector(
             agentsOf(1 to AutoAI(), 2 to AutoAI(), 3 to AutoAI())
         )
@@ -261,25 +261,65 @@ class WerewolfDirectorTest {
         assertEquals("商议完自动进入下刀", Phase.NIGHT_WOLF, result.game.phase)
         assertEquals(1, result.game.wolfVoteRound)
 
+        val head = result.game.nightHead
+        assertNotNull("每晚都要指定头狼", head)
         val wolves = result.transcriptFor(1).filter { it.kind == MessageKind.WOLF_CHAT }
-        assertEquals("三只狼各说一句", listOf(1, 2, 3), wolves.map { it.seat })
+        assertEquals("三只狼各说一句", 3, wolves.size)
+        assertEquals("头狼第一个发言", head, wolves.first().seat)
+        assertEquals(
+            "其余按座位",
+            listOf(1, 2, 3).filter { it != head },
+            wolves.drop(1).map { it.seat },
+        )
         assertEquals("好人一条都看不到", 0, result.transcriptFor(4).count { it.kind == MessageKind.WOLF_CHAT })
     }
 
     @Test
-    fun `商议是串行的，后说的狼能看见队友已经说了什么`() = runBlocking {
+    fun `商议是串行的：头狼先说，后面的狼看得见他的战术`() = runBlocking {
         // 这条锁的是「商量」这件事本身：并发收集的话每只狼都在对着空白表态，
-        // 各说各的，等于没商量，第一夜就必然分票
-        val seat1 = ScriptedAI(listOf("我倾向 7 号。"))
-        val seat2 = ScriptedAI(listOf("我跟 1 号，刀 7 号。"))
-        val seat3 = ScriptedAI(listOf("那就 7 号。"))
-        val director = WerewolfDirector(agentsOf(1 to seat1, 2 to seat2, 3 to seat3))
+        // 各说各的，等于没商量，第一夜就必然分票。
+        // 顺序由随机选出的头狼决定，所以断言不能写死座位——要断言的是
+        // 「第一个开口的人没有前文，后面的人都有前文」。
+        val texts = mapOf(
+            1 to "我倾向 7 号。",
+            2 to "我跟 1 号，刀 7 号。",
+            3 to "那就 7 号。",
+        )
+        val scripts = texts.mapValues { ScriptedAI(listOf(it.value)) }
+        val director = WerewolfDirector(agentsOf(*scripts.map { it.key to it.value }.toTypedArray()))
 
-        director.nightWolfChat(WerewolfTable(standard9()))
+        val result = director.nightWolfChat(WerewolfTable(standard9()))
 
-        assertTrue("1 号先开口，没有前文", seat1.calls.single().userText.contains("现在只有你们狼人醒着"))
-        assertTrue("2 号必须看到 1 号说了什么", seat2.calls.single().userText.contains("我倾向 7 号。"))
-        assertTrue("3 号要看到前两位", seat3.calls.single().userText.contains("我跟 1 号，刀 7 号。"))
+        val head = result.game.nightHead!!
+        val headText = texts.getValue(head)
+        assertTrue(
+            "头狼的提示词里要有指挥身份",
+            scripts.getValue(head).calls.single().userText.contains("头狼"),
+        )
+        scripts.filterKeys { it != head }.forEach { (seat, ai) ->
+            val text = ai.calls.single().userText
+            assertTrue("$seat 号必须看到头狼说的战术", text.contains(headText))
+        }
+    }
+
+    @Test
+    fun `夜谈结束后战术被存下来，白天才排得上用`() = runBlocking {
+        // 白天的上下文里没有夜聊，战术不存一份就等于没商量过。
+        // 头狼是随机的，所以断言「存下来的就是头狼那一句」，不写死是谁。
+        val lines = mapOf(
+            1 to "今晚刀 7 号，白天 2 号跳预言家。",
+            2 to "行，我跳预言家。",
+            3 to "我冲锋。",
+        )
+        val director = WerewolfDirector(
+            agentsOf(*lines.map { it.key to ScriptedAI(listOf(it.value)) }.toTypedArray())
+        )
+
+        val result = director.nightWolfChat(WerewolfTable(standard9()))
+
+        val head = result.game.nightHead
+        assertNotNull("每晚都要有头狼", head)
+        assertEquals("存的是头狼那一句", lines.getValue(head!!), result.game.wolfPlan)
     }
 
     @Test

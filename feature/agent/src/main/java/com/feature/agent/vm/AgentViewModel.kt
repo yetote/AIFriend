@@ -418,6 +418,11 @@ class AgentViewModel(application: Application) : BaseViewModel(application) {
             providers = providers,
             modelsOf = { brand -> modelCache[brand].orEmpty() },
             voicesOf = { id -> VoiceCatalog.forProvider(id).mapNotNull { it.id } },
+            // 音色分组：批量分配时按角色性别挑同组的音色，
+            // 否则「大小姐」会配一把男声
+            voiceGroupOf = { id, voiceId ->
+                VoiceCatalog.forProvider(id).firstOrNull { it.id == voiceId }?.group
+            },
             ttsIds = ttsIds,
             existingNames = state.friends.map { it.name }.toSet(),
             allowPaid = allowPaid,

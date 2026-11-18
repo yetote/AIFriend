@@ -171,6 +171,24 @@ class WerewolfPromptTest {
     }
 
     @Test
+    fun `白天的狼能看到昨晚头狼的战术，好人看不到`() {
+        // 白天的上下文只喂公开消息，夜聊原文在白天是看不见的。
+        // 战术安排只存一份给狼本人——不存的话，昨晚商量出来的分工等于没商量。
+        val game = standardGame().copy(
+            phase = Phase.DAY_DISCUSSION,
+            wolfPlan = "今晚刀 5 号；白天 3 号跳预言家，4 号负责冲锋。",
+        )
+
+        val wolf = WerewolfPrompt.systemPrompt(game, seat = 1)
+        assertTrue(wolf.contains("昨晚头狼定的战术"))
+        assertTrue(wolf.contains("3 号跳预言家"))
+
+        val good = WerewolfPrompt.systemPrompt(game, seat = 6)
+        assertFalse("好人不能看到狼队的战术", good.contains("昨晚头狼定的战术"))
+        assertFalse(good.contains("3 号跳预言家"))
+    }
+
+    @Test
     fun `猎人知道自己的开枪规则，别人不知道他是猎人`() {
         val game = standardGame()
         val hunter = WerewolfPrompt.systemPrompt(game, seat = 5)
