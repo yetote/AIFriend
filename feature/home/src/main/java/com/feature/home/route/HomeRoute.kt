@@ -61,7 +61,9 @@ fun HomeRoute(viewModel: HomeViewModel = viewModel()) {
         )
     }
 
-    BackHandler(enabled = state.screen != HomeScreen.List) {
+    // 设置页有自己的两级返回逻辑（二级→首页→退出），这里让位给它，
+    // 避免两个 BackHandler 都 enabled 时行为依赖注册顺序。
+    BackHandler(enabled = state.screen != HomeScreen.List && state.screen != HomeScreen.Settings) {
         viewModel.back()
     }
 
