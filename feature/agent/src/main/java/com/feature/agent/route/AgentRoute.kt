@@ -54,15 +54,17 @@ fun AgentRoute(
 
     when (val current = screen) {
         AgentScreen.Create -> {
+            // 只含配了 Key 的厂商：批量创建也只能在这些里面随机
+            val uiProviders = state.providers.map {
+                UIProvider(
+                    brand = it.brand,
+                    company = it.company,
+                    thinkingSwitchable = it.thinkingSwitchable,
+                    isGateway = it.isGateway
+                )
+            }
             UIFriendCreateScreen(
-                providers = state.providers.map {
-                    UIProvider(
-                        brand = it.brand,
-                        company = it.company,
-                        thinkingSwitchable = it.thinkingSwitchable,
-                        isGateway = it.isGateway
-                    )
-                },
+                providers = uiProviders,
                 selectedBrand = state.selectedBrand,
                 onBrandSelect = viewModel::selectBrand,
                 models = state.models,
@@ -89,6 +91,18 @@ fun AgentRoute(
                 previewingVoiceId = state.previewingVoiceId,
                 previewError = state.previewError,
                 onClearPreviewError = viewModel::clearVoicePreviewError,
+                batchProviders = uiProviders,
+                batchTts = state.readyTts,
+                onCreateBatch = { count, categories, brands, ttsIds, assignVoice ->
+                    // 分类在路由层就摊平成模板列表：ViewModel 不依赖模板目录的结构，
+                    // 以后换成「收藏的模板」「最近用过」也不用改 VM
+                    viewModel.createFriendsBatch(
+                        personas = PersonaCatalog.all.filter { it.category in categories },
+                        count = count,
+                        brands = brands,
+                        ttsIds = if (assignVoice) ttsIds else emptySet()
+                    )
+                },
                 onOpenSettings = onOpenSettings,
                 onSubmit = { name, role, prompt, avatarBytes, thinking, voiceId, ttsConfigId ->
                     val friend = viewModel.createFriend(

@@ -1,0 +1,234 @@
+package com.feature.agent.batch
+
+import com.core.persona.Persona
+import com.core.persona.PersonaCategory
+import com.feature.agent.model.Provider
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import kotlin.random.Random
+
+class BatchRosterTest {
+
+    @Test
+    fun `模型只从传入的池子里挑`() {
+        // 只要有一个模型不在调用方给的池子里，就说明这里偷偷扩大了范围——
+        // 那个模型很可能属于没配 Key 的厂商，建出来的角色一开口就报错
+        val providers = listOf(
+            provider("DeepSeek", listOf("deepseek-chat", "deepseek-reasoner")),
+            provider("Kimi", listOf("moonshot-v1-8k"))
+        )
+        val plan = BatchRoster.plan(
+            personas = listOf(persona("p1", "阿毒"), persona("p2", "小咪")),
+            count = 4,
+            providers = providers,
+            modelsOf = { brand -> providers.first { it.brand == brand }.fallbackModels },
+            voicesOf = { emptyList() },
+            ttsIds = emptySet(),
+            random = Random(7)
+        )
+
+        assertEquals(4, plan.size)
+        val poolByBrand = providers.associate { it.brand to it.fallbackModels.toSet() }
+        plan.forEach { slot ->
+            val pool = poolByBrand[slot.brand]
+            assertTrue("分配到了没配过 Key 的厂商：${slot.brand}", pool != null)
+            assertTrue("模型 ${slot.model} 不在 ${slot.brand} 的池子里", pool!!.contains(slot.model))
+        }
+    }
+
+    @Test
+    fun `每家厂商都会被轮到`() {
+        // 纯随机会出现「八个人全落在一家」，用户特意配了好几家就等于白配
+        val providers = listOf(
+            provider("A", listOf("a1")),
+            provider("B", listOf("b1")),
+            provider("C", listOf("c1"))
+        )
+        val plan = BatchRoster.plan(
+            personas = listOf(persona("p1", "阿毒")),
+            count = 3,
+            providers = providers,
+            modelsOf = { brand -> providers.first { it.brand == brand }.fallbackModels },
+            voicesOf = { emptyList() },
+            ttsIds = emptySet(),
+            random = Random(1)
+        )
+
+        assertEquals(setOf("A", "B", "C"), plan.map { it.brand }.toSet())
+    }
+
+    @Test
+    fun `名字不重复，撞名时加序号`() {
+        // 模板只有几十个，建十个必然撞名；列表里两个「小咪」分不清谁是谁
+        val plan = BatchRoster.plan(
+            personas = listOf(persona("p1", "小咪"), persona("p2", "阿毒")),
+            count = 5,
+            providers = listOf(provider("A", listOf("a1"))),
+            modelsOf = { listOf("a1") },
+            voicesOf = { emptyList() },
+            ttsIds = emptySet(),
+            random = Random(3)
+        )
+
+        val names = plan.map { it.name }
+        assertEquals("名字必须两两不同：$names", names.size, names.toSet().size)
+        assertTrue(names.all { it.startsWith("小咪") || it.startsWith("阿毒") })
+    }
+
+    @Test
+    fun `不和已有好友重名`() {
+        val plan = BatchRoster.plan(
+            personas = listOf(persona("p1", "阿毒")),
+            count = 2,
+            providers = listOf(provider("A", listOf("a1"))),
+            modelsOf = { listOf("a1") },
+            voicesOf = { emptyList() },
+            ttsIds = emptySet(),
+            existingNames = setOf("阿毒"),
+            random = Random(5)
+        )
+
+        assertTrue("已有好友不能被顶掉名字", plan.none { it.name == "阿毒" })
+        assertEquals(setOf("阿毒2", "阿毒3"), plan.map { it.name }.toSet())
+    }
+
+    @Test
+    fun `同一批里音色不重复`() {
+        val voices = (1..5).map { "v$it" }
+        val plan = BatchRoster.plan(
+            personas = listOf(persona("p1", "阿毒")),
+            count = 4,
+            providers = listOf(provider("A", listOf("a1"))),
+            modelsOf = { listOf("a1") },
+            voicesOf = { voices },
+            ttsIds = setOf("minimax"),
+            random = Random(11)
+        )
+
+        assertEquals(4, plan.mapNotNull { it.voiceId }.toSet().size)
+        assertTrue(plan.all { it.ttsConfigId == "minimax" })
+    }
+
+    @Test
+    fun `音色池不够时允许重复，但不编造 ID`() {
+        // 编一个不存在的音色会让合成直接失败，比几个人同声更糟
+        val voices = listOf("v1", "v2")
+        val plan = BatchRoster.plan(
+            personas = listOf(persona("p1", "阿毒")),
+            count = 5,
+            providers = listOf(provider("A", listOf("a1"))),
+            modelsOf = { listOf("a1") },
+            voicesOf = { voices },
+            ttsIds = setOf("minimax"),
+            random = Random(13)
+        )
+
+        assertTrue(plan.all { it.voiceId in voices })
+    }
+
+    @Test
+    fun `没有配语音时不分配音色`() {
+        val plan = BatchRoster.plan(
+            personas = listOf(persona("p1", "阿毒")),
+            count = 2,
+            providers = listOf(provider("A", listOf("a1"))),
+            modelsOf = { listOf("a1") },
+            voicesOf = { emptyList() },
+            ttsIds = emptySet(),
+            random = Random(17)
+        )
+
+        assertNull(plan.first().ttsConfigId)
+        assertNull(plan.first().voiceId)
+    }
+
+    @Test
+    fun `某家语音没有音色时不会被轮到`() {
+        // 有一家配了凭证但音色目录空（自定义网关），分给它就等于没分配
+        val plan = BatchRoster.plan(
+            personas = listOf(persona("p1", "阿毒")),
+            count = 2,
+            providers = listOf(provider("A", listOf("a1"))),
+            modelsOf = { listOf("a1") },
+            voicesOf = { id -> if (id == "minimax") listOf("v1", "v2") else emptyList() },
+            ttsIds = setOf("minimax", "custom"),
+            random = Random(19)
+        )
+
+        assertTrue(plan.all { it.ttsConfigId == "minimax" })
+    }
+
+    @Test
+    fun `没模板没厂商或数量为零都返回空`() {
+        val provider = provider("A", listOf("a1"))
+        assertTrue(
+            BatchRoster.plan(
+                personas = emptyList(), count = 3, providers = listOf(provider),
+                modelsOf = { listOf("a1") }, voicesOf = { emptyList() }, ttsIds = emptySet()
+            ).isEmpty()
+        )
+        assertTrue(
+            BatchRoster.plan(
+                personas = listOf(persona("p1", "阿毒")), count = 3, providers = emptyList(),
+                modelsOf = { listOf("a1") }, voicesOf = { emptyList() }, ttsIds = emptySet()
+            ).isEmpty()
+        )
+        assertTrue(
+            BatchRoster.plan(
+                personas = listOf(persona("p1", "阿毒")), count = 0, providers = listOf(provider),
+                modelsOf = { listOf("a1") }, voicesOf = { emptyList() }, ttsIds = emptySet()
+            ).isEmpty()
+        )
+    }
+
+    @Test
+    fun `模型池全空的厂商会被跳过`() {
+        // 建一个 model 为空串的角色，聊天时必然报错，而它在列表里看着很正常
+        val empty = Provider(brand = "Empty", company = "Empty", defaultModel = "", fallbackModels = emptyList())
+        val plan = BatchRoster.plan(
+            personas = listOf(persona("p1", "阿毒")),
+            count = 3,
+            providers = listOf(provider("A", listOf("a1")), empty),
+            modelsOf = { brand -> if (brand == "A") listOf("a1") else emptyList() },
+            voicesOf = { emptyList() },
+            ttsIds = emptySet(),
+            random = Random(29)
+        )
+
+        assertEquals(3, plan.size)
+        assertTrue("不该分给没有模型的厂商", plan.all { it.brand == "A" })
+    }
+
+    @Test
+    fun `模型池为空时退回厂商的默认模型`() {
+        // 模型列表还没拉回来，也不能建一个 model 为空串的角色
+        val plan = BatchRoster.plan(
+            personas = listOf(persona("p1", "阿毒")),
+            count = 1,
+            providers = listOf(provider("A", listOf("a1"))),
+            modelsOf = { emptyList() },
+            voicesOf = { emptyList() },
+            ttsIds = emptySet(),
+            random = Random(23)
+        )
+
+        assertEquals("a1", plan.single().model)
+    }
+
+    private fun persona(id: String, name: String) = Persona(
+        id = id,
+        name = name,
+        role = "角色",
+        prompt = "设定",
+        category = PersonaCategory.CHAT
+    )
+
+    private fun provider(brand: String, models: List<String>) = Provider(
+        brand = brand,
+        company = brand,
+        defaultModel = models.first(),
+        fallbackModels = models
+    )
+}

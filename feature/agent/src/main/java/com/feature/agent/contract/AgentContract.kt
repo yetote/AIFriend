@@ -6,6 +6,7 @@ import com.core.ai.model.GatewayModel
 import com.core.ai.model.ModelPrice
 import com.core.repository.settings.AIProviderCatalog
 import com.feature.agent.model.Provider
+import com.ui.agent.data.UIReadyTts
 
 /**
  * 官方厂商的默认形态，直接从服务商目录派生。
@@ -86,7 +87,15 @@ data class AgentUiState(
     val priceSnapshotDate: String? = null,
 
     /** 正在手动刷新价格，刷新期间按钮要禁用，免得连点发出多次请求。 */
-    val isRefreshingPrice: Boolean = false
+    val isRefreshingPrice: Boolean = false,
+
+    /**
+     * 已配好凭证的语音服务，批量创建面板据此列选项。
+     *
+     * 只放「能用的」：没配 Key 的服务一旦参与随机，建出来的角色朗读全报错，
+     * 而用户建的时候看不出来——设置页配没配，创建页没必要让人再记一遍。
+     */
+    val readyTts: List<UIReadyTts> = emptyList()
 ) {
     val selectedProvider: Provider?
         get() = providers.firstOrNull { it.brand == selectedBrand }

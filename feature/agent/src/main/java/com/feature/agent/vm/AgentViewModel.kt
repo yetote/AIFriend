@@ -10,12 +10,14 @@ import com.core.ai.model.GatewayModel
 import com.core.ai.model.ModelPrice
 import com.core.ai.model.ModelPriceRefresher
 import com.core.ai.model.ModelPrices
+import com.core.ai.model.VoiceCatalog
 import com.core.ai.model.toFriend
 import com.core.ai.model.toStored
 import com.core.ai.model.trimToBudget
 import com.core.common.BaseViewModel
 import com.core.common.GlobalUiEvent
 import com.core.common.GlobalUiEventManager
+import com.core.persona.Persona
 import com.core.repository.storage.AICredentials
 import com.core.repository.storage.AIProviderSettings
 import com.core.repository.storage.AvatarStore
@@ -25,12 +27,15 @@ import com.core.repository.storage.ProfileRepository
 import com.core.repository.storage.StoredMessage
 import com.core.repository.settings.AIProviderCatalog
 import com.core.repository.settings.TTSProviderCatalog
+import com.core.repository.storage.TTSCredentials
 import com.core.repository.storage.TTSProviderSettings
 import com.core.tts.TTSPreviewPlayer
 import com.core.tts.TTSReadableError
+import com.feature.agent.batch.BatchRoster
 import com.feature.agent.contract.AgentUiState
 import com.feature.agent.contract.DEFAULT_PROVIDERS
 import com.feature.agent.model.Provider
+import com.ui.agent.data.UIReadyTts
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -81,6 +86,9 @@ class AgentViewModel(application: Application) : BaseViewModel(application) {
             runCatching { priceRefresher.refreshIfNeeded() }
             loadFriends()
             refreshProviders()
+            // 批量创建面板要列「已经配好的语音服务」，冷启动时快照还是空的
+            runCatching { ttsSettings.load() }
+            syncReadyTts()
         }
     }
 
@@ -152,11 +160,31 @@ class AgentViewModel(application: Application) : BaseViewModel(application) {
         if (available.isNotEmpty()) loadModelsFor(_uiState.value.selectedBrand)
     }
 
+    /**
+     * 把「已经配好凭证的语音服务」同步到界面状态。
+     *
+     * 批量创建只能在这些里面随机：没配 Key 的服务一旦被分到，角色朗读全报错，
+     * 而错误发生在建好之后，用户根本不会想到是创建时选错了。
+     */
+    private fun syncReadyTts() {
+        val ready = TTSProviderCatalog.all
+            .filter { provider ->
+                TTSCredentials.apiKeyOf(provider.id).isNotBlank() &&
+                    TTSCredentials.baseUrlOf(provider).isNotBlank()
+            }
+            .map { UIReadyTts(id = it.id, label = it.name) }
+        _uiState.update { it.copy(readyTts = ready) }
+    }
+
     fun refresh() {
         viewModelScope.launch {
             loadFriends()
             // 回到创建页时顺手同步一次凭证：用户可能刚在设置页配好了新服务商。
             runCatching { settings.load() }
+            // 语音凭证也同步一次：批量创建面板要列出「已经配好的 TTS」，
+            // 而冷启动时内存快照还是空的（只有设置页 load 过）
+            runCatching { ttsSettings.load() }
+            syncReadyTts()
             val now = AIProviderCatalog.all
                 .filter { it.requiresKey.not() || AICredentials.apiKeyOf(it.id).isNotBlank() }
                 .map { it.id }
@@ -358,6 +386,63 @@ class AgentViewModel(application: Application) : BaseViewModel(application) {
             }
         }
         return friend
+    }
+
+    /**
+     * 批量创建：一次建 [count] 个，人设、模型、音色各自随机搭配。
+     *
+     * 和 [createFriend] 分开，是因为方向相反：单个创建是「用户已经选好了」，
+     * 这里用户只说建几个，剩下从**已配置**的模型与语音里随机分。
+     * 分配规则在 `BatchRoster`（纯函数、有单测），这里只负责落库与界面。
+     *
+     * @return 实际创建数量；0 表示没有可用的人设或模型，什么都没建。
+     */
+    fun createFriendsBatch(
+        personas: List<Persona>,
+        count: Int,
+        brands: Set<String>,
+        ttsIds: Set<String>,
+    ): Int {
+        val state = _uiState.value
+        // 再按当前已配置筛一遍：面板是打开时取的快照，期间用户可能删了某家的 Key
+        val providers = state.providers.filter { it.brand in brands }.ifEmpty { state.providers }
+        val slots = BatchRoster.plan(
+            personas = personas,
+            count = count,
+            providers = providers,
+            modelsOf = { brand -> modelCache[brand].orEmpty() },
+            voicesOf = { id -> VoiceCatalog.forProvider(id).mapNotNull { it.id } },
+            ttsIds = ttsIds,
+            existingNames = state.friends.map { it.name }.toSet(),
+        )
+        if (slots.isEmpty()) return 0
+
+        val created = slots.map { slot ->
+            Friend(
+                id = UUID.randomUUID().toString(),
+                name = slot.name,
+                role = slot.persona.role,
+                prompt = slot.persona.prompt,
+                brand = slot.brand,
+                company = slot.company,
+                model = slot.model,
+                // 批量不走深度思考：一批建出来的角色默认该是能立刻对话的状态，
+                // 开了思考每条回复都要等一截，用户会以为是卡住了
+                thinkingEnabled = false,
+                voiceId = slot.voiceId,
+                ttsConfigId = slot.ttsConfigId
+            )
+        }
+        // 一次性更新：逐个 append 会让列表重建 N 次，角色一多就明显抖
+        _uiState.update { it.copy(friends = it.friends + created, error = null) }
+        viewModelScope.launch {
+            // 落库失败不回滚界面：用户已经看到了，删掉更困惑；下次刷新会自然消失
+            created.forEach { friend -> runCatching { friendRepository.upsert(friend.toStored()) } }
+        }
+        GlobalUiEventManager.sendEventSync(
+            GlobalUiEvent.ShowToast("已创建 ${created.size} 个智能体")
+        )
+        return created.size
     }
 
     fun saveFriendEdits(

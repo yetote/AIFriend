@@ -62,9 +62,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.core.persona.Persona
+import com.core.persona.PersonaCategory
 import com.ui.agent.data.UIModelGroup
 import com.ui.agent.data.UIModelOption
 import com.ui.agent.data.UIProvider
+import com.ui.agent.data.UIReadyTts
 import com.ui.agent.data.UIPriceTone
 import com.ui.common.theme.UIActionBrush
 import com.ui.common.theme.UIBlobBlue
@@ -139,6 +141,28 @@ fun UIFriendCreateScreen(
     /** 切换服务商时清掉上一次的试听报错：留着会让人以为新服务也不可用。 */
     onClearPreviewError: () -> Unit = {},
     /**
+     * 批量创建：已配好 Key 的模型厂商。空表示没得随机，入口不显示。
+     *
+     * 传进来的只该是「能用的」——没配 Key 的厂商参与随机，建出来的角色
+     * 一开口就是 401，而用户根本不会想到问题出在创建时。
+     */
+    batchProviders: List<UIProvider> = emptyList(),
+    /** 批量创建：已配好凭证的语音服务。 */
+    batchTts: List<UIReadyTts> = emptyList(),
+    /**
+     * 执行批量创建，返回实际建出来的数量（0 表示什么都没建）。
+     *
+     * 返回个数而不是 Unit：建成功了才该退出这个页面，否则用户会回到列表
+     * 发现一个都没有，而表单已经被清空。
+     */
+    onCreateBatch: (
+        count: Int,
+        categories: Set<PersonaCategory>,
+        brands: Set<String>,
+        ttsIds: Set<String>,
+        assignVoice: Boolean
+    ) -> Int = { _, _, _, _, _ -> 0 },
+    /**
      * 一个服务商都没配时，引导用户去设置页填 Key。
      *
      * 不设默认值：漏传应该是编译错误，而不是点了没反应。
@@ -160,6 +184,7 @@ fun UIFriendCreateScreen(
     val voiceBuiltIn = VoiceCatalog.isBuiltIn(ttsConfigId, voiceId)
     var pickingVoice by remember { mutableStateOf(false) }
     var pickingPersona by remember { mutableStateOf(false) }
+    var pickingBatch by remember { mutableStateOf(false) }
     var appliedPersonaId by rememberSaveable { mutableStateOf("") }
     var pendingPersona by remember { mutableStateOf<Persona?>(null) }
     var cropUri by remember { mutableStateOf<Uri?>(null) }
@@ -175,7 +200,22 @@ fun UIFriendCreateScreen(
         Column(
             modifier = Modifier.fillMaxSize()
         ) {
-            UITopBar(title = title, onBack = onCancel)
+            UITopBar(title = title, onBack = onCancel) {
+                // 批量入口只在新建时出现：编辑已有角色没有「批量」这回事；
+                // 一家模型都没配时也不出现，点进去只会是一个空面板
+                if (!editing && personas.isNotEmpty() && batchProviders.isNotEmpty()) {
+                    Text(
+                        text = "批量",
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .clickable { pickingBatch = true }
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = UIFriendBarTagTextBlue
+                    )
+                }
+            }
 
             Column(
                 modifier = Modifier
@@ -687,6 +727,23 @@ fun UIFriendCreateScreen(
                 pickingVoice = false
             },
             onPreview = { picked -> onPreviewVoice(ttsConfigId, picked) }
+        )
+    }
+
+    if (pickingBatch) {
+        UIBatchCreateSheet(
+            providers = batchProviders,
+            readyTts = batchTts,
+            personas = personas,
+            onDismiss = { pickingBatch = false },
+            onCreate = { count, categories, brands, ttsIds, assignVoice ->
+                val created = onCreateBatch(count, categories, brands, ttsIds, assignVoice)
+                if (created > 0) {
+                    // 建完就离开这个表单：留在原地下次会重复创建一遍
+                    onCancel()
+                }
+                created
+            }
         )
     }
 
