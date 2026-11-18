@@ -9,6 +9,13 @@ data class Provider(
     val defaultModel: String,
     /** 模型列表拉取失败时的兜底选项，避免创建页空着。 */
     val fallbackModels: List<String>,
+    /**
+     * 自家模型的 ID 前缀；空 = 不区分（聚合平台没有自家模型）。
+     *
+     * 只给批量创建用：方舟、百炼、TokenHub 的模型列表里混着代理来的别家模型，
+     * 那些模型没在控制台开通就调用会 404，随机挑中了就是「建完说不了话」。
+     */
+    val ownModelPrefixes: List<String> = emptyList(),
     /** 是否支持关闭深度思考；星火、Gemini 目前没有对应参数。 */
     val thinkingSwitchable: Boolean = true,
     /**

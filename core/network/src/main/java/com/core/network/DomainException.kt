@@ -13,6 +13,25 @@ sealed class DomainException(override val message: String) : Exception(message) 
 
 }
 
+/**
+ * 404 时把「是哪个模型」补进去。
+ *
+ * 「接口或模型不存在」在一个模型时够用，但用户手上可能是十几个角色，
+ * 光说 404 等于让他一个个去试。而且这类 404 大半不是 ID 写错：
+ * 方舟、百炼、TokenHub 的 `/models` 会把代理来的别家模型也列出来，
+ * 那些模型要在控制台单独「开通」，没开通就直接 404（方舟报
+ * InvalidEndpointOrModel.NotFound，看着像模型根本不存在）。
+ * 点名到模型，用户才知道该去开通，还是该换一个。
+ */
+fun withModelHint(message: String, brand: String?, model: String?): String {
+    if (!message.contains("404")) return message
+    val modelId = model?.trim().orEmpty()
+    if (modelId.isBlank()) return message
+    val owner = brand?.trim()?.takeIf { it.isNotBlank() }?.let { "$it 的" }.orEmpty()
+    return "$message\n${owner}模型「$modelId」调不通。这类平台要先在控制台「开通管理」里开通该模型，" +
+        "没开通就是这个错；也可以在角色编辑页换一个模型。"
+}
+
 fun getReadableMessage(throwable: Throwable): String {
     return when (throwable) {
         is DomainException.UnauthorizedException -> "API Key 无效或已过期，请检查配置"

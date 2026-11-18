@@ -93,14 +93,15 @@ fun AgentRoute(
                 onClearPreviewError = viewModel::clearVoicePreviewError,
                 batchProviders = uiProviders,
                 batchTts = state.readyTts,
-                onCreateBatch = { count, categories, brands, ttsIds, assignVoice ->
+                onCreateBatch = { count, categories, brands, ttsIds, assignVoice, allowPaid ->
                     // 分类在路由层就摊平成模板列表：ViewModel 不依赖模板目录的结构，
                     // 以后换成「收藏的模板」「最近用过」也不用改 VM
                     viewModel.createFriendsBatch(
                         personas = PersonaCatalog.all.filter { it.category in categories },
                         count = count,
                         brands = brands,
-                        ttsIds = if (assignVoice) ttsIds else emptySet()
+                        ttsIds = if (assignVoice) ttsIds else emptySet(),
+                        allowPaid = allowPaid
                     )
                 },
                 onOpenSettings = onOpenSettings,

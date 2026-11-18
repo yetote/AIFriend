@@ -23,6 +23,7 @@ val DEFAULT_PROVIDERS: List<Provider> = AIProviderCatalog.official.map { provide
         company = provider.company.ifBlank { provider.name },
         defaultModel = provider.fallbackModels.firstOrNull().orEmpty(),
         fallbackModels = provider.fallbackModels,
+        ownModelPrefixes = provider.ownModelPrefixes,
         thinkingSwitchable = provider.thinkingSwitchable,
         isGateway = false
     )

@@ -7,6 +7,8 @@ import com.core.ai.factory.AIFactory
 import com.core.ai.model.ChatMessage
 import com.core.ai.model.Friend
 import com.core.ai.model.GatewayModel
+import com.core.ai.model.ModelCost
+import com.core.ai.model.ModelCosts
 import com.core.ai.model.ModelPrice
 import com.core.ai.model.ModelPriceRefresher
 import com.core.ai.model.ModelPrices
@@ -17,6 +19,7 @@ import com.core.ai.model.trimToBudget
 import com.core.common.BaseViewModel
 import com.core.common.GlobalUiEvent
 import com.core.common.GlobalUiEventManager
+import com.core.network.withModelHint
 import com.core.persona.Persona
 import com.core.repository.storage.AICredentials
 import com.core.repository.storage.AIProviderSettings
@@ -127,6 +130,8 @@ class AgentViewModel(application: Application) : BaseViewModel(application) {
                 company = provider.name,
                 defaultModel = provider.fallbackModels.firstOrNull().orEmpty(),
                 fallbackModels = provider.fallbackModels,
+                // 网关一把 Key 覆盖多家，没有「自家模型」可言，批量时全池可选
+                ownModelPrefixes = provider.ownModelPrefixes,
                 // 聚合平台的模型未必接受 enable_thinking，一律不发
                 thinkingSwitchable = false,
                 isGateway = true
@@ -402,6 +407,7 @@ class AgentViewModel(application: Application) : BaseViewModel(application) {
         count: Int,
         brands: Set<String>,
         ttsIds: Set<String>,
+        allowPaid: Boolean = true,
     ): Int {
         val state = _uiState.value
         // 再按当前已配置筛一遍：面板是打开时取的快照，期间用户可能删了某家的 Key
@@ -414,8 +420,23 @@ class AgentViewModel(application: Application) : BaseViewModel(application) {
             voicesOf = { id -> VoiceCatalog.forProvider(id).mapNotNull { it.id } },
             ttsIds = ttsIds,
             existingNames = state.friends.map { it.name }.toSet(),
+            allowPaid = allowPaid,
+            costOf = ::modelCost,
         )
-        if (slots.isEmpty()) return 0
+        if (slots.isEmpty()) {
+            // 一个都没建出来必须说清楚原因。最常见的不是没凭证，而是
+            // 「关掉了付费模型 + 这几家一个轻量档都没有」——
+            // 不说的话，用户只会看到面板又弹回来（点了没反应）。
+            if (!allowPaid) {
+                GlobalUiEventManager.sendEventSync(
+                    GlobalUiEvent.ShowToast(
+                        "这几家没有查到免费或轻量档的模型：价格接口拿不到的模型不会被选。" +
+                            "把「允许付费模型」打开，或者去控制台看看哪档便宜"
+                    )
+                )
+            }
+            return 0
+        }
 
         val created = slots.map { slot ->
             Friend(
@@ -443,6 +464,21 @@ class AgentViewModel(application: Application) : BaseViewModel(application) {
             GlobalUiEvent.ShowToast("已创建 ${created.size} 个智能体")
         )
         return created.size
+    }
+
+    /**
+     * 某个模型贵不贵。
+     *
+     * 价格优先级：模型列表里带回来的报价（OpenRouter 这类，最准）→
+     * 内置快照 / 定价页抓取（硅基流动）→ 只能看模型名里的档位词。
+     * 官方厂商（方舟、百炼、TokenHub、MiMo）没有公开的价格接口，
+     * 走到最后一步是常态，所以「查不到」要如实返回 UNKNOWN，不能猜成免费。
+     */
+    private fun modelCost(brand: String, model: String): ModelCost {
+        val providerId = AIProviderCatalog.all.firstOrNull { it.name == brand }?.id.orEmpty()
+        val price = modelDetailCache[brand]?.firstOrNull { it.id == model }?.price
+        if (price != null) return ModelCosts.fromPrice(price, ModelPrices.currencyOf(providerId))
+        return ModelCosts.of(providerId, model)
     }
 
     fun saveFriendEdits(
@@ -648,7 +684,7 @@ class AgentViewModel(application: Application) : BaseViewModel(application) {
                 it.copy(error = "还没有填 ${t.providerName} 的 API Key，去设置页填一把就能继续聊。")
             }
         } catch (t: Throwable) {
-            _uiState.update { it.copy(error = t.readableMessage()) }
+            _uiState.update { it.copy(error = t.readableMessage(friend.brand, friend.model)) }
         } finally {
             _uiState.update { it.copy(isSending = false, streaming = null) }
             replyJob = null
@@ -717,10 +753,17 @@ class AgentViewModel(application: Application) : BaseViewModel(application) {
         }
     }
 
-    private fun Throwable.readableMessage(): String {
+    /**
+     * 报错文案。
+     *
+     * 传 brand/model 只为一件事：404 时能点名到模型。用户手上可能是批量建出来的
+     * 十几个角色，「接口或模型不存在」不说是哪一个，等于没说。
+     */
+    private fun Throwable.readableMessage(brand: String? = null, model: String? = null): String {
         var message = ""
         handleError { message = it }
-        return message.ifBlank { "发生未知错误，请重试" }
+        val base = message.ifBlank { "发生未知错误，请重试" }
+        return withModelHint(base, brand, model)
     }
 
     private companion object {

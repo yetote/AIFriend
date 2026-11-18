@@ -1,5 +1,7 @@
 package com.feature.agent.batch
 
+import com.core.ai.model.ModelCost
+import com.core.ai.model.ModelCosts
 import com.core.persona.Persona
 import com.feature.agent.model.Provider
 import kotlin.random.Random
@@ -49,15 +51,25 @@ object BatchRoster {
         ttsIds: Set<String>,
         /** 已有好友的名字：新角色不能和它们重名。 */
         existingNames: Set<String> = emptySet(),
+        /**
+         * 允不允许给角色配付费模型。
+         *
+         * 关掉（false）时只从「免费 / 轻量档」里挑，查不到档位的模型一律不入选：
+         * 一个模型查不到价，最可能的原因就是它本来就要钱。
+         */
+        allowPaid: Boolean = true,
+        /** 某厂商某模型的档位；价格买不到时由调用方按名字判断后传进来。 */
+        costOf: (brand: String, model: String) -> ModelCost = { _, _ -> ModelCost.UNKNOWN },
         random: Random = Random.Default,
     ): List<BatchSlot> {
-        // 模型池完全空的厂商直接跳过：建出来 model 是空串，聊天时必然报错，
-        // 而这种角色在列表里看着是正常的，用户根本查不出原因
-        val usable = providers.filter { provider ->
-            provider.defaultModel.isNotBlank() ||
-                modelsOf(provider.brand).any { it.isNotBlank() } ||
-                provider.fallbackModels.any { it.isNotBlank() }
+        // 每个厂商先算出「这次允许挑的模型池」。
+        // 池子空的厂商直接跳过：建出来 model 是空串，聊天时必然报错，
+        // 而这种角色在列表里看着是正常的，用户根本查不出原因。
+        // 关掉付费模型后池子被筛空，也是同一个道理 —— 那个厂商这次一个都不建。
+        val pools = providers.associate { provider ->
+            provider.brand to allowedModels(provider, modelsOf, costOf, allowPaid)
         }
+        val usable = providers.filter { pools[it.brand].orEmpty().isNotEmpty() }
         if (count <= 0 || personas.isEmpty() || usable.isEmpty()) return emptyList()
 
         val personaOrder = personas.shuffled(random)
@@ -74,9 +86,7 @@ object BatchRoster {
             val persona = personaOrder[index % personaOrder.size]
             val provider = providerOrder[index % providerOrder.size]
 
-            val modelPool = modelsOf(provider.brand)
-                .filter { it.isNotBlank() }
-                .ifEmpty { provider.fallbackModels.filter { it.isNotBlank() } }
+            val modelPool = pools[provider.brand].orEmpty()
             val model = pickFree(modelPool, usedModels, { "${provider.brand}|$it" }, random)
                 ?: provider.defaultModel
 
@@ -94,6 +104,47 @@ object BatchRoster {
                 voiceId = voice,
             )
         }
+    }
+
+    /**
+     * 这一家这次允许挑哪些模型。
+     *
+     * 两层筛选，顺序不能换：
+     * 1. 先只留自家模型（[preferOwnBrand]）—— 聚合平台列出来的别家模型常常没开通，
+     *    挑中就是 404；
+     * 2. 再按成本筛（[allowPaid] 关掉时只留免费 / 轻量档）。
+     *
+     * 筛完为空就返回空：调用方据此把这家整个跳过，而不是退回到「全池」——
+     * 用户关掉付费模型，就是想避开贵的，悄悄退回去等于骗他。
+     */
+    private fun allowedModels(
+        provider: Provider,
+        modelsOf: (String) -> List<String>,
+        costOf: (String, String) -> ModelCost,
+        allowPaid: Boolean,
+    ): List<String> {
+        val loaded = preferOwnBrand(provider, modelsOf(provider.brand))
+            .filter { it.isNotBlank() }
+        val pool = loaded.ifEmpty { provider.fallbackModels.filter { it.isNotBlank() } }
+        if (allowPaid) return pool
+        return pool.filter { model -> ModelCosts.isBudget(costOf(provider.brand, model)) }
+    }
+
+    /**
+     * 只留自家模型；一家都匹配不上时退回全池。
+     *
+     * 方舟、百炼、TokenHub 的 `GET /models` 会把代理来的别家模型一起列出来
+     * （方舟上就有 Qwen、DeepSeek），这些模型要在控制台单独「开通」，
+     * 没开通调用直接 404。随机挑中一个，角色建完全天说不了话，而列表里看着正常。
+     * 自家模型通常随账号自动开通，随机池只用它们，才符合「建完就能聊」。
+     *
+     * 聚合平台没有自家模型（前缀为空），不做筛选。
+     */
+    private fun preferOwnBrand(provider: Provider, pool: List<String>): List<String> {
+        val prefixes = provider.ownModelPrefixes
+        if (prefixes.isEmpty()) return pool
+        val own = pool.filter { id -> prefixes.any { id.startsWith(it, ignoreCase = true) } }
+        return own.ifEmpty { pool }
     }
 
     /** 先试没被占用的，池子都占满了再退回全池随机；池子本身为空就返回 null。 */

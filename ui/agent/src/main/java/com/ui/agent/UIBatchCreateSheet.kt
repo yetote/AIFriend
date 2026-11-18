@@ -79,7 +79,8 @@ fun UIBatchCreateSheet(
         categories: Set<PersonaCategory>,
         brands: Set<String>,
         ttsIds: Set<String>,
-        assignVoice: Boolean
+        assignVoice: Boolean,
+        allowPaid: Boolean
     ) -> Int,
 ) {
     val allCategories = remember(personas) { personas.map { it.category }.distinct() }
@@ -89,6 +90,8 @@ fun UIBatchCreateSheet(
     var ttsIds by remember(readyTts) { mutableStateOf(readyTts.map { it.id }.toSet()) }
     // 没配语音时开关默认关着：给角色分配一个用不了的音色，比不分配更糟
     var assignVoice by remember(readyTts) { mutableStateOf(readyTts.isNotEmpty()) }
+    // 默认允许付费：这是「限制」，不是「推荐」。用户没表态前不该替他砍掉一半模型
+    var allowPaid by remember { mutableStateOf(true) }
 
     val matchCount = remember(personas, categories) {
         personas.count { it.category in categories }
@@ -213,6 +216,34 @@ fun UIBatchCreateSheet(
                     }
                 }
 
+                // ---- 成本 -------------------------------------------------
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "允许使用付费模型",
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = UIFriendBarTitleColor
+                        )
+                        Spacer(Modifier.height(3.dp))
+                        Text(
+                            text = if (allowPaid) {
+                                "每家的模型全部可挑，贵的那档也会被挑到"
+                            } else {
+                                "只挑 flash / lite / mini 这类轻量档。" +
+                                    "方舟、百炼、TokenHub 没有公开报价，查不到档位的模型会被跳过"
+                            },
+                            fontSize = 11.5.sp,
+                            lineHeight = 16.sp,
+                            color = UIFriendBarItemMetaColor
+                        )
+                    }
+                    BatchSwitch(checked = allowPaid, onCheckedChange = { allowPaid = it })
+                }
+
                 // ---- 音色 -------------------------------------------------
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -239,16 +270,10 @@ fun UIBatchCreateSheet(
                             color = UIFriendBarItemMetaColor
                         )
                     }
-                    Switch(
+                    BatchSwitch(
                         checked = assignVoice && readyTts.isNotEmpty(),
                         onCheckedChange = { assignVoice = it },
-                        enabled = readyTts.isNotEmpty(),
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = Color.White,
-                            checkedTrackColor = SwitchDefaults.colors().checkedTrackColor,
-                            uncheckedThumbColor = Color.White,
-                            uncheckedTrackColor = Color(0xFFC3CBD9)
-                        )
+                        enabled = readyTts.isNotEmpty()
                     )
                 }
                 if (assignVoice && readyTts.isNotEmpty()) {
@@ -280,7 +305,8 @@ fun UIBatchCreateSheet(
                             categories,
                             brands,
                             if (assignVoice) ttsIds else emptySet(),
-                            assignVoice && readyTts.isNotEmpty()
+                            assignVoice && readyTts.isNotEmpty(),
+                            allowPaid
                         )
                         // 建成功了才关；一个都没建（比如凭证刚被删）时别让用户以为已经建好
                         if (created > 0) onDismiss()
@@ -298,9 +324,28 @@ fun UIBatchCreateSheet(
     }
 }
 
+/** 面板里的开关共用一个样式：两个开关长得不一样，会显得是随手拼出来的。 */
 @Composable
-private fun SectionHint(title: String, hint: String) {
-    Column {
+private fun BatchSwitch(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    enabled: Boolean = true,
+) {
+    Switch(
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        enabled = enabled,
+        colors = SwitchDefaults.colors(
+            checkedThumbColor = Color.White,
+            checkedTrackColor = SwitchDefaults.colors().checkedTrackColor,
+            uncheckedThumbColor = Color.White,
+            uncheckedTrackColor = Color(0xFFC3CBD9)
+        )
+    )
+}
+
+@Composable
+private fun SectionHint(title: String, hint: String) {    Column {
         Text(
             text = title,
             fontSize = 13.5.sp,

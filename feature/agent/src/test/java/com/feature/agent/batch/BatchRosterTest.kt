@@ -1,5 +1,7 @@
 package com.feature.agent.batch
 
+import com.core.ai.model.ModelCost
+import com.core.ai.model.ModelCosts
 import com.core.persona.Persona
 import com.core.persona.PersonaCategory
 import com.feature.agent.model.Provider
@@ -215,6 +217,168 @@ class BatchRosterTest {
         )
 
         assertEquals("a1", plan.single().model)
+    }
+
+    @Test
+    fun `批量只从自家模型里挑 避开平台代理来但没开通的模型`() {
+        // 方舟、百炼的 /models 会把代理来的别家模型一起列出来（方舟上有 Qwen），
+        // 那些模型要在控制台单独开通，没开通调用直接 404。批量是随机挑的，
+        // 挑中一个就是「建完当天说不了话」，而角色在列表里看着完全正常
+        val doubao = Provider(
+            brand = "豆包",
+            company = "字节跳动",
+            defaultModel = "doubao-seed-evolving",
+            fallbackModels = listOf("doubao-seed-evolving"),
+            ownModelPrefixes = listOf("doubao")
+        )
+        val pool = listOf(
+            "doubao-seed-evolving",
+            "doubao-seed-2-1-pro-260915",
+            "qwen3-0-6b-20250429",
+            "qwen2-5-72b-20240919"
+        )
+        val plan = BatchRoster.plan(
+            personas = listOf(persona("p1", "阿豆"), persona("p2", "小豆")),
+            count = 6,
+            providers = listOf(doubao),
+            modelsOf = { pool },
+            voicesOf = { emptyList() },
+            ttsIds = emptySet(),
+            random = Random(11)
+        )
+
+        assertEquals(6, plan.size)
+        assertTrue("挑到了代理来但未必开通的模型：${plan.map { it.model }}", plan.all { it.model.startsWith("doubao-") })
+    }
+
+    @Test
+    fun `池子里没有自家模型时退回全池`() {
+        // 前缀只是「优先」，不是白名单：一家都匹配不上还硬筛，会建出模型为空串的角色
+        val provider = Provider(
+            brand = "星火",
+            company = "科大讯飞",
+            defaultModel = "x1",
+            fallbackModels = listOf("x1"),
+            ownModelPrefixes = listOf("x1")
+        )
+        val plan = BatchRoster.plan(
+            personas = listOf(persona("p1", "阿火")),
+            count = 2,
+            providers = listOf(provider),
+            modelsOf = { listOf("4.0Ultra", "generalv3.5") },
+            voicesOf = { emptyList() },
+            ttsIds = emptySet(),
+            random = Random(13)
+        )
+
+        assertEquals(2, plan.size)
+        assertTrue(plan.all { it.model in setOf("4.0Ultra", "generalv3.5") })
+    }
+
+    @Test
+    fun `聚合平台没有自家模型 全池可选`() {
+        val gateway = Provider(
+            brand = "硅基流动",
+            company = "硅基流动",
+            defaultModel = "deepseek-ai/DeepSeek-V3",
+            fallbackModels = listOf("deepseek-ai/DeepSeek-V3"),
+            ownModelPrefixes = emptyList(),
+            isGateway = true
+        )
+        val pool = listOf("deepseek-ai/DeepSeek-V3", "Qwen/Qwen2.5-72B-Instruct", "THUDM/glm-4-9b-chat")
+        val plan = BatchRoster.plan(
+            personas = listOf(persona("p1", "阿网")),
+            count = 3,
+            providers = listOf(gateway),
+            modelsOf = { pool },
+            voicesOf = { emptyList() },
+            ttsIds = emptySet(),
+            random = Random(17)
+        )
+
+        assertTrue(plan.all { it.model in pool })
+    }
+
+    @Test
+    fun `关掉付费后只挑轻量档的模型`() {
+        val providers = listOf(
+            provider("豆包", listOf("doubao-seed-2.1-pro", "doubao-seed-2.1-lite"))
+        )
+        val plan = BatchRoster.plan(
+            personas = listOf(persona("p1", "阿省"), persona("p2", "小抠")),
+            count = 4,
+            providers = providers,
+            modelsOf = { brand -> providers.first { it.brand == brand }.fallbackModels },
+            voicesOf = { emptyList() },
+            ttsIds = emptySet(),
+            allowPaid = false,
+            costOf = { _, model -> ModelCosts.of("doubao", model) },
+            random = Random(11)
+        )
+
+        assertEquals(4, plan.size)
+        assertTrue("挑到了付费模型：${plan.map { it.model }}", plan.all { it.model.endsWith("-lite") })
+    }
+
+    @Test
+    fun `关掉付费后查不到档位的厂商整个跳过`() {
+        // 混元只有 hy3 / hy4，名字里没有任何档位词，查不到价 —— 不能当免费用
+        val providers = listOf(
+            provider("混元", listOf("hy4", "hy3")),
+            provider("豆包", listOf("doubao-seed-2.1-lite"))
+        )
+        val plan = BatchRoster.plan(
+            personas = listOf(persona("p1", "阿省"), persona("p2", "小抠")),
+            count = 4,
+            providers = providers,
+            modelsOf = { brand -> providers.first { it.brand == brand }.fallbackModels },
+            voicesOf = { emptyList() },
+            ttsIds = emptySet(),
+            allowPaid = false,
+            costOf = { _, model -> ModelCosts.fromName(model) },
+            random = Random(5)
+        )
+
+        assertEquals(4, plan.size)
+        // 只剩豆包一家，四个人都该落在豆包上；混元一个都不能出现
+        assertTrue(plan.all { it.brand == "豆包" })
+    }
+
+    @Test
+    fun `一家都挑不出免费模型时 一个都不建`() {
+        val providers = listOf(provider("混元", listOf("hy4")))
+        val plan = BatchRoster.plan(
+            personas = listOf(persona("p1", "阿省")),
+            count = 3,
+            providers = providers,
+            modelsOf = { brand -> providers.first { it.brand == brand }.fallbackModels },
+            voicesOf = { emptyList() },
+            ttsIds = emptySet(),
+            allowPaid = false,
+            costOf = { _, model -> ModelCosts.fromName(model) },
+            random = Random(9)
+        )
+
+        assertTrue("宁可一个不建，也不能悄悄退回付费模型", plan.isEmpty())
+    }
+
+    @Test
+    fun `默认允许付费 模型池不受成本影响`() {
+        val providers = listOf(provider("豆包", listOf("doubao-seed-2.1-pro", "doubao-seed-2.1-lite")))
+        val plan = BatchRoster.plan(
+            personas = listOf(persona("p1", "阿用")),
+            count = 6,
+            providers = providers,
+            modelsOf = { brand -> providers.first { it.brand == brand }.fallbackModels },
+            voicesOf = { emptyList() },
+            ttsIds = emptySet(),
+            // 刻意给一个「全都超贵」的判定：开关没关就不该筛掉任何一个
+            costOf = { _, _ -> ModelCost.PREMIUM },
+            random = Random(13)
+        )
+
+        assertEquals(6, plan.size)
+        assertTrue(plan.any { it.model.endsWith("-pro") })
     }
 
     private fun persona(id: String, name: String) = Persona(

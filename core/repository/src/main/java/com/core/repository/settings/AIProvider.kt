@@ -40,6 +40,18 @@ data class AIProvider(
      */
     val fallbackModels: List<String> = emptyList(),
     /**
+     * 自家模型的 ID 前缀，用来把「平台代理来的别家模型」挑出去。
+     *
+     * 方舟、百炼、TokenHub 的 `GET /models` 会把代理来的别家模型一起列出来
+     * （方舟上就有 Qwen、DeepSeek），但那些模型要在控制台单独「开通」，
+     * 没开通调用直接 404。批量建角色是从列表里随机挑模型的，挑中一个没开通的，
+     * 就是「建完当天说不了话」，而角色在列表里看着完全正常。
+     * 自家模型通常随账号自动开通，所以随机池只取这些前缀；一家都匹配不上才退回全池。
+     *
+     * 聚合平台留空：它们本来就没有「自家模型」，全部可选。
+     */
+    val ownModelPrefixes: List<String> = emptyList(),
+    /**
      * 是不是聚合平台。
      *
      * 创建页按这个字段把两类服务商分两组摆：混在一排 chip 里，
@@ -120,7 +132,8 @@ object AIProviderCatalog {
         baseUrl = URL_DEEPSEEK,
         consoleUrl = "https://platform.deepseek.com/api_keys",
         fallbackModels = listOf("deepseek-flash", "deepseek-v4-pro"),
-        company = "深度求索"
+        company = "深度求索",
+        ownModelPrefixes = listOf("deepseek"),
     )
 
     val Doubao = AIProvider(
@@ -130,7 +143,8 @@ object AIProviderCatalog {
         baseUrl = URL_DOUBAO,
         consoleUrl = "https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey",
         fallbackModels = listOf("doubao-seed-evolving", "doubao-seed-2-1-pro-260915"),
-        company = "字节跳动"
+        company = "字节跳动",
+        ownModelPrefixes = listOf("doubao"),
     )
 
     val Zhipu = AIProvider(
@@ -142,7 +156,8 @@ object AIProviderCatalog {
         // glm-4.7-flash 是官方定价页上标「输入免费/输出免费」的那一档（200K 上下文），
         // 排最后是因为它能干的事最少；但在拉不到列表时，它是唯一不用充钱就能跑的选择
         fallbackModels = listOf("glm-5.3-flash", "glm-5.3", "glm-5.2", "glm-4.7-flash"),
-        company = "北京智谱华章"
+        company = "北京智谱华章",
+        ownModelPrefixes = listOf("glm"),
     )
 
     val Kimi = AIProvider(
@@ -152,7 +167,8 @@ object AIProviderCatalog {
         baseUrl = URL_KIMI,
         consoleUrl = "https://platform.moonshot.cn/console/api-keys",
         fallbackModels = listOf("kimi-k3.1-pro", "kimi-k3", "kimi-k2.6"),
-        company = "月之暗面"
+        company = "月之暗面",
+        ownModelPrefixes = listOf("kimi", "moonshot"),
     )
 
     val Qianwen = AIProvider(
@@ -162,7 +178,8 @@ object AIProviderCatalog {
         baseUrl = URL_QIANWEN,
         consoleUrl = "https://bailian.console.aliyun.com/",
         fallbackModels = listOf("qwen3.8-flash", "qwen3.8-max", "qwen-plus"),
-        company = "阿里巴巴"
+        company = "阿里巴巴",
+        ownModelPrefixes = listOf("qwen", "qwq"),
     )
 
     val Hunyuan = AIProvider(
@@ -173,7 +190,8 @@ object AIProviderCatalog {
         consoleUrl = "https://console.cloud.tencent.com/tokenhub/apikey",
         // Hy4 是 2026-11 的旗舰；Hy3 便宜、输出上限还更高（128K），留着当日常档
         fallbackModels = listOf("hy4", "hy3"),
-        company = "腾讯"
+        company = "腾讯",
+        ownModelPrefixes = listOf("hy"),
     )
 
     val MiniMax = AIProvider(
@@ -186,7 +204,8 @@ object AIProviderCatalog {
         fallbackModels = listOf("MiniMax-M3.1-Flash", "MiniMax-M3", "M2-her"),
         company = "MiniMax",
         // M3.1-Flash 恒定思考，发 thinking:disabled 会被 400 拒掉，所以不给开关
-        thinkingSwitchable = false
+        thinkingSwitchable = false,
+        ownModelPrefixes = listOf("minimax", "m2"),
     )
 
     val MiMo = AIProvider(
@@ -196,7 +215,8 @@ object AIProviderCatalog {
         baseUrl = URL_MIMO,
         consoleUrl = "https://platform.xiaomimimo.com/",
         fallbackModels = listOf("mimo-v2.6-flash", "mimo-v2.6-pro"),
-        company = "小米"
+        company = "小米",
+        ownModelPrefixes = listOf("mimo"),
     )
 
     val Spark = AIProvider(
@@ -209,7 +229,8 @@ object AIProviderCatalog {
         // 讯飞没有开放 /models（实测 404），模型名只能走兜底列表
         hasModelList = false,
         company = "科大讯飞",
-        thinkingSwitchable = false
+        thinkingSwitchable = false,
+        ownModelPrefixes = listOf("x1", "spark", "general"),
     )
 
     val Gemini = AIProvider(
@@ -220,7 +241,8 @@ object AIProviderCatalog {
         consoleUrl = "https://aistudio.google.com/app/apikey",
         fallbackModels = listOf("gemini-3.8-flash", "gemini-3.7-flash", "gemini-flash-latest"),
         company = "Google",
-        thinkingSwitchable = false
+        thinkingSwitchable = false,
+        ownModelPrefixes = listOf("gemini"),
     )
 
     // ---------- 聚合平台 ----------

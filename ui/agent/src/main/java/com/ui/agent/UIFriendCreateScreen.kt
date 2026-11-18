@@ -160,8 +160,9 @@ fun UIFriendCreateScreen(
         categories: Set<PersonaCategory>,
         brands: Set<String>,
         ttsIds: Set<String>,
-        assignVoice: Boolean
-    ) -> Int = { _, _, _, _, _ -> 0 },
+        assignVoice: Boolean,
+        allowPaid: Boolean
+    ) -> Int = { _, _, _, _, _, _ -> 0 },
     /**
      * 一个服务商都没配时，引导用户去设置页填 Key。
      *
@@ -736,8 +737,10 @@ fun UIFriendCreateScreen(
             readyTts = batchTts,
             personas = personas,
             onDismiss = { pickingBatch = false },
-            onCreate = { count, categories, brands, ttsIds, assignVoice ->
-                val created = onCreateBatch(count, categories, brands, ttsIds, assignVoice)
+            onCreate = { count, categories, brands, ttsIds, assignVoice, allowPaid ->
+                val created = onCreateBatch(
+                    count, categories, brands, ttsIds, assignVoice, allowPaid
+                )
                 if (created > 0) {
                     // 建完就离开这个表单：留在原地下次会重复创建一遍
                     onCancel()
