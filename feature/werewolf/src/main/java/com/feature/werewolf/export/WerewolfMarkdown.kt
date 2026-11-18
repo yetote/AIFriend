@@ -67,11 +67,16 @@ object WerewolfMarkdown {
             append("| 夜 | 狼刀 | 守卫 | 女巫 | 结果 |\n")
             append("| --- | --- | --- | --- | --- |\n")
             review.nights.forEach { night ->
+                val result = if (night.mutualProtection) {
+                    night.deathLine + "（守救同归：守卫守到又被女巫救，按规则同归于尽）"
+                } else {
+                    night.deathLine
+                }
                 append("| 第 ").append(night.day).append(" 夜 | ")
                     .append(cell(night.wolfLine)).append(" | ")
                     .append(cell(night.guardLine ?: "—")).append(" | ")
                     .append(cell(night.witchLine ?: "—")).append(" | ")
-                    .append(cell(night.deathLine)).append(" |\n")
+                    .append(cell(result)).append(" |\n")
             }
         }
 

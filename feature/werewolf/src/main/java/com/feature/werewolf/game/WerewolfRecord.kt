@@ -49,6 +49,13 @@ data class NightRecord(
     val poisonTarget: Int? = null,
     /** 这一夜实际死亡的人，可能含毒杀。 */
     val deaths: List<Int> = emptyList(),
+    /**
+     * 守救同归：守卫守的人正好是刀口，女巫也用了药，人还是死了。
+     *
+     * 单独记一笔是为了复盘能解释得通：只摆「狼刀 5 号、守卫守了 5 号、女巫救了 5 号、
+     * 5 号死了」，看起来像引擎算错了；写上「守救同归」才知道这是规则。
+     */
+    val mutualProtection: Boolean = false,
 )
 
 /** 一轮投票的结局。加投时同一 [VoteRound.day] 会有多条记录，靠 [VoteRound.round] 区分。 */

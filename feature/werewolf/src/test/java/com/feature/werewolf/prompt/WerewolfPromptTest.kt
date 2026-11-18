@@ -44,6 +44,56 @@ class WerewolfPromptTest {
     // 身份
     // ------------------------------------------------------------------
 
+    /** 带守卫的 8 人局：1、2 狼；3 预言家；4 女巫；5 守卫；6 猎人；7、8 平民。 */
+    private fun gameWithGuard(): WerewolfGame = WerewolfGame.withRoles(
+        config = WerewolfConfig(
+            composition = mapOf(
+                WerewolfRole.WEREWOLF to 2,
+                WerewolfRole.SEER to 1,
+                WerewolfRole.WITCH to 1,
+                WerewolfRole.GUARD to 1,
+                WerewolfRole.VILLAGER to 2,
+                WerewolfRole.HUNTER to 1,
+            ),
+        ),
+        roster = roster(8),
+        roles = listOf(
+            WerewolfRole.WEREWOLF,
+            WerewolfRole.WEREWOLF,
+            WerewolfRole.SEER,
+            WerewolfRole.WITCH,
+            WerewolfRole.GUARD,
+            WerewolfRole.HUNTER,
+            WerewolfRole.VILLAGER,
+            WerewolfRole.VILLAGER,
+        ),
+    )
+
+    @Test
+    fun `狼人的打法里有盘身份和盘守卫`() {
+        // 狼人整局不盘身份 = 白天说的全是「他很可疑」这种没有指向的废话，
+        // 好人分不出谁在带节奏，狼队也拿不到任何可执行的信息。
+        val wolf = WerewolfPrompt.systemPrompt(gameWithGuard(), seat = 1)
+
+        assertTrue("要盘身份", wolf.contains("盘身份"))
+        assertTrue("盘预言家", wolf.contains("预言家"))
+        assertTrue("盘猎人", wolf.contains("猎人"))
+        assertTrue("盘女巫", wolf.contains("女巫"))
+        assertTrue("盘守卫", wolf.contains("盘守卫"))
+        assertTrue("要给出推理链：刀口没死就是线索", wolf.contains("X 却没死"))
+    }
+
+    @Test
+    fun `规则说明里写清楚守救同归`() {
+        // 守卫和女巫互相不知道对方做了什么。不提前说明，
+        // 守救同归时牌桌上看起来就是「明明守了又救了，怎么还是死了」。
+        val game = gameWithGuard()
+
+        assertTrue(WerewolfPrompt.systemPrompt(game, seat = 1).contains("守救同归"))
+        assertTrue(WerewolfPrompt.systemPrompt(game, seat = 4).contains("守救同归"))
+        assertTrue(WerewolfPrompt.systemPrompt(game, seat = 7).contains("守救同归"))
+    }
+
     @Test
     fun `身份和座位出现在提示词里`() {
         val game = standardGame()

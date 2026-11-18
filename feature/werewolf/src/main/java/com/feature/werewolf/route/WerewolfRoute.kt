@@ -613,6 +613,7 @@ internal fun WerewolfUiState.toReview(
                 } else {
                     night.deaths.joinToString("、") + " 号出局"
                 },
+                mutualProtection = night.mutualProtection,
             )
         }
 

@@ -83,7 +83,10 @@ class WerewolfSnapshotTest {
             ),
             winner = Faction.WEREWOLF,
             nights = listOf(
-                NightRecord(day = 1, wolfTarget = 5, healed = false, poisonTarget = 5, deaths = listOf(5)),
+                NightRecord(
+                    day = 1, wolfTarget = 5, healed = false, poisonTarget = 5,
+                    deaths = listOf(5), mutualProtection = true,
+                ),
                 NightRecord(day = 2, wolfTarget = 3, healed = true, deaths = emptyList()),
             ),
             voteRounds = listOf(
@@ -167,7 +170,10 @@ class WerewolfSnapshotTest {
                 GameEvent.IdiotRevealed(day = 1, seat = 4, voteCount = 4.0),
             ),
             nights = listOf(
-                NightRecord(day = 1, wolfTarget = 5, guarded = 6, healed = false, deaths = listOf(5)),
+                NightRecord(
+                    day = 1, wolfTarget = 5, guarded = 6, healed = false,
+                    deaths = listOf(5), mutualProtection = true,
+                ),
             ),
             voteRounds = listOf(
                 VoteRound(
@@ -233,6 +239,14 @@ class WerewolfSnapshotTest {
             "他昨晚的发言在避重就轻。",
             public.reasoning,
         )
+    }
+
+    @Test
+    fun `守救同归的标记跟着存档走`() {
+        // 复盘里那行红字「守救同归」是从这个标记来的，续档后不能丢
+        val restored = WerewolfSnapshot.decode(WerewolfSnapshot.encode(richTable()))!!
+
+        assertTrue(restored.game.nights.first().mutualProtection)
     }
 
     @Test

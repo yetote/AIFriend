@@ -402,7 +402,13 @@ data class WerewolfGame(
             antidoteAvailable = witch.antidoteAvailable && !heal,
             poisonAvailable = witch.poisonAvailable && poisonTarget == null,
         )
-        return settleNight(deaths, stock, healed = heal)
+        return settleNight(
+            deaths,
+            stock,
+            healed = heal,
+            // 守救同归：守卫守的正是刀口，女巫又用了药
+            mutualProtection = heal && tonightVictim != null && tonightVictim == tonightGuardedSeat,
+        )
     }
 
     // ---------------------------------------------------------------------
@@ -788,16 +794,24 @@ data class WerewolfGame(
     /**
      * 这一夜的狼刀是否真的造成了死亡。
      *
-     * 两种情况会让它落空：女巫用了解药、守卫守中了同一个人。
+     * 三种落空方式：**女巫用了解药**、**守卫守中了同一个人**，
+     * 以及这两种保护**同时**落在他身上。
      *
-     * **同守同救按「活下来」处理**，这是本引擎选择的简化规则：两种保护叠加时如果反而死，
-     * 玩家就得同时记住「谁能救」「谁和谁叠加会失效」两件事，AI 更难推理，而且这种死法
-     * 在播报里看起来和「守错了」一模一样，复盘也解释不清。所以宁可让它按直觉走。
+     * **同守同救按「同归于尽」处理**（守救同归，线下经典规则）：
+     * 守卫守了他，女巫也救了他，人还是死。
+     *
+     * 代价是女巫和守卫互相不知道对方做了什么——他们各自只知道自己那一半，
+     * 所以这种死法在牌桌上看起来就是「明明守了又救了，怎么还是死了」。
+     * 因此规则说明里必须把这条写给所有人（见 [WerewolfPrompt.ruleBrief]），
+     * 复盘的夜间明细里也要单独写一行，别让人以为引擎算错了。
      */
     private fun wolfKillDeath(healed: Boolean): Pair<Int, DeathCause>? {
         val victim = tonightVictim ?: return null
+        val guarded = victim == tonightGuardedSeat
+        // 守救同归：两种保护叠在一起，人还是死
+        if (guarded && healed) return victim to DeathCause.WOLF_KILL
         if (healed) return null
-        if (victim == tonightGuardedSeat) return null
+        if (guarded) return null
         return victim to DeathCause.WOLF_KILL
     }
 
@@ -807,11 +821,16 @@ data class WerewolfGame(
      * [healed] 必须由调用方传入，不能靠「刀口没死」反推：万一女巫毒的人和狼刀的人是同一个，
      * 那个人照样会死，反推就会把「用过解药」记成「没用」，复盘里那一夜就解释不通了。
      * 同样的道理，[NightRecord.guarded] 也照抄本夜的守护，而不是「谁没死所以守对了」。
+     *
+     * [mutualProtection] 是「守救同归」：守卫守了他，女巫也救了他，人还是死了。
+     * 它要单独记一笔，否则复盘里只会看到「狼刀 X 号，守卫守了 X 号，女巫救了 X 号，
+     * 然后 X 号死了」——看起来像引擎算错了。
      */
     private fun settleNight(
         deaths: List<Pair<Int, DeathCause>>,
         stock: WitchStock,
         healed: Boolean = false,
+        mutualProtection: Boolean = false,
     ): WerewolfGame {
         // 同一夜可能有两个来源指向同一个人（狼刀 + 女巫毒）。播报、复盘记录、玩家死因
         // 三处必须只算一次，否则会出现「6 号、6 号出局」和「记为毒死却照常开枪」。
@@ -834,6 +853,7 @@ data class WerewolfGame(
                 healed = healed,
                 poisonTarget = merged.firstOrNull { it.second == DeathCause.WITCH_POISON }?.first,
                 deaths = deadSeats,
+                mutualProtection = mutualProtection,
             ),
         )
 

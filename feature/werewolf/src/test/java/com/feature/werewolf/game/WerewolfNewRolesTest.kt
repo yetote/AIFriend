@@ -161,15 +161,17 @@ private fun WerewolfGame.atWolfVote(): WerewolfGame =
     }
 
     @Test
-    fun `同守同救按活下来处理`() {
-        // 这是本引擎选定的规则：两种保护叠加不死。
-        // 如果哪天改成线下的「同守同救死」，这条测试就是第一个该改的地方。
+    fun `同守同救按同归于尽处理`() {
+        // 线下经典规则：守卫守了他，女巫也救了他，人还是死。
+        // 本引擎原来选的是「活下来」（那时觉得 AI 推理成本高），
+        // 2026-11-19 按用户要求改成守救同归。
         val morning = night(game(guard10), guard = 8, victim = 8, heal = true)
 
-        assertTrue(morning.playerAt(8).alive)
-        assertTrue(lastDawn(morning).isPeaceful)
+        assertFalse("同归于尽就是要死", morning.playerAt(8).alive)
+        assertFalse("不是平安夜", lastDawn(morning).isPeaceful)
         assertTrue("解药确实用掉了", !morning.witch.antidoteAvailable)
         assertTrue(morning.nights.single().healed)
+        assertTrue("复盘里要记下是守救同归", morning.nights.single().mutualProtection)
     }
 
     // ------------------------------------------------------------------

@@ -680,6 +680,14 @@ private fun NightCard(nights: List<UIWerewolfNightReport>) {
                         fontSize = 10.sp,
                         color = ReviewDim
                     )
+                    if (night.mutualProtection) {
+                        Text(
+                            text = "守救同归：他被守卫守到又被女巫救了，按规则同归于尽",
+                            modifier = Modifier.padding(top = 2.dp),
+                            fontSize = 10.sp,
+                            color = WolfRed
+                        )
+                    }
                 }
             }
         }

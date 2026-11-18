@@ -38,7 +38,7 @@ import kotlinx.serialization.json.Json
 object WerewolfSnapshot {
 
     /** 当前存档格式版本。改动 DTO 结构时必须加一。 */
-    const val VERSION = 8
+    const val VERSION = 9
 
     private val json = Json {
         ignoreUnknownKeys = true   // 旧档多出来的字段不该让新版本读不出来
@@ -165,6 +165,8 @@ internal data class NightSnapshot(
     val healed: Boolean = false,
     val poisonTarget: Int? = null,
     val deaths: List<Int> = emptyList(),
+    /** v9 起：守救同归（守卫守了刀口，女巫也救了，按规则同归于尽）。旧档没有。 */
+    val mutualProtection: Boolean = false,
 )
 
 @Serializable
@@ -278,6 +280,7 @@ internal fun WerewolfTable.toSnapshot(): TableSnapshot {
                 healed = it.healed,
                 poisonTarget = it.poisonTarget,
                 deaths = it.deaths,
+                mutualProtection = it.mutualProtection,
             )
         },
         voteRounds = game.voteRounds.map { it.toSnapshot() },
@@ -388,6 +391,7 @@ internal fun TableSnapshot.toTable(): WerewolfTable = WerewolfTable(
                 healed = it.healed,
                 poisonTarget = it.poisonTarget,
                 deaths = it.deaths,
+                mutualProtection = it.mutualProtection,
             )
         },
         voteRounds = voteRounds.map { it.toRound() },

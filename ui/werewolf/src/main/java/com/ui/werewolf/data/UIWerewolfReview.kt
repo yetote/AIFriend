@@ -110,6 +110,12 @@ data class UIWerewolfNightReport(
     val witchLine: String? = null,
     /** 「6 号出局」/「平安夜」。 */
     val deathLine: String,
+    /**
+     * 守救同归：守卫守的人正好是刀口，女巫也用了药，人还是死了。
+     *
+     * 界面上要单独写一行，不然「明明守了又救了，怎么还是死了」看起来像引擎算错了。
+     */
+    val mutualProtection: Boolean = false,
 )
 
 /**
