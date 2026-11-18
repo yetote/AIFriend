@@ -41,3 +41,6 @@ keys-recovered.txt
 
 # 构建工具在仓库根留下的 Berkeley DB 临时文件
 bc_*.db
+
+# AI 协作工具的工作区数据（工作日志、长期记忆），属于本地环境，不进仓库
+.workbuddy/
