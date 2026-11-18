@@ -34,6 +34,28 @@ enum class MessageKind {
 
     /** 上帝播报，来自 [WerewolfGame.history]。 */
     DIVINE,
+    ;
+
+    /**
+     * 说出口的话。
+     *
+     * 判断标准不是「别人能不能看见」，而是**桌上的人有没有真的听见**：
+     * 白天的发言是对全场说的，狼人夜聊是对队友说的，两者都是真实对话，
+     * 所以都值得朗读（观战时夜聊才会被念）。
+     */
+    val isSpokenOutLoud: Boolean
+        get() = this == SPEECH || this == WOLF_CHAT
+
+    /**
+     * 内心活动：投票的理由、夜里查验与用药的念头。
+     *
+     * 这些**永远不朗读**，上帝视角也不例外。朗读是为了让用户听见牌桌上
+     * 你来我往的对话，把每个人心里的盘算也念一遍，节奏立刻拖垮——一圈人
+     * 投票就是十几段独白，而且念出来会和发言混成一片，分不清谁在说话、
+     * 谁在心里想。
+     */
+    val isInnerThought: Boolean
+        get() = this == VOTE || this == NIGHT_ACT
 }
 
 /**
@@ -55,6 +77,14 @@ data class WerewolfMessage(
     val text: String,
     /** null = 全员可见。 */
     val audience: Set<Int>? = null,
+    /**
+     * 产生这句话时的模型思考过程（thinking token）。
+     *
+     * **对局中不显示**——连观战也不显示，看别人推理会把「读心」变成主要玩法；
+     * 只在复盘里摊开。它永远不进 [WerewolfPrompt] 的上下文：模型看自己的旧思考
+     * 只会复读上一次的推理。
+     */
+    val reasoning: String = "",
 ) {
     val isPublic: Boolean get() = audience == null
 

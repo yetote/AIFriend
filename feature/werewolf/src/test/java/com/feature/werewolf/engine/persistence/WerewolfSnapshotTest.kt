@@ -116,6 +116,7 @@ class WerewolfSnapshotTest {
             WerewolfMessage(
                 day = 1, phase = Phase.DAY_DISCUSSION, seat = 4, kind = MessageKind.SPEECH,
                 text = "我觉得 2 号有问题。",
+                reasoning = "他昨晚的发言在避重就轻。",
             ),
             WerewolfMessage(
                 day = 1, phase = Phase.DAY_VOTE, seat = 6, kind = MessageKind.VOTE,
@@ -227,6 +228,11 @@ class WerewolfSnapshotTest {
 
         val public = restored.transcript.first { it.kind == MessageKind.SPEECH }
         assertNull("公开发言不该带 audience", public.audience)
+        assertEquals(
+            "思考过程跟着存档走，续档之后复盘不能丢",
+            "他昨晚的发言在避重就轻。",
+            public.reasoning,
+        )
     }
 
     @Test

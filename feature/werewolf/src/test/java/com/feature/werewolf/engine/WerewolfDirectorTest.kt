@@ -190,6 +190,48 @@ class WerewolfDirectorTest {
     }
 
     @Test
+    fun `狼人一致定刀只落一条记录`() = runBlocking {
+        // 四只狼读同一份上下文、同一个模型，意见一致时连理由都几乎一样。
+        // 逐条落账读出来就是同一句话重复四遍，观感像复读机——一致就只留一条。
+        val director = WerewolfDirector(
+            agentsOf(
+                1 to ScriptedAI(listOf("""{"target": 7, "reason": "存在感低。"}""")),
+                2 to ScriptedAI(listOf("""{"target": 7, "reason": "存在感低。"}""")),
+                3 to ScriptedAI(listOf("""{"target": 7, "reason": "存在感低。"}""")),
+            )
+        )
+
+        val result = director.nightWolf(WerewolfTable(standard9().beginWolfVote()))
+
+        val chats = result.transcript.filter {
+            it.kind == MessageKind.WOLF_CHAT && it.phase == Phase.NIGHT_WOLF
+        }
+        assertEquals("一致时不该复读三遍", 1, chats.size)
+        assertTrue("要说清刀的是谁", chats.single().text.contains("7 号"))
+        assertEquals(7, result.game.tonightVictim)
+    }
+
+    @Test
+    fun `狼人分票时逐条记录谁指了谁`() = runBlocking {
+        // 分票时「谁指了谁」是复盘要看的，不能合并
+        val director = WerewolfDirector(
+            agentsOf(
+                1 to ScriptedAI(listOf("""{"target": 7, "reason": "7 号话少。"}""")),
+                2 to ScriptedAI(listOf("""{"target": 8, "reason": "8 号太急。"}""")),
+                3 to ScriptedAI(listOf("""{"target": 8, "reason": "8 号太急。"}""")),
+            )
+        )
+
+        val result = director.nightWolf(WerewolfTable(standard9().beginWolfVote()))
+
+        val chats = result.transcript.filter {
+            it.kind == MessageKind.WOLF_CHAT && it.phase == Phase.NIGHT_WOLF
+        }
+        assertEquals("三只狼各落一条", listOf(1, 2, 3), chats.map { it.seat })
+        assertEquals(8, result.game.tonightVictim)
+    }
+
+    @Test
     fun `狼人平票会加商一轮，第二轮定下目标`() = runBlocking {
         // 第一轮 7/8/9 各一票 → 平票；第二轮 7/7/8 → 定 7 号
         val director = WerewolfDirector(
@@ -564,10 +606,23 @@ class WerewolfDirectorTest {
         )
         assertEquals(Phase.DAY_SHERIFF_SPEECH, signedUp.game.phase)
         assertEquals(listOf(1, 2), signedUp.game.sheriffCandidates)
+        // 上警只是举手：这一步一句发言都不该有
+        assertEquals(
+            "上警报名阶段不该产生发言",
+            0,
+            signedUp.transcript.count {
+                it.phase == Phase.DAY_SHERIFF_SIGNUP && it.kind == MessageKind.SPEECH
+            },
+        )
+        // 谁上了警由一条上帝播报公开，信息量一样，但不占十二行
+        assertTrue(
+            "上警名单要有播报",
+            signedUp.transcript.any { it.kind == MessageKind.DIVINE && it.text.contains("上警的是") },
+        )
 
         val spoken = director.sheriffSpeech(signedUp)
         assertEquals(Phase.DAY_SHERIFF_VOTE, spoken.game.phase)
-        // 上警报名阶段每人也要说一句，所以只数竞选发言阶段的消息
+        // 只有竞选发言阶段才轮到候选人说话
         assertEquals(
             "两个候选人都发了言",
             2,
@@ -639,8 +694,9 @@ class WerewolfDirectorTest {
     }
 
     @Test
-    fun `狼人发言带自爆标记就当场自爆，白天提前结束`() = runBlocking {
-        val exploding = ScriptedAI(listOf("【自爆】我自爆，别再投他了。"))
+    fun `狼人发言带自爆标记并点名队友就当场自爆，白天提前结束`() = runBlocking {
+        // 1、2、3 号是狼。自爆必须写出要救的队友座位号，光写标记不生效
+        val exploding = ScriptedAI(listOf("【自爆】救 3 号，别再投他了。"))
         val quiet = ScriptedAI(listOf("我觉得 2 号有点急。"))
         // 只有 1 号会开口：没有警长、没有死讯，发言从 1 号起，他自爆之后这一天就结束了
         val director = WerewolfDirector(
@@ -662,6 +718,26 @@ class WerewolfDirectorTest {
         )
     }
 
+    @Test
+    fun `只写自爆标记却没点名队友，不算自爆`() = runBlocking {        // 实测有狼输出一个光秃秃的「【自爆】」：正文为空、当天没有投票，白送一条命。
+        // 规则本来就写着「唯一值得的情况是另一个队友要被投出去」，所以这样不该受理
+        val blank = ScriptedAI(listOf("【自爆】"))
+        val quiet = ScriptedAI(listOf("我觉得 2 号有点急。"))
+        val director = WerewolfDirector(
+            agentsOf(1 to blank, 2 to quiet, 3 to quiet, 4 to quiet, 5 to quiet, 6 to quiet, 7 to quiet, 8 to quiet, 9 to quiet),
+        )
+
+        val result = director.discussion(
+            WerewolfTable(standard9().copy(day = 1, phase = Phase.DAY_DISCUSSION))
+        )
+
+        assertTrue("没点名队友的自爆必须被拒", result.game.playerAt(1).alive)
+        assertTrue("也不能进黑夜", result.game.phase != Phase.NIGHT_WOLF_CHAT)
+        assertTrue(result.game.history.none { it is GameEvent.WolfExploded })
+        // 正文被清洗后是空的，要留一句占位，否则牌桌上会出现一条空白发言
+        assertTrue(result.transcript.any { it.seat == 1 && it.text.isNotBlank() })
+    }
+
     // ------------------------------------------------------------------
     // 兜底
     // ------------------------------------------------------------------
@@ -678,8 +754,10 @@ class WerewolfDirectorTest {
         assertNotEquals("必须离开狼人阶段", Phase.NIGHT_WOLF, result.game.phase)
         // 每个狼人至少被问了一次，格式不对会重试
         assertTrue(garbage.callCount >= 3)
-        // 平票会加商，所以消息数至少一轮 3 条
-        assertTrue(result.transcript.count { it.kind == MessageKind.WOLF_CHAT } >= 3)
+        // 完整票型记在 wolfVotes 里：一致定刀只落一条 WOLF_CHAT（避免复读），
+        // 但落账不能少——这里不能再用消息条数代表「每只狼都表态了」
+        assertEquals(3, result.game.wolfVotes.size)
+        assertTrue(result.transcript.count { it.kind == MessageKind.WOLF_CHAT } >= 1)
     }
 
     // ------------------------------------------------------------------
@@ -741,5 +819,98 @@ class WerewolfDirectorTest {
 
         assertNotNull("缺模型必须报错", error)
         assertTrue(error!!.message.orEmpty().contains("没有配置模型"))
+    }
+
+    // ------------------------------------------------------------------
+    // 发言上下文
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `上下文单独列出自己今天说过的话`() = runBlocking {
+        // 真预言家在警上、PK、白天把同一段话说了三段，全场据此判它背词悍跳。
+        // 自己的发言混在十几个人里权重和「别人说的」一样，摘出来才拦得住复读
+        val said = "4号查7号是金水，可7号用守卫自守来回应，这不合逻辑。"
+        val table = WerewolfTable(
+            standard9().copy(day = 1, phase = Phase.DAY_DISCUSSION),
+            transcript = listOf(
+                WerewolfMessage(
+                    day = 1,
+                    phase = Phase.DAY_SHERIFF_SPEECH,
+                    seat = 1,
+                    kind = MessageKind.SPEECH,
+                    text = said,
+                ),
+            ),
+        )
+        val speaker = ScriptedAI(listOf("我补充一点，2 号的票型也很可疑。"))
+        val quiet = ScriptedAI(listOf("我先听。"))
+        val director = WerewolfDirector(
+            agentsOf(1 to speaker, 2 to quiet, 3 to quiet, 4 to quiet, 5 to quiet, 6 to quiet, 7 to quiet, 8 to quiet, 9 to quiet),
+        )
+
+        director.discussion(table)
+
+        val userText = speaker.calls.first().userText
+        assertTrue("要有专门一段", userText.contains("【你今天已经说过的话】"))
+        assertTrue("要复述出来才拦得住", userText.contains("4号查7号是金水"))
+        assertTrue(userText.contains("不要再说一遍"))
+    }
+
+    @Test
+    fun `上下文保留昨天的发言`() = runBlocking {
+        // 只看当天的话，到第 4 天模型只能从上帝播报反推，实测出现过
+        // 「6 号昨天投票给 3 号很可疑」——那天有人自爆，根本没有投票
+        val table = WerewolfTable(
+            standard9().copy(day = 2, phase = Phase.DAY_DISCUSSION),
+            transcript = listOf(
+                WerewolfMessage(
+                    day = 1,
+                    phase = Phase.DAY_DISCUSSION,
+                    seat = 3,
+                    kind = MessageKind.SPEECH,
+                    text = "我昨天怀疑 8 号，他一直在跟票。",
+                ),
+            ),
+        )
+        val speaker = ScriptedAI(listOf("今天我先听 2 号。"))
+        val quiet = ScriptedAI(listOf("我先听。"))
+        val director = WerewolfDirector(
+            agentsOf(1 to speaker, 2 to quiet, 3 to quiet, 4 to quiet, 5 to quiet, 6 to quiet, 7 to quiet, 8 to quiet, 9 to quiet),
+        )
+
+        director.discussion(table)
+
+        val userText = speaker.calls.first().userText
+        assertTrue("昨天的发言要留着", userText.contains("我昨天怀疑 8 号"))
+        assertTrue("并且要标明是昨天的", userText.contains("第 1 天（昨天及更早）"))
+    }
+
+    @Test
+    fun `投票候选里不能出现自己`() = runBlocking {
+        // 实测记录里明明白白写着「9 号投 9 号」：真预言家被全场踩到顺着气氛自投，
+        // 白送好人一个轮次。线下没有这种打法，候选里直接拿掉
+        val ai = ScriptedAI(listOf("""{"target": 3, "reason": "先跟一票"}"""))
+        val director = WerewolfDirector(
+            agentsOf(*(1..9).map { it to ai }.toTypedArray()),
+        )
+
+        director.vote(WerewolfTable(standard9().copy(day = 1, phase = Phase.DAY_VOTE)))
+
+        var checked = 0
+        ai.calls.forEach { call ->
+            val prompt = call.systemPrompt.orEmpty() + "\n" + call.userText
+            val seat = SEAT_IN_PROMPT.find(prompt)?.groupValues?.get(1)?.toIntOrNull() ?: return@forEach
+            val segment = CANDIDATE_LINE.find(prompt)?.groupValues?.get(1) ?: return@forEach
+            val seats = SEAT_NUMBER_IN_CANDIDATES.findAll(segment).map { it.groupValues[1].toInt() }.toSet()
+            assertFalse("$seat 号的候选里不该有自己：$segment", seat in seats)
+            checked++
+        }
+        assertTrue("至少要看几次请求，否则等于没测", checked >= 9)
+    }
+
+    private companion object {
+        val SEAT_IN_PROMPT = Regex("""你是 (\d+) 号玩家""")
+        val CANDIDATE_LINE = Regex("""只能从 ([^中]*) 中选""")
+        val SEAT_NUMBER_IN_CANDIDATES = Regex("""(\d+)\s*号""")
     }
 }

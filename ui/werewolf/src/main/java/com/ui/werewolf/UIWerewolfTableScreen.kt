@@ -13,6 +13,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -841,8 +842,11 @@ private fun Feed(
     // - 还没有任何输出（投票、夜间决策这种返回 JSON 的步骤），退回三个点。
     // 别看三个点不起眼：一轮八个人要等一分多钟，中间没有任何东西在动的话，
     // 界面看着就是卡死的
-    val streaming = if (live.running && live.turn == null) live.streaming else null
-    val thinkingSeat = if (live.running && live.turn == null && streaming == null) {
+    //
+    // 两种「正在发生」都必须等喇叭空下来（!speechBusy）：念 A 的时候引擎已经在生成 B 了，
+    // 这时冒出 B 的名字或半句话，就是用户说的「下一个人对话框弹出来又消失」。
+    val streaming = if (live.running && live.turn == null && !live.speechBusy) live.streaming else null
+    val thinkingSeat = if (live.running && live.turn == null && streaming == null && !live.speechBusy) {
         live.seats.firstOrNull { it.active }
     } else {
         null
@@ -908,9 +912,8 @@ private fun Feed(
 /**
  * 「某人正在说」的一行，逐字长出来。
  *
- * 长得和一条普通发言一模一样（头像 + 名字 + 正文），只多了三样东西：
- * 末尾一个光标、语气淡一点、以及可折叠的思考过程。刻意不做卡片、不做边框——
- * 等这句话说完，它会变成上面那条普通记录，两者长得一样才不会「跳一下」。
+ * 长得和一条普通发言一模一样（头像 + 名字 + 正文），只多了末尾一个光标、语气淡一点。
+ * 刻意不做卡片、不做边框——等这句话说完，它会变成上面那条普通记录，两者长得一样才不会「跳一下」。
  */
 @Composable
 private fun StreamingLine(
@@ -944,19 +947,6 @@ private fun StreamingLine(
                     maxLines = 1
                 )
             }
-            if (stream.reasoning.isNotBlank()) {
-                Spacer(Modifier.height(4.dp))
-                StreamThought(
-                    // 换人说话时重置折叠状态：上一位摊开的思考不该跟到下一位身上
-                    key = stream.seat,
-                    reasoning = stream.reasoning,
-                    // 还没开口时摊开，否则这一行只有一个折叠条，看着像空了一块
-                    expandedByDefault = stream.text.isBlank(),
-                    thinking = stream.text.isBlank(),
-                    night = night,
-                    dimColor = dimColor
-                )
-            }
             if (stream.text.isNotBlank()) {
                 Text(
                     text = stream.text + "▌",
@@ -965,7 +955,9 @@ private fun StreamingLine(
                     lineHeight = FsSpeechLine,
                     color = textColor.copy(alpha = 0.92f)
                 )
-            } else if (stream.reasoning.isBlank()) {
+            } else {
+                // 还在思考、一个字没说：只显示「正在组织语言」，不把思考流放出来——
+                // 对局里看 AI 推理会把「读心」变成主要玩法，思考留给复盘
                 Row(
                     modifier = Modifier.padding(top = 2.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -975,60 +967,6 @@ private fun StreamingLine(
                     ThinkingDot(color = dimColor)
                 }
             }
-        }
-    }
-}
-
-/**
- * 流式发言里的思考过程。
- *
- * 折叠条用灰字而不是强调色：思考是「还没说出口的东西」，在牌桌上它的地位比正文低，
- * 一旦和正文一样显眼，用户会先读心再听话，反而看不懂这局在争什么。
- */
-@Composable
-private fun StreamThought(
-    key: Int,
-    reasoning: String,
-    expandedByDefault: Boolean,
-    thinking: Boolean,
-    night: Boolean,
-    dimColor: Color,
-) {
-    var expanded by remember(key) { mutableStateOf(expandedByDefault) }
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(if (night) Color(0x14FFFFFF) else Color(0x0A000000))
-            .padding(horizontal = 9.dp, vertical = 6.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { expanded = !expanded },
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = if (thinking) "正在思考…" else "思考过程",
-                modifier = Modifier.weight(1f),
-                fontSize = FsMeta,
-                color = dimColor
-            )
-            Text(
-                text = if (expanded) "收起" else "展开",
-                fontSize = 10.sp,
-                color = dimColor.copy(alpha = 0.8f)
-            )
-        }
-        if (expanded) {
-            Spacer(Modifier.height(5.dp))
-            Text(
-                text = reasoning,
-                fontSize = 11.5.sp,
-                lineHeight = 17.sp,
-                color = dimColor
-            )
         }
     }
 }
@@ -1091,16 +1029,10 @@ private fun LineRow(
             )
         }
 
-        UIWerewolfLineKind.VOTE -> Text(
-            text = buildString {
-                line.seat?.let { append("$it 号") }
-                line.seat?.let { append(" " ) }
-                append(line.text)
-            },
-            modifier = Modifier.padding(start = 40.dp),
-            fontSize = FsName,
-            lineHeight = 19.sp,
-            color = dimColor
+        UIWerewolfLineKind.INNER -> InnerRow(
+            line = line,
+            night = night,
+            dimColor = dimColor
         )
 
         UIWerewolfLineKind.SPEECH -> SpeechRow(
@@ -1160,6 +1092,75 @@ private fun SpeechRow(
                 fontSize = FsSpeech,
                 lineHeight = FsSpeechLine,
                 color = textColor.copy(alpha = 0.92f)
+            )
+        }
+    }
+}
+
+/**
+ * 内心活动：投票的理由、夜里查验与用药的念头。
+ *
+ * 排版上刻意**不套用**发言的样式——没有头像、字号更小、整体压暗、左边一根细竖线。
+ * 因为这些字没有人听见：做成发言的样子，用户会以为「他刚才在桌上说了这句」。
+ * 朗读也一并关掉了（`MessageKind.isInnerThought`），否则一圈投票就要念十几段独白。
+ */
+@Composable
+private fun InnerRow(
+    line: UIWerewolfLine,
+    night: Boolean,
+    dimColor: Color,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(IntrinsicSize.Min)
+            .padding(start = 44.dp, end = 6.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .width(2.dp)
+                .fillMaxHeight()
+                .clip(RoundedCornerShape(1.dp))
+                .background(dimColor.copy(alpha = 0.32f))
+        )
+        Spacer(Modifier.width(8.dp))
+        Column {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = line.innerLabel ?: "内心",
+                    fontSize = FsMeta,
+                    fontWeight = FontWeight.SemiBold,
+                    color = dimColor.copy(alpha = 0.8f),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(if (night) Color(0x14FFFFFF) else Color(0x0A000000))
+                        .padding(horizontal = 6.dp, vertical = 1.dp)
+                )
+                val who = listOfNotNull(line.seat?.let { "$it 号" }, line.speaker)
+                    .joinToString(" ")
+                if (who.isNotBlank()) {
+                    Text(
+                        text = " $who",
+                        fontSize = FsMeta,
+                        color = dimColor.copy(alpha = 0.72f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                if (line.secret) {
+                    Text(
+                        text = " · 仅你可见",
+                        fontSize = FsMeta,
+                        color = dimColor.copy(alpha = 0.55f)
+                    )
+                }
+            }
+            Text(
+                text = line.text,
+                modifier = Modifier.padding(top = 2.dp),
+                fontSize = FsName,
+                lineHeight = 18.sp,
+                color = dimColor
             )
         }
     }

@@ -74,6 +74,32 @@ class SpeechFilterTest {
     }
 
     @Test
+    fun `内心活动永远不读 上帝视角也不读`() {
+        // 投票理由、夜里查验用药的念头：没人听见，也不该被念出来。
+        // 一圈人投票念过去就是十几段独白，节奏直接拖垮，还和真正的发言混成一片
+        assertFalse(
+            speakable(
+                isPublicSpeech = true,
+                speakerSeat = 5,
+                selfSeat = null,
+                text = "我投 3 号。他昨天的发言太飘",
+                readEverything = true,
+                isInnerThought = true,
+            )
+        )
+        assertFalse(
+            speakable(
+                isPublicSpeech = false,
+                speakerSeat = 7,
+                selfSeat = null,
+                text = "我守 3 号。",
+                readEverything = true,
+                isInnerThought = true,
+            )
+        )
+    }
+
+    @Test
     fun `上帝视角下仍然不读空白`() {
         // 队列是按条消费的，空文本会让喇叭停一次，听起来像卡带
         assertFalse(
@@ -107,5 +133,13 @@ class SpeechFilterTest {
         selfSeat: Int?,
         text: String = "我怀疑 3 号",
         readEverything: Boolean = false,
-    ) = SpeechFilter.speakable(isPublicSpeech, speakerSeat, selfSeat, text, readEverything)
+        isInnerThought: Boolean = false,
+    ) = SpeechFilter.speakable(
+        isPublicSpeech,
+        speakerSeat,
+        selfSeat,
+        text,
+        readEverything,
+        isInnerThought,
+    )
 }

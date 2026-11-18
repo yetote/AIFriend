@@ -9,6 +9,7 @@ import com.feature.werewolf.game.RosterEntry
 import com.feature.werewolf.game.WerewolfConfig
 import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfRole
+import com.ui.werewolf.data.UIWerewolfGroupKind
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -188,6 +189,7 @@ class WerewolfReviewMappingTest {
                     seat = 1,
                     kind = MessageKind.SPEECH,
                     text = "我是好人，先听 3 号怎么说。",
+                    reasoning = "先不暴露信息，听狼怎么带节奏。",
                 ),
                 WerewolfMessage(
                     day = 1,
@@ -219,12 +221,31 @@ class WerewolfReviewMappingTest {
         assertEquals(3, wolfChat.seat)
         assertTrue("要带上座位号：${wolfChat.speaker}", wolfChat.speaker.contains("3 号"))
 
+        // 身份跟着对话行走：复盘时不该再要求玩家翻回底牌区对座位
+        val roleOf3 = game.players.first { it.seat == 3 }.role
+        assertEquals("要带上发言者的身份", roleOf3.displayName, wolfChat.roleLabel)
+        assertEquals(
+            "分组决定标签配色",
+            when {
+                roleOf3.isWerewolf -> UIWerewolfGroupKind.WOLF
+                roleOf3.isGod -> UIWerewolfGroupKind.GOD
+                else -> UIWerewolfGroupKind.VILLAGER
+            },
+            wolfChat.roleKind,
+        )
+
         val speech = day.open.first()
         assertFalse(speech.secret)
         assertEquals("/tmp/a.png", speech.avatarPath)
+        assertEquals(
+            "思考过程跟着原话一起进复盘，对局里已经藏了一整局",
+            "先不暴露信息，听狼怎么带节奏。",
+            speech.reasoning,
+        )
 
         // 上帝播报没有座位，界面上居中显示
         assertNull(day.open.last().seat)
         assertEquals("上帝", day.open.last().speaker)
+        assertNull("上帝没有身份标签", day.open.last().roleLabel)
     }
 }

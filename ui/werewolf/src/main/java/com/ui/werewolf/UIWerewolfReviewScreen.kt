@@ -95,6 +95,8 @@ fun UIWerewolfReviewScreen(
     review: UIWerewolfReview,
     onBack: () -> Unit,
     onRestart: (() -> Unit)? = null,
+    /** 导出成 Markdown 文件。null 表示不提供入口（例如没有可分享的环境）。 */
+    onExport: (() -> Unit)? = null,
 ) {
     // 「上帝视角」默认关闭：狼人夜聊、查验这些当时只有个别人看得到的内容，
     // 需要玩家主动打开。默认摊开的话，「原来那一夜他们商量的是这个」就没得发现了。
@@ -111,7 +113,7 @@ fun UIWerewolfReviewScreen(
             .pageInsetsTop()
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            ReviewTopBar(onBack = onBack)
+            ReviewTopBar(onBack = onBack, onExport = onExport)
 
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
@@ -201,7 +203,7 @@ fun UIWerewolfReviewScreen(
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun ReviewTopBar(onBack: () -> Unit) {
+private fun ReviewTopBar(onBack: () -> Unit, onExport: (() -> Unit)? = null) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -228,6 +230,20 @@ private fun ReviewTopBar(onBack: () -> Unit) {
                 color = ReviewDim,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
+            )
+        }
+        if (onExport != null) {
+            // 文字按钮而不是图标：分享图标在这里语义太宽（分享这一局？分享一局战绩？），
+            // 写「导出 MD」不用猜，也说明了导出的格式
+            Text(
+                text = "导出 MD",
+                modifier = Modifier
+                    .clip(RoundedCornerShape(UIRadiusControl))
+                    .clickable { onExport() }
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                color = GodBlue
             )
         }
     }
@@ -813,8 +829,12 @@ private fun DialogueLine(line: UIWerewolfSpeechLine) {
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                line.roleLabel?.let { role ->
+                    RoleTag(text = role, kind = line.roleKind)
+                }
                 Text(
-                    text = "  ${line.label}",
+                    text = line.label,
+                    modifier = Modifier.padding(start = 5.dp),
                     fontSize = 9.sp,
                     color = if (line.secret) WolfRed.copy(alpha = 0.8f) else ReviewDim
                 )
@@ -826,8 +846,87 @@ private fun DialogueLine(line: UIWerewolfSpeechLine) {
                 lineHeight = 17.sp,
                 color = ReviewBody
             )
+            if (line.reasoning.isNotBlank()) {
+                Spacer(Modifier.height(4.dp))
+                ReviewThought(reasoning = line.reasoning)
+            }
         }
     }
+}
+
+/**
+ * 复盘里的思考过程。
+ *
+ * 思考在**对局中一律不显示**（看 AI 推理会变成读心玩法），复盘是它唯一的舞台。
+ * 默认收起：几十条发言每条都摊着几千字的推理，复盘页就翻不动了；
+ * 想看的人自己点开——多半是想验证「他嘴上说一套、心里想的是另一套」。
+ */
+@Composable
+private fun ReviewThought(reasoning: String) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(UIGlassSurfaceStrong)
+            .padding(horizontal = 8.dp, vertical = 5.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded },
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "思考过程",
+                modifier = Modifier.weight(1f),
+                fontSize = 9.sp,
+                color = ReviewDim
+            )
+            Text(
+                text = if (expanded) "收起" else "展开",
+                fontSize = 9.sp,
+                color = GodBlue
+            )
+        }
+        if (expanded) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = reasoning,
+                fontSize = 11.sp,
+                lineHeight = 16.sp,
+                color = ReviewDim
+            )
+        }
+    }
+}
+
+/**
+ * 对话行里的身份小标签。
+ *
+ * 底色只给 10% 透明度：它要能被一眼扫到，又不能抢过发言正文——复盘是拿来读的，
+ * 不是拿来看配色的。三种颜色沿用底牌区的划分，同一个身份在两处不能两个颜色。
+ */
+@Composable
+private fun RoleTag(text: String, kind: UIWerewolfGroupKind?) {
+    val color = when (kind) {
+        UIWerewolfGroupKind.WOLF -> WolfRed
+        UIWerewolfGroupKind.GOD -> GodBlue
+        else -> VillagerGray
+    }
+    Text(
+        text = text,
+        modifier = Modifier
+            .padding(start = 4.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .background(color.copy(alpha = 0.10f))
+            .padding(horizontal = 4.dp, vertical = 1.dp),
+        fontSize = 9.sp,
+        lineHeight = 12.sp,
+        color = color,
+        maxLines = 1
+    )
 }
 
 /**

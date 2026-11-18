@@ -38,7 +38,7 @@ import kotlinx.serialization.json.Json
 object WerewolfSnapshot {
 
     /** 当前存档格式版本。改动 DTO 结构时必须加一。 */
-    const val VERSION = 5
+    const val VERSION = 6
 
     private val json = Json {
         ignoreUnknownKeys = true   // 旧档多出来的字段不该让新版本读不出来
@@ -211,6 +211,8 @@ internal data class MessageSnapshot(
     val text: String,
     /** null 表示全员可见。 */
     val audience: List<Int>? = null,
+    /** v7 起：发言时的思考过程，只在复盘展示。旧档没有，默认空。 */
+    val reasoning: String = "",
 )
 
 // ---------------------------------------------------------------------------
@@ -281,6 +283,7 @@ internal fun WerewolfTable.toSnapshot(): TableSnapshot {
                 kind = it.kind.name,
                 text = it.text,
                 audience = it.audience?.sorted(),
+                reasoning = it.reasoning,
             )
         },
     )
@@ -310,6 +313,8 @@ private fun GameEvent.toSnapshot(): EventSnapshot = when (this) {
     )
     is GameEvent.BearRoar -> EventSnapshot(type = "BEAR_ROAR", day = day, seat = seat)
     is GameEvent.WolfExploded -> EventSnapshot(type = "WOLF_EXPLODED", day = day, seat = seat)
+    is GameEvent.SheriffSignup ->
+        EventSnapshot(type = "SHERIFF_SIGNUP", day = day, seats = runners)
     is GameEvent.SheriffElected ->
         EventSnapshot(type = "SHERIFF_ELECTED", day = day, seat = seat, voteCount = votes.toDouble())
     is GameEvent.SheriffVacant -> EventSnapshot(type = "SHERIFF_VACANT", day = day, reason = reason)
@@ -387,6 +392,7 @@ internal fun TableSnapshot.toTable(): WerewolfTable = WerewolfTable(
             kind = enumOf<MessageKind>(it.kind),
             text = it.text,
             audience = it.audience?.toSet(),
+            reasoning = it.reasoning,
         )
     },
 )
@@ -427,6 +433,7 @@ private fun EventSnapshot.toEvent(): GameEvent = when (type) {
         day = day,
         seat = requireNotNull(seat) { "WOLF_EXPLODED 缺少 seat" },
     )
+    "SHERIFF_SIGNUP" -> GameEvent.SheriffSignup(day = day, runners = seats.orEmpty())
     "SHERIFF_ELECTED" -> GameEvent.SheriffElected(
         day = day,
         seat = requireNotNull(seat) { "SHERIFF_ELECTED 缺少 seat" },

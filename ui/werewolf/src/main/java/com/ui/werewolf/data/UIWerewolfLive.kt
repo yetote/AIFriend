@@ -65,13 +65,18 @@ enum class UIWerewolfLineKind {
     /** 上帝播报：所有人都知道的事实。 */
     DIVINE,
 
-    /** 公开发言。 */
+    /** 说出口的发言（白天发言、狼人夜聊）。 */
     SPEECH,
 
-    /** 投票表态。 */
-    VOTE,
+    /**
+     * 内心活动：投票的理由、夜里查验用药的念头。
+     *
+     * 和 [SPEECH] 在排版上必须明显不同——这些字**没有人听见**。写成发言的样式，
+     * 用户会以为「他刚才在桌上说了这句话」，而实际上牌桌上只有他自己知道。
+     */
+    INNER,
 
-    /** 只有这个视角看得见的话（狼人夜聊、查验结果、用药）。 */
+    /** 只有这个视角看得见的话（狼人夜聊）。 */
     PRIVATE,
 }
 
@@ -83,6 +88,10 @@ data class UIWerewolfLine(
     val speaker: String? = null,
     val avatarPath: String? = null,
     val text: String,
+    /** 内心活动的类型标签（「投票」「查验」）。[UIWerewolfLineKind.INNER] 才有。 */
+    val innerLabel: String? = null,
+    /** 只有当前视角看得见。内心活动在参与局里恒为 true。 */
+    val secret: Boolean = false,
 )
 
 /**
@@ -94,6 +103,9 @@ data class UIWerewolfLine(
  *
  * [isSelf] 为 true 时说明是「我」在说——那不可能是模型在打字，而是界面在等自己输入，
  * 这时不该显示「正在组织语言」，所以映射时就置空。
+ *
+ * 不带思考过程：对局里一律不显示推理（观战也一样），思考随消息存档，
+ * 复盘时才摊开。
  */
 data class UIWerewolfStreaming(
     val seat: Int,
@@ -101,8 +113,6 @@ data class UIWerewolfStreaming(
     val avatarPath: String? = null,
     /** 已经生成的正文。为空表示还在思考，一个字都没说。 */
     val text: String = "",
-    /** 思考过程。参与中的局一律为空——别人的心里话听到了就是作弊。 */
-    val reasoning: String = "",
 )
 
 /** 轮到人类时要做的事。UI 按这个决定弹哪种输入面板。 */
@@ -198,4 +208,11 @@ data class UIWerewolfLive(
     val autoSpeak: Boolean = true,
     /** 系统中文语音是否可用。false 时开关点了也不出声，界面要说明原因。 */
     val speechReady: Boolean = true,
+    /**
+     * 喇叭手里还有没念完的行（含正在念的这一句）。
+     *
+     * 界面靠它压住「下一位正在生成」的气泡：念 A 的时候进度已经推到 A，看起来追平了，
+     * 但 A 还在响。这时把 B 的打字打出来，用户看到的是「B 的对话框冒出来又消失」。
+     */
+    val speechBusy: Boolean = false,
 )

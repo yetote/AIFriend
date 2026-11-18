@@ -7,6 +7,7 @@ import com.feature.werewolf.game.SeerCheck
 import com.feature.werewolf.game.WerewolfConfig
 import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfRole
+import com.feature.werewolf.game.WitchStock
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -93,7 +94,7 @@ class WerewolfPromptTest {
 
         val wolf = WerewolfPrompt.task(day, seat = 1)
         assertTrue(wolf.contains("另一个队友"))
-        assertTrue(wolf.contains("答不上具体号码就别写"))
+        assertTrue(wolf.contains("写不出这个号码就别写标记"))
 
         // 好人看不到这条：写给好人等于提前告诉全场「这局的狼会自爆」
         assertFalse(WerewolfPrompt.task(day, seat = 6).contains("【自爆】"))
@@ -133,6 +134,40 @@ class WerewolfPromptTest {
             assertFalse("$seat 号不该知道今晚谁被刀", other.contains("今晚被狼人袭击的是"))
             assertFalse("$seat 号不该知道药品余量", other.contains("解药："))
         }
+    }
+
+    @Test
+    fun `女巫自己被刀且解药已尽时，提示词告诉她今晚会死`() {
+        // 第 2 夜、解药用尽、狼刀落在女巫自己身上。这一夜的毒药是最后一次行动，
+        // 提示词必须说出来，否则模型会答「毒药留到更关键的时候」——而它天一亮就出局了。
+        val game = standardGame().copy(
+            phase = Phase.NIGHT_WITCH,
+            day = 2,
+            tonightVictim = 4,
+            witch = WitchStock(antidoteAvailable = false),
+        )
+        val prompt = WerewolfPrompt.systemPrompt(game, seat = 4)
+        assertTrue(prompt.contains("今晚被狼人袭击的就是你自己（4 号）"))
+        assertTrue(prompt.contains("天一亮你就出局了"))
+        assertTrue(prompt.contains("这是你最后一次行动"))
+        assertFalse("不能再说「可以救他」", prompt.contains("你可以救他"))
+    }
+
+    @Test
+    fun `女巫第一夜被刀可以自救，提示词不渲染必死`() {
+        val game = standardGame().copy(phase = Phase.NIGHT_WITCH, day = 1, tonightVictim = 4)
+        val prompt = WerewolfPrompt.systemPrompt(game, seat = 4)
+        assertTrue(prompt.contains("第一夜你还能自救"))
+        assertFalse(prompt.contains("这是你最后一次行动"))
+    }
+
+    @Test
+    fun `女巫没被刀时不会看到必死文案`() {
+        // 上面两个用例证明「该说的说到了」，这条守住反面：没被刀时不能渲染必死
+        val game = standardGame().copy(phase = Phase.NIGHT_WITCH, day = 3, tonightVictim = 7)
+        val prompt = WerewolfPrompt.systemPrompt(game, seat = 4)
+        assertTrue(prompt.contains("今晚被狼人袭击的是 7 号"))
+        assertFalse(prompt.contains("天一亮你就出局了"))
     }
 
     @Test
@@ -176,9 +211,11 @@ class WerewolfPromptTest {
     @Test
     fun `上帝播报只报事件，不解释规则`() {
         // 玩家原话：「熊咆哮了」就够了。播报会被朗读，解释规则既占屏幕又拖长语音，
-        // 而规则本来就在板子说明和提示词里讲过
+        // 而规则本来就在板子说明和提示词里讲过。
+        // 座位号也不能带：熊是暗身份，「11 号在咆哮」等于当众宣布谁是熊
         val roar = WerewolfPrompt.describe(GameEvent.BearRoar(day = 1, seat = 11))
-        assertTrue(roar.contains("熊 11 号在咆哮"))
+        assertTrue(roar.contains("熊在咆哮"))
+        assertFalse("不能点名熊的座位", roar.contains("11 号"))
         assertFalse(roar.contains("邻座"))
         assertFalse(roar.contains("狼人"))
 
@@ -319,5 +356,68 @@ class WerewolfPromptTest {
         assertTrue(prompt.contains("身份是狼人"))
         assertTrue(prompt.contains("你的狼队友"))
         assertTrue(prompt.length > 1000)
+    }
+
+    // ------------------------------------------------------------------
+    // 基本打法
+    // ------------------------------------------------------------------
+
+    /** 8 人局，5 号是守卫。 */
+    private fun guardGame(): WerewolfGame = WerewolfGame.withRoles(
+        config = WerewolfConfig(
+            composition = mapOf(
+                WerewolfRole.WEREWOLF to 2,
+                WerewolfRole.SEER to 1,
+                WerewolfRole.WITCH to 1,
+                WerewolfRole.GUARD to 1,
+                WerewolfRole.VILLAGER to 3,
+            ),
+        ),
+        roster = roster(8),
+        roles = listOf(
+            WerewolfRole.WEREWOLF,
+            WerewolfRole.WEREWOLF,
+            WerewolfRole.SEER,
+            WerewolfRole.WITCH,
+            WerewolfRole.GUARD,
+            WerewolfRole.VILLAGER,
+            WerewolfRole.VILLAGER,
+            WerewolfRole.VILLAGER,
+        ),
+    )
+
+    @Test
+    fun `系统提示词带基本打法 而不是只有规则`() {
+        // 规则说的是「能做什么」，打法说的是「怎么判断」。缺了这一层，
+        // 发言完全由人设驱动：真预言家三轮复读、好人看对跳只看谁语气硬。
+        val prompt = WerewolfPrompt.systemPrompt(standardGame(), seat = 1)
+
+        assertTrue(prompt.contains("【基本打法】"))
+        assertTrue("预言家必须报验人", prompt.contains("报出前一晚验了谁"))
+        assertTrue("防复读", prompt.contains("同一段判断说第二遍"))
+        assertTrue("看票型而不是看气势", prompt.contains("谁发起的"))
+        assertTrue("被指认先正面回答", prompt.contains("先正面回答"))
+    }
+
+    @Test
+    fun `守卫白天拿到的昨夜守人 是真正昨夜的那个 而不是前夜`() {
+        val game = guardGame()
+        // 白天这一刻 lastGuardedSeat 还停在「前夜的前夜」——startNextNight() 是白天结束才搬家的。
+        // 照它发言，守卫每轮都会报错守人对象，好人据此认定它前后矛盾。
+        val day = game.copy(
+            day = 3,
+            phase = Phase.DAY_DISCUSSION,
+            lastGuardedSeat = 7,
+            tonightGuardedSeat = 4,
+        )
+        val brief = WerewolfPrompt.privateBriefing(day, seat = 5)
+        assertTrue("白天要报昨夜守的 4 号", brief.contains("你昨夜守的是 4 号"))
+        assertFalse("不能把前夜守的 7 号说成昨夜", brief.contains("你昨夜守的是 7 号"))
+
+        // 守护阶段正好相反：那时 tonightGuardedSeat 还没产生，lastGuardedSeat 才是昨夜
+        val guardPhase = day.copy(phase = Phase.NIGHT_GUARD)
+        assertTrue(
+            WerewolfPrompt.privateBriefing(guardPhase, seat = 5).contains("你昨夜守的是 7 号")
+        )
     }
 }

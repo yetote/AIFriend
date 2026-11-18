@@ -145,4 +145,24 @@ data class UIWerewolfSpeechLine(
     val label: String,
     val text: String,
     val secret: Boolean = false,
+    /**
+     * 发言者的终局身份，例如「狼人」「预言家」。上帝播报为 null。
+     *
+     * 局中这是秘密，复盘里已经公开（底牌分组就在页面上方）。写在这里是因为
+     * 读对话时最常问的一句是「这人当时是什么身份」——没有它就得往上翻底牌区
+     * 一个座位一个座位地对，读三句就要来回滚一次。
+     *
+     * 存**文案 + 分组**而不是原始枚举：ui 层不该认识规则层的角色类型，
+     * 换个板子加个新身份也不用回来改这里。
+     */
+    val roleLabel: String? = null,
+    /** 身份所属分组，只用来上色。null 与 [roleLabel] 为 null 同义。 */
+    val roleKind: UIWerewolfGroupKind? = null,
+    /**
+     * 产生这句话时模型的思考过程。
+     *
+     * 对局里一律不显示，复盘是它唯一的舞台——「他当时是怎么想的」是复盘里
+     * 最有看头的部分，尤其是发言和推理对不上号的时候。
+     */
+    val reasoning: String = "",
 )

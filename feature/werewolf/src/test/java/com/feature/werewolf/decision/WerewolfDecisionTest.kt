@@ -135,6 +135,38 @@ class WerewolfDecisionTest {
         assertFalse("9 号根本不存在", spec.validate(WitchChoice(poison = 9)))
     }
 
+    @Test
+    fun `毒药候选名单里没有女巫自己`() {
+        val g = game().copy(phase = Phase.NIGHT_WITCH, tonightVictim = 6)
+        val text = WerewolfDecisions.witch(g, seat = 4).instruction
+        assertTrue("要给候选，否则模型只能瞎猜", text.contains("只能从 1 号、2 号、3 号、5 号"))
+        assertTrue(text.contains("不能毒自己"))
+    }
+
+    @Test
+    fun `女巫自己中刀且救不了时，提示词说明这是最后一次用毒`() {
+        // 第 2 夜、解药已尽、自己被刀：天一亮就出局，毒药不用就作废。
+        val g = game().copy(
+            phase = Phase.NIGHT_WITCH,
+            day = 2,
+            tonightVictim = 4,
+            witch = com.feature.werewolf.game.WitchStock(antidoteAvailable = false),
+        )
+        val text = WerewolfDecisions.witch(g, seat = 4).instruction
+        assertTrue("要说明中刀的是自己", text.contains("今晚被狼人袭击的是你自己（4 号）"))
+        assertTrue("解药的禁用原因要说清", text.contains("（救不了你自己）"))
+        assertTrue("必须点明这是唯一机会", text.contains("你今晚必死"))
+    }
+
+    @Test
+    fun `无人被刀的夜晚，提示词不说解药不能用`() {
+        // 「没人被刀」和「药没了」是两件事，混成一句会让女巫以为自己漏了信息
+        val g = game().copy(phase = Phase.NIGHT_WITCH, tonightVictim = null)
+        val text = WerewolfDecisions.witch(g, seat = 4).instruction
+        assertTrue(text.contains("今晚没有人被狼人袭击"))
+        assertTrue(text.contains("今晚没人被刀，用不上"))
+    }
+
     // ------------------------------------------------------------------
     // 投票与开枪
     // ------------------------------------------------------------------

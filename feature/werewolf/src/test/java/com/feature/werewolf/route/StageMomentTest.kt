@@ -74,6 +74,40 @@ class StageMomentTest {
     }
 
     @Test
+    fun `最后一条正在念的时候 舞台还停在它上面`() {
+        // 投票结束后的遗言最容易撞上这条：`revealed` 是「取出即前进」，
+        // 念最后一条遗言时它已经等于 lastIndex，看着像追平了；但引擎早在
+        // 遗言生成完的那一刻就把状态推到了入夜。只比 lastIndex 的话，
+        // 遗言还没念完，背景已经黑掉——用户看到的就是「投票结束先切黑夜」。
+        val moment = stageMoment(
+            transcript = transcript,
+            revealed = transcript.lastIndex,
+            gated = true,
+            fallbackDay = 2,
+            fallbackPhase = Phase.NIGHT_WOLF,
+            speechBusy = true,
+        )
+
+        assertEquals(2, moment.day)
+        assertEquals(Phase.DAY_DISCUSSION, moment.phase)
+    }
+
+    @Test
+    fun `喇叭忙但进度越界时 夹到最后一条而不是崩`() {
+        val moment = stageMoment(
+            transcript = transcript,
+            revealed = Int.MAX_VALUE,
+            gated = true,
+            fallbackDay = 2,
+            fallbackPhase = Phase.NIGHT_WOLF,
+            speechBusy = true,
+        )
+
+        assertEquals(2, moment.day)
+        assertEquals(Phase.DAY_DISCUSSION, moment.phase)
+    }
+
+    @Test
     fun `空 transcript 时用实时阶段 而不是假装有过去`() {
         val moment = stageMoment(emptyList(), revealed = -1, gated = true, fallbackDay = 1, fallbackPhase = null)
 

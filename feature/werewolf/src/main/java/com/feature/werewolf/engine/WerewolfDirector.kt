@@ -160,18 +160,38 @@ class WerewolfDirector(
             // 并发阶段没有确定的「当前是谁」，所以到齐之后才报一次完成
             onProgress(WerewolfProgress(game.day, Phase.NIGHT_WOLF, wolves.size, wolves.size))
 
+            // 定刀结果落账。**一致时只落一条**：四只狼吃的是同一份上下文、同一个模型，
+            // 结论相同的时候连理由都几乎一样，逐条落账再读出来就是同一句话重复四遍
+            // （实测「我定 2 号。存在感低、信息量小」连说四遍，观感像复读机）。
+            // 只有真分票时才逐条保留——那时「谁指了谁」才是复盘需要的，
+            // 而完整票型本来就记在 game.wolfVotes 里。
+            val targets = outcomes.map { it.second.value.target }.distinct()
             var next = current
-            outcomes.forEach { (seat, outcome) ->
+            if (targets.size == 1) {
+                val (firstSeat, first) = outcomes.first()
                 next = next.append(
                     WerewolfMessage(
                         day = game.day,
                         phase = Phase.NIGHT_WOLF,
-                        seat = seat,
+                        seat = firstSeat,
                         kind = MessageKind.WOLF_CHAT,
-                        text = "我定 ${outcome.value.target} 号。" + outcome.value.reason,
+                        text = "我们定刀 ${first.value.target} 号。" + first.value.reason,
                         audience = wolves.map { it.seat }.toSet(),
                     )
                 )
+            } else {
+                outcomes.forEach { (seat, outcome) ->
+                    next = next.append(
+                        WerewolfMessage(
+                            day = game.day,
+                            phase = Phase.NIGHT_WOLF,
+                            seat = seat,
+                            kind = MessageKind.WOLF_CHAT,
+                            text = "我定 ${outcome.value.target} 号。" + outcome.value.reason,
+                            audience = wolves.map { it.seat }.toSet(),
+                        )
+                    )
+                }
             }
 
             val votes = outcomes.associate { (seat, outcome) -> seat to outcome.value.target }
@@ -232,7 +252,8 @@ class WerewolfDirector(
                     phase = Phase.NIGHT_WOLF_CHAT,
                     seat = wolf.seat,
                     kind = MessageKind.WOLF_CHAT,
-                    text = text,
+                    text = text.text,
+                    reasoning = text.reasoning,
                     audience = audience,
                 )
             )
@@ -326,7 +347,12 @@ class WerewolfDirector(
                 )
             )
             val text = askSpeech(current, seat)
-            current = current.speakAndMaybeExplode(seat, Phase.DAY_DISCUSSION, text)
+            current = current.speakAndMaybeExplode(
+                seat,
+                Phase.DAY_DISCUSSION,
+                text.text,
+                reasoning = text.reasoning,
+            )
             // 说完一个就推一次。下一位要看到的上下文里已经有这句（current 已带），
             // 界面拿到的也是同一份，不存在「显示的和模型看到的不是一回事」
             onTranscript(current)
@@ -344,6 +370,11 @@ class WerewolfDirector(
      * 并发是为了不让后面的座位跟风：串行的话，第 5 个人听到前 4 个都上警了，
      * 就只会做「我也上」或「那我算了」的从众判断，而这恰恰是唯一不该从众的一步。
      * 报名结果随后一次性公开——线下本来也是举手，谁都能看见。
+     *
+     * 这一步**不产生任何发言**。举手就是举手，信息留到竞选发言：[signUpSheriff] 只往
+     * history 里记一条名单，播报说「上警的是 3、5、7 号」就完了。此前这里给每个座位
+     * append 了一条「我上警。」+ 模型给的理由，12 个人各说一句，第一阶段比竞选环节还长，
+     * 真正该曝信息的警上发言反倒被淹没了。
      */
     suspend fun sheriffSignup(table: WerewolfTable): WerewolfTable {
         val game = table.game
@@ -355,24 +386,11 @@ class WerewolfDirector(
         }
         onProgress(WerewolfProgress(game.day, Phase.DAY_SHERIFF_SIGNUP, game.aliveSeats.size, game.aliveSeats.size))
 
-        var next = table
-        outcomes.forEach { (seat, outcome) ->
-            val running = outcome.value.target == seat
-            next = next.append(
-                WerewolfMessage(
-                    day = game.day,
-                    phase = Phase.DAY_SHERIFF_SIGNUP,
-                    seat = seat,
-                    kind = MessageKind.SPEECH,
-                    text = (if (running) "我上警。" else "我不上警。") + outcome.value.reason,
-                )
-            )
-        }
         val runners = outcomes.filter { (seat, outcome) -> outcome.value.target == seat }
             .map { it.first }
             .toSet()
         val after = game.signUpSheriff(runners)
-        return next.copy(game = after).syncBroadcasts(game).also { onTranscript(it) }
+        return table.copy(game = after).syncBroadcasts(game).also { onTranscript(it) }
     }
 
     /**
@@ -410,7 +428,12 @@ class WerewolfDirector(
                         "用 2-3 句说清你的判断和当选后的思路，让警下愿意把票投给你。"
                 },
             )
-            current = current.speakAndMaybeExplode(seat, Phase.DAY_SHERIFF_SPEECH, text)
+            current = current.speakAndMaybeExplode(
+                seat,
+                Phase.DAY_SHERIFF_SPEECH,
+                text.text,
+                reasoning = text.reasoning,
+            )
             onTranscript(current)
         }
 
@@ -533,7 +556,8 @@ class WerewolfDirector(
                         phase = Phase.DAY_LAST_WORDS,
                         seat = seat,
                         kind = MessageKind.SPEECH,
-                        text = text,
+                        text = text.text,
+                        reasoning = text.reasoning,
                     )
                 )
             }
@@ -759,11 +783,17 @@ class WerewolfDirector(
         candidates: List<Int>,
     ): StructuredOutcome<VoteChoice> {
         val game = table.game
+        // 候选里去掉自己。实测真预言家被全场踩的时候会顺着气氛把票投给自己——
+        // 记录里明明白白写着「9 号投 9 号」，一票自投等于白送好人一个轮次。
+        // 线下没有这种打法，干脆从候选里拿掉，模型想投也投不了。
+        // 万一过滤后为空（理论上不可能，场上至少还有另一方），退回原列表保住流程。
+        val withoutSelf = candidates.filter { it != seat }
+        val valid = withoutSelf.ifEmpty { candidates }
         return ask(
             table = table,
             seat = seat,
-            spec = WerewolfDecisions.vote(game, candidates),
-            fallback = { WerewolfDecisions.fallbackVote(game, seat, candidates, random) },
+            spec = WerewolfDecisions.vote(game, valid),
+            fallback = { WerewolfDecisions.fallbackVote(game, seat, valid, random) },
             task = "请给出你的投票。",
         )
     }
@@ -836,7 +866,7 @@ class WerewolfDirector(
         table: WerewolfTable,
         seat: Int,
         task: String = "现在轮到你发言。",
-    ): String {
+    ): SpeechResult {
         val agent = agentOf(seat)
         val game = table.game
         val messages = listOf(ChatMessage.user(context(table, seat, task)))
@@ -886,8 +916,16 @@ class WerewolfDirector(
         } else {
             content.toString()
         }
-        return sanitize(raw, seat, game.playerAt(seat).name)
+        return SpeechResult(
+            text = sanitize(raw, seat, game.playerAt(seat).name),
+            // 思考过程只留给复盘：对局里不显示，但存进 transcript，
+            // 局结束后「他当时是怎么想的」是复盘最有意思的部分之一
+            reasoning = reasoning.toString().trim(),
+        )
     }
+
+    /** 一句流式发言的成品。思考过程跟正文一起回来，各走各的去处。 */
+    private data class SpeechResult(val text: String, val reasoning: String)
 
     private suspend fun <T> ask(
         table: WerewolfTable,
@@ -928,16 +966,68 @@ class WerewolfDirector(
         // 「昨夜四狼一致刀 4 号」这种当众自曝。狼白天真正需要的东西（队友名单、
         // 昨晚刀了谁）在 system 的私有简报里，不依赖这段原文。
         val daytime = !table.game.phase.isNight
-        val today = table.transcriptFor(seat)
-            .filter { it.day == table.game.day }
+        val game = table.game
+        // 保留昨天。只看当天的话，到第 4 天模型完全不知道前几天谁说过什么，
+        // 只能从上帝播报里反推，实测出现过「6 号昨天投票给 3 号很可疑」这种幻觉——
+        // 那天有人自爆，根本没有投票环节。预算由 recentlySaid 的字数上限兜住。
+        val from = (game.day - 1).coerceAtLeast(1)
+        val recent = table.transcriptFor(seat)
+            .filter { it.day >= from }
             .filter { !daytime || it.isPublic }
-        val lines = recentlySaid(renderDay(today))
+        val lines = recentlySaid(renderRecent(recent, game.day))
         if (lines.isNotEmpty()) {
             append("【本日进程】\n")
             lines.forEach { append(it).append("\n") }
             append("\n")
         }
+        appendSaidToday(recent, seat, game.day)
         append(task)
+    }
+
+    /**
+     * 把「本人今天已经说过的话」单独列一段。
+     *
+     * 不列这一段，模型照样看得到自己的发言——但它混在十几个人的行里，
+     * 权重和「别人说了什么」一样，模型不会把它当成「我刚说过」。
+     * 实测后果是真预言家在警上发言、PK、白天讨论连说三段几乎一字不差的话，
+     * 全场据此判定它是背词的悍跳狼，把它全票投了出去。
+     */
+    private fun StringBuilder.appendSaidToday(
+        recent: List<WerewolfMessage>,
+        seat: Int,
+        today: Int,
+    ) {
+        val mine = recent.filter {
+            it.day == today && it.seat == seat && it.kind.isSpokenOutLoud
+        }
+        if (mine.isEmpty()) return
+        append("【你今天已经说过的话】\n")
+        mine.forEach { message ->
+            append("· ").append(message.phase.displayName).append("：")
+            append(message.text.replace('\n', ' ').take(SAID_ECHO_CHARS))
+            if (message.text.length > SAID_ECHO_CHARS) append("…")
+            append("\n")
+        }
+        append("—— 上面这些不要再说一遍。这一轮必须给出新的内容：新的怀疑对象、")
+        append("对别人刚说的那句话的回应，或者对自己上一票的解释。\n\n")
+    }
+
+    /** 复述自己旧发言时，每条摘要留多少字。够认出「这是同一段」，又不占预算。 */
+
+
+    /**
+     * 跨天渲染。昨天和今天分开标，只有一天时不留标题——白天的预算全给发言原文。
+     */
+    private fun renderRecent(messages: List<WerewolfMessage>, today: Int): List<String> {
+        // 判据是「有没有更早的天」，不是「分了几个组」：第 2 天早上一条发言都还没有时，
+        // 列表里只剩昨天的内容，按组数判会以为只有一天，把日期标题省掉
+        if (messages.none { it.day < today }) return renderDay(messages)
+        val out = mutableListOf<String>()
+        messages.groupBy { it.day }.toSortedMap().forEach { (day, list) ->
+            out += if (day >= today) "— 第 $day 天 —" else "— 第 $day 天（昨天及更早） —"
+            out += renderDay(list)
+        }
+        return out
     }
 
     /**
@@ -1024,12 +1114,33 @@ class WerewolfDirector(
      * 标记只在「真的是能自爆的狼」时才生效：好人写了这四个字，不该让他凭空出局，
      * 也不该把这句话吃掉——那是他自己说的，就让它留在记录里。
      */
-    private fun WerewolfTable.speakAndMaybeExplode(seat: Int, phase: Phase, raw: String): WerewolfTable {
-        val marker = EXPLODE_MARKERS.firstOrNull { raw.trimStart().startsWith(it) }
-        val exploding = marker != null && game.canExplode(seat)
-        val text = if (exploding) raw.trimStart().removePrefix(marker!!).trim() else raw
+    private fun WerewolfTable.speakAndMaybeExplode(
+        seat: Int,
+        phase: Phase,
+        raw: String,
+        reasoning: String = "",
+    ): WerewolfTable {
+        val trimmed = raw.trimStart()
+        val marker = EXPLODE_MARKERS.firstOrNull { trimmed.startsWith(it) }
+        var text = if (marker != null) trimmed.removePrefix(marker).trim() else raw
+        // 标记之外还要**点名一个活着的队友**，才算「值得自爆」。
+        // 原来只看标记，实测有狼在只被自己吓到的时候，输出一个光秃秃的「【自爆】」——
+        // 正文为空、没有投票、直接送掉一条命，而规则本来就写着「唯一值得的情况是
+        // 另一个队友今天确定要被投出去」。这一条靠提示词挡不住，只能卡在动作上。
+        val exploding = marker != null && game.canExplode(seat) && game.explodesToSaveMate(seat, text)
+        if (marker != null && !exploding && text.isBlank()) {
+            // 标记被拒、正文又是空的：留一句占位，否则牌桌上会出现一条空白发言
+            text = EMPTY_SPEECH_FALLBACK
+        }
         var next = append(
-            WerewolfMessage(day = game.day, phase = phase, seat = seat, kind = MessageKind.SPEECH, text = text)
+            WerewolfMessage(
+                day = game.day,
+                phase = phase,
+                seat = seat,
+                kind = MessageKind.SPEECH,
+                text = text,
+                reasoning = reasoning,
+            )
         )
         if (exploding) {
             val before = game
@@ -1037,6 +1148,18 @@ class WerewolfDirector(
         }
         return next
     }
+
+    /** 正文里点到至少一个**存活队友**的座位号，才算自爆有代价意义。 */
+    private fun WerewolfGame.explodesToSaveMate(seat: Int, body: String): Boolean {
+        val mates = wolves().filter { it.alive && it.seat != seat }.map { it.seat }.toSet()
+        if (mates.isEmpty()) return false
+        return SEAT_NUMBER.findAll(body)
+            .mapNotNull { it.groupValues[1].toIntOrNull() }
+            .any { it in mates }
+    }
+
+    /** 座位号写法。只认「4 号」这种明确说法：裸数字会误吃「第 2 天」「两个」。 */
+    private val SEAT_NUMBER = Regex("""(\d{1,2})\s*号""")
 
     /**
      * 把阶段推进产生的新播报补成消息。
@@ -1092,6 +1215,12 @@ class WerewolfDirector(
     }
 
     private companion object {
+
+        /** 复述自己旧发言时，每条摘要留多少字。够认出「这是同一段」，又不占预算。 */
+        const val SAID_ECHO_CHARS = 80
+
+        /** 发言被清洗/拒绝后仍然为空时的占位。宁可平庸，也不要一条空气泡。 */
+        const val EMPTY_SPEECH_FALLBACK = "我先听完这一轮，暂时不改判断。"
         /**
          * 当天进程的字数预算。
          *

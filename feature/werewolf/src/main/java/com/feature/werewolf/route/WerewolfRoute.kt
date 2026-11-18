@@ -10,8 +10,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.feature.werewolf.contract.WerewolfScreen
+import com.feature.werewolf.export.WerewolfExport
 import com.feature.werewolf.engine.HumanTurn
 import com.feature.werewolf.engine.MessageKind
 import com.feature.werewolf.engine.WerewolfMessage
@@ -86,7 +88,10 @@ fun WerewolfRoute(
     val autoSpeak by viewModel.autoSpeak.collectAsState()
     val speechReady by viewModel.speechReady.collectAsState()
     val revealedIndex by viewModel.revealedIndex.collectAsState()
+    val speechBusy by viewModel.speechBusy.collectAsState()
     val speakingSeat by viewModel.speakingSeat.collectAsState()
+    // 导出复盘要用它写缓存文件并拉起系统分享
+    val context = LocalContext.current
 
     // 入口是列表，不是配置页，更不是上次的牌桌
     var screen by remember { mutableStateOf<WerewolfScreen>(WerewolfScreen.History) }
@@ -169,6 +174,7 @@ fun WerewolfRoute(
                 viewModel.closeRecord()
                 screen = WerewolfScreen.Setup
             },
+            onExport = { WerewolfExport.share(context, recordReview) },
         )
         return
     }
@@ -257,6 +263,7 @@ fun WerewolfRoute(
                         showReview = false
                         screen = WerewolfScreen.Setup
                     },
+                    onExport = { WerewolfExport.share(context, review) },
                 )
             } else {
                 UIWerewolfTableScreen(
@@ -268,6 +275,7 @@ fun WerewolfRoute(
                         speechReady = speechReady,
                         revealedIndex = revealedIndex,
                         speakingSeat = speakingSeat,
+                        speechBusy = speechBusy,
                     ),
                     // 牌桌左上角的返回 = 收起牌桌回列表，不是退出狼人杀
                     onExit = {
@@ -602,11 +610,21 @@ internal fun WerewolfUiState.toReview(
     // 谁当时能看到这句话，在它被写进 transcript 的那一刻就定死了，复盘只是把它摊开。
     val seatNames = game.players.associate { it.seat to it.name }
     val seatAvatars = game.players.associate { it.seat to avatars[it.id] }
+    // 对话里每一行都挂上发言者的终局身份。读复盘时最常问的是「这人当时是什么身份」，
+    // 没有它就得往上翻底牌区一个一个座位对，读三句来回滚一次。
+    val seatRoles = game.players.associate { it.seat to it.role }
+
+    fun kindOf(role: WerewolfRole): UIWerewolfGroupKind = when {
+        role.isWerewolf -> UIWerewolfGroupKind.WOLF
+        role.isGod -> UIWerewolfGroupKind.GOD
+        else -> UIWerewolfGroupKind.VILLAGER
+    }
 
     fun toSpeechLine(message: WerewolfMessage): UIWerewolfSpeechLine? {
         val text = message.text.trim()
         if (text.isEmpty()) return null
         val seat = message.seat
+        val role = seat?.let { seatRoles[it] }
         return UIWerewolfSpeechLine(
             seat = seat,
             speaker = seat?.let { "$it 号 ${seatNames[it].orEmpty()}".trim() } ?: "上帝",
@@ -620,6 +638,9 @@ internal fun WerewolfUiState.toReview(
             },
             text = text,
             secret = !message.isPublic,
+            roleLabel = role?.displayName,
+            roleKind = role?.let(::kindOf),
+            reasoning = message.reasoning,
         )
     }
 
@@ -747,6 +768,43 @@ internal fun emergedVisible(
 internal fun litSeats(actorSeat: Int?, speakingSeat: Int?, running: Boolean): Set<Int> =
     if (!running) emptySet() else setOfNotNull(actorSeat, speakingSeat)
 
+/**
+ * 一条消息在界面上的排版性质。
+ *
+ * 「说出口」和「心里想」必须分成两种样子：
+ *
+ * - [MessageKind.SPEECH] → 发言气泡（有头像、正常字号）
+ * - [MessageKind.WOLF_CHAT] → 密谈卡（也是说出口的，只是听众只有狼，所以不能并进内心活动，
+ *   否则会让人以为队友当时没在商量）
+ * - [MessageKind.VOTE] / [MessageKind.NIGHT_ACT] → 内心活动（压暗的小字），
+ *   它们**没有人听见**，也永远不朗读
+ * - [MessageKind.DIVINE] → 居中播报
+ */
+internal fun lineKindOf(kind: MessageKind): UIWerewolfLineKind = when (kind) {
+    MessageKind.DIVINE -> UIWerewolfLineKind.DIVINE
+    MessageKind.SPEECH -> UIWerewolfLineKind.SPEECH
+    MessageKind.WOLF_CHAT -> UIWerewolfLineKind.PRIVATE
+    MessageKind.VOTE, MessageKind.NIGHT_ACT -> UIWerewolfLineKind.INNER
+}
+
+/**
+ * 内心活动的小标签：投票、守人、查验、用药。
+ *
+ * 只写「内心」的话，一夜里的几条记录看起来像同一件事说了好几遍，
+ * 玩家要靠点开上下文才知道刚才那是在守人还是在查验。
+ */
+internal fun innerLabelOf(message: com.feature.werewolf.engine.WerewolfMessage): String? =
+    when (message.kind) {
+        MessageKind.VOTE -> "投票"
+        MessageKind.NIGHT_ACT -> when (message.phase) {
+            Phase.NIGHT_GUARD -> "守人"
+            Phase.NIGHT_SEER -> "查验"
+            Phase.NIGHT_WITCH -> "用药"
+            else -> "念头"
+        }
+        else -> null
+    }
+
 internal fun WerewolfUiState.toLive(
     humanSeat: Int?,
     turn: HumanTurn?,
@@ -756,6 +814,8 @@ internal fun WerewolfUiState.toLive(
     revealedIndex: Int = Int.MAX_VALUE,
     /** 喇叭此刻在念谁的发言，用来把牌桌上那个人亮起来。null = 没在念。 */
     speakingSeat: Int? = null,
+    /** 喇叭手里还有没有没念完的行（含正在念的这一句）。 */
+    speechBusy: Boolean = false,
 ): UIWerewolfLive {
     val table = table
     val game = table?.game
@@ -781,6 +841,9 @@ internal fun WerewolfUiState.toLive(
         gated = gated,
         fallbackDay = game?.day ?: 1,
         fallbackPhase = game?.phase,
+        // 喇叭还在响就说明舞台还没走完最后一条。少了这一半判断，念最后一条的时候
+        // `revealed` 已经追平，界面会当场切到引擎的下一阶段（遗言没念完，天已经黑了）
+        speechBusy = speechBusy,
     )
     // 舞台追上引擎了吗。没追上说明屏幕上是「回放」，引擎那边的「轮到谁、走到第几个」
     // 都属于未来：先亮起 4 号在夜里思考，再听见白天的话，是比背景抢跑更明显的剧透。
@@ -839,30 +902,33 @@ internal fun WerewolfUiState.toLive(
         val speaker = message.seat?.let { seat -> game?.players?.firstOrNull { it.seat == seat } }
         UIWerewolfLine(
             index = index,
-            kind = when (message.kind) {
-                MessageKind.DIVINE -> UIWerewolfLineKind.DIVINE
-                MessageKind.SPEECH -> UIWerewolfLineKind.SPEECH
-                MessageKind.VOTE -> UIWerewolfLineKind.VOTE
-                MessageKind.WOLF_CHAT, MessageKind.NIGHT_ACT -> UIWerewolfLineKind.PRIVATE
-            },
+            kind = lineKindOf(message.kind),
             seat = message.seat,
             speaker = speaker?.name,
             avatarPath = speaker?.id?.let { avatars[it] },
             text = message.text,
+            innerLabel = innerLabelOf(message),
+            secret = !message.isPublic,
         )
     }
 
-    // 此刻正在逐字说的一段话。三道闸门缺一不可：
+    // 此刻正在逐字说的一段话。四道闸门缺一不可：
     //
     // 1. 对他可见吗——和座位高亮同一套判断（actorVisible）。夜里守卫在守人，
     //    把他亮出来、还把他想的话打出来，等于直接把身份念给全场听；
     // 2. 朗读积压了吗——文字跟着语音走的时候，抢先打字就是把下一句提前剧透；
-    // 3. 思考过程只给上帝视角——参与中的局，别人的推理属于作弊信息。
-    //    （自己的思考不会出现在这里：人类座位背后不是模型，压根没有流式。）
+    // 3. **喇叭闲了吗**——只比 revealedIndex 是不够的：念 A 的时候进度已经推到 A，
+    //    看起来追平了，但 A 还在响。这时把 B 的打字打出来，用户看到的就是
+    //    「下一个人的对话框冒出来、然后又消失」（等 B 真念到才重新出现）。
+    //    所以要等队列真的空下来（speechBusy=false）才允许显示；
+    // 4. **思考过程一律不给**——不参与局不给（别人推理=作弊），观战也不给：
+    //    一旦能看 AI 的推理，看推理本身就成了主要玩法，牌桌上的发言反倒没人读了。
+    //    思考过程随消息存进 transcript，复盘时才摊开（玩家原话：「别显示在对局里，
+    //    在复盘里展示出来就行」）。
     val streaming = live
         ?.takeIf { running && !finished }
         ?.takeIf { item -> actorVisible(item.seat, item.phase) && item.seat != humanSeat }
-        ?.takeIf { !gated || revealed >= (table?.transcript?.lastIndex ?: -1) }
+        ?.takeIf { !gated || (!speechBusy && revealed >= (table?.transcript?.lastIndex ?: -1)) }
         ?.let { item ->
             val speaker = game?.players?.firstOrNull { it.seat == item.seat }
             if (speaker == null) {
@@ -873,7 +939,6 @@ internal fun WerewolfUiState.toLive(
                     speaker = speaker.name,
                     avatarPath = avatars[speaker.id],
                     text = item.text,
-                    reasoning = if (reveal) item.reasoning else "",
                 )
             }
         }
@@ -902,6 +967,9 @@ internal fun WerewolfUiState.toLive(
         error = error,
         autoSpeak = autoSpeak,
         speechReady = speechReady,
+        // 闸门没生效时一律当作「不忙」：关朗读/已结束/没语音包的时候，
+        // 界面必须照常显示正在生成的内容，否则看起来就是卡住了。
+        speechBusy = speechBusy && gated,
     )
 }
 
@@ -931,7 +999,7 @@ private fun buildTurn(
             kind = UIWerewolfTurnKind.VOTE,
             seat = humanSeat,
             title = "要不要竞选警长",
-            hint = "警长票权 1.5 票，上警的人不能投警长票",
+            hint = "只是举手报名，理由留到竞选发言；上警的人不能投警长票",
             targets = listOf(UIWerewolfTarget(seat = humanSeat, name = "上警")),
             canAbstain = true,
             abstainLabel = "不上警",

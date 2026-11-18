@@ -151,6 +151,17 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
     private val _speakingSeat = MutableStateFlow<Int?>(null)
     val speakingSeat: StateFlow<Int?> = _speakingSeat.asStateFlow()
 
+    /**
+     * 喇叭手里还有没有活：队列里积压着没念的行，或者某一句正在念。
+     *
+     * 界面拿它决定「能不能提前显示下一条正在生成的发言」。只看 [revealedIndex] 不够：
+     * 念 A 的时候进度已经推到 A，看起来「追平了」，可这句还没播完——此时把 B 的流式
+     * 文字打出来，用户看到的就是「下一个人的对话框先冒出来、然后又消失」（等 B 真被
+     * 念到才重新出现）。
+     */
+    private val _speechBusy = MutableStateFlow(false)
+    val speechBusy: StateFlow<Boolean> = _speechBusy.asStateFlow()
+
     /** 串行朗读循环：一次只在读一句，上一句读完才 poll 下一句。 */
     private var speakJob: Job? = null
 
@@ -268,30 +279,34 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
     /**
      * 把新增的消息放进朗读队列。
      *
-     * 参与的局按以前的规则收紧到「只有 AI 的公开发言」：
-     * - 只读 [MessageKind.SPEECH]：上帝播报（DIVINE）不读——那是事实陈述，
-     *   读出来既长又和发言混在一起；投票表态（VOTE）不读——屏幕上一目了然。
-     * - 私有消息（狼人夜聊、夜间行动）本来 audience 就不包含人类座位，
-     *   `transcriptFor` 里根本不会出现；这里再判一次 isPublic 是双保险：
-     *   语音是不可撤回的，一旦读错一句「我是狼」，说出去的话收不回来。
-     * - 不读自己说的话：自己刚打完的字再念一遍是纯粹的噪音。
+     * **只有「说出口的话」会进声音**：白天发言、狼人夜聊（观战时才听得到）。
+     * 投票理由、夜里查验用药的念头属于内心活动（[MessageKind.isInnerThought]），
+     * 任何模式都不读——一圈人投票就是十几段独白，念出来既拖节奏，又和真正的
+     * 发言混在一起分不清。它们照常进 transcript、照常显示，只是不发声。
      *
-     * **纯观战（上帝视角）反过来：全读。** 观战没有「自己」这一格，牌桌上的一切
-     * 本来就摊在屏幕上——狼人夜聊、查验点人、用药、上帝播报、投票，只念公开发言
-     * 等于把剧情念丢一半。私密性由调用方保证：只有 `humanSeat == null` 才为 true。
+     * 参与的局再收紧一层：只读 audience 为 null 的发言。
+     * 私有消息（狼人夜聊、夜间行动）本来 audience 就不包含人类座位，
+     * `transcriptFor` 里根本不会出现；这里再判一次 isPublic 是双保险：
+     * 语音是不可撤回的，一旦读错一句「我是狼」，说出去的话收不回来。
+     * 不读自己说的话：自己刚打完的字再念一遍是纯粹的噪音。
+     *
+     * **纯观战（上帝视角）读得更多**：观战没有「自己」这一格，夜聊和上帝播报
+     * 本来就摊在屏幕上，不念等于把剧情念丢一半。私密性由调用方保证：
+     * 只有 `humanSeat == null` 才为 true。
      */
     private fun enqueueSpeech(transcript: List<com.feature.werewolf.engine.WerewolfMessage>) {
         if (!_autoSpeak.value) return
         val self = _humanSeat.value
-        // 观战 = 上帝视角：没有座位，全部朗读
+        // 观战 = 上帝视角：没有座位，能念的都念
         val readEverything = self == null
         val candidates = transcript.mapIndexed { index, message ->
             val speakable = SpeechFilter.speakable(
-                isPublicSpeech = message.kind == MessageKind.SPEECH && message.isPublic,
+                isPublicSpeech = message.kind.isSpokenOutLoud && message.isPublic,
                 speakerSeat = message.seat,
                 selfSeat = self,
                 text = message.text,
                 readEverything = readEverything,
+                isInnerThought = message.kind.isInnerThought,
             )
             SpeechCandidate(
                 text = message.text,
@@ -303,7 +318,12 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
             )
         }
         val added = speechQueue.offer(candidates)
-        if (added.isNotEmpty()) startSpeakLoop()
+        if (added.isNotEmpty()) {
+            // 在启动循环之前就置忙：从入队到协程真正派发之间还有一段空档，
+            // 那时界面不该认为「喇叭已经闲了」。
+            _speechBusy.value = true
+            startSpeakLoop()
+        }
     }
 
     /** 串行读：poll 一句、等它读完、再读下一句。同时只会有一个循环在跑。 */
@@ -347,6 +367,8 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
                 // 循环正常结束、被取消、抛异常，都要把高亮收掉：
                 // 留一个永远亮着的座位，用户会以为那个人说了十分钟话
                 _speakingSeat.value = null
+                // 队列已空（或被清），喇叭闲下来了，界面可以重新显示正在生成的下一条
+                _speechBusy.value = false
             }
         }
     }
@@ -384,6 +406,7 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
         speechQueue.reset(fromIndex)
         _revealedIndex.value = fromIndex - 1
         _speakingSeat.value = null
+        _speechBusy.value = false
     }
 
     /** 重开朗读时跳过关闭期间积下的消息，显示进度也一起跳到当前末尾。 */
@@ -398,6 +421,7 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
         speakJob = null
         if (clearQueue) speechQueue.clear()
         _speakingSeat.value = null
+        _speechBusy.value = false
         speechEngine.stop()
     }
 

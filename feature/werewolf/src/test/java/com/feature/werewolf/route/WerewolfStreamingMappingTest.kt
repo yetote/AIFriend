@@ -51,6 +51,7 @@ class WerewolfStreamingMappingTest {
         transcript: List<WerewolfMessage> = emptyList(),
         revealedIndex: Int = Int.MAX_VALUE,
         running: Boolean = true,
+        speechBusy: Boolean = false,
         text: String = "我觉得",
         reasoning: String = "先看他的表态",
     ): UIWerewolfLive = WerewolfUiState(
@@ -64,10 +65,14 @@ class WerewolfStreamingMappingTest {
         autoSpeak = true,
         speechReady = true,
         revealedIndex = revealedIndex,
+        speechBusy = speechBusy,
     )
 
     @Test
-    fun `观战时能看见正在说的话和思考过程`() {
+    fun `观战时能看见正在说的话，但思考过程同样不给`() {
+        // 思考过程已经从流式行整体移除（UIWerewolfStreaming 连字段都没有了）：
+        // 能看 AI 推理的话，「读心」会变成主要玩法，牌桌上的发言反倒没人读。
+        // 它随消息存进 transcript，复盘时才摊开。
         val ui = live(Phase.DAY_DISCUSSION, seat = 4, humanSeat = null)
 
         val streaming = ui.streaming
@@ -75,17 +80,15 @@ class WerewolfStreamingMappingTest {
         assertEquals(4, streaming!!.seat)
         assertEquals("玩家4", streaming.speaker)
         assertEquals("我觉得", streaming.text)
-        assertEquals("心里话是观战的乐趣之一", "先看他的表态", streaming.reasoning)
     }
 
     @Test
-    fun `参与中的局拿不到别人的思考过程`() {
+    fun `参与中的局照样看得到公开发言`() {
         val ui = live(Phase.DAY_DISCUSSION, seat = 4, humanSeat = 9)
 
         val streaming = ui.streaming
         assertNotNull("他正在公开说话，这句本身是公开的", streaming)
         assertEquals("我觉得", streaming!!.text)
-        assertEquals("听不到别人想什么，这才是牌桌", "", streaming.reasoning)
     }
 
     @Test
@@ -100,7 +103,6 @@ class WerewolfStreamingMappingTest {
     fun `狼人商议只对狼队友可见`() {
         val wolf = live(Phase.NIGHT_WOLF_CHAT, seat = 2, humanSeat = 1)
         assertNotNull("1 号是狼，能听到队友商量", wolf.streaming)
-        assertEquals("队友的心里话同样不给看", "", wolf.streaming!!.reasoning)
 
         val good = live(Phase.NIGHT_WOLF_CHAT, seat = 2, humanSeat = 9)
         assertNull("9 号是好人，夜里不该看见狼在说话", good.streaming)
@@ -140,6 +142,50 @@ class WerewolfStreamingMappingTest {
         )
 
         assertNotNull("队列已经追平，这时不打字反而像卡住了", ui.streaming)
+    }
+
+    @Test
+    fun `喇叭还在念上一句时不显示下一位的打字`() {
+        // 进度已经推到末尾（看起来「追平了」），但那一句还在响。
+        // 这时候把 B 的流式文字打出来，用户看到的就是「B 的对话框冒出来又消失」。
+        val backlog = listOf(
+            WerewolfMessage(1, Phase.DAY_DISCUSSION, 1, MessageKind.SPEECH, "一"),
+            WerewolfMessage(1, Phase.DAY_DISCUSSION, 2, MessageKind.SPEECH, "二"),
+        )
+        val ui = live(
+            Phase.DAY_DISCUSSION,
+            seat = 4,
+            humanSeat = 9,
+            transcript = backlog,
+            revealedIndex = backlog.lastIndex,
+            speechBusy = true,
+        )
+
+        assertNull(ui.streaming)
+        assertEquals("界面也要知道喇叭没闲下来", true, ui.speechBusy)
+    }
+
+    @Test
+    fun `关掉朗读时 speechBusy 不再拦人`() {
+        // 闸门没生效时必须当作「不忙」：否则关掉语音反而看不到任何正在生成的内容
+        val ui = WerewolfUiState(
+            table = WerewolfTable(
+                standard9().copy(phase = Phase.DAY_DISCUSSION),
+                listOf(WerewolfMessage(1, Phase.DAY_DISCUSSION, 1, MessageKind.SPEECH, "一")),
+            ),
+            live = WerewolfLive(seat = 4, phase = Phase.DAY_DISCUSSION, text = "我觉得"),
+            running = true,
+        ).toLive(
+            humanSeat = 9,
+            turn = null,
+            avatars = emptyMap(),
+            autoSpeak = false,
+            revealedIndex = 0,
+            speechBusy = true,
+        )
+
+        assertEquals(false, ui.speechBusy)
+        assertNotNull(ui.streaming)
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.feature.werewolf.prompt
 
+import com.feature.werewolf.engine.isNight
 import com.feature.werewolf.game.Faction
 import com.feature.werewolf.game.GameEvent
 import com.feature.werewolf.game.Phase
@@ -56,6 +57,7 @@ object WerewolfPrompt {
             }
             append(ruleBrief(game.config)).append("\n\n")
             append(boardBrief(game.config).trimEnd()).append("\n\n")
+            append(strategyBrief(game.config).trimEnd()).append("\n\n")
             append(publicSituation(game).trimEnd()).append("\n\n")
             append(privateBriefing(game, seat)).append("\n\n")
             append(task(game, seat))
@@ -146,9 +148,13 @@ object WerewolfPrompt {
             "${event.shooterLabel} ${event.hunterSeat} 号开枪带走 ${event.targetSeat} 号"
         }
 
-        is GameEvent.BearRoar -> "熊 ${event.seat} 号在咆哮（左右邻座有狼）"
+        // 提示词里的摘要同样不能带座位号：它进的是所有玩家的上下文，
+        // 点了号等于把「谁是熊」发给了每一只狼。熊自己知道自己是熊，不需要这一行。
+        is GameEvent.BearRoar -> "熊在咆哮（左右邻座有狼）"
 
         is GameEvent.WolfExploded -> "${event.seat} 号狼人自爆，当天直接入夜"
+
+        is GameEvent.SheriffSignup -> "上警的是 ${seats(event.runners)}"
 
         is GameEvent.SheriffElected -> if (event.votes <= 0) {
             "${event.seat} 号自动当选警长"
@@ -202,12 +208,18 @@ object WerewolfPrompt {
         }
 
         // 上帝播报只报「发生了什么」，不解释规则：规则在板子说明和模型提示词里
-        // 已经讲过一遍，写在播报里既占屏幕又是废话（玩家原话：「熊咆哮了」就够了）
+        // 已经讲过一遍，写在播报里既占屏幕又是废话（玩家原话：「熊咆哮了」就够了）。
+        // 也**不能点名熊的座位**——熊是暗身份，念出「11 号在咆哮」等于当众宣布谁是熊，
+        // 狼人下一夜就先刀它（玩家原话：「那不直接把熊的号码点出来了么？」）。
         is GameEvent.BearRoar ->
-            "第${event.day}天 天亮：熊 ${event.seat} 号在咆哮"
+            "第${event.day}天 天亮：熊在咆哮"
 
         is GameEvent.WolfExploded ->
             "第${event.day}天：${event.seat} 号狼人自爆，直接进入黑夜"
+
+        // 报名只报名单：理由属于竞选发言，两处都写就等于把同一件事说两遍
+        is GameEvent.SheriffSignup ->
+            "第${event.day}天：上警的是 ${seats(event.runners)}"
 
         is GameEvent.SheriffElected -> if (event.votes <= 0) {
             "第${event.day}天：只有 ${event.seat} 号上警，自动当选警长"
@@ -271,6 +283,43 @@ object WerewolfPrompt {
                     "警长出局时要在遗言里移交警徽，没人接手或没来得及交代就作废。\n"
             )
         }
+    }
+
+    // ---------------------------------------------------------------------
+    // 基本打法
+    // ---------------------------------------------------------------------
+
+    /**
+     * 判断方法，而不是规则。
+     *
+     * [ruleBrief] 说的是「能做什么、怎么算赢」，这一层说的是「怎么判断谁像狼」。
+     * 缺了这一层，模型的发言完全由人设驱动，实测出现过三种灾难：
+     * 真预言家在警上、PK、白天把同一段话说了三遍；守卫第一天就当众解释
+     * 「我昨夜守了自己，所以是平安夜」；好人看到预言家对跳，只看谁语气更硬。
+     *
+     * 写死在这里而不是塞进每个角色的私有简报：**判断别人的方法是公共知识**，
+     * 平民、狼人、神职都用得上，而且必须一致——否则同一局里两个人用两套标准。
+     *
+     * 每条都尽量写成「可执行的动作」，不写「要理性分析」这种正确但没用的话。
+     */
+    private fun strategyBrief(config: WerewolfConfig): String = buildString {
+        append("【基本打法】以下和你的性格、说话风格无关，冲突时以这里为准：\n")
+        append("· 预言家每天开口第一件事，是报出前一晚验了谁、结果是好人还是狼人，然后才谈判断。")
+        append("跳过不报、只喊结论不报验人，在好人眼里就是悍跳。\n")
+        append("· 谁跳了预言家却报不出连续的验人链，或者验的人专挑已经被全场怀疑的，就该被盯上——")
+        append("这是好人盘对跳的第一依据，比语气和文采可靠得多。\n")
+        append("· 狼给谁发金水都不亏，「被发金水」证明不了干净；反过来，给金水的人也没必要急着投。\n")
+        append("· 神职不要主动报身份。")
+        if (config.has(WerewolfRole.GUARD)) {
+            append("守卫尤其不能说自己守过谁——那等于把守人路线和剩下的选择交给狼队，平安夜也不能当证据。")
+        }
+        append("猎人翻牌前报身份，等于给狼指路。\n")
+        append("· 每一轮都要带来新东西：新的怀疑对象、对别人刚说完那句话的回应、或对自己上一票的解释。")
+        append("结论没变就补理由或回应，**同一段判断说第二遍在别人眼里就是背词**。\n")
+        append("· 被指认时先正面回答对方的具体质疑，再反打。只喊「我是好人」「我逻辑自洽」没有用。\n")
+        append("· 投票前先看票型：谁发起的、谁跟得最快、谁在事后把自己摘干净。")
+        append("票型整齐不等于投对了人，一致跟票的人里一定有狼。\n")
+        append("· 出局时说遗言要给具体座位号和理由，别只交代「别投错」。")
     }
 
     // ---------------------------------------------------------------------
@@ -344,10 +393,36 @@ object WerewolfPrompt {
                 lines += "解药：" + if (game.witch.antidoteAvailable) "还在" else "已经用完"
                 lines += "毒药：" + if (game.witch.poisonAvailable) "还在" else "已经用完"
                 if (game.phase == Phase.NIGHT_WITCH) {
-                    lines += if (game.tonightVictim == null) {
-                        "今晚没有人被狼人袭击。"
-                    } else {
-                        "今晚被狼人袭击的是 ${game.tonightVictim} 号。"
+                    val victim = game.tonightVictim
+                    val canSelfHeal = game.witch.antidoteAvailable &&
+                        game.day == 1 && game.config.witchCanSelfHealOnFirstNight
+                    when {
+                        victim == null ->
+                            lines += "今晚没有人被狼人袭击，解药这次没有用处，你可以只用毒药或什么都不做。"
+
+                        victim == seat && canSelfHeal ->
+                            lines += "**今晚被狼人袭击的就是你自己（$seat 号）。** " +
+                                "第一夜你还能自救：用解药就活下来，不用就当场出局。"
+
+                        victim == seat -> {
+                            // 必死的局面。以前这里只写「被袭击的是 2 号」，模型按普通夜晚的
+                            // 思路答「这晚先不用药，毒药留到更关键的时候」——可它天一亮就死了，
+                            // 「更关键的时候」永远不会到来，毒药跟着进棺材。
+                            // 所以要明写「你今晚会死」和「这是最后机会」，不能只给客观信息。
+                            lines += "**今晚被狼人袭击的就是你自己（$seat 号），而你已经救不了自己" +
+                                "——天一亮你就出局了。**"
+                            if (game.witch.poisonAvailable) {
+                                lines += "这是你最后一次行动：毒药现在不用，就跟着你一起作废，" +
+                                    "以后永远没有第二次机会。想清楚最该带走谁，" +
+                                    "别把毒药省给一个不会到来的明天。"
+                            }
+                        }
+
+                        else -> {
+                            lines += "今晚被狼人袭击的是 $victim 号。"
+                            lines += "你可以救他，也可以不救。解药只有一次，" +
+                                "救他等于把这一次押在「他是好人」上。"
+                        }
                     }
                 }
                 lines += "解药用一次就没了，可以救活被狼刀的人，但不能救自己（第一夜除外）。"
@@ -359,16 +434,24 @@ object WerewolfPrompt {
             }
 
             WerewolfRole.GUARD -> {
-                lines += if (game.lastGuardedSeat == null) {
+                // 白天不能读 lastGuardedSeat：`startNextNight()` 是**白天结束**时才把它换成
+                // 上一夜的守人，所以白天这一刻它指向的是「前夜的前夜」。
+                // 实测后果很严重——守卫在白天照着这个字段发言，报的守人对象整整差一夜
+                // （第 2 天说守 5 号实守 4 号、第 4 天说守 6 号实守 10 号），
+                // 好人据此认定他「前后矛盾、在编身份」，把真守卫票了出去。
+                // 白天该看的是 tonightGuardedSeat，它只在跨夜时被搬走。
+                val lastNight = if (game.phase.isNight) game.lastGuardedSeat else game.tonightGuardedSeat
+                lines += if (lastNight == null) {
                     "你昨夜没有守人，今晚任何人都可以守。"
                 } else {
-                    "你昨夜守的是 ${game.lastGuardedSeat} 号，今晚不能再守他。"
+                    "你昨夜守的是 $lastNight 号，今晚不能再守他。"
                 }
                 if (game.phase == Phase.NIGHT_GUARD) {
                     lines += "现在轮到你守护。你不知道今晚狼人会刀谁，只能凭白天的发言去猜。"
                 }
                 lines += "你守的人当夜不会被刀死，但你自己也可能被刀——守自己同样是合法选择。"
-                lines += "你救下人的时候不会被告知，平安夜也可能只是狼人空刀，不要在白天当成证据说出来。"
+                lines += "你救下人的时候不会被告知，平安夜也可能只是狼人空刀，不要在白天当成证据说出来。" +
+                    "也不要在白天报出你守过谁：那等于把守人路线和剩下的选择一起交给狼队。"
             }
 
             WerewolfRole.IDIOT -> {
@@ -497,14 +580,17 @@ object WerewolfPrompt {
                         "第 ${game.day} 天，警长竞选开始，先问你要不要上警。" +
                             "想当警长就把 target 填成你自己的 $seat 号，不想就填 null。" +
                             "当上警长票权 1.5 票、还能决定当天的发言起点，代价是被狼人优先盯上；" +
-                            "而且上过警的人不能投警长票。用一句中文说明你的动机。"
+                            "而且上过警的人不能投警长票。" +
+                            "这一步只是举手报名，不发言——别写竞选宣言，那些话留到竞选发言环节。"
                     )
 
                 Phase.DAY_SHERIFF_SPEECH ->
                     append(
                         "现在轮到你竞选发言。用 2-3 句说服警下把票投给你：" +
                             "你的判断、你觉得谁是狼、你当选之后打算先推谁。" +
-                            "不要念座位号清单，不要写「某某说：」这样的格式。"
+                            "不要念座位号清单，不要写「某某说：」这样的格式。" +
+                            "如果你已经上台说过一次（PK 重新发言），必须回应对方这一轮说的话，" +
+                            "不要把刚才那段再念一遍——复读是最容易被抓的破绽。"
                     )
 
                 Phase.DAY_SHERIFF_VOTE ->
@@ -532,8 +618,20 @@ object WerewolfPrompt {
                     append(
                         "第 ${game.day} 天白天讨论，轮到你发言。" +
                             "用 2-3 句中文说出你的判断：你怀疑谁、为什么，或者解释你上一轮为什么那样投票。" +
-                            "只说你自己的话，不要替别人发言，不要写「某某说：」这样的格式。"
+                            "只说你自己的话，不要替别人发言，不要写「某某说：」这样的格式。" +
+                            "这一段必须和今天你已经说过的内容不同：结论没变就补理由或回应别人的质疑。"
                     )
+                    // 验人是全场最硬的信息，也是好人认预言家的唯一凭据。
+                    // 不点出来，模型会按人设聊感受，把一整晚的查验结果烂在手里，
+                    // 然后被全场当成「跳了预言家却不报验人」投出去。
+                    if (player.role == WerewolfRole.SEER && game.seerChecks.isNotEmpty()) {
+                        val last = game.seerChecks.last()
+                        append(
+                            "开口第一件事先报验人：第 ${last.day} 夜你验的是 ${last.targetSeat} 号，" +
+                                "结果是" + (if (last.isWerewolf) "狼人" else "好人") +
+                                "。报完再谈判断——跳了预言家却不报验人，好人只能当你悍跳。"
+                        )
+                    }
                     // 自爆只对狼有意义。写给所有人等于向好人泄露「这局的狼会自爆」，
                     // 虽然规则公开可查，但提示词里不该出现一句只对狼有用的话
                     if (player.role.isWerewolf) {
@@ -542,8 +640,8 @@ object WerewolfPrompt {
                                 "唯一值得的情况：**另一个队友**今天已经确定要被投出去，" +
                                 "你爆了才能让他活下来。被怀疑的是你自己、你想搅乱讨论、" +
                                 "你觉得再聊下去会露——这些都不许爆，爆了也救不回来。" +
-                                "写之前先回答自己：我爆完，活下来的是哪一个座位？答不上具体号码就别写。" +
-                                "真要爆，就在发言最开头写「【自爆】」。"
+                                "真要爆，就在发言最开头写「【自爆】救 X 号」，X 必须是还活着的队友座位号；" +
+                                "写不出这个号码就别写标记，系统不会受理没有救到人的自爆。"
                         )
                     }
                 }

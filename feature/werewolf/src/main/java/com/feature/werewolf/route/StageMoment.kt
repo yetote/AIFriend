@@ -24,14 +24,21 @@ internal fun stageMoment(
     gated: Boolean,
     fallbackDay: Int,
     fallbackPhase: Phase?,
+    speechBusy: Boolean = false,
 ): StageMoment {
-    // 空 transcript 时 lastIndex 是 -1，`revealed < -1` 恒不成立，自然落到 fallback。
-    val behind = gated && revealed < transcript.lastIndex
-    // revealed = -1（第一条还没念完）时给开头那条：队列里已经在放它了。
-    val message = if (behind) transcript.getOrNull(revealed.coerceAtLeast(0)) else null
-    return if (message == null) {
-        StageMoment(fallbackDay, fallbackPhase)
-    } else {
-        StageMoment(message.day, message.phase)
-    }
+    if (transcript.isEmpty()) return StageMoment(fallbackDay, fallbackPhase)
+
+    // 两条都要判，缺一个就会把舞台交给引擎：
+    //
+    // - `revealed < lastIndex`：后面还有没念到的；
+    // - `speechBusy`：**最后一条正在念**。`revealed` 是「取出即前进」（为了边看边听），
+    //   所以念最后一条时它已经等于 lastIndex，看着像「追平了」，但喇叭还在响。
+    //   这时引擎早把状态推到下一阶段了——遗言念到一半背景就入夜，正是这条漏判。
+    val behind = gated && (speechBusy || revealed < transcript.lastIndex)
+    if (!behind) return StageMoment(fallbackDay, fallbackPhase)
+
+    // revealed 可能落在可见范围之外（理论上不会），夹一下再取，取不到就回落实时阶段
+    val message = transcript.getOrNull(revealed.coerceIn(0, transcript.lastIndex))
+        ?: return StageMoment(fallbackDay, fallbackPhase)
+    return StageMoment(message.day, message.phase)
 }

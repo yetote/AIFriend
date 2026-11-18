@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  只暴露应用缓存里的 export/ 目录：复盘导出的 md 文件写在这里。
+  不要写 <external-path> 或 <root-path>——那等于把整个存储的读取权交给任意接收方。
+-->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <cache-path name="export" path="export/" />
+</paths>

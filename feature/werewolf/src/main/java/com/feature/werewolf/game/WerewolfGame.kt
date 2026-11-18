@@ -520,15 +520,22 @@ data class WerewolfGame(
             sheriffCandidates = candidates,
             sheriffRound = 1,
         )
+        // 两人以上才单独播报名单：单人上警时 SheriffElected 的文案已经说了
+        // 「只有 X 号上警，自动当选」，再补一条「上警的是 X 号」只是重复占屏。
+        val signed = if (candidates.size >= 2) {
+            base.copy(history = base.history + GameEvent.SheriffSignup(day, candidates))
+        } else {
+            base
+        }
         return when (candidates.size) {
-            0 -> base.copy(
+            0 -> signed.copy(
                 sheriffElectionDone = true,
-                history = base.history + GameEvent.SheriffVacant(day, "无人上警"),
+                history = signed.history + GameEvent.SheriffVacant(day, "无人上警"),
             ).afterSheriffElection()
 
-            1 -> base.electSheriff(candidates.first(), votes = 0)
+            1 -> signed.electSheriff(candidates.first(), votes = 0)
 
-            else -> base.copy(phase = Phase.DAY_SHERIFF_SPEECH)
+            else -> signed.copy(phase = Phase.DAY_SHERIFF_SPEECH)
         }
     }
 

@@ -91,6 +91,18 @@ sealed interface GameEvent {
         val seat: Int,
     ) : GameEvent
 
+    /**
+     * 上警报名结果：这些人举手竞选警长。
+     *
+     * 报名**不是发言**。线下就是举手，谁上谁不上一次报完，理由留到竞选发言环节。
+     * 所以这里只记名单，不记每个人说了什么——把 12 个人的「我上警，因为……」
+     * 全写进 transcript，第一阶段会比竞选本身还长，真正该曝信息的环节反而被淹没。
+     */
+    data class SheriffSignup(
+        override val day: Int,
+        val runners: List<Int>,
+    ) : GameEvent
+
     /** 警长选出来了。[votes] 是得票数（警下每人一票，所以是整数）。 */
     data class SheriffElected(
         override val day: Int,
