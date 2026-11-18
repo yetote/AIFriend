@@ -39,7 +39,7 @@ data class TTSProvider(
 enum class TTSProtocol {
     /** MiniMax `POST {baseUrl}/t2a_v2`，非流式 JSON，data.audio 是 hex 编码 mp3。 */
     MINIMAX,
-    /** 科大讯飞 `POST {baseUrl}/v2/tts`，MD5 签名 + 表单，响应是二进制音频。 */
+    /** 科大讯飞 `wss://tts-api.xfyun.cn/v2/tts`，HMAC-SHA256 签名，流式收 mp3 分片。 */
     IFLYTEK,
     /** 火山引擎 `POST {baseUrl}/api/v1/tts`，Bearer;token + JSON，data 是 base64。 */
     VOLCENGINE,
@@ -63,11 +63,12 @@ object TTSProviderCatalog {
     val Iflytek = TTSProvider(
         id = "iflytek",
         name = "科大讯飞",
-        description = "老牌中文语音，发音清晰稳定",
-        baseUrl = "https://tts.xfyun.cn",
+        description = "老牌中文语音，需 App ID + API Key + API Secret",
+        baseUrl = "wss://tts-api.xfyun.cn",
         consoleUrl = "https://console.xfyun.cn/services/tts",
         protocol = TTSProtocol.IFLYTEK,
         keyLabel = "API Key",
+        secretLabel = "API Secret",
         appIdLabel = "App ID",
         defaultVoice = "xiaoyan",
     )

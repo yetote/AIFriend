@@ -9,8 +9,12 @@ import io.ktor.client.request.post
 import io.ktor.client.request.request
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
+import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.http.HttpMethod
 import io.ktor.http.contentType
+import io.ktor.websocket.Frame
+import io.ktor.websocket.readBytes
+import io.ktor.websocket.readText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -94,37 +98,100 @@ internal object TTSProtocols {
     }
 
     // ---- 科大讯飞 -------------------------------------------------------
-    // POST {baseUrl}/v2/tts，MD5 签名 + 表单，响应二进制音频。
-    // voiceId 用讯飞发音人（xiaoyan/xiaolin 等），与 MiniMax 的不同。
+    // 官方现行的在线语音合成是 WebSocket 流式接口 wss://tts-api.xfyun.cn/v2/tts，
+    // HMAC-SHA256 签名，需要 AppID + APIKey + APISecret（旧的 HTTP 接口已不对外开放）。
+    // 只发一帧文本（status=2），随后把服务端推来的音频分片拼成完整 mp3。
     private suspend fun iflytek(req: Request): ByteArray {
-        val param = buildJsonObject {
-            put("auf", "audio/L16;rate=16000")
-            put("aue", "lame")
-            put("voice_name", req.voiceId.ifBlank { "xiaoyan" })
-            put("speed", "50")
-            put("volume", "50")
-            put("pitch", "50")
-            put("engine_type", "intp65")
-        }.toString()
-        val paramB64 = Base64.encodeToString(param.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
-        val curTime = (System.currentTimeMillis() / 1000).toString()
-        val checkSum = md5(req.apiKey + curTime + paramB64)
-        val bytes: ByteArray = KtorClient.instance.client.request("${req.baseUrl.trimEnd('/')}/v2/tts") {
-            method = HttpMethod.Post
-            header("X-Appid", req.appId)
-            header("X-CurTime", curTime)
-            header("X-Param", paramB64)
-            header("X-CheckSum", checkSum)
-            contentType(io.ktor.http.ContentType.Application.FormUrlEncoded)
-            setBody("text=${urlEncode(req.text)}")
-        }.body()
-        if (bytes.isEmpty()) throw TTSException("讯飞返回空音频")
-        // 鉴权失败时讯飞返回 JSON 错误体而非音频，用前几个字节粗判。
-        val head = bytes.take(48).map { it.toInt() and 0xFF }
-        if ('{'.code in head) {
-            throw TTSException("讯飞合成失败: ${String(bytes, Charsets.UTF_8).take(160)}")
+        if (req.apiSecret.isBlank()) {
+            throw TTSException("讯飞缺少 API Secret（新版流式接口必需，请在设置页补填）")
         }
+        val url = iflytekAuthUrl(req.apiKey, req.apiSecret, System.currentTimeMillis())
+        val frame = buildJsonObject {
+            put("common", buildJsonObject { put("app_id", req.appId) })
+            put("business", buildJsonObject {
+                put("aue", "lame")       // mp3
+                put("sfl", 1)            // aue=lame 时必须开启流式返回
+                put("vcn", req.voiceId.ifBlank { "xiaoyan" })
+                put("speed", 50)
+                put("volume", 50)
+                put("pitch", 50)
+            })
+            put("data", buildJsonObject {
+                put("status", 2)         // 流式合成文本只能一次性上传，固定为 2
+                put("text", Base64.encodeToString(req.text.toByteArray(Charsets.UTF_8), Base64.NO_WRAP))
+            })
+        }.toString()
+
+        val audio = java.io.ByteArrayOutputStream()
+        var finished = false
+        KtorClient.instance.client.webSocket(url) {
+            send(Frame.Text(frame))
+            for (packet in incoming) {
+                when (packet) {
+                    is Frame.Text -> {
+                        val text = packet.readText()
+                        val root = runCatching { parseObject(text) }.getOrNull()
+                            ?: throw TTSException("讯飞响应不是 JSON: ${text.take(160)}")
+                        val code = int(root, "code") ?: -1
+                        if (code != 0) {
+                            throw TTSException("讯飞合成失败 code=$code: ${str(root, "message").orEmpty()}")
+                        }
+                        obj(root, "data")?.let { data ->
+                            str(data, "audio")?.let { b64 ->
+                                runCatching { Base64.decode(b64, Base64.DEFAULT) }
+                                    .getOrNull()?.let { audio.write(it) }
+                            }
+                            if ((int(data, "status") ?: -1) == 2) finished = true
+                        }
+                    }
+                    is Frame.Binary -> audio.write(packet.readBytes())
+                    else -> Unit
+                }
+                if (finished) break
+            }
+        }
+        val bytes = audio.toByteArray()
+        if (bytes.isEmpty()) throw TTSException("讯飞返回空音频（请确认 AppID/APIKey/APISecret 与发音人权限）")
         return bytes
+    }
+
+    /**
+     * 生成讯飞流式接口的鉴权 WebSocket URL。拆出来便于单测签名算法。
+     *
+     * date 用 GMT/RFC1123（服务端允许 300 秒偏差）；signature 对
+     * `host: ...\ndate: ...\nGET /v2/tts HTTP/1.1` 做 HMAC-SHA256 再 base64，
+     * 拼进 authorization_origin 后整体再做一次 base64。
+     */
+    internal fun iflytekAuthUrl(apiKey: String, apiSecret: String, nowMillis: Long): String {
+        val host = "tts-api.xfyun.cn"
+        val path = "/v2/tts"
+        val date = SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss 'GMT'", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("GMT")
+        }.format(Date(nowMillis))
+        val signatureOrigin = "host: $host\ndate: $date\nGET $path HTTP/1.1"
+        val signature = base64Encode(hmacSha256(apiSecret.toByteArray(Charsets.UTF_8), signatureOrigin))
+        val authOrigin = "api_key=\"$apiKey\", algorithm=\"hmac-sha256\", " +
+            "headers=\"host date request-line\", signature=\"$signature\""
+        val authorization = base64Encode(authOrigin.toByteArray(Charsets.UTF_8))
+        return "wss://$host$path?authorization=${urlEncode(authorization)}&date=${urlEncode(date)}&host=$host"
+    }
+
+    /** 标准 Base64 编码（纯 Kotlin，避免单测环境里 android.util.Base64 是 stub）。 */
+    internal fun base64Encode(input: ByteArray): String {
+        val table = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+        val out = StringBuilder()
+        var i = 0
+        while (i < input.size) {
+            val b0 = input[i].toInt() and 0xFF
+            val b1 = if (i + 1 < input.size) input[i + 1].toInt() and 0xFF else -1
+            val b2 = if (i + 2 < input.size) input[i + 2].toInt() and 0xFF else -1
+            out.append(table[b0 shr 2])
+            out.append(table[((b0 and 0x3) shl 4) or (if (b1 >= 0) b1 shr 4 else 0)])
+            out.append(if (b1 >= 0) table[((b1 and 0xF) shl 2) or (if (b2 >= 0) b2 shr 6 else 0)] else '=')
+            out.append(if (b2 >= 0) table[b2 and 0x3F] else '=')
+            i += 3
+        }
+        return out.toString()
     }
 
     // ---- 火山引擎 -------------------------------------------------------

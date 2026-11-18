@@ -70,14 +70,20 @@ class CloudSpeechEngine(context: Context) : SpeechEngine {
                 val provider = TTSProviderCatalog.byId(ttsConfigId)
                     ?: TTSProviderCatalog.default()
                 val credential = TTSCredentials.get(provider.id)
-                if (credential?.apiKey.isNullOrBlank() && provider.id != "iflytek") {
+                // 讯飞新版流式接口三个凭证缺一不可（API Key / API Secret / App ID）。
+                if (provider.id == "iflytek") {
+                    val missing = buildList {
+                        if (credential?.apiKey.isNullOrBlank()) add("API Key")
+                        if (credential?.apiSecret.isNullOrBlank()) add("API Secret")
+                        if (credential?.appId.isNullOrBlank()) add("App ID")
+                    }
+                    if (missing.isNotEmpty()) {
+                        Log.w(TAG, "speak $utteranceId: 讯飞缺少 ${missing.joinToString("、")}，跳过")
+                        done()
+                        return@launch
+                    }
+                } else if (credential?.apiKey.isNullOrBlank()) {
                     Log.w(TAG, "speak $utteranceId: ${provider.name} 没有配置 Key，跳过")
-                    done()
-                    return@launch
-                }
-                // 讯飞的 AppID 是必填的第二字段。
-                if (provider.id == "iflytek" && credential?.appId.isNullOrBlank()) {
-                    Log.w(TAG, "speak $utteranceId: 讯飞缺少 App ID，跳过")
                     done()
                     return@launch
                 }

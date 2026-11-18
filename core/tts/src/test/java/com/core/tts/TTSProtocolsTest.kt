@@ -5,6 +5,8 @@ import com.core.tts.TTSProtocols.toHex
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.net.URLDecoder
+import java.util.Base64
 
 /**
  * 各家 TTS 协议的加密与编码基础测试。
@@ -49,6 +51,46 @@ class TTSProtocolsTest {
     @Test(expected = IllegalArgumentException::class)
     fun `奇数长度 hex 直接抛错`() {
         "abc".hexToBytes()
+    }
+
+    // ---- 讯飞流式接口鉴权 URL ----
+    @Test
+    fun `Base64 编码标准向量`() {
+        assertEquals("YWJj", TTSProtocols.base64Encode("abc".toByteArray(Charsets.UTF_8)))
+        assertEquals("", TTSProtocols.base64Encode(ByteArray(0)))
+        assertEquals("YWJjZA==", TTSProtocols.base64Encode("abcd".toByteArray(Charsets.UTF_8)))
+    }
+
+    @Test
+    fun `讯飞鉴权 URL 结构完整且签名可复算`() {
+        // 固定一个时间点，date 应稳定为 GMT/RFC1123。
+        val now = 1_564_608_201_000L
+        val url = TTSProtocols.iflytekAuthUrl("test-api-key", "test-api-secret", now)
+        assertTrue(url.startsWith("wss://tts-api.xfyun.cn/v2/tts?"))
+        assertTrue(url.contains("host=tts-api.xfyun.cn"))
+
+        val query = url.substringAfter('?').split('&')
+            .associate { it.substringBefore('=') to it.substringAfter('=') }
+        val date = URLDecoder.decode(query.getValue("date"), "UTF-8")
+        // RFC1123 + GMT，服务端要求这个精确格式且允许 300 秒偏差。
+        assertEquals("Wed, 31 Jul 2019 21:23:21 GMT", date)
+
+        // authorization 在 URL 里被编码过，先还原；再解两层 base64：
+        // 外层拿到 origin，内层的 signature 再解出 32 字节 HMAC。
+        val authorization = URLDecoder.decode(query.getValue("authorization"), "UTF-8")
+        val authJson = String(Base64.getDecoder().decode(authorization), Charsets.UTF_8)
+        assertTrue(authJson.contains("api_key=\"test-api-key\""))
+        assertTrue(authJson.contains("algorithm=\"hmac-sha256\""))
+        assertTrue(authJson.contains("headers=\"host date request-line\""))
+
+        val signatureB64 = authJson.substringAfter("signature=\"").substringBefore("\"")
+        val signature = Base64.getDecoder().decode(signatureB64)
+        assertEquals(32, signature.size) // HMAC-SHA256 固定 32 字节
+
+        // 用同样的签名原文独立复算一次，必须逐字节一致，证明拼串顺序正确。
+        val origin = "host: tts-api.xfyun.cn\ndate: $date\nGET /v2/tts HTTP/1.1"
+        val expected = TTSProtocols.hmacSha256("test-api-secret".toByteArray(Charsets.UTF_8), origin)
+        assertTrue(signature.contentEquals(expected))
     }
 
     // ---- 腾讯云 TC3 派生链：密钥逐步派生，结果必须稳定 ----

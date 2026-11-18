@@ -32,12 +32,15 @@ class TtsCredentialValidationTest {
     }
 
     @Test
-    fun `讯飞已保存 AppID 时不用重填`() {
+    fun `讯飞已保存 Secret 与 AppID 时不用重填`() {
         val provider = UITTSProviderOption(
             id = "iflytek", name = "讯飞", description = "", maskedKey = "abcd••••wxyz", hasKey = true,
+            secretLabel = "API Secret", hasSecret = true,
             appIdLabel = "App ID", hasAppId = true,
         )
         assertTrue(state(provider).canSave)
+        // 两个第二凭证缺任意一个都不能测，否则真机只会报鉴权失败。
+        assertFalse(state(provider.copy(hasSecret = false)).canSave)
         assertFalse(state(provider.copy(hasAppId = false)).canSave)
     }
 

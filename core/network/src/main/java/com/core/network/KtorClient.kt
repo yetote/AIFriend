@@ -16,6 +16,7 @@ import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logger
 import io.ktor.client.plugins.logging.Logging
+import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
@@ -43,6 +44,10 @@ class KtorClient {
             connectTimeoutMillis = 15_000
             requestTimeoutMillis = 120_000
             socketTimeoutMillis = 120_000
+        }
+        // 讯飞在线合成用 WebSocket；默认 ping/pong 关掉，避免长时间朗读被服务端超时踢掉。
+        install(WebSockets) {
+            pingIntervalMillis = 20_000
         }
         install(Logging) {
             logger = object : Logger {
