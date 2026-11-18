@@ -6,9 +6,13 @@ import com.core.repository.settings.TTSProtocol
 import io.ktor.client.call.body
 import io.ktor.client.request.header
 import io.ktor.client.request.post
+import io.ktor.client.request.preparePost
 import io.ktor.client.request.request
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
+import io.ktor.utils.io.readRemaining
+import io.ktor.client.plugins.expectSuccess
 import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.http.HttpMethod
 import io.ktor.http.contentType
@@ -20,6 +24,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.io.readByteArray
 import kotlinx.serialization.json.put
 import java.security.MessageDigest
 import java.text.SimpleDateFormat
@@ -194,43 +199,165 @@ internal object TTSProtocols {
         return out.toString()
     }
 
-    // ---- 火山引擎 -------------------------------------------------------
-    // POST {baseUrl}/api/v1/tts，Authorization 用分号 "Bearer;token"，data 是 base64。
+    // ---- 火山引擎（豆包）-----------------------------------------------
+    // V3 HTTP Chunked：POST {baseUrl}/api/v3/tts/unidirectional
+    // 一次请求、流式回多帧 JSON，每帧 data 是一段 base64 音频，code=20000000 表示说完。
+    //
+    // 为什么从 /api/v1/tts 迁过来：v1 官方已标「不推荐」，而且**明确不支持 2.0 音色**
+    // （zh_female_xxx_uranus_bigtts），发不发 resource id 都没用。2.0 的音质和音色数量
+    // 都比 1.0 好一大截，为它必须走 v3。
+    //
+    // 鉴权有两套，而且**互不兼容**：
+    //   新版控制台：只发 X-Api-Key（一把 UUID 形态的 Key）
+    //   旧版控制台：X-Api-App-Id + X-Api-Access-Key
+    // 不能按「填没填 AppID」分流——用户很容易新旧控制台各抄一点（填了 AppID，Key 却是
+    // 新版 API Key），实测这样会拿到 401 `load grant: requested grant not found`，
+    // 而且看不出是哪一步错。所以按 Key 的形态先猜一次，被拒再换另一套重试。
     private suspend fun volcengine(req: Request): ByteArray {
+        // AppID 空着就只剩单头一条路；有 AppID 时两种都排上，第一次通过就不会再发第二次
+        val order = when {
+            req.appId.isBlank() -> listOf(false)
+            looksLikeVolcApiKey(req.apiKey) -> listOf(false, true)
+            else -> listOf(true, false)
+        }
+        val failures = mutableListOf<String>()
+        for (legacyAuth in order) {
+            try {
+                return volcSynthesize(req, legacyAuth)
+            } catch (rejected: VolcAuthRejected) {
+                failures += "${if (legacyAuth) "AppID + Access Token" else "API Key 单头"}，" +
+                    rejected.detail
+            }
+        }
+        throw TTSException(
+            if (failures.size == 1) {
+                "火山拒绝了这次请求（${failures.first()}）。" +
+                    "新版控制台只填 API Key、AppID 留空；旧版控制台 AppID 和 Access Token 都要填。"
+            } else {
+                "火山两套鉴权都被拒绝了（${failures.joinToString("；")}）。" +
+                    "确认一下 Key 到底是新版的 API Key 还是旧版的 Access Token，两者不能混用。"
+            }
+        )
+    }
+
+    /**
+     * 火山 v3 的一次合成。
+     *
+     * 鉴权被拒时抛 [VolcAuthRejected]，外层会换另一套头重试；其余失败（音色没开通、
+     * resource 不匹配、空音频）换头也没用，直接抛给用户。
+     */
+    private suspend fun volcSynthesize(req: Request, legacyAuth: Boolean): ByteArray {
+        val voice = req.voiceId.ifBlank { DEFAULT_VOLC_VOICE }
         val body = buildJsonObject {
-            put("app", buildJsonObject {
-                put("appid", req.appId)
-                put("token", req.apiKey)
-                put("cluster", "volcano_tts")
-            })
             put("user", buildJsonObject { put("uid", "aifriend") })
-            put("audio", buildJsonObject {
-                put("voice_type", req.voiceId.ifBlank { "zh_female_qingxin" })
-                put("encoding", "mp3")
-                put("speed_ratio", 1.0)
-                put("volume_ratio", 1.0)
-                put("pitch_ratio", 1.0)
-            })
-            put("request", buildJsonObject {
-                put("reqid", UUID.randomUUID().toString())
+            put("req_params", buildJsonObject {
                 put("text", req.text)
-                put("text_type", "plain")
-                put("operation", "query")
+                put("speaker", voice)
+                put("audio_params", buildJsonObject {
+                    put("format", "mp3")
+                    put("sample_rate", 24_000)
+                })
             })
         }
-        val text = KtorClient.instance.client.post("${req.baseUrl.trimEnd('/')}/api/v1/tts") {
-            header("Authorization", "Bearer;${req.apiKey}")
+        val splitter = JsonFrameSplitter()
+        val audio = java.io.ByteArrayOutputStream()
+        var finishCode: Int? = null
+
+        KtorClient.instance.client.preparePost("${req.baseUrl.trimEnd('/')}/api/v3/tts/unidirectional") {
+            // 这里自己看状态码：火山的失败原因在响应体里（音色没开通、resource 不匹配），
+            // 交给全局校验器翻译只会剩一个 4xx，用户没法照着改。
+            expectSuccess = false
+            if (legacyAuth) {
+                header("X-Api-App-Id", req.appId)
+                header("X-Api-Access-Key", req.apiKey)
+            } else {
+                header("X-Api-Key", req.apiKey)
+            }
+            header("X-Api-Resource-Id", volcResourceId(voice))
+            header("X-Api-Request-Id", UUID.randomUUID().toString())
             contentType(io.ktor.http.ContentType.Application.Json)
             setBody(body.toString())
-        }.bodyAsText()
-        val root = parseObject(text)
-        val code = int(root, "code") ?: -1
-        val data = str(root, "data")
-        if (code != 3000 || data.isNullOrBlank()) {
-            throw TTSException("火山合成失败 code=$code msg=${str(root, "message").orEmpty()}")
+        }.execute { response ->
+            if (response.status.value !in 200..299) {
+                val detail = "HTTP ${response.status.value} ${response.bodyAsText().take(200)}"
+                // 401/403 才是「这套头不被认」，换一套还有机会；其它状态码换头也白换
+                if (response.status.value == 401 || response.status.value == 403) {
+                    throw VolcAuthRejected(detail)
+                }
+                throw TTSException("火山合成失败 $detail")
+            }
+            val channel = response.bodyAsChannel()
+            while (true) {
+                val packet = channel.readRemaining(8 * 1024L)
+                if (packet.exhausted()) break
+                for (frame in splitter.feed(packet.readByteArray())) {
+                    val root = parseObject(frame)
+                    val code = int(root, "code") ?: -1
+                    when {
+                        // 结束帧：data 为 null，不能再当音频解
+                        code == VOLC_CODE_FINISHED -> finishCode = code
+                        code != 0 -> {
+                            val detail = "code=$code ${str(root, "message").orEmpty()}"
+                            if (isVolcAuthMessage(detail)) throw VolcAuthRejected(detail)
+                            throw TTSException("火山合成失败 $detail")
+                        }
+                        else -> str(root, "data")?.takeIf { it.isNotEmpty() }?.let {
+                            audio.write(Base64.decode(it, Base64.DEFAULT))
+                        }
+                    }
+                    if (finishCode != null) break
+                }
+                if (finishCode != null) break
+            }
         }
-        return Base64.decode(data, Base64.DEFAULT)
+
+        if (audio.size() == 0) {
+            throw TTSException("火山返回了空音频（音色 $voice 可能没开通对应模型）")
+        }
+        return audio.toByteArray()
     }
+
+    /**
+     * 新版控制台的 API Key 是 UUID 形态，旧版 Access Token 不是。
+     *
+     * 只用来决定先试哪套，猜错有自动回退兜着，所以不必求全。
+     */
+    internal fun looksLikeVolcApiKey(key: String): Boolean =
+        VOLC_API_KEY_FORMAT.matches(key.trim())
+
+    /** 响应体里出现这些字样说明是鉴权问题，不是音色问题。 */
+    internal fun isVolcAuthMessage(text: String): Boolean {
+        val t = text.lowercase()
+        return t.contains("grant") || t.contains("unauthorized") ||
+            t.contains("access key") || t.contains("access_key") ||
+            t.contains("authentication") || t.contains("permission") ||
+            t.contains("45000010")
+    }
+
+    /** 这套鉴权头不被接受，换另一套可能就过了——不是终态错误。 */
+    private class VolcAuthRejected(val detail: String) : Exception(detail)
+
+    private val VOLC_API_KEY_FORMAT =
+        Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
+    /**
+     * 音色对应的 resource id，决定走哪个模型版本，也决定计费商品。
+     *
+     * `seed-tts-2.0` 只认 2.0 音色、`seed-tts-1.0` 只认 1.0 音色，配错会直接报
+     * 「voice_type 不存在」或「access denied」——所以必须按音色推断，不能写死。
+     * 声音复刻训练出来的音色（通常 `S_` 开头）走 `seed-icl-2.0`。
+     */
+    internal fun volcResourceId(voiceType: String): String = when {
+        voiceType.endsWith("_uranus_bigtts") -> "seed-tts-2.0"
+        voiceType.startsWith("S_") -> "seed-icl-2.0"
+        else -> "seed-tts-1.0"
+    }
+
+    /** 火山 2.0 的默认音色：官方示例里用小何，账号开通 2.0 后即可用。 */
+    internal const val DEFAULT_VOLC_VOICE = "zh_female_xiaohe_uranus_bigtts"
+
+    /** 合成结束的成功码，和中间帧的 0 区分开。 */
+    private const val VOLC_CODE_FINISHED = 20_000_000
 
     // ---- 阿里云百炼 -----------------------------------------------------
     // POST .../SpeechSynthesizer → output.audio.url，再 GET 下载音频。
@@ -270,10 +397,17 @@ internal object TTSProtocols {
             timeZone = TimeZone.getTimeZone("UTC")
         }.format(Date(timestamp * 1000))
 
+        // 腾讯云两套音色字段：官方预置的是数字 VoiceType，复刻/克隆音色是一个字符串，
+        // 走 FastVoiceType。以前只做 toIntOrNull 兜底，用户填了复刻音色会被静默换成
+        // 默认音色——听感不对但没有任何报错，最难查。这里按「是不是数字」分流。
+        val numericVoice = req.voiceId.toIntOrNull()
         val payload = buildJsonObject {
             put("Text", req.text)
             put("SessionId", UUID.randomUUID().toString())
-            put("VoiceType", req.voiceId.toIntOrNull() ?: 101001)
+            put("VoiceType", numericVoice ?: 101001)
+            if (numericVoice == null && req.voiceId.isNotBlank()) {
+                put("FastVoiceType", req.voiceId)
+            }
             put("Codec", "mp3")
             put("PrimaryLanguage", 1)
         }.toString()

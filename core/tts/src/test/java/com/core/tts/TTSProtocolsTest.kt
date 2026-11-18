@@ -113,4 +113,54 @@ class TTSProtocolsTest {
         assertTrue(!signingKey.contentEquals(dateKey))
         assertTrue(!signingKey.contentEquals(serviceKey))
     }
+
+    // ---- 火山 v3：resource id 必须跟着音色走 ----
+    @Test
+    fun `2点0 音色走 seed-tts-2点0`() {
+        assertEquals("seed-tts-2.0", TTSProtocols.volcResourceId("zh_female_xiaohe_uranus_bigtts"))
+    }
+
+    @Test
+    fun `1点0 大模型音色走 seed-tts-1点0`() {
+        // 配错 resource id 会直接报「voice_type 不存在」，
+        // 而且报错文案不会提示是哪一步错了
+        assertEquals("seed-tts-1.0", TTSProtocols.volcResourceId("zh_female_yueyunv_mars_bigtts"))
+        assertEquals("seed-tts-1.0", TTSProtocols.volcResourceId("zh_female_qingxin"))
+    }
+
+    @Test
+    fun `声音复刻音色走 seed-icl`() {
+        // S_ 开头是声音复刻训练出来的 speaker id，走 ICL 才能用
+        assertEquals("seed-icl-2.0", TTSProtocols.volcResourceId("S_abc123def"))
+    }
+
+    // ---- 火山 v3：鉴权双轨不能靠「有没有 AppID」猜 ----
+    @Test
+    fun `新版 API Key 是 UUID 形态`() {
+        assertTrue(TTSProtocols.looksLikeVolcApiKey("3f7a1c92-5b64-4d18-9a0e-2c8b7f1d4e35"))
+        // 首尾空白和大写都该容忍：从控制台复制经常带空格
+        assertTrue(TTSProtocols.looksLikeVolcApiKey("  3F7A1C92-5B64-4D18-9A0E-2C8B7F1D4E35 "))
+    }
+
+    @Test
+    fun `旧版 Access Token 不会被当成 API Key`() {
+        // 旧版 token 不是 UUID；认错了会先发单头白挨一次 401。
+        // 反过来猜错有自动回退兜着，所以这里只需要「不误判成 UUID」。
+        assertTrue(!TTSProtocols.looksLikeVolcApiKey("d41d8cd98f00b204e9800998ecf8427e"))
+        assertTrue(!TTSProtocols.looksLikeVolcApiKey(""))
+    }
+
+    @Test
+    fun `送错鉴权头的报错要能认出来`() {
+        // 实测报文：填了 AppID 却给新版 Key，服务端回 401 + 这个 code
+        assertTrue(
+            TTSProtocols.isVolcAuthMessage(
+                "HTTP 401 {\"header\":{\"code\":45000010," +
+                    "\"message\":\"load grant: requested grant not found in SaaS storage\"}}"
+            )
+        )
+        assertTrue(TTSProtocols.isVolcAuthMessage("code=45000010 "))
+        // 音色没开通是另一回事，换鉴权头重试没有意义，别把用户拖进第二次请求
+        assertTrue(!TTSProtocols.isVolcAuthMessage("code=55000000 voice_type not found"))
+    }
 }

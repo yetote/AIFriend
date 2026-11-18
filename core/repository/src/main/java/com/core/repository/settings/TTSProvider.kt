@@ -29,6 +29,14 @@ data class TTSProvider(
     val secretLabel: String? = null,
     /** AppID 类字段的输入框标签；null 表示这家不用。 */
     val appIdLabel: String? = null,
+    /**
+     * AppID 可以留空。
+     *
+     * 火山 v3 有两条鉴权路径：新版控制台只有一把 API Key（X-Api-Key），
+     * 旧版控制台要 AppID + Access Token（X-Api-App-Id + X-Api-Access-Key）。
+     * 所以 AppID 从「必填」变成「填了就走旧版鉴权」，新用户不该被它卡住。
+     */
+    val appIdOptional: Boolean = false,
     /** baseUrl 是否由用户填写（自定义网关）。 */
     val editableBaseUrl: Boolean = false,
     /** 该协议的默认音色，角色没选音色时用它。 */
@@ -41,7 +49,10 @@ enum class TTSProtocol {
     MINIMAX,
     /** 科大讯飞 `wss://tts-api.xfyun.cn/v2/tts`，HMAC-SHA256 签名，流式收 mp3 分片。 */
     IFLYTEK,
-    /** 火山引擎 `POST {baseUrl}/api/v1/tts`，Bearer;token + JSON，data 是 base64。 */
+    /**
+     * 火山引擎 V3 `POST {baseUrl}/api/v3/tts/unidirectional`，HTTP Chunked 多帧 JSON，
+     * 每帧 data 是 base64 音频片段。鉴权按 AppID 是否为空在新旧控制台之间分流。
+     */
     VOLCENGINE,
     /** 阿里云百炼 `POST {baseUrl}/api/v1/services/audio/tts/SpeechSynthesizer`，返回音频 URL。 */
     ALIBABA,
@@ -76,13 +87,14 @@ object TTSProviderCatalog {
     val Volcengine = TTSProvider(
         id = "volcengine",
         name = "火山引擎（豆包）",
-        description = "豆包语音，音色自然，需 AppID + Access Token",
+        description = "豆包语音 2.0，音色自然度高；新版控制台只填 API Key，旧版填 AppID + Access Token",
         baseUrl = "https://openspeech.bytedance.com",
-        consoleUrl = "https://console.volcengine.com/speech/app",
+        consoleUrl = "https://console.volcengine.com/speech/new",
         protocol = TTSProtocol.VOLCENGINE,
-        keyLabel = "Access Token",
-        appIdLabel = "App ID",
-        defaultVoice = "zh_female_qingxin",
+        keyLabel = "API Key / Access Token",
+        appIdLabel = "App ID（旧版控制台）",
+        appIdOptional = true,
+        defaultVoice = "zh_female_xiaohe_uranus_bigtts",
     )
 
     val Alibaba = TTSProvider(
