@@ -3,7 +3,7 @@ package com.core.network
 import android.util.Log
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
-import io.ktor.client.engine.android.Android
+import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.statement.bodyAsText
 import io.ktor.client.network.sockets.ConnectTimeoutException
 import io.ktor.client.plugins.ClientRequestException
@@ -29,7 +29,9 @@ import kotlinx.serialization.json.Json
 import java.net.SocketTimeoutException
 
 class KtorClient {
-    val client = HttpClient(Android) {
+    // 必须用 OkHttp 引擎：Android 引擎（HttpURLConnection）不支持 WebSocket，
+    // 讯飞在线合成的 wss 流式接口会直接抛 "Engine doesn't support WebSocketCapability"。
+    val client = HttpClient(OkHttp) {
         expectSuccess = true
         install(ContentNegotiation) {
             json(Json {

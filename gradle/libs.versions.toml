@@ -77,6 +77,8 @@ cn-therouter-apt = { group = "cn.therouter", name = "apt", version.ref = "theRou
 #Coil/Ktor
 ktor-client-core = { group = "io.ktor", name = "ktor-client-core", version.ref = "ktor" }
 ktor-client-android = { group = "io.ktor", name = "ktor-client-android", version.ref = "ktor" }
+# Android 引擎基于 HttpURLConnection，不支持 WebSocket；讯飞流式 TTS 必须用 OkHttp 引擎。
+ktor-client-okhttp = { group = "io.ktor", name = "ktor-client-okhttp", version.ref = "ktor" }
 ktor-client-auth = { group = "io.ktor", name = "ktor-client-auth", version.ref = "ktor" }
 ktor-client-websockets = { group = "io.ktor", name = "ktor-client-websockets", version.ref = "ktor" }
 ktor-log = { group = "io.ktor", name = "ktor-client-logging", version.ref = "ktor" }
