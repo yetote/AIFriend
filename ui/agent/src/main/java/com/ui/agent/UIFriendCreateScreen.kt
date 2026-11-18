@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -57,6 +58,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.core.persona.Persona
@@ -121,6 +123,22 @@ fun UIFriendCreateScreen(
     /** 点「刷新价格」。为空表示当前平台不支持刷新。 */
     onRefreshPrice: () -> Unit = {},
     /**
+     * 试听某个音色，null = 该服务的默认音色。
+     *
+     * 放在建角色页而不是设置页：音色是角色属性，而且「这个音色能不能出声」
+     * 只有真的合成一次才知道（精品音色要单独开通）。试听失败不影响选，
+     * 但用户得当场知道换哪个能响。
+     */
+    onPreviewVoice: (ttsConfigId: String?, voiceId: String?) -> Unit = { _, _ -> },
+    /** 正在合成试听音频。 */
+    isPreviewingVoice: Boolean = false,
+    /** 正在试听哪个音色；null 表示默认音色那条，配合 [isPreviewingVoice] 区分。 */
+    previewingVoiceId: String? = null,
+    /** 上一次试听失败的原因，换音色后由调用方清空。 */
+    previewError: String? = null,
+    /** 切换服务商时清掉上一次的试听报错：留着会让人以为新服务也不可用。 */
+    onClearPreviewError: () -> Unit = {},
+    /**
      * 一个服务商都没配时，引导用户去设置页填 Key。
      *
      * 不设默认值：漏传应该是编译错误，而不是点了没反应。
@@ -133,6 +151,14 @@ fun UIFriendCreateScreen(
     var thinking by rememberSaveable(initialThinking) { mutableStateOf(initialThinking) }
     var voiceId by rememberSaveable(initialVoiceId) { mutableStateOf(initialVoiceId) }
     var ttsConfigId by rememberSaveable(initialTtsConfigId) { mutableStateOf(initialTtsConfigId) }
+    /*
+     * 内置列表里没有的音色一律当「自定义」处理——旧角色存的音色、用户从控制台
+     * 抄来的复刻音色都走这条。内置列表永远追不上各家音色库（克隆音色、国际站、
+     * 需要单独开通的精品音色），所以手填这条路必须在，而且要好用。
+     * 手填入口在选择面板里（[UIVoicePickerSheet]），这里只判断要不要显示成「自定义」。
+     */
+    val voiceBuiltIn = VoiceCatalog.isBuiltIn(ttsConfigId, voiceId)
+    var pickingVoice by remember { mutableStateOf(false) }
     var pickingPersona by remember { mutableStateOf(false) }
     var appliedPersonaId by rememberSaveable { mutableStateOf("") }
     var pendingPersona by remember { mutableStateOf<Persona?>(null) }
@@ -362,7 +388,9 @@ fun UIFriendCreateScreen(
                                     .clickable {
                                         if (ttsConfigId != option.id) {
                                             ttsConfigId = option.id
+                                            // 各家音色 id 不通用，旧音色留着必定合成失败
                                             voiceId = null
+                                            onClearPreviewError()
                                         }
                                     }
                                     .padding(horizontal = 14.dp, vertical = 8.dp)
@@ -377,25 +405,62 @@ fun UIFriendCreateScreen(
                         color = UIFriendBarTitleColor
                     )
                     Spacer(Modifier.height(6.dp))
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        contentPadding = PaddingValues(vertical = 2.dp)
+                    // 音色不再是横向 chip 行：一家二十多个音色横着划不动，而且选的时候
+                    // 必须能试听——能不能出声取决于账号权限（精品音色要单独开通），
+                    // 名字再好听也可能合成失败，等进了角色才发现就查不出是哪一步的问题。
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(UIRadiusControl))
+                            .background(Color(0xFFEEF1F6))
+                            .clickable { pickingVoice = true }
+                            .padding(start = 14.dp, end = 8.dp, top = 9.dp, bottom = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // 音色按选中的服务分组：各家 id 不通用，混在一起会选到用不了的音色。
-                        items(VoiceCatalog.forProvider(ttsConfigId)) { option ->
-                            val selected = option.id == voiceId
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = option.label,
-                                fontSize = 13.sp,
-                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                                color = if (selected) Color.White else UIFriendBarTitleColor,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(50))
-                                    .background(if (selected) UIActionBrush else SolidColor(Color(0xFFEEF1F6)))
-                                    .clickable { voiceId = option.id }
-                                    .padding(horizontal = 14.dp, vertical = 8.dp)
+                                text = if (voiceBuiltIn) {
+                                    VoiceCatalog.labelOf(ttsConfigId, voiceId)
+                                } else {
+                                    "自定义：$voiceId"
+                                },
+                                fontSize = 13.5.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = UIFriendBarTitleColor,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                text = "共 ${
+                                    VoiceCatalog.forProvider(ttsConfigId).count { it.id != null }
+                                } 个可选 · 点开挑选并试听",
+                                fontSize = 11.sp,
+                                color = UIFriendBarItemMetaColor
                             )
                         }
+                        // 试听放在行内而不是面板里才有：改完音色想复听一下，不用再打开面板
+                        UIVoicePreviewButton(
+                            playing = isPreviewingVoice && previewingVoiceId == voiceId,
+                            onClick = { onPreviewVoice(ttsConfigId, voiceId) }
+                        )
+                        Spacer(Modifier.width(2.dp))
+                        Text(
+                            text = "更换 ›",
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = UIFriendBarTagTextBlue
+                        )
+                    }
+                    if (previewError != null) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = previewError,
+                            fontSize = 11.5.sp,
+                            lineHeight = 16.sp,
+                            color = Color(0xFFD14343)
+                        )
                     }
                 }
 
@@ -605,6 +670,23 @@ fun UIFriendCreateScreen(
                 avatarBytes = bytes
                 cropUri = null
             }
+        )
+    }
+
+    if (pickingVoice) {
+        UIVoicePickerSheet(
+            providerId = ttsConfigId,
+            currentVoiceId = voiceId,
+            isPreviewing = isPreviewingVoice,
+            previewingVoiceId = previewingVoiceId,
+            previewError = previewError,
+            onDismiss = { pickingVoice = false },
+            onPick = { picked ->
+                // 选中即收起：这一步只是挑声音，没有别的要填
+                voiceId = picked
+                pickingVoice = false
+            },
+            onPreview = { picked -> onPreviewVoice(ttsConfigId, picked) }
         )
     }
 

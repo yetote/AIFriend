@@ -102,13 +102,12 @@ data class UITTSProviderOption(
     val secretLabel: String? = null,
     /** AppID 标签；null 表示这家不用（讯飞、火山要）。 */
     val appIdLabel: String? = null,
+    /** AppID 可以留空（火山新版控制台只给一把 API Key）。 */
+    val appIdOptional: Boolean = false,
     /** 已保存的第二凭证 / AppID，留空表示沿用旧值。 */
     val hasSecret: Boolean = false,
     val hasAppId: Boolean = false,
 )
-
-/** 试听音色选项，映射到 core:ai 的 VoiceCatalog，UI 不直接依赖那层。 */
-data class UIVoiceOption(val id: String?, val label: String)
 
 /** TTS 试听结果：成功会真的响一声，失败要给出能照着改的原因。 */
 sealed interface UITTSTestResult {
@@ -125,9 +124,6 @@ data class UITTSState(
     val appIdInput: String = "",
     val baseUrlInput: String = "",
     val keyVisible: Boolean = false,
-    /** 试听用的音色，null = 服务商默认。 */
-    val voiceId: String? = null,
-    val voices: List<UIVoiceOption> = emptyList(),
     /** 正在真实合成并播放，禁用按钮防止连点。 */
     val testing: Boolean = false,
     /** 试听结果；失败时带出可直接照着改的原因。 */
@@ -138,9 +134,6 @@ data class UITTSState(
     val selected: UITTSProviderOption?
         get() = providers.firstOrNull { it.id == selectedId }
 
-    val selectedVoiceLabel: String
-        get() = voices.firstOrNull { it.id == voiceId }?.label ?: "默认音色"
-
     val canSave: Boolean
         get() {
             if (testing) return false
@@ -148,7 +141,12 @@ data class UITTSState(
             if (keyInput.isBlank() && !p.hasKey) return false
             // 腾讯云要 SecretKey、讯飞火山要 AppID；输入框留空时允许沿用已保存的值。
             if (p.secretLabel != null && secretInput.isBlank() && !p.hasSecret) return false
-            if (p.appIdLabel != null && appIdInput.isBlank() && !p.hasAppId) return false
+            // 火山的 AppID 可留空：留空即走新版 API Key 单头鉴权
+            if (p.appIdLabel != null && !p.appIdOptional &&
+                appIdInput.isBlank() && !p.hasAppId
+            ) {
+                return false
+            }
             if (p.editableBaseUrl && baseUrlInput.isBlank() && p.baseUrl.isBlank()) return false
             return true
         }

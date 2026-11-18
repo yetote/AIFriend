@@ -76,7 +76,6 @@ fun SettingsRoute(
             onAppIdChange = viewModel::setTtsAppIdInput,
             onBaseUrlChange = viewModel::setTtsBaseUrlInput,
             onToggleVisible = viewModel::toggleTtsKeyVisible,
-            onVoiceSelect = viewModel::selectTtsVoice,
             onTestAndSave = viewModel::testAndSaveTtsCredential,
             onClearKey = viewModel::clearTtsKey,
             onOpenConsole = { providerId ->

@@ -24,6 +24,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -75,7 +79,6 @@ fun UITtsSettingsPage(
     onAppIdChange: (String) -> Unit,
     onBaseUrlChange: (String) -> Unit,
     onToggleVisible: () -> Unit,
-    onVoiceSelect: (String?) -> Unit,
     onTestAndSave: () -> Unit,
     onClearKey: () -> Unit,
     onOpenConsole: (String) -> Unit,
@@ -97,8 +100,9 @@ fun UITtsSettingsPage(
             ) {
                 Spacer(Modifier.height(14.dp))
                 Text(
-                    text = "狼人杀自动朗读用这里的凭证，和模型 Key 分开。" +
-                        "语音权限通常要在服务商控制台单独开通。",
+                    text = "这里只管凭证和能不能接通：会真的合成一句试给你听。" +
+                        "语音权限通常要在服务商控制台单独开通。音色是每个角色的属性，" +
+                        "在创建 AI 好友时挑、可逐个试听。",
                     fontSize = 12.sp,
                     color = UIFriendBarItemMetaColor,
                     lineHeight = 17.sp
@@ -112,7 +116,6 @@ fun UITtsSettingsPage(
                     onAppIdChange = onAppIdChange,
                     onBaseUrlChange = onBaseUrlChange,
                     onToggleVisible = onToggleVisible,
-                    onVoiceSelect = onVoiceSelect,
                     onTestAndSave = onTestAndSave,
                     onClearKey = onClearKey,
                     onOpenConsole = onOpenConsole,
@@ -132,7 +135,6 @@ private fun TtsSection(
     onAppIdChange: (String) -> Unit,
     onBaseUrlChange: (String) -> Unit,
     onToggleVisible: () -> Unit,
-    onVoiceSelect: (String?) -> Unit,
     onTestAndSave: () -> Unit,
     onClearKey: () -> Unit,
     onOpenConsole: (String) -> Unit,
@@ -212,9 +214,24 @@ private fun TtsSection(
                 onValueChange = onAppIdChange,
                 visible = true,
                 onToggleVisible = {},
-                placeholder = "填写 ${provider.appIdLabel}",
+                placeholder = if (provider.appIdOptional) {
+                    "用新版 API Key 时留空即可"
+                } else {
+                    "填写 ${provider.appIdLabel}"
+                },
                 password = false
             )
+            if (provider.appIdOptional) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "新版控制台只有一把 API Key，这里留空；" +
+                        "旧版控制台才需要 AppID + Access Token 两个都填。" +
+                        "填了也不会错，会依次试两套鉴权。",
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp,
+                    color = UIFriendBarItemMetaColor
+                )
+            }
         }
 
         if (provider.secretLabel != null) {
@@ -246,21 +263,6 @@ private fun TtsSection(
                 placeholder = "https://your-host/v1",
                 password = false
             )
-        }
-
-        if (state.voices.isNotEmpty()) {
-            Spacer(Modifier.height(10.dp))
-            SectionLabel("试听音色")
-            Spacer(Modifier.height(8.dp))
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(state.voices) { voice ->
-                    VoiceChip(
-                        label = voice.label,
-                        selected = voice.id == state.voiceId,
-                        onClick = { onVoiceSelect(voice.id) }
-                    )
-                }
-            }
         }
 
         Spacer(Modifier.height(10.dp))
@@ -304,7 +306,7 @@ private fun TtsSection(
         )
         Spacer(Modifier.height(6.dp))
         Text(
-            text = "会实际朗读一句测试文本，合成成功才保存；不消耗对话额度。",
+            text = "用该服务的默认音色合成一句并播放，成功才保存；不消耗对话额度。",
             fontSize = 11.sp,
             color = UIFriendBarItemMetaColor
         )
@@ -347,30 +349,13 @@ private fun SelectionDot(selected: Boolean) {
     }
 }
 
-@Composable
-private fun VoiceChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .uiControl(
-                shape = RoundedCornerShape(50),
-                color = if (selected) UIFriendBarTagBgBlue else Color.White.copy(alpha = 0.92f)
-            )
-            .clickable { onClick() }
-            .padding(horizontal = 12.dp, vertical = 6.dp)
-    ) {
-        Text(
-            text = label,
-            fontSize = 12.sp,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-            color = if (selected) UIFriendBarTagTextBlue else UIFriendBarItemMetaColor
-        )
-    }
-}
 
 @Composable
 private fun TtsTestBanner(result: UITTSTestResult) {
     val (text, color) = when (result) {
-        is UITTSTestResult.Success -> "试听成功：${result.voiceLabel}，凭证已验证" to UIFriendBarOnlineGreen
+        // 只报「出声了」这件事本身：设置页验的是凭证 + 权限，
+        // 具体音色能不能用要到建角色页挑的时候才验（那时才知道用的是哪个）
+        is UITTSTestResult.Success -> "合成成功（${result.voiceLabel}），凭证与语音权限都通了" to UIFriendBarOnlineGreen
         is UITTSTestResult.Failure -> result.message to UIFriendBarRed
     }
     Row(

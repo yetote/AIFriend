@@ -27,7 +27,6 @@ import com.ui.home.UITTSTestResult
 import com.ui.home.UITTSProviderOption
 import com.ui.home.UITTSState
 import com.ui.home.UIVerifyResult
-import com.ui.home.UIVoiceOption
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -96,8 +95,6 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
                 secretInput = "",
                 appIdInput = savedTts[selected.id]?.appId.orEmpty(),
                 baseUrlInput = savedTts[selected.id]?.baseUrl.orEmpty(),
-                voices = voicesFor(selected.id),
-                voiceId = VoiceCatalog.defaultVoiceOf(selected.id),
             )
         )
     }
@@ -467,23 +464,11 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
                 secretInput = "",
                 appIdInput = saved?.appId.orEmpty(),
                 baseUrlInput = saved?.baseUrl.orEmpty(),
-                voices = voicesFor(id),
-                voiceId = VoiceCatalog.defaultVoiceOf(id),
                 hint = null,
                 testResult = null
             )
         )
     }
-
-    /** 切音色只影响试听；角色实际用哪个音色仍在建角色时决定。 */
-    fun selectTtsVoice(id: String?) {
-        _state.value = _state.value.copy(
-            tts = _state.value.tts.copy(voiceId = id, testResult = null)
-        )
-    }
-
-    private fun voicesFor(providerId: String): List<UIVoiceOption> =
-        VoiceCatalog.forProvider(providerId).map { UIVoiceOption(it.id, it.label) }
 
     fun setTtsKeyInput(value: String) {
         _state.value = _state.value.copy(
@@ -554,7 +539,9 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
             return
         }
         val appId = tts.appIdInput.ifBlank { existing?.appId.orEmpty() }
-        if (provider.appIdLabel != null && appId.isBlank()) {
+        // 火山的 AppID 可留空：留空即走新版控制台的 API Key 单头鉴权。
+        // 这里少判一次，用户就会被卡在「不填不行」，而新版控制台压根没有 AppID。
+        if (provider.appIdLabel != null && !provider.appIdOptional && appId.isBlank()) {
             _state.value = _state.value.copy(tts = tts.copy(hint = "请先填写 ${provider.appIdLabel}"))
             return
         }
@@ -575,7 +562,9 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
         )
         viewModelScope.launch {
             val result = try {
-                previewPlayer.preview(provider, credential, tts.voiceId)
+                // 用服务商默认音色验证：设置页只回答「这套凭证在这台机器上能不能出声」，
+                // 具体音色是角色的属性，在建角色页挑并逐个试听。
+                previewPlayer.preview(provider, credential, null)
             } catch (t: Throwable) {
                 Result.failure<Unit>(t)
             }
@@ -593,7 +582,7 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
 
             val ok = withContext(Dispatchers.IO) { ttsSettings.save(credential) }
             if (ok) savedTts = savedTts + (provider.id to credential)
-            val voiceLabel = _state.value.tts.selectedVoiceLabel
+            val voiceLabel = VoiceCatalog.defaultOption(provider.id).label
             _state.value = _state.value.copy(
                 tts = _state.value.tts.copy(
                     testing = false,
@@ -607,21 +596,11 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
         }
     }
 
-    /** 鉴权失败单独点明「语音权限」，其余交给统一错误转换。 */
-    private fun ttsReadableError(throwable: Throwable, provider: com.core.repository.settings.TTSProvider): String {
-        var message = ""
-        throwable.handleError { message = it }
-        val lower = message.lowercase()
-        return when {
-            lower.contains("401") || lower.contains("403") || lower.contains("unauthorized") ||
-                lower.contains("invalid") || lower.contains("签名") ->
-                "${provider.name} 拒绝了这次请求。请确认 Key / AppID / Secret 填对，且已开通语音合成权限。"
-            lower.contains("合成失败") || lower.contains("播放失败") || lower.contains("空音频") -> message
-            lower.contains("timeout") || lower.contains("超时") ->
-                "连接超时。检查网络，或该语音接口在当前网络下不可达。"
-            else -> message.ifBlank { "试听失败，请稍后重试" }
-        }
-    }
+    /** 文案与建角色页试听共用一份，别一边说「Key 不对」一边摔堆栈给用户。 */
+    private fun ttsReadableError(
+        throwable: Throwable,
+        provider: com.core.repository.settings.TTSProvider,
+    ): String = com.core.tts.TTSReadableError.of(throwable, provider.name)
 
     private fun com.core.repository.settings.TTSProvider.toTtsOption() = UITTSProviderOption(
         id = id,
@@ -634,6 +613,7 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
         keyLabel = keyLabel,
         secretLabel = secretLabel,
         appIdLabel = appIdLabel,
+        appIdOptional = appIdOptional,
         hasSecret = savedTts[id]?.apiSecret?.isNotBlank() == true,
         hasAppId = savedTts[id]?.appId?.isNotBlank() == true,
     )
