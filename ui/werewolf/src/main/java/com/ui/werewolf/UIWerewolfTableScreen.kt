@@ -610,7 +610,10 @@ private fun SeatTile(
     ) {
         Box(modifier = Modifier.size(40.dp), contentAlignment = Alignment.Center) {
             if (seat.active) {
-                // 正在发言/正在行动的人要有动静，静止的牌桌看不出轮到谁
+                // 正在发言/正在行动的人要有动静，静止的牌桌看不出轮到谁。
+                // 两层：贴着头像的呼吸光说「是这个人」，往外扩的涟漪说「他正在出声」。
+                // 只有呼吸的话，一个正在思考的人和一个正在说话的人长得一样；
+                // 只有涟漪的话，安静时看不出重心在哪。两个一起才读得出来。
                 val transition = rememberInfiniteTransition(label = "active")
                 val scale by transition.animateFloat(
                     initialValue = 0.90f,
@@ -620,6 +623,28 @@ private fun SeatTile(
                         repeatMode = RepeatMode.Reverse
                     ),
                     label = "scale"
+                )
+                // 涟漪周期 1.6s：比呼吸（1.6s 一个来回）慢半拍，两圈不会叠成一个节拍器
+                val ripple by transition.animateFloat(
+                    initialValue = 0f,
+                    targetValue = 1f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(durationMillis = 1600, easing = LinearEasing)
+                    ),
+                    label = "ripple"
+                )
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .graphicsLayer {
+                            // 扩到 1.5 倍（约 57dp），72dp 的列里放得下，不会压到隔壁
+                            val grow = 1f + 0.5f * ripple
+                            scaleX = grow
+                            scaleY = grow
+                            // 扩出去的同时淡掉：一圈硬边扩到底再消失会像故障
+                            alpha = (1f - ripple) * 0.9f
+                        }
+                        .border(1.5.dp, Color(0xFF6C9BFF), CircleShape)
                 )
                 Box(
                     modifier = Modifier

@@ -86,6 +86,7 @@ fun WerewolfRoute(
     val autoSpeak by viewModel.autoSpeak.collectAsState()
     val speechReady by viewModel.speechReady.collectAsState()
     val revealedIndex by viewModel.revealedIndex.collectAsState()
+    val speakingSeat by viewModel.speakingSeat.collectAsState()
 
     // 入口是列表，不是配置页，更不是上次的牌桌
     var screen by remember { mutableStateOf<WerewolfScreen>(WerewolfScreen.History) }
@@ -266,6 +267,7 @@ fun WerewolfRoute(
                         autoSpeak = autoSpeak,
                         speechReady = speechReady,
                         revealedIndex = revealedIndex,
+                        speakingSeat = speakingSeat,
                     ),
                     // 牌桌左上角的返回 = 收起牌桌回列表，不是退出狼人杀
                     onExit = {
@@ -729,6 +731,22 @@ internal fun emergedVisible(
     return if (humanSeat == null) emerged else emerged.filter { it.visibleTo(humanSeat) }
 }
 
+/**
+ * 牌桌上该亮起来的座位。
+ *
+ * 两条独立的线：引擎此刻在问谁（[actorSeat]）、喇叭此刻在念谁（[speakingSeat]）。
+ * 引擎比朗读跑得快，这两个经常不是同一个人——一个在说，下一个已经在想。
+ * 两件都是「正在发生」，所以都亮。
+ *
+ * 对局没在跑时一个都不亮：复盘看的是整段历史，没有「此刻」可言，
+ * 留一个还在呼吸的头像会让人以为这局还在打。
+ *
+ * [speakingSeat] 的安全性不在这一层：它只由朗读队列里 `speakable=true` 的行产生，
+ * 而筛选已经保证了参与局里只有 AI 的公开发言会出声（见 SpeechFilter）。
+ */
+internal fun litSeats(actorSeat: Int?, speakingSeat: Int?, running: Boolean): Set<Int> =
+    if (!running) emptySet() else setOfNotNull(actorSeat, speakingSeat)
+
 internal fun WerewolfUiState.toLive(
     humanSeat: Int?,
     turn: HumanTurn?,
@@ -736,6 +754,8 @@ internal fun WerewolfUiState.toLive(
     autoSpeak: Boolean = true,
     speechReady: Boolean = true,
     revealedIndex: Int = Int.MAX_VALUE,
+    /** 喇叭此刻在念谁的发言，用来把牌桌上那个人亮起来。null = 没在念。 */
+    speakingSeat: Int? = null,
 ): UIWerewolfLive {
     val table = table
     val game = table?.game
@@ -748,6 +768,24 @@ internal fun WerewolfUiState.toLive(
 
     val me = game?.players?.firstOrNull { it.seat == humanSeat }
 
+    // 显示闸门：朗读正在推进时，界面只跟着队列走——文字、背景、第几天都一样。
+    // 关了朗读、没语音包、对局没在跑、已结束——这些情况一律全文显示，绝不能
+    // 让闸门把话永久藏住（否则用户关掉语音反而看不到任何发言）。
+    val gated = autoSpeak && speechReady && running && !finished
+    val revealed = if (gated) revealedIndex.coerceAtLeast(-1) else Int.MAX_VALUE
+    // 舞台时间（背景 / 第几天 / 白天黑夜）：朗读没追上就停在已播到最后一条上，
+    // 否则会「声音还在夜里，背景已经天亮」。见 StageMoment。
+    val moment = stageMoment(
+        transcript = table?.transcript.orEmpty(),
+        revealed = revealed,
+        gated = gated,
+        fallbackDay = game?.day ?: 1,
+        fallbackPhase = game?.phase,
+    )
+    // 舞台追上引擎了吗。没追上说明屏幕上是「回放」，引擎那边的「轮到谁、走到第几个」
+    // 都属于未来：先亮起 4 号在夜里思考，再听见白天的话，是比背景抢跑更明显的剧透。
+    val onStage = moment.phase == game?.phase && moment.day == (game?.day ?: moment.day)
+
     // 夜里「现在轮到谁」本身就是隐私：狼人商议挨个开口，守卫、预言家、女巫也都只有一个座位
     // 在动。把这个人亮在牌桌上，等于把身份直接摊给好人看。观战和本人轮到时照常亮。
     //
@@ -757,7 +795,11 @@ internal fun WerewolfUiState.toLive(
         reveal || !phase.hidesActor || seat == humanSeat ||
             (me?.role?.isWerewolf == true && phase == Phase.NIGHT_WOLF_CHAT)
     }
-    val actorSeat = progress?.seat?.takeIf { seat -> actorVisible(seat, progress.phase) }
+    val actorSeat = progress?.seat
+        ?.takeIf { onStage }
+        ?.takeIf { seat -> actorVisible(seat, progress.phase) }
+
+    val litSeats = litSeats(actorSeat = actorSeat, speakingSeat = speakingSeat, running = running)
 
     val seats = game?.players?.map { player ->
         // 翻过牌的白痴身份是公开的：牌桌上必须给所有人看见，
@@ -781,18 +823,13 @@ internal fun WerewolfUiState.toLive(
             },
             roleLabel = if (known) player.role.displayName else null,
             wolf = player.role.isWerewolf,
-            active = actorSeat == player.seat,
+            active = player.seat in litSeats,
             votes = voteCounts[player.seat],
             // 警长是公开身份，牌桌上必须一直挂着——它是「谁的一票值 1.5」的唯一提示
             sheriff = game.sheriffSeat == player.seat,
         )
     }.orEmpty()
 
-    // 显示闸门：朗读正在推进时，只放出队列消费到的那几条，让文字跟着语音一条条走。
-    // 关了朗读、没语音包、对局没在跑、已结束——这些情况一律全文显示，绝不能
-    // 让闸门把话永久藏住（否则用户关掉语音反而看不到任何发言）。
-    val gated = autoSpeak && speechReady && running && !finished
-    val revealed = if (gated) revealedIndex.coerceAtLeast(-1) else Int.MAX_VALUE
     // 先在**原始** transcript 上截断，再按视角过滤私有消息。
     // 顺序不能反：transcriptFor 会剔掉私有消息导致下标重排，拿过滤后的下标
     // 去截原始进度会错位，把别人的话放出来或把自己的话藏住。
@@ -842,15 +879,16 @@ internal fun WerewolfUiState.toLive(
         }
 
     return UIWerewolfLive(
-        day = game?.day ?: 1,
-        phaseLabel = game?.phase?.displayName ?: "准备中",
-        night = game?.phase?.let { it.isNightPhase() } ?: false,
+        day = moment.day,
+        phaseLabel = moment.phase?.displayName ?: "准备中",
+        night = moment.phase?.let { it.isNightPhase() } ?: false,
         running = running,
         finished = finished,
         winnerLabel = game?.winner?.let { "${it.displayName}胜" },
-        progressLabel = progress?.label,
+        // 舞台还停在过去时，「轮到谁、走到第几个」属于未来的阶段，一律不显示。
+        progressLabel = progress?.takeIf { onStage }?.label,
         // 并发阶段（狼人商议、投票）没有确定的「第几个」，那时宁可不画进度
-        progressFraction = progress?.let { p ->
+        progressFraction = progress?.takeIf { onStage }?.let { p ->
             if (p.step > 0 && p.total > 0) p.step.toFloat() / p.total else null
         },
         seats = seats,

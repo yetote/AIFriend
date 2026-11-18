@@ -923,7 +923,15 @@ class WerewolfDirector(
      * 当天最早的那几句发言会在压缩之前就已经被丢掉。
      */
     private fun context(table: WerewolfTable, seat: Int, task: String): String = buildString {
-        val lines = recentlySaid(renderDay(table.transcriptFor(seat).filter { it.day == table.game.day }))
+        // 白天只喂公开消息。夜聊原文是「只有狼醒着时说的话」，而模型分不清
+        // 「我记得」和「我能说」——把原文摆在它面前，它就会在白天复述，实测出现过
+        // 「昨夜四狼一致刀 4 号」这种当众自曝。狼白天真正需要的东西（队友名单、
+        // 昨晚刀了谁）在 system 的私有简报里，不依赖这段原文。
+        val daytime = !table.game.phase.isNight
+        val today = table.transcriptFor(seat)
+            .filter { it.day == table.game.day }
+            .filter { !daytime || it.isPublic }
+        val lines = recentlySaid(renderDay(today))
         if (lines.isNotEmpty()) {
             append("【本日进程】\n")
             lines.forEach { append(it).append("\n") }

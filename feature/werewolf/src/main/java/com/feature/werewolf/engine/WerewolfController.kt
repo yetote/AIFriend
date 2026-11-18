@@ -97,7 +97,11 @@ class WerewolfController(
      * 一个阶段最多十来次请求，落档太频繁纯属浪费；而阶段之间的局面是自洽的，
      * 从这里续上不会出现「话说到一半」的状态。
      */
-    suspend fun play() {
+    /**
+     * @param awaitStage 每推完一个阶段调用一次，由上层决定要不要等（比如等朗读念完）。
+     *   默认不等——引擎自己跑得快本来就是对的，同步是界面层的需求，不是规则的。
+     */
+    suspend fun play(awaitStage: suspend () -> Unit = {}) {
         val initial = _state.value.table ?: return
         val id = gameId ?: return
         if (initial.game.isFinished) return
@@ -118,6 +122,9 @@ class WerewolfController(
             val result = director.play(initial) { snapshot ->
                 _state.update { it.copy(table = snapshot) }
                 store.save(id, snapshot, createdAt)
+                // 落档之后停一下：这一阶段产生的话要先念给人听完，再往下走。
+                // 放在落档之后而不是之前——等的时候进程被杀，存档已经是最新的。
+                awaitStage()
             }
             _state.update {
                 it.copy(table = result, running = false, finished = true, progress = null, live = null)

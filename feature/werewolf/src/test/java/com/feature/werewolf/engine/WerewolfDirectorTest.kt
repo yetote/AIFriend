@@ -372,6 +372,64 @@ class WerewolfDirectorTest {
     // ------------------------------------------------------------------
 
     @Test
+    fun `白天的上下文里没有夜聊原文`() = runBlocking {
+        // 模型分不清「我记得」和「我能说」：把夜聊原文摆在它面前，它就会在白天复述，
+        // 线上出现过「昨夜四狼一致刀 4 号」这种当众自曝。
+        val ai = ScriptedAI(listOf("我怀疑 3 号。"))
+        val wolfChat = WerewolfMessage(
+            day = 1,
+            phase = Phase.NIGHT_WOLF_CHAT,
+            seat = 1,
+            kind = MessageKind.WOLF_CHAT,
+            text = "今晚我们刀 4 号吧",
+            audience = setOf(1, 2, 3),
+        )
+        val speech = WerewolfMessage(
+            day = 1,
+            phase = Phase.DAY_DISCUSSION,
+            seat = 2,
+            kind = MessageKind.SPEECH,
+            text = "我觉得 5 号有问题。",
+        )
+        val table = WerewolfTable(
+            game = standard9().copy(phase = Phase.DAY_DISCUSSION),
+            transcript = listOf(wolfChat, speech),
+        )
+        val director = WerewolfDirector((1..9).associate { it to SeatAgent(ai, "test-model") })
+
+        director.discussion(table)
+
+        val context = ai.calls.first().userText
+        assertFalse("白天不该看到夜聊原文", context.contains("今晚我们刀 4 号吧"))
+        assertTrue("公开发言照常给", context.contains("我觉得 5 号有问题。"))
+    }
+
+    @Test
+    fun `夜里的上下文仍然给狼看夜聊原文`() = runBlocking {
+        val ai = ScriptedAI(listOf("我刀 4 号。"))
+        val wolfChat = WerewolfMessage(
+            day = 1,
+            phase = Phase.NIGHT_WOLF_CHAT,
+            seat = 2,
+            kind = MessageKind.WOLF_CHAT,
+            text = "今晚刀 4 号，他像预言家。",
+            audience = setOf(1, 2, 3),
+        )
+        val table = WerewolfTable(
+            game = standard9().copy(phase = Phase.NIGHT_WOLF_CHAT),
+            transcript = listOf(wolfChat),
+        )
+        val director = WerewolfDirector((1..9).associate { it to SeatAgent(ai, "test-model") })
+
+        director.nightWolfChat(table)
+
+        assertTrue(
+            "夜里必须看得到队友说了什么，否则没法接话",
+            ai.calls.first().userText.contains("今晚刀 4 号，他像预言家。"),
+        )
+    }
+
+    @Test
     fun `当天投票在上下文里压成一行票型`() = runBlocking {
         val ai = ScriptedAI(listOf("""{"target": 3, "reason": "我跟票。"}"""))
         val table = WerewolfTable(

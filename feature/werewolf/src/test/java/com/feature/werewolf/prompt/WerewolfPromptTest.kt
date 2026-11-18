@@ -77,6 +77,29 @@ class WerewolfPromptTest {
     }
 
     @Test
+    fun `狼人被明确要求白天不许提狼队内部的事`() {
+        // 线上实际出现的两句话：「顺手往队友节奏里搅屎」「昨夜四狼一致刀 4 号」。
+        // 只写「不要说队友的名字」挡不住这种不点名但等于摊牌的表述。
+        val wolf = WerewolfPrompt.systemPrompt(standardGame(), seat = 1)
+
+        assertTrue(wolf.contains("狼队内部的一切只能在夜里说"))
+        assertTrue(wolf.contains("不许出现「队友」"))
+        assertTrue(wolf.contains("不许复述夜里说过的话"))
+    }
+
+    @Test
+    fun `自爆提示要求能指出救下的是哪个座位 否则不许写标记`() {
+        val day = standardGame().copy(phase = Phase.DAY_DISCUSSION)
+
+        val wolf = WerewolfPrompt.task(day, seat = 1)
+        assertTrue(wolf.contains("另一个队友"))
+        assertTrue(wolf.contains("答不上具体号码就别写"))
+
+        // 好人看不到这条：写给好人等于提前告诉全场「这局的狼会自爆」
+        assertFalse(WerewolfPrompt.task(day, seat = 6).contains("【自爆】"))
+    }
+
+    @Test
     fun `查验记录只给预言家`() {
         val game = standardGame().copy(
             seerChecks = listOf(
@@ -148,6 +171,21 @@ class WerewolfPromptTest {
         assertTrue(WerewolfPrompt.describe(GameEvent.NoExile(2)).contains("无人被放逐"))
         assertTrue(WerewolfPrompt.describe(GameEvent.HunterShot(2, 5, null)).contains("没有开枪"))
         assertTrue(WerewolfPrompt.describe(GameEvent.HunterShot(2, 5, 7)).contains("带走"))
+    }
+
+    @Test
+    fun `上帝播报只报事件，不解释规则`() {
+        // 玩家原话：「熊咆哮了」就够了。播报会被朗读，解释规则既占屏幕又拖长语音，
+        // 而规则本来就在板子说明和提示词里讲过
+        val roar = WerewolfPrompt.describe(GameEvent.BearRoar(day = 1, seat = 11))
+        assertTrue(roar.contains("熊 11 号在咆哮"))
+        assertFalse(roar.contains("邻座"))
+        assertFalse(roar.contains("狼人"))
+
+        // 自爆的后果由流程本身表达（直接入夜），不用写成一段说明文
+        val exploded = WerewolfPrompt.describe(GameEvent.WolfExploded(day = 1, seat = 8))
+        assertTrue(exploded.contains("8 号狼人自爆"))
+        assertFalse(exploded.contains("没有人被放逐"))
     }
 
     // ------------------------------------------------------------------

@@ -1,6 +1,7 @@
 package com.feature.werewolf.vm
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.core.ai.entity.IAI
@@ -19,6 +20,7 @@ import com.core.tts.SpeechCandidate
 import com.core.tts.SpeechEngine
 import com.core.tts.SpeechFilter
 import com.core.tts.SpeechQueue
+import com.core.tts.SpeechTiming
 import com.feature.werewolf.decision.SeatChoice
 import com.feature.werewolf.decision.VoteChoice
 import com.feature.werewolf.decision.WitchChoice
@@ -47,7 +49,9 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
@@ -58,6 +62,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
 import kotlinx.serialization.json.Json
 import java.util.UUID
@@ -135,6 +140,16 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
      */
     private val _revealedIndex = MutableStateFlow(-1)
     val revealedIndex: StateFlow<Int> = _revealedIndex.asStateFlow()
+
+    /**
+     * 此刻正在被朗读的那条消息属于哪个座位。null 表示没在念，或念的东西没有座位
+     * （上帝播报、投票汇总）。
+     *
+     * 和 [progress] 的 `seat` 不是一回事：那是「引擎此刻在问谁」，这是「喇叭此刻在念谁」。
+     * 引擎比朗读跑得快，两者经常不是同一个人，牌桌上要亮的是**正在说话**的那个。
+     */
+    private val _speakingSeat = MutableStateFlow<Int?>(null)
+    val speakingSeat: StateFlow<Int?> = _speakingSeat.asStateFlow()
 
     /** 串行朗读循环：一次只在读一句，上一句读完才 poll 下一句。 */
     private var speakJob: Job? = null
@@ -251,25 +266,32 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
     // -----------------------------------------------------------------
 
     /**
-     * 把新增的公开发言放进朗读队列。
+     * 把新增的消息放进朗读队列。
      *
-     * 筛选规则按用户的选择收紧到「只有 AI 说的话」：
+     * 参与的局按以前的规则收紧到「只有 AI 的公开发言」：
      * - 只读 [MessageKind.SPEECH]：上帝播报（DIVINE）不读——那是事实陈述，
      *   读出来既长又和发言混在一起；投票表态（VOTE）不读——屏幕上一目了然。
      * - 私有消息（狼人夜聊、夜间行动）本来 audience 就不包含人类座位，
      *   `transcriptFor` 里根本不会出现；这里再判一次 isPublic 是双保险：
      *   语音是不可撤回的，一旦读错一句「我是狼」，说出去的话收不回来。
      * - 不读自己说的话：自己刚打完的字再念一遍是纯粹的噪音。
+     *
+     * **纯观战（上帝视角）反过来：全读。** 观战没有「自己」这一格，牌桌上的一切
+     * 本来就摊在屏幕上——狼人夜聊、查验点人、用药、上帝播报、投票，只念公开发言
+     * 等于把剧情念丢一半。私密性由调用方保证：只有 `humanSeat == null` 才为 true。
      */
     private fun enqueueSpeech(transcript: List<com.feature.werewolf.engine.WerewolfMessage>) {
         if (!_autoSpeak.value) return
         val self = _humanSeat.value
+        // 观战 = 上帝视角：没有座位，全部朗读
+        val readEverything = self == null
         val candidates = transcript.mapIndexed { index, message ->
             val speakable = SpeechFilter.speakable(
                 isPublicSpeech = message.kind == MessageKind.SPEECH && message.isPublic,
                 speakerSeat = message.seat,
                 selfSeat = self,
                 text = message.text,
+                readEverything = readEverything,
             )
             SpeechCandidate(
                 text = message.text,
@@ -277,6 +299,7 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
                 // 只有发言座位才有音色/TTS 配置；上帝播报 seat=null、人类自己的话不朗读，取不到就是 null。
                 voiceId = message.seat?.let { seatVoiceIds[it] },
                 ttsConfigId = message.seat?.let { seatTtsConfigIds[it] },
+                seat = message.seat,
             )
         }
         val added = speechQueue.offer(candidates)
@@ -287,24 +310,72 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
     private fun startSpeakLoop() {
         if (speakJob?.isActive == true) return
         speakJob = viewModelScope.launch {
-            while (isActive && _autoSpeak.value) {
-                val line = speechQueue.poll() ?: break
-                // 取出就放行文字，不等念完——用户边看边听；等念完才显示
-                // 会变成「听完了才给看」，比文字抢跑更难受。
-                _revealedIndex.value = speechQueue.revealedIndex
-                // 投票、播报、自己的话不朗读，瞬间过，只推进显示进度
-                if (!line.speakable) continue
-                suspendCancellableCoroutine<Unit> { cont ->
-                    speechEngine.speak(
-                        text = line.text,
-                        utteranceId = line.index.toString(),
-                        onDone = { if (cont.isActive) cont.resume(Unit) },
-                        voiceId = line.voiceId,
-                        ttsConfigId = line.ttsConfigId,
-                    )
-                    cont.invokeOnCancellation { speechEngine.stop() }
+            try {
+                while (isActive && _autoSpeak.value) {
+                    val line = speechQueue.poll() ?: break
+                    // 取出就放行文字，不等念完——用户边看边听；等念完才显示
+                    // 会变成「听完了才给看」，比文字抢跑更难受。
+                    _revealedIndex.value = speechQueue.revealedIndex
+                    // 不出声的行（参与局里的投票/播报）瞬间过，只推进显示进度。
+                    // 这里不点亮座位：它们没有「说话的人」，亮一下反而像在念错人。
+                    if (!line.speakable) continue
+                    // 喇叭开始念谁，牌桌上就亮谁。必须放在 speakable 之后——
+                    // 狼人夜聊在参与的局里 speakable=false，亮了就等于把夜里的活人摊出来。
+                    _speakingSeat.value = line.seat
+                    // 一句一个超时：合成被挂住、播放回调丢失时，宁可这句不出声，
+                    // 也不能把队列（以及跟着队列走的界面文字）永久卡在这里。
+                    val finished = withTimeoutOrNull(SpeechTiming.totalTimeoutMs(line.text)) {
+                        suspendCancellableCoroutine<Unit> { cont ->
+                            speechEngine.speak(
+                                text = line.text,
+                                utteranceId = line.index.toString(),
+                                onDone = { if (cont.isActive) cont.resume(Unit) },
+                                voiceId = line.voiceId,
+                                ttsConfigId = line.ttsConfigId,
+                            )
+                            cont.invokeOnCancellation { speechEngine.stop() }
+                        }
+                        true
+                    }
+                    if (finished != true) {
+                        Log.w(TAG, "朗读超时，跳过第 ${line.index} 条（${line.text.length} 字）")
+                        speechEngine.stop()
+                    }
+                    _speakingSeat.value = null
                 }
+            } finally {
+                // 循环正常结束、被取消、抛异常，都要把高亮收掉：
+                // 留一个永远亮着的座位，用户会以为那个人说了十分钟话
+                _speakingSeat.value = null
             }
+        }
+    }
+
+    /**
+     * 停在这里等朗读把当前阶段念完。
+     *
+     * 引擎原来是一路跑到天亮的：语音还在念第一夜的狼人商议，投票结果早就算好了。
+     * 界面上虽然用闸门把文字压住了，但那是「藏」不是「同步」——引擎侧已经走到
+     * 第二天，重开、暂停、看进度都会露出真实位置，而且越跑越远，最后差出好几分钟。
+     * 这里在每个阶段边界踩一脚刹车，让两边真正走在一起。
+     *
+     * 关朗读、没配语音包、或等待超时都直接放行：声音可以缺，局面不能挂。
+     */
+    private suspend fun awaitSpeechCaughtUp() {
+        if (!_autoSpeak.value || !_speechReady.value) return
+        val target = (state.value.table?.transcript?.size ?: return) - 1
+        val start = _revealedIndex.value
+        if (target <= start) return
+        // 同时等两个条件：追上末尾，或者用户在等的过程中把朗读关了。
+        // 只等 _revealedIndex 的话，关朗读会清空队列、进度再也不动，
+        // 引擎要空等满 5 分钟才继续——用户看到的就是「点了静音，牌桌反而僵住了」。
+        val done = withTimeoutOrNull(SpeechTiming.CATCH_UP_TIMEOUT_MS) {
+            combine(_revealedIndex, _autoSpeak) { revealed, speak -> revealed >= target || !speak }
+                .first { it }
+            true
+        }
+        if (done != true) {
+            Log.w(TAG, "朗读 ${SpeechTiming.CATCH_UP_TIMEOUT_MS / 1000}s 内没追平（$start/$target），引擎继续")
         }
     }
 
@@ -312,6 +383,7 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
     private fun resetSpeech(fromIndex: Int) {
         speechQueue.reset(fromIndex)
         _revealedIndex.value = fromIndex - 1
+        _speakingSeat.value = null
     }
 
     /** 重开朗读时跳过关闭期间积下的消息，显示进度也一起跳到当前末尾。 */
@@ -325,6 +397,7 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
         speakJob?.cancel()
         speakJob = null
         if (clearQueue) speechQueue.clear()
+        _speakingSeat.value = null
         speechEngine.stop()
     }
 
@@ -451,7 +524,7 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
                 // 采集器异步跑，放后面会漏掉早期发言或读到上一局的残留。
                 resetSpeech(fromIndex = 0)
                 controller.start(UUID.randomUUID().toString(), game)
-                controller.play()
+                controller.play(awaitStage = { awaitSpeechCaughtUp() })
                 refresh()
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -503,7 +576,7 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
                     return@launch
                 }
                 _error.value = null
-                controller.play()
+                controller.play(awaitStage = { awaitSpeechCaughtUp() })
                 refresh()
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -803,5 +876,9 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
         val created = aiFactory.createAI(brand) ?: return null
         ais[brand] = created
         return created
+    }
+
+    private companion object {
+        const val TAG = "WerewolfViewModel"
     }
 }
