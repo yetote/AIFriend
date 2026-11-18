@@ -323,6 +323,26 @@ class WerewolfDirectorTest {
     }
 
     @Test
+    fun `续档时沿用存档里的头狼`() = runBlocking {
+        // 同一条夜里换人当头狼，而 transcript 里已经躺着旧头狼的发言，
+        // 场上会凭空多出一个「假头狼」
+        val game = standard9().copy(phase = Phase.NIGHT_WOLF_CHAT, nightHead = 2)
+        val director = WerewolfDirector(
+            agentsOf(
+                1 to ScriptedAI(listOf("我听 2 号的。")),
+                2 to ScriptedAI(listOf("今晚刀 7 号。")),
+                3 to ScriptedAI(listOf("行。")),
+            )
+        )
+
+        val result = director.nightWolfChat(WerewolfTable(game))
+
+        assertEquals("续档不能换头狼", 2, result.game.nightHead)
+        val chats = result.transcript.filter { it.kind == MessageKind.WOLF_CHAT }
+        assertEquals("存档里的头狼先发言", 2, chats.first().seat)
+    }
+
+    @Test
     fun `商议阶段不改局面，刀口只在定刀之后才有`() = runBlocking {
         val director = WerewolfDirector(
             agentsOf(1 to AutoAI(), 2 to AutoAI(), 3 to AutoAI())

@@ -6,6 +6,7 @@ import com.feature.werewolf.game.RosterEntry
 import com.feature.werewolf.game.SeerCheck
 import com.feature.werewolf.game.WerewolfConfig
 import com.feature.werewolf.game.WerewolfGame
+import com.feature.werewolf.game.NightRecord
 import com.feature.werewolf.game.WerewolfRole
 import com.feature.werewolf.game.WitchStock
 import org.junit.Assert.assertFalse
@@ -186,6 +187,25 @@ class WerewolfPromptTest {
         val good = WerewolfPrompt.systemPrompt(game, seat = 6)
         assertFalse("好人不能看到狼队的战术", good.contains("昨晚头狼定的战术"))
         assertFalse(good.contains("3 号跳预言家"))
+    }
+
+    @Test
+    fun `白天的狼看到昨晚定刀是谁，不再看到没谈拢`() {
+        // 定刀成功后 wolfVoteRound 还停在 2、wolfVotes 已经是第二轮那份一致的票。
+        // 白天再说「上一轮没谈拢」就是自相矛盾的情报：文案说分歧，票型却是统一的。
+        val game = standardGame().copy(
+            phase = Phase.DAY_DISCUSSION,
+            day = 2,
+            wolfVoteRound = 2,
+            wolfVotes = mapOf(1 to 5, 2 to 5),
+            nights = listOf(
+                NightRecord(day = 1, wolfTarget = 5, deaths = listOf(5)),
+            ),
+        )
+
+        val wolf = WerewolfPrompt.systemPrompt(game, seat = 1)
+        assertFalse("定完刀就不该再说没谈拢", wolf.contains("没能统一意见"))
+        assertTrue("白天要知道昨晚定了谁", wolf.contains("昨晚你们定了刀 5 号"))
     }
 
     @Test

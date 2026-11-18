@@ -125,7 +125,13 @@ class WerewolfDirector(
         // 每晚随机指定一名头狼：没有指挥，四只狼就是四份互不相干的上下文，
         // 夜里各说各的、白天各跳各的。随机而不是固定给某个座位（第一个发言的、
         // 或者模型最强的），是为了让每局都有变化，也避免永远有人背这个角色。
-        val head = game.aliveWolves().randomOrNull(random)?.seat
+        //
+        // 续档时**沿用存档里的头狼**：同一条夜里换人当头狼，而 transcript 里已经
+        // 躺着旧头狼的发言，场上会凭空多出一个「假头狼」。存档里的头狼已经出局
+        // （理论上不会，但存档可能被改过）才重选。
+        val aliveWolves = game.aliveWolves()
+        val head = game.nightHead?.takeIf { seat -> aliveWolves.any { it.seat == seat } }
+            ?: aliveWolves.randomOrNull(random)?.seat
         val prepared = if (head == null) table else table.copy(game = game.copy(nightHead = head))
         val spoken = talkRound(prepared, note = null)
         return spoken.copy(game = spoken.game.beginWolfVote())

@@ -385,11 +385,26 @@ object WerewolfPrompt {
                 if (game.phase == Phase.NIGHT_WOLF) {
                     lines += "商议已经结束，现在各自动手：只要有一只狼指了别人，今晚就可能空刀。"
                 }
-                if (game.wolfVoteRound > 1 && game.wolfVotes.isNotEmpty()) {
-                    lines += "上一轮你们没能统一意见：" +
-                        game.wolfVotes.entries.sortedBy { it.key }
-                            .joinToString("、") { "${it.key} 号想刀 ${it.value} 号" } +
-                        "。这一轮必须定下来，再平票今晚就空刀。"
+                if (game.phase.isNight) {
+                    // 只有**正在加商**的时候才说「没谈拢」。
+                    // 白天还说这句是错的：wolfVoteRound 到定刀成功后还停在 2，
+                    // 而 wolfVotes 已经是第二轮那份一致的票——文案说分歧、票型却是统一的，
+                    // 狼人拿到的情报自相矛盾。
+                    if (game.wolfVoteRound > 1 && game.wolfVotes.isNotEmpty()) {
+                        lines += "上一轮你们没能统一意见：" +
+                            game.wolfVotes.entries.sortedBy { it.key }
+                                .joinToString("、") { "${it.key} 号想刀 ${it.value} 号" } +
+                            "。这一轮必须定下来，再平票今晚就空刀。"
+                    }
+                } else {
+                    // 白天狼要知道昨晚定了谁，不然四个人白天各演各的，
+                    // 说的和昨晚商量出来的对不上。
+                    // 但这条是**私有信息**：说了就等于自曝，所以要连着「怎么用」一起交代，
+                    // 否则模型会直接顺着它说「昨晚我们刀了 X 号」。
+                    game.nights.lastOrNull { it.day == game.day - 1 }?.wolfTarget?.let { target ->
+                        lines += "昨晚你们定了刀 $target 号。白天**一个字都不许提这件事**，"
+                        lines += "也别刻意回避他——刚刀完就绕着一个人走，那种回避本身就像狼。"
+                    }
                 }
             }
 
@@ -793,14 +808,18 @@ object WerewolfPrompt {
     private fun ruleBrief(config: WerewolfConfig): String {
         val win = when (config.winRule) {
             WinRule.SLAY_SIDE ->
-                "【胜负规则】屠边局：狼人杀光所有神职，或杀光所有平民，狼人获胜；好人放逐全部狼人则好人获胜。"
+                "【胜负规则】屠边局：狼人杀光所有神职，或杀光所有平民，狼人获胜；好人放逐全部狼人则好人获胜。" +
+                    "屠边之前先过绑票这一关。"
 
             WinRule.SLAY_ALL ->
-                "【胜负规则】屠城局：存活狼人数不少于存活好人数时狼人获胜；好人放逐全部狼人则好人获胜。"
+                "【胜负规则】屠城局：狼人票权不少于好人票权时狼人获胜（警长一票算 1.5 票）；" +
+                    "好人放逐全部狼人则好人获胜。"
         }
         return buildString {
             append(win).append("\n")
-            append("【绑票】存活狼人数不少于存活好人数时，狼人直接获胜，游戏当场结束——")
+            // 绑票比的是**票权**不是人头：警长那 1.5 票也要算进去。
+            // 写成「人数」的话，模型会按人头推，警长在手时推出来的结论整个是错的。
+            append("【绑票】狼人票权不少于好人票权时，狼人直接获胜，游戏当场结束——")
             append("这时所有人一起投也压不过狼队的票，投不出人了。\n")
             if (config.hasSheriff) {
                 append("【白天投票】平票时，平票的人再各说一轮（PK），然后由全体重投一次；")

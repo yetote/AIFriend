@@ -151,6 +151,16 @@ data class WerewolfGame(
      */
     val witchCanHeal: Boolean get() = witch.antidoteAvailable && tonightVictim != null
 
+    /**
+     * 女巫此刻能否**救自己**。
+     *
+     * 绝大多数夜晚都救不了自己（解药不能自己救自己），只有第一夜且配置允许时例外。
+     * 界面必须用这个判断：给玩家一个「用解药救 3 号」的按钮，而 3 号就是她自己，
+     * 她点了之后引擎会拒绝，这个操作就变成了一次静默的「什么都不做」。
+     */
+    val witchCanSelfHeal: Boolean
+        get() = witch.antidoteAvailable && day == 1 && config.witchCanSelfHealOnFirstNight
+
     /** 女巫此刻能否使用毒药。药还在，且场上还有别人可以毒。 */
     val witchCanPoison: Boolean
         get() = witch.poisonAvailable && aliveSeats.size > 1
@@ -185,6 +195,17 @@ data class WerewolfGame(
     /** 还活着的警长。警长死了但警徽还没移交时，这里给 null。 */
     val aliveSheriffSeat: Int?
         get() = sheriffSeat?.takeIf { seat -> playerAt(seat).alive }
+
+    /**
+     * 警徽归属待定：警长刚死，徽章还没在遗言里交出去。
+     *
+     * 这段时间里**不能判胜负**。警徽那 1.5 票到底算给谁还没定，
+     * 按「谁的都没有」来算的话，2 狼 2 好（警长是好人且刚被刀）会算成 4 比 4，
+     * 好人直接被判负——而他本来能在遗言里把徽章交给同伴，翻成 5 比 4。
+     * 提前判就是白丢那一张票权。
+     */
+    val badgeUndecided: Boolean
+        get() = sheriffSeat != null && !playerAt(sheriffSeat!!).alive
 
     /**
      * 这个座位的一票值几个半点：平民 2 点（1 票），警长 3 点（1.5 票）。
@@ -312,6 +333,12 @@ data class WerewolfGame(
         val aliveSet = aliveSeats.toSet()
         votes.forEach { (wolf, target) ->
             require(target in aliveSet) { "$wolf 号狼人指向了非存活玩家 $target 号" }
+            // 引擎级护栏：狼不能刀队友，也不能刀自己。
+            // 决策层和界面都挡过一遍，但那些是「调用方」的约定——存档被改、
+            // 将来新增一个决策入口，都可能绕过它们。刀到狼王身上时他会获得开枪权，
+            // 一枪就能把局面翻回去，这条防线不能只建在外面。
+            require(target !in wolfSeats) { "$wolf 号狼人指向了队友 $target 号" }
+            require(target != wolf) { "$wolf 号狼人指向了自己" }
         }
 
         val tally = votes.values.groupingBy { it }.eachCount()
@@ -646,6 +673,21 @@ data class WerewolfGame(
     fun finishLastWords(): WerewolfGame {
         require(phase == Phase.DAY_LAST_WORDS) { "当前不是遗言阶段：$phase" }
         val cleared = copy(pendingLastWords = emptyList()).dropDeadBadge()
+
+        // 警徽在遗言里交出去了（或者被撕掉），这时候才判得了胜负。
+        // 之前死警长时算的是「徽章归属未定」，那张 1.5 票不能白丢——
+        // 详见 [badgeUndecided]。
+        // 但接下来是猎人开枪时**不能**判：那一枪可能带走最后一狼或最后一神，
+        // 胜负得等枪响完。
+        val decided = if (afterLastWordsPhase == Phase.HUNTER_SHOOT) null else cleared.evaluateWinner()
+        if (decided != null) {
+            return cleared.copy(
+                phase = Phase.FINISHED,
+                winner = decided,
+                history = cleared.history + GameEvent.GameOver(cleared.day, decided),
+            )
+        }
+
         return when (afterLastWordsPhase) {
             Phase.NIGHT_WOLF -> cleared.startNextNight()
             // 被票出的猎人：先遗言，再开枪。枪开完才轮到入夜
@@ -1067,6 +1109,10 @@ data class WerewolfGame(
     private fun evaluateWinner(allowWolfWinWithNoWolves: Boolean = false): Faction? {
         val aliveWolfCount = players.count { it.alive && it.role.isWerewolf }
         if (aliveWolfCount == 0 && !allowWolfWinWithNoWolves) return Faction.GOOD
+
+        // 警徽还没决定给谁：这时候不算胜负，等遗言里交完（或者被撕掉）再说。
+        // 详见 [badgeUndecided]。
+        if (badgeUndecided) return null
 
         val aliveGoodCount = players.count { it.alive && it.faction == Faction.GOOD }
 

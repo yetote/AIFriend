@@ -1033,7 +1033,7 @@ internal fun WerewolfUiState.toLive(
  * 只认 `phase` + 本人身份。人类座位和 AI 座位共用同一条请求路径，
  * 所以「该不该弹面板」不能靠 `turn != null` 判断——`turn` 只说明导演正在等这个座位。
  */
-private fun buildTurn(
+internal fun buildTurn(
     game: WerewolfGame,
     humanSeat: Int?,
     me: WerewolfPlayer?,
@@ -1173,12 +1173,21 @@ private fun buildTurn(
         }
 
         Phase.NIGHT_WITCH -> if (me.role == WerewolfRole.WITCH) {
+            // 今晚被刀的是自己、而规则又不许自救时，**不能**摆出「用解药救 X 号」那个按钮：
+            // 点了之后引擎会拒绝，玩家的操作会被静默换成「不用药」，她还以为自己救了自己。
+            val selfDoomed = game.tonightVictim == humanSeat && !game.witchCanSelfHeal
             UIWerewolfTurn(
                 kind = UIWerewolfTurnKind.WITCH,
                 seat = humanSeat,
                 title = "女巫用药",
+                hint = if (selfDoomed) {
+                    "今晚被刀的是你自己，你救不了自己。" +
+                        (if (game.witch.poisonAvailable) "毒药还在的话，今晚是它最后一次机会。" else "")
+                } else {
+                    null
+                },
                 targets = others,
-                canHeal = game.witchCanHeal,
+                canHeal = game.witchCanHeal && !selfDoomed,
                 canPoison = game.witchCanPoison,
                 healTarget = game.tonightVictim?.let { "$it 号" },
             )

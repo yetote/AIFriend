@@ -7,6 +7,7 @@ import com.feature.werewolf.game.WerewolfRole.WEREWOLF
 import com.feature.werewolf.game.WerewolfRole.WITCH
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -27,6 +28,60 @@ class WerewolfGameTest {
 
     /** 6 人：两个神职，杀一个不够屠边，适合测投票流程。 */
     private val sixWithWitch = listOf(WEREWOLF, WEREWOLF, SEER, WITCH, VILLAGER, VILLAGER)
+
+    /**
+     * 死警长的警徽没交出去之前**不判胜负**。
+     *
+     * 2 狼 2 好（警长是好人），夜里狼把警长刀了：警徽那 1.5 票还没决定给谁，
+     * 按「谁的都没有」算就是 4 比 4 直接判狼胜——而他本来能在遗言里把徽章交给同伴，
+     * 翻成 5 比 4 继续打。提前判就是白丢那张票权。
+     */
+    @Test
+    fun `死警长的警徽没交出去之前不判胜负`() {
+        val game = game(listOf(WEREWOLF, WEREWOLF, VILLAGER, VILLAGER, VILLAGER)).copy(
+            day = 2,
+            sheriffSeat = 3,
+            sheriffElectionDone = true,
+        )
+
+        val dawn = game.atWolfVote().wolfVote(mapOf(1 to 3, 2 to 3))
+
+        assertNotEquals("徽章还没交，不能判负", Phase.FINISHED, dawn.phase)
+        assertTrue("警徽待定", dawn.badgeUndecided)
+        assertNull("也不能提前判狼胜", dawn.winner)
+
+        // 遗言里把徽章交给好人 → 好人 5 点 vs 狼 4 点，还能继续
+        val after = dawn.transferBadge(3, 4).finishLastWords()
+        assertNotEquals(Phase.FINISHED, after.phase)
+        assertNull("好人还有票权，不该被判负", after.winner)
+    }
+
+    @Test
+    fun `死警长把徽章交给狼人就要判负`() {
+        val game = game(listOf(WEREWOLF, WEREWOLF, VILLAGER, VILLAGER, VILLAGER)).copy(
+            day = 2,
+            sheriffSeat = 3,
+            sheriffElectionDone = true,
+        )
+
+        val dawn = game.atWolfVote().wolfVote(mapOf(1 to 3, 2 to 3))
+        val after = dawn.transferBadge(3, 1).finishLastWords()
+
+        assertEquals(Phase.FINISHED, after.phase)
+        assertEquals(Faction.WEREWOLF, after.winner)
+    }
+
+    @Test
+    fun `狼人不能刀队友也不能刀自己`() {
+        val g = game(listOf(WEREWOLF, WEREWOLF, SEER, WITCH, VILLAGER, VILLAGER)).atWolfVote()
+
+        assertThrows(IllegalArgumentException::class.java) {
+            g.wolfVote(mapOf(1 to 2, 2 to 3))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            g.wolfVote(mapOf(1 to 1, 2 to 3))
+        }
+    }
 
     private fun game(
         roles: List<WerewolfRole>,

@@ -139,7 +139,8 @@ class WerewolfGameSimulationTest {
         Phase.NIGHT_WOLF_CHAT -> game.beginWolfVote()
 
         Phase.NIGHT_WOLF -> {
-            val target = game.aliveSeats.random(rng)
+            // 刀口只能落在好人身上：引擎现在会拒绝刀队友/刀自己
+            val target = game.aliveSeats.filter { !game.isWerewolf(it) }.random(rng)
             game.wolfVote(game.aliveWolves().map { it.seat }.associateWith { target })
         }
 
