@@ -135,7 +135,8 @@ fun RoomMessage.toStored(): StoredRoomMessage = StoredRoomMessage(
     content = content,
     createdAt = createdAt,
     seq = seq,
-    targetIds = targetIds
+    targetIds = targetIds,
+    reasoning = reasoning
 )
 
 fun StoredRoomMessage.toRoomMessage(): RoomMessage = RoomMessage(
@@ -149,7 +150,8 @@ fun StoredRoomMessage.toRoomMessage(): RoomMessage = RoomMessage(
     content = content,
     createdAt = createdAt,
     seq = seq,
-    targetIds = targetIds
+    targetIds = targetIds,
+    reasoning = reasoning
 )
 
 /**

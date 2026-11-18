@@ -1,5 +1,6 @@
 package com.feature.agent.contract
 
+import com.core.ai.model.ChatMessage
 import com.core.ai.model.Friend
 import com.core.ai.model.GatewayModel
 import com.core.ai.model.ModelPrice
@@ -44,6 +45,24 @@ data class AgentUiState(
     val activeFriendId: String? = null,
     val input: String = "",
     val isSending: Boolean = false,
+    /**
+     * 正在流式接收的那条回复。null 表示此刻没有在收。
+     *
+     * 它是一个**还没落库的临时消息**：正文和思考过程都在里面，每收到一段就更新一次。
+     * 收完才写进 [friends] 里的消息列表并落库——如果边流边落库，
+     * 一条回复会写几十次数据库，而且进程被杀时会留下半句话在历史里。
+     */
+    val streaming: ChatMessage? = null,
+    /**
+     * 建角色页正在试听音色。
+     *
+     * 和 [previewingVoiceId] 一起用：id 为 null 表示听的是「跟随默认音色」那条，
+     * 光靠 id 分不出「没在听」和「在听默认音色」。
+     */
+    val previewingVoice: Boolean = false,
+    val previewingVoiceId: String? = null,
+    /** 试听失败的原因（Key 没配、音色没开通、余额不足…），换音色时清空。 */
+    val previewError: String? = null,
     val error: String? = null,
     val loaded: Boolean = false,
     /**

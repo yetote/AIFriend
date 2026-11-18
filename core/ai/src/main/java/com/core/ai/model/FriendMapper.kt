@@ -22,7 +22,7 @@ fun Friend.toStored(): StoredFriend = StoredFriend(
     avatarPath = avatarPath,
     voiceId = voiceId,
     ttsConfigId = ttsConfigId,
-    messages = messages.map { StoredMessage(role = it.role, content = it.content) }
+    messages = messages.map { StoredMessage(role = it.role, content = it.content, reasoning = it.reasoning) }
 )
 
 fun StoredFriend.toFriend(): Friend = Friend(
@@ -37,5 +37,5 @@ fun StoredFriend.toFriend(): Friend = Friend(
     avatarPath = avatarPath,
     voiceId = voiceId,
     ttsConfigId = ttsConfigId,
-    messages = messages.map { ChatMessage(role = it.role, content = it.content) }
+    messages = messages.map { ChatMessage(role = it.role, content = it.content, reasoning = it.reasoning) }
 )

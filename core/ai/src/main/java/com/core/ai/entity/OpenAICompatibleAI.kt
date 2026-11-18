@@ -2,10 +2,16 @@ package com.core.ai.entity
 
 import com.core.ai.model.ChatCompletionRequest
 import com.core.ai.model.ChatCompletionResponse
+import com.core.ai.model.ChatDelta
 import com.core.ai.model.ChatMessage
+import com.core.ai.model.ChatStreamEvent
+import com.core.ai.model.ChatStreamParser
 import com.core.ai.model.ResponseFormat
 import com.core.repository.ApiConfig
 import com.core.repository.WebRepository
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.channelFlow
 
 /**
  * OpenAI Chat Completions 协议的公共实现：
@@ -31,16 +37,7 @@ abstract class OpenAICompatibleAI(
         enableThinking: Boolean,
         jsonMode: Boolean
     ): String {
-        val apiMessages = buildList {
-            if (!systemPrompt.isNullOrBlank()) {
-                add(ChatMessage.system(systemPrompt))
-            }
-            addAll(messages)
-        }
-        val request = ChatCompletionRequest(model = model, messages = apiMessages)
-            .applyThinking(enableThinking)
-            // 厂商不支持就当作没开，宁可让模型自由发挥，也不要一个 400 把整轮对话打断
-            .applyJsonMode(jsonMode && supportsJsonMode)
+        val request = buildRequest(messages, model, systemPrompt, enableThinking, jsonMode, stream = false)
 
         val response = WebRepository.instance
             .chat<ChatCompletionResponse>(config = config, body = request)
@@ -49,6 +46,81 @@ abstract class OpenAICompatibleAI(
         val content = response.choices.firstOrNull()?.message?.content
         return content?.takeIf { it.isNotBlank() }
             ?: throw IllegalStateException("模型没有返回内容，请重试")
+    }
+
+    /**
+     * 流式对话，走同一套 OpenAI 兼容协议：请求体多一个 `stream: true`，
+     * 响应变成一行一个 `data: {...}`。
+     *
+     * 正文和思维链分别累加，不混在一起——思考过程在界面上是折叠的一块，
+     * 一旦拼进正文，就没有办法再把它拆出来了。
+     *
+     * 结束时**必须有正文**才认这一轮成功。只有 thinking 没有回答，说明模型跑到一半
+     * 被截断了（或者这一家的兼容层只回思维链），这时候抛错让上层留重试入口，
+     * 比把一个空气泡落库要好。
+     */
+    override fun chatStream(
+        messages: List<ChatMessage>,
+        model: String,
+        systemPrompt: String?,
+        enableThinking: Boolean,
+        jsonMode: Boolean
+    ): Flow<ChatDelta> = channelFlow {
+        val request = buildRequest(messages, model, systemPrompt, enableThinking, jsonMode, stream = true)
+        var hasContent = false
+
+        val failure = runCatching {
+            WebRepository.instance.streamChat(config, request) { line ->
+                when (val event = ChatStreamParser.parse(line)) {
+                    is ChatStreamEvent.Delta -> {
+                        if (event.content.isNotEmpty()) hasContent = true
+                        send(ChatDelta(content = event.content, reasoning = event.reasoning))
+                    }
+
+                    // 大多数厂商发完 [DONE] 就关连接，循环会自然结束；
+                    // 不发也不影响，读到 EOF 一样能收尾
+                    ChatStreamEvent.Done -> Unit
+                    ChatStreamEvent.Skip -> Unit
+                }
+            }
+        }.exceptionOrNull()
+
+        if (failure != null) {
+            // 用户按了停止：这不叫失败，不能顺手再发一个完整请求
+            if (failure is CancellationException) throw failure
+            // 一个字都还没收到就断了，退化成一次性请求。
+            // 十家厂商的兼容层对流式的支持并不整齐（个别会直接 400，或者回一个空流），
+            // 与其让用户看到报错，不如「憋一会儿再一次性出结果」——功能是对的，只是没有逐字效果。
+            if (!hasContent) {
+                send(ChatDelta(content = chat(messages, model, systemPrompt, enableThinking, jsonMode)))
+                return@channelFlow
+            }
+            // 已经吐了一半：不能补发，否则会把前半句重复一遍。交给上层保留半句并给重试。
+            throw failure
+        }
+
+        if (!hasContent) throw IllegalStateException("模型没有返回内容，请重试")
+    }
+
+    /** 一次性请求和流式请求的报文只差 `stream` 一个字段，其余构造逻辑必须一致。 */
+    private fun buildRequest(
+        messages: List<ChatMessage>,
+        model: String,
+        systemPrompt: String?,
+        enableThinking: Boolean,
+        jsonMode: Boolean,
+        stream: Boolean,
+    ): ChatCompletionRequest {
+        val apiMessages = buildList {
+            if (!systemPrompt.isNullOrBlank()) {
+                add(ChatMessage.system(systemPrompt))
+            }
+            addAll(messages)
+        }
+        return ChatCompletionRequest(model = model, messages = apiMessages, stream = stream)
+            .applyThinking(enableThinking)
+            // 厂商不支持就当作没开，宁可让模型自由发挥，也不要一个 400 把整轮对话打断
+            .applyJsonMode(jsonMode && supportsJsonMode)
     }
 
     /**

@@ -33,6 +33,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -103,9 +104,15 @@ fun UIFriendChatPage(
     messages: List<ChatMessage>,
     input: String,
     isSending: Boolean,
+    /**
+     * 正在流式接收的回复。它不在 [messages] 里——还没落库的临时消息不该混进历史，
+     * 否则「重试」和上下文裁剪都会把它当成一次完整回答。
+     */
+    streaming: ChatMessage?,
     error: String?,
     onInputChange: (String) -> Unit,
     onSend: () -> Unit,
+    onStop: () -> Unit,
     onBack: () -> Unit,
     onRetry: () -> Unit,
     onAvatarClick: () -> Unit
@@ -125,18 +132,27 @@ fun UIFriendChatPage(
             )
 
             val listState = rememberLazyListState()
-            val totalItems = messages.size + (if (isSending) 1 else 0) + (if (error != null) 1 else 0)
+            // 流式期间没有「新消息」，只有同一条在变长：用可见条目数算目标位置会停在原地，
+            // 所以下面还要跟着 streaming 的长度滚
+            val streamingLength = streaming?.content?.length ?: 0
+            val totalItems = messages.size +
+                (if (streaming != null || isSending) 1 else 0) +
+                (if (error != null) 1 else 0)
             var didInitialScroll by remember { mutableStateOf(false) }
             var listHeight by remember { mutableIntStateOf(0) }
 
-            LaunchedEffect(messages.size, isSending, error) {
+            LaunchedEffect(messages.size, isSending, error, streamingLength) {
                 if (totalItems <= 0) return@LaunchedEffect
                 val target = totalItems - 1
-                if (!didInitialScroll) {
-                    listState.scrollToItem(target)
-                    didInitialScroll = true
-                } else {
-                    listState.animateScrollToItem(target)
+                when {
+                    !didInitialScroll -> {
+                        listState.scrollToItem(target)
+                        didInitialScroll = true
+                    }
+                    // 流式期间每 60ms 就来一次。这里必须瞬时跟随：
+                    // 用动画的话每次更新都会把上一段动画打断重来，看起来像卡住不动
+                    streamingLength > 0 -> listState.scrollToItem(target)
+                    else -> listState.animateScrollToItem(target)
                 }
             }
 
@@ -207,7 +223,20 @@ fun UIFriendChatPage(
                         userAvatarPath = userAvatarPath
                     )
                 }
-                if (isSending) {
+                if (streaming != null) {
+                    item {
+                        MessageBubble(
+                            message = streaming,
+                            friendName = friendName,
+                            avatarPath = avatarPath,
+                            userAvatarPath = userAvatarPath,
+                            streaming = true
+                        )
+                    }
+                } else if (isSending) {
+                    // 还没有第一个字：这时候只能显示「正在输入」。
+                    // 一旦开始吐字就换成真正的气泡，两者不能同时出现，
+                    // 否则用户会以为对方派了两个人回话
                     item { TypingIndicator(friendName) }
                 }
                 if (error != null) {
@@ -219,7 +248,8 @@ fun UIFriendChatPage(
                 input = input,
                 isSending = isSending,
                 onInputChange = onInputChange,
-                onSend = onSend
+                onSend = onSend,
+                onStop = onStop
             )
         }
     }
@@ -311,7 +341,9 @@ private fun MessageBubble(
     message: ChatMessage,
     friendName: String,
     avatarPath: String?,
-    userAvatarPath: String?
+    userAvatarPath: String?,
+    /** 这条消息还在流式接收：末尾要跟一个光标，正文不完整是正常的。 */
+    streaming: Boolean = false
 ) {
     val isUser = message.role == ChatMessage.USER
     Row(
@@ -357,12 +389,37 @@ private fun MessageBubble(
                 )
                 .padding(horizontal = 14.dp, vertical = 10.dp)
         ) {
-            Text(
-                text = message.content,
-                fontSize = 15.sp,
-                lineHeight = 22.sp,
-                color = if (isUser) Color.White else UIFriendBarTitleColor
-            )
+            Column {
+                // 思考过程放在正文上方，折叠起来。展开时是灰字，一眼能看出
+                // 「这是他想的」而不是「他对我说的」
+                message.reasoning?.takeIf { it.isNotBlank() }?.let { reasoning ->
+                    ReasoningBlock(
+                        reasoning = reasoning,
+                        // 只想了还没开始说的时候默认展开：这时候用户除了思考
+                        // 没有别的可看，收起来就只剩一个空气泡
+                        expandedByDefault = streaming && message.content.isBlank(),
+                        thinking = streaming && message.content.isBlank()
+                    )
+                    if (message.content.isNotBlank()) {
+                        Spacer(Modifier.height(8.dp))
+                    }
+                }
+                if (message.content.isNotBlank() || !streaming) {
+                    Text(
+                        text = if (streaming) message.content + "▌" else message.content,
+                        fontSize = 15.sp,
+                        lineHeight = 22.sp,
+                        color = if (isUser) Color.White else UIFriendBarTitleColor
+                    )
+                } else if (message.reasoning.isNullOrBlank()) {
+                    // 既没正文也还没收到思考内容：至少让气泡里有点东西在动
+                    Text(
+                        text = "…",
+                        fontSize = 15.sp,
+                        color = UIFriendBarItemMetaColor
+                    )
+                }
+            }
         }
         if (isUser) {
             Spacer(Modifier.width(8.dp))
@@ -371,6 +428,54 @@ private fun MessageBubble(
                 avatarPath = userAvatarPath,
                 size = 34.dp,
                 shape = CircleShape
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReasoningBlock(
+    reasoning: String,
+    expandedByDefault: Boolean,
+    thinking: Boolean
+) {
+    // 用 remember 而不是 rememberSaveable：这是纯展示的临时展开状态。
+    // 存下来的话，下次进来说过的每一句都会带着一块展开的思考过程，历史会长得没法看。
+    var expanded by remember { mutableStateOf(expandedByDefault) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(UIFieldFill)
+            .padding(horizontal = 10.dp, vertical = 8.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded },
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = if (thinking) "正在思考…" else "思考过程",
+                modifier = Modifier.weight(1f),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                color = UIFriendBarItemMetaColor
+            )
+            Text(
+                text = if (expanded) "收起" else "展开",
+                fontSize = 10.sp,
+                color = UIFriendBarTagTextBlue
+            )
+        }
+        if (expanded) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = reasoning,
+                fontSize = 12.sp,
+                lineHeight = 18.sp,
+                color = UIFriendBarItemMetaColor
             )
         }
     }
@@ -436,9 +541,13 @@ private fun ChatInputBar(
     input: String,
     isSending: Boolean,
     onInputChange: (String) -> Unit,
-    onSend: () -> Unit
+    onSend: () -> Unit,
+    onStop: () -> Unit
 ) {
     val canSend = input.isNotBlank() && !isSending
+    // 生成中，发送键变成停止键。流式回复可能很长，没有这个按钮用户只能干等
+    val showStop = isSending
+    val buttonEnabled = showStop || canSend
 
     Row(
         // 不再用整条通栏白底：改成浮在渐变上的圆角玻璃条，和页面里其他卡片用同一套语言
@@ -488,7 +597,7 @@ private fun ChatInputBar(
                 // 与输入框共用基准高度，单行时严格等高
                 .size(UIComposerHeight)
                 .shadow(
-                    elevation = if (canSend) 8.dp else 0.dp,
+                    elevation = if (buttonEnabled) 8.dp else 0.dp,
                     shape = CircleShape,
                     clip = false,
                     ambientColor = UIBlobBlue,
@@ -496,18 +605,18 @@ private fun ChatInputBar(
                 )
                 .clip(CircleShape)
                 .then(
-                    if (canSend) {
-                        Modifier.background(UIActionBrush)
-                    } else {
-                        Modifier.background(UIChatSendDisabled.copy(alpha = 0.6f))
+                    when {
+                        showStop -> Modifier.background(UIFriendBarRed)
+                        canSend -> Modifier.background(UIActionBrush)
+                        else -> Modifier.background(UIChatSendDisabled.copy(alpha = 0.6f))
                     }
                 )
-                .clickable(enabled = canSend) { onSend() },
+                .clickable(enabled = buttonEnabled) { if (showStop) onStop() else onSend() },
             contentAlignment = Alignment.Center
         ) {
             Icon(
-                imageVector = Icons.AutoMirrored.Filled.Send,
-                contentDescription = "发送",
+                imageVector = if (showStop) Icons.Filled.Stop else Icons.AutoMirrored.Filled.Send,
+                contentDescription = if (showStop) "停止生成" else "发送",
                 tint = Color.White,
                 modifier = Modifier.size(18.dp)
             )

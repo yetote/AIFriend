@@ -34,6 +34,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -791,10 +792,42 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
             if (isRoomActive(roomId)) {
                 _uiState.update { it.copy(roomPending = it.roomPending + friendId) }
             }
+            val streamingId = "stream-$friendId-${System.currentTimeMillis()}"
+            val content = StringBuilder()
+            val reasoning = StringBuilder()
+            var lastPush = 0L
+
+            fun clearStreaming() {
+                if (!isRoomActive(roomId)) return
+                _uiState.update { state ->
+                    state.copy(roomStreaming = state.roomStreaming.filterNot { it.id == streamingId })
+                }
+            }
+
+            fun pushStreaming() {
+                if (!isRoomActive(roomId)) return
+                val snapshot = RoomMessage(
+                    id = streamingId,
+                    roomId = roomId,
+                    sender = RoomSender.Ai(friendId),
+                    content = content.toString(),
+                    // 临时消息不参与已落库消息的排序，seq 固定为 0；
+                    // 流式列表本身按插入顺序展示
+                    createdAt = System.currentTimeMillis(),
+                    seq = 0L,
+                    reasoning = reasoning.toString().takeIf { it.isNotBlank() }
+                )
+                _uiState.update { state ->
+                    state.copy(
+                        roomStreaming = state.roomStreaming.filterNot { it.id == streamingId } + snapshot
+                    )
+                }
+            }
+
             try {
                 val ai = aiFor(friend.brand)
                     ?: throw IllegalStateException("暂不支持的厂商：${friend.brand}")
-                val reply = ai.chat(
+                ai.chatStream(
                     messages = context,
                     model = friend.model,
                     systemPrompt = buildRoomSystemPrompt(
@@ -803,22 +836,34 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
                         autoChat = isBurstTurn
                     ),
                     enableThinking = friend.thinkingEnabled
-                )
-                // 自由对话的收尾标记只用于判断「聊完了」，不该显示在气泡里
-                val content = if (isBurstTurn) {
-                    AutoChatPolicy.stripEndMarker(reply)
-                } else {
-                    reply
+                ).collect { delta ->
+                    content.append(delta.content)
+                    reasoning.append(delta.reasoning)
+                    // 和 1:1 同一个理由：token 级推送会让长回复掉帧
+                    val now = System.currentTimeMillis()
+                    if (now - lastPush >= STREAM_PUSH_INTERVAL_MS) {
+                        lastPush = now
+                        pushStreaming()
+                    }
                 }
-                if (content.isNotBlank() && isFriendActiveInRoom(roomId, friendId)) {
+                // 自由对话的收尾标记只用于判断「聊完了」，不该显示在气泡里
+                val reply = if (isBurstTurn) {
+                    AutoChatPolicy.stripEndMarker(content.toString())
+                } else {
+                    content.toString()
+                }
+                // 先把临时气泡撤掉再落消息：反过来的话会有一帧同时显示两条一样的
+                clearStreaming()
+                if (reply.isNotBlank() && isFriendActiveInRoom(roomId, friendId)) {
                     appendRoomMessage(
                         RoomMessage(
                             id = UUID.randomUUID().toString(),
                             roomId = roomId,
                             sender = RoomSender.Ai(friendId),
-                            content = content,
+                            content = reply,
                             createdAt = System.currentTimeMillis(),
-                            seq = seqCounter.incrementAndGet()
+                            seq = seqCounter.incrementAndGet(),
+                            reasoning = reasoning.toString().takeIf { it.isNotBlank() }
                         )
                     )
                 }
@@ -826,8 +871,25 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
                     _uiState.update { it.copy(roomErrors = it.roomErrors - friendId) }
                 }
                 reply
-            } catch (t: CancellationException) {
-                throw t
+            } catch (cancelled: CancellationException) {
+                // 用户按了停止：已经说出来的半句留着，和他在屏幕上看到的最后一眼一致。
+                // 整段丢掉会让「停止」看起来像「出错」。
+                val partial = content.toString()
+                clearStreaming()
+                if (partial.isNotBlank() && isFriendActiveInRoom(roomId, friendId)) {
+                    appendRoomMessage(
+                        RoomMessage(
+                            id = UUID.randomUUID().toString(),
+                            roomId = roomId,
+                            sender = RoomSender.Ai(friendId),
+                            content = partial,
+                            createdAt = System.currentTimeMillis(),
+                            seq = seqCounter.incrementAndGet(),
+                            reasoning = reasoning.toString().takeIf { it.isNotBlank() }
+                        )
+                    )
+                }
+                throw cancelled
             } catch (t: Throwable) {
                 if (isRoomActive(roomId)) {
                     _uiState.update {
@@ -836,6 +898,8 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
                 }
                 null
             } finally {
+                // 无论成功、失败还是被取消，临时气泡都不能留在界面上
+                clearStreaming()
                 if (isRoomActive(roomId)) {
                     _uiState.update { it.copy(roomPending = it.roomPending - friendId) }
                 }
@@ -924,6 +988,14 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
 
     private companion object {
         const val MESSAGE_PAGE_SIZE = 50
+
+        /**
+         * 流式推送给界面的最小间隔。
+         *
+         * 聊天室可能同时有几个人在说（自由对话虽然串行，但首批回复的等待是并行的），
+         * 每个 token 都推一次会让整页反复重组，反而看出卡顿。60ms 已经够「逐字」了。
+         */
+        const val STREAM_PUSH_INTERVAL_MS = 60L
 
         /** 普通聊天室上下文预算。 */
         const val NORMAL_MAX_TOKENS = 6000

@@ -16,7 +16,9 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class StoredMessage(
     val role: String,
-    val content: String
+    val content: String,
+    /** 深度思考的思维链，只有 AI 回复可能有。@Serializable 默认值兼容旧 JSON。 */
+    val reasoning: String? = null
 )
 
 @Serializable
@@ -62,7 +64,9 @@ data class StoredRoomMessage(
     val content: String,
     val createdAt: Long = 0L,
     val seq: Long = 0L,
-    val targetIds: Set<String>? = null
+    val targetIds: Set<String>? = null,
+    /** 这一条 AI 发言的思维链，可空。 */
+    val reasoning: String? = null
 )
 
 internal fun StoredFriend.toEntity(): FriendEntity = FriendEntity(
@@ -82,7 +86,8 @@ internal fun StoredFriend.toEntity(): FriendEntity = FriendEntity(
 internal fun StoredMessage.toEntity(friendId: String): FriendMessageEntity = FriendMessageEntity(
     friendId = friendId,
     role = role,
-    content = content
+    content = content,
+    reasoning = reasoning
 )
 
 internal fun FriendWithMessages.toStored(): StoredFriend = StoredFriend(
@@ -97,7 +102,9 @@ internal fun FriendWithMessages.toStored(): StoredFriend = StoredFriend(
     avatarPath = friend.avatarPath,
     voiceId = friend.voiceId,
     ttsConfigId = friend.ttsConfigId,
-    messages = messages.sortedBy { it.id }.map { StoredMessage(role = it.role, content = it.content) }
+    messages = messages.sortedBy { it.id }.map {
+        StoredMessage(role = it.role, content = it.content, reasoning = it.reasoning)
+    }
 )
 
 internal fun StoredRoom.toEntity(): RoomEntity = RoomEntity(
@@ -137,7 +144,8 @@ internal fun StoredRoomMessage.toEntity(): RoomMessageEntity = RoomMessageEntity
     content = content,
     createdAt = createdAt,
     seq = seq,
-    targetIds = targetIds?.joinToString(",")
+    targetIds = targetIds?.joinToString(","),
+    reasoning = reasoning
 )
 
 internal fun RoomMessageEntity.toStored(): StoredRoomMessage = StoredRoomMessage(
@@ -148,5 +156,6 @@ internal fun RoomMessageEntity.toStored(): StoredRoomMessage = StoredRoomMessage
     content = content,
     createdAt = createdAt,
     seq = seq,
-    targetIds = targetIds?.split(",")?.filter { it.isNotBlank() }?.toSet()
+    targetIds = targetIds?.split(",")?.filter { it.isNotBlank() }?.toSet(),
+    reasoning = reasoning
 )

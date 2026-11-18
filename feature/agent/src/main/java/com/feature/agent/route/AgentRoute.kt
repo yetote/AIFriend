@@ -84,6 +84,11 @@ fun AgentRoute(
                 } == true,
                 isRefreshingPrice = state.isRefreshingPrice,
                 onRefreshPrice = viewModel::refreshPrice,
+                onPreviewVoice = viewModel::previewVoice,
+                isPreviewingVoice = state.previewingVoice,
+                previewingVoiceId = state.previewingVoiceId,
+                previewError = state.previewError,
+                onClearPreviewError = viewModel::clearVoicePreviewError,
                 onOpenSettings = onOpenSettings,
                 onSubmit = { name, role, prompt, avatarBytes, thinking, voiceId, ttsConfigId ->
                     val friend = viewModel.createFriend(
@@ -118,9 +123,11 @@ fun AgentRoute(
                     messages = friend.messages,
                     input = state.input,
                     isSending = state.isSending,
+                    streaming = state.streaming,
                     error = state.error,
                     onInputChange = viewModel::updateInput,
                     onSend = viewModel::send,
+                    onStop = viewModel::stopReply,
                     onBack = onExit,
                     onRetry = viewModel::retry,
                     // 点头像先去信息页，不再直接弹相册：
@@ -210,6 +217,11 @@ fun AgentRoute(
                     thinkingSwitchable = provider?.thinkingSwitchable ?: true,
                     personas = PersonaCatalog.all,
                     personaToggleLabel = "换成内置模板",
+                    onPreviewVoice = viewModel::previewVoice,
+                    isPreviewingVoice = state.previewingVoice,
+                    previewingVoiceId = state.previewingVoiceId,
+                    previewError = state.previewError,
+                    onClearPreviewError = viewModel::clearVoicePreviewError,
                     onOpenSettings = onOpenSettings
                 )
             }

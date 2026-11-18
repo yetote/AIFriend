@@ -15,6 +15,9 @@ dependencies {
     implementation(project(":core:common"))
     implementation(project(":core:persona"))
     implementation(project(":core:repository"))
+    // 建角色页要能试听音色：音色能不能出声取决于账号开通情况，
+    // 选的时候当场响一声，比配完角色进游戏才发现没声音强。
+    implementation(project(":core:tts"))
     implementation(project(":ui:agent"))
     implementation(project(":ui:common"))
     implementation(platform(libs.androidx.compose.bom))

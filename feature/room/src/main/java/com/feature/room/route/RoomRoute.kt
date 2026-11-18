@@ -12,11 +12,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.core.ai.model.Friend
 import com.core.ai.model.estimateTokens
 import com.core.ai.model.trimToBudget
 import com.feature.room.contract.RoomScreen
 import com.feature.room.data.buildRoomContext
 import com.feature.room.model.MAX_ROOM_MEMBERS
+import com.feature.room.model.RoomMessage
+import com.feature.room.model.RoomSender
 import com.feature.room.vm.RoomViewModel
 import com.ui.common.theme.UIGradientBackground
 import com.ui.room.UIRoomChatPage
@@ -125,23 +128,8 @@ fun RoomRoute(
                     messages = state.roomMessages
                         .filter { it.roomId == room.id }
                         .sortedWith(compareBy({ it.createdAt }, { it.seq }))
-                        .map { message ->
-                            val aiId = (message.sender as? com.feature.room.model.RoomSender.Ai)?.friendId
-                            UIRoomMessage(
-                                id = message.id,
-                                isUser = message.sender == com.feature.room.model.RoomSender.User,
-                                isSystem = message.sender == com.feature.room.model.RoomSender.System,
-                                senderId = aiId,
-                                senderName = aiId?.let { id ->
-                                    state.friends.firstOrNull { it.id == id }?.name ?: "已移除"
-                                },
-                                avatarPath = aiId?.let { id ->
-                                    state.friends.firstOrNull { it.id == id }?.avatarPath
-                                },
-                                content = message.content,
-                                createdAt = message.createdAt
-                            )
-                        },
+                        .map { it.toUiMessage(state.friends) },
+                    streaming = state.activeRoomStreaming.map { it.toUiMessage(state.friends, streaming = true) },
                     input = state.roomInput,
                     userAvatarPath = state.userAvatarPath,
                     // 消息还在读的时候，消息区显示 loading，顶栏/输入框照常可见
@@ -261,6 +249,32 @@ fun RoomRoute(
             }
         }
     }
+}
+
+/**
+ * 领域消息 → 展示消息。
+ *
+ * 头像和昵称都按好友 id 现查：成员被移出房间以后，历史消息仍然要能显示，
+ * 那时候查不到人就退回「已移除」，而不是让这一条消失。
+ */
+private fun RoomMessage.toUiMessage(
+    friends: List<Friend>,
+    streaming: Boolean = false
+): UIRoomMessage {
+    val aiId = (sender as? RoomSender.Ai)?.friendId
+    val friend = aiId?.let { id -> friends.firstOrNull { it.id == id } }
+    return UIRoomMessage(
+        id = id,
+        isUser = sender == RoomSender.User,
+        isSystem = sender == RoomSender.System,
+        senderId = aiId,
+        senderName = aiId?.let { friend?.name ?: "已移除" },
+        avatarPath = friend?.avatarPath,
+        content = content,
+        createdAt = createdAt,
+        reasoning = reasoning,
+        isStreaming = streaming
+    )
 }
 
 private fun shareRoomMarkdown(context: Context, roomName: String, markdown: String) {

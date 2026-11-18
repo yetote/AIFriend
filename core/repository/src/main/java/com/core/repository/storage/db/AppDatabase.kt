@@ -16,7 +16,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         RoomMessageEntity::class,
         ProfileEntity::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -87,6 +87,19 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v10：AI 回复的思考过程。两张消息表都加一个可空列。
+         *
+         * 只加列不搬数据，旧消息读出来是 null，界面就不显示思考区块——
+         * 这和「这条消息当时确实没思考」在展示上是一回事，不需要区分。
+         */
+        private val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE friend_messages ADD COLUMN reasoning TEXT")
+                db.execSQL("ALTER TABLE room_messages ADD COLUMN reasoning TEXT")
+            }
+        }
+
         @Volatile
         private var instance: AppDatabase? = null
 
@@ -105,7 +118,8 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_5_6,
                         MIGRATION_6_7,
                         MIGRATION_7_8,
-                        MIGRATION_8_9
+                        MIGRATION_8_9,
+                        MIGRATION_9_10
                     )
                     .build()
                     .also { instance = it }

@@ -1,8 +1,11 @@
 package com.core.ai.entity
 
+import com.core.ai.model.ChatDelta
 import com.core.ai.model.ChatMessage
 import com.core.ai.model.GatewayModel
 import com.core.ai.model.ModelPrice
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 
 interface IAI {
     suspend fun requestModel()
@@ -61,6 +64,36 @@ interface IAI {
         enableThinking: Boolean = true,
         jsonMode: Boolean = false
     ): String = throw UnsupportedOperationException("「$brandName」暂未接入对话")
+
+    /**
+     * 流式对话：以增量片段的形式返回正文与思考过程。
+     *
+     * 默认实现退化成「一次性请求，再推一整段」——这样即使某个厂商没接流式，
+     * 上层也不用为它单开一条分支，界面照样能渲染，只是没有逐字效果。
+     * OpenAI 兼容的厂商都在 [OpenAICompatibleAI] 里覆盖成了真正的 SSE。
+     *
+     * 实现方要保证：出错时抛出异常，而不是安静地结束。上层靠这一点区分
+     * 「说完了」和「被切断了」——前者要落库，后者要留个重试入口。
+     */
+    fun chatStream(
+        messages: List<ChatMessage>,
+        model: String,
+        systemPrompt: String? = null,
+        enableThinking: Boolean = true,
+        jsonMode: Boolean = false
+    ): Flow<ChatDelta> = flow {
+        emit(
+            ChatDelta(
+                content = chat(
+                    messages = messages,
+                    model = model,
+                    systemPrompt = systemPrompt,
+                    enableThinking = enableThinking,
+                    jsonMode = jsonMode
+                )
+            )
+        )
+    }
 
     @Deprecated("改用 chat(messages, model, systemPrompt, enableThinking)")
     suspend fun chat(message: String, model: String): String

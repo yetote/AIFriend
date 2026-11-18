@@ -8,6 +8,13 @@ data class RoomUiState(
     val rooms: List<Room> = emptyList(),
     val friends: List<Friend> = emptyList(),
     val roomMessages: List<RoomMessage> = emptyList(),
+    /**
+     * 正在流式接收的 AI 回复。
+     *
+     * 不进 [roomMessages]：那条列表是「已经发生过的对话」，要参与分页、导出和
+     * 下一轮的上下文构建。半成品混进去，上下文里就会出现一句没说完的话。
+     */
+    val roomStreaming: List<RoomMessage> = emptyList(),
     val userAvatarPath: String? = null,
     val activeRoomId: String? = null,
     val roomInput: String = "",
@@ -38,6 +45,12 @@ data class RoomUiState(
         get() = activeRoom?.let { room ->
             roomMessages.filter { it.roomId == room.id }
                 .sortedWith(compareBy({ it.createdAt }, { it.seq }))
+        }.orEmpty()
+
+    /** 当前房间正在流式输出的那几条，按开始时间排在已落库消息之后。 */
+    val activeRoomStreaming: List<RoomMessage>
+        get() = activeRoom?.let { room ->
+            roomStreaming.filter { it.roomId == room.id }
         }.orEmpty()
 }
 

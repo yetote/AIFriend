@@ -24,12 +24,19 @@ import com.core.repository.storage.LegacyMigration
 import com.core.repository.storage.ProfileRepository
 import com.core.repository.storage.StoredMessage
 import com.core.repository.settings.AIProviderCatalog
+import com.core.repository.settings.TTSProviderCatalog
+import com.core.repository.storage.TTSProviderSettings
+import com.core.tts.TTSPreviewPlayer
+import com.core.tts.TTSReadableError
 import com.feature.agent.contract.AgentUiState
 import com.feature.agent.contract.DEFAULT_PROVIDERS
 import com.feature.agent.model.Provider
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -43,11 +50,19 @@ class AgentViewModel(application: Application) : BaseViewModel(application) {
     private val avatarStore = AvatarStore(application)
 
     private val ais = mutableMapOf<String, IAI>()
+
+    /** 正在生成的那条回复。停止、重试都要能掐掉它。 */
+    private var replyJob: Job? = null
+
     private val modelCache = mutableMapOf<String, List<String>>()
 
     /** 带价格的模型明细缓存，切回已加载过的平台时直接复用，价格才不会丢。 */
     private val modelDetailCache = mutableMapOf<String, List<GatewayModel>>()
     private val settings = AIProviderSettings(application)
+
+    /** 建角色页试听用：读 TTS 凭证 + 真实合成并播放。 */
+    private val ttsSettings = TTSProviderSettings(application)
+    private val previewPlayer = TTSPreviewPlayer(application)
 
     private val priceRefresher = ModelPriceRefresher(application)
 
@@ -251,6 +266,54 @@ class AgentViewModel(application: Application) : BaseViewModel(application) {
         _uiState.update { it.copy(input = text) }
     }
 
+    /**
+     * 建角色页试听音色。
+     *
+     * 为什么不在设置页做：音色是角色属性，而且**只能靠真合成一次来判断能不能用**。
+     * 腾讯云的精品音色、火山的部分渠道音色要在控制台单独开通，Key 完全正常也会失败；
+     * 用户在这里当场听到报错，才知道该换一个音色，而不是回头怀疑自己 Key 填错了。
+     *
+     * 凭证读盘而不是用内存快照：快照是给朗读用的，可能还没加载；
+     * 试听是低频操作，多读一次盘没有性能问题。
+     */
+    /** 换服务商 / 换音色时清掉上一次的报错，否则用户会以为新服务也是坏的。 */
+    fun clearVoicePreviewError() {
+        _uiState.update { it.copy(previewError = null) }
+    }
+
+    fun previewVoice(ttsConfigId: String?, voiceId: String?) {
+        // 播放器一次只放一条，连点会把上一段截断并叠着响
+        if (_uiState.value.previewingVoice) return
+        val provider = TTSProviderCatalog.byId(ttsConfigId) ?: TTSProviderCatalog.default()
+        _uiState.update {
+            it.copy(previewingVoice = true, previewingVoiceId = voiceId, previewError = null)
+        }
+        viewModelScope.launch {
+            val credential = withContext(Dispatchers.IO) {
+                runCatching { ttsSettings.load() }.getOrDefault(emptyList())
+                    .firstOrNull { it.providerId == provider.id }
+            }
+            if (credential == null || credential.apiKey.isBlank()) {
+                _uiState.update {
+                    it.copy(
+                        previewingVoice = false,
+                        previewError = "还没配「${provider.name}」的语音凭证。" +
+                            "先在上面选一家配过的服务，或去 设置 → 语音朗读 里填好并测试通过。"
+                    )
+                }
+                return@launch
+            }
+            val outcome = runCatching { previewPlayer.preview(provider, credential, voiceId) }
+            val failure = outcome.getOrNull()?.exceptionOrNull() ?: outcome.exceptionOrNull()
+            _uiState.update {
+                it.copy(
+                    previewingVoice = false,
+                    previewError = failure?.let { error -> TTSReadableError.of(error, provider.name) }
+                )
+            }
+        }
+    }
+
     fun createFriend(
         name: String,
         role: String,
@@ -370,25 +433,36 @@ class AgentViewModel(application: Application) : BaseViewModel(application) {
         }
     }
 
-    fun send() = viewModelScope.launch {
+    fun send() {
         val state = _uiState.value
-        val friend = state.activeFriend ?: return@launch
+        val friend = state.activeFriend ?: return
         val text = state.input.trim()
-        if (text.isEmpty() || state.isSending) return@launch
+        if (text.isEmpty() || state.isSending) return
 
         val history = friend.messages + ChatMessage.user(text)
         appendMessage(friend.id, ChatMessage.user(text))
-        _uiState.update { it.copy(input = "", isSending = true, error = null) }
-        requestReply(friend.id, friend, history)
+        _uiState.update { it.copy(input = "", isSending = true, error = null, streaming = null) }
+        startReply(friend.id, friend, history)
     }
 
-    fun retry() = viewModelScope.launch {
+    fun retry() {
         val state = _uiState.value
-        val friend = state.activeFriend ?: return@launch
-        if (state.isSending || friend.messages.isEmpty()) return@launch
+        val friend = state.activeFriend ?: return
+        if (state.isSending || friend.messages.isEmpty()) return
 
-        _uiState.update { it.copy(isSending = true, error = null) }
-        requestReply(friend.id, friend, friend.messages)
+        _uiState.update { it.copy(isSending = true, error = null, streaming = null) }
+        startReply(friend.id, friend, friend.messages)
+    }
+
+    /**
+     * 停止生成。
+     *
+     * 已经吐出来的半句话会保留下来，而不是整段丢弃：用户看着字一个个出现，
+     * 突然全部消失会让人以为出错了。留下的内容和他看到的最后一眼一致，
+     * 不满意可以直接接着让他重说。
+     */
+    fun stopReply() {
+        replyJob?.cancel()
     }
 
     private fun loadModelsFor(brand: String) = viewModelScope.launch {
@@ -433,11 +507,21 @@ class AgentViewModel(application: Application) : BaseViewModel(application) {
         }
     }
 
+    /** 起一轮回复。重试和首次发送走同一条路，避免两边对「取消旧请求」的处理不一致。 */
+    private fun startReply(friendId: String, friend: Friend, history: List<ChatMessage>) {
+        replyJob?.cancel()
+        replyJob = viewModelScope.launch { requestReply(friendId, friend, history) }
+    }
+
     private suspend fun requestReply(
         friendId: String,
         friend: Friend,
         history: List<ChatMessage>
     ) {
+        // 累加器放在 try 外面：被取消时 catch 里还要用它们把半句话存下来
+        val content = StringBuilder()
+        val reasoning = StringBuilder()
+        var lastPush = 0L
         try {
             // 以前 Key 是编译进 App 的，这里不会缺；现在全由用户自己填，
             // 老好友或刚换设备时很可能一把 Key 都没有。直接发请求会拿到
@@ -450,15 +534,30 @@ class AgentViewModel(application: Application) : BaseViewModel(application) {
             }
             val ai = aiFor(friend.brand)
                 ?: throw IllegalStateException("暂不支持的厂商：${friend.brand}")
-            val reply = ai.chat(
+
+            ai.chatStream(
                 messages = history.trimToBudget(),
                 model = friend.model,
                 systemPrompt = friend.systemPrompt,
                 enableThinking = friend.thinkingEnabled
-            )
-            if (_uiState.value.friends.any { it.id == friendId }) {
-                appendMessage(friendId, ChatMessage.assistant(reply))
+            ).collect { delta ->
+                content.append(delta.content)
+                reasoning.append(delta.reasoning)
+                // 每帧都推会把主线程的重组排满，长回复反而更卡。
+                // 60ms 一次肉眼已经是「一个字一个字」的效果了。
+                val now = System.currentTimeMillis()
+                if (now - lastPush >= STREAM_PUSH_INTERVAL_MS) {
+                    lastPush = now
+                    pushStreaming(friendId, content, reasoning)
+                }
             }
+
+            val full = content.toString()
+            if (full.isBlank()) throw IllegalStateException("模型没有返回内容，请重试")
+            commitReply(friendId, full, reasoning.toString())
+        } catch (cancelled: CancellationException) {
+            commitReply(friendId, content.toString(), reasoning.toString())
+            throw cancelled
         } catch (t: MissingKeyException) {
             _uiState.update {
                 it.copy(error = "还没有填 ${t.providerName} 的 API Key，去设置页填一把就能继续聊。")
@@ -466,9 +565,38 @@ class AgentViewModel(application: Application) : BaseViewModel(application) {
         } catch (t: Throwable) {
             _uiState.update { it.copy(error = t.readableMessage()) }
         } finally {
-            _uiState.update { it.copy(isSending = false) }
+            _uiState.update { it.copy(isSending = false, streaming = null) }
+            replyJob = null
         }
     }
+
+    /**
+     * 把正在生成的内容推给界面。
+     *
+     * 只推给当前正在看的那个好友：用户切到别人那儿以后，这里的重组没有意义，
+     * 但请求本身要继续跑完——切回来还能看到完整结果。
+     */
+    private fun pushStreaming(friendId: String, content: StringBuilder, reasoning: StringBuilder) {
+        if (_uiState.value.activeFriendId != friendId) return
+        _uiState.update {
+            it.copy(streaming = ChatMessage.assistant(content.toString(), reasoning.ifNotBlank()))
+        }
+    }
+
+    /**
+     * 一轮结束（说完了、被停止、或者出错了）时把已有的内容落成正式消息。
+     *
+     * 空内容不落：那会留下一个点了没反应的气泡，重试也没法解释它是哪来的。
+     */
+    private fun commitReply(friendId: String, content: String, reasoning: String) {
+        _uiState.update { it.copy(streaming = null) }
+        if (content.isBlank()) return
+        if (_uiState.value.friends.none { it.id == friendId }) return
+        appendMessage(friendId, ChatMessage.assistant(content, reasoning.takeIf { it.isNotBlank() }))
+    }
+
+    /** 全是空白就当作没有思考过程，别在界面上留一块空的「思考」标题。 */
+    private fun StringBuilder.ifNotBlank(): String? = toString().takeIf { it.isNotBlank() }
 
     private fun aiFor(brand: String): IAI? {
         ais[brand]?.let { return it }
@@ -493,7 +621,12 @@ class AgentViewModel(application: Application) : BaseViewModel(application) {
             runCatching {
                 friendRepository.appendMessage(
                     friendId = friendId,
-                    message = StoredMessage(role = message.role, content = message.content)
+                    message = StoredMessage(
+                        role = message.role,
+                        content = message.content,
+                        // 思考过程跟消息一起落库，退出页面再回来还在
+                        reasoning = message.reasoning
+                    )
                 )
             }
         }
@@ -507,6 +640,14 @@ class AgentViewModel(application: Application) : BaseViewModel(application) {
 
     private companion object {
         const val USER_AVATAR_ID = "user"
+
+        /**
+         * 流式推送给界面的最小间隔。
+         *
+         * token 级推送看起来最「实时」，但一次长回复会有几千次重组，主线程跟不上，
+         * 反而表现为卡顿和掉帧。60ms 一次在观感上和逐字毫无区别。
+         */
+        const val STREAM_PUSH_INTERVAL_MS = 60L
     }
 }
 

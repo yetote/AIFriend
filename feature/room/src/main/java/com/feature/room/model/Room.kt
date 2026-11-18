@@ -62,5 +62,7 @@ data class RoomMessage(
      * 这条用户消息 @ 的成员 ID。
      * null 表示全员可见；非空表示这一轮只对这些成员可见。
      */
-    val targetIds: Set<String>? = null
+    val targetIds: Set<String>? = null,
+    /** AI 发言的思考过程，可空。用户和系统消息永远没有。 */
+    val reasoning: String? = null
 )

@@ -40,7 +40,14 @@ data class FriendMessageEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val friendId: String,
     val role: String,
-    val content: String
+    val content: String,
+    /**
+     * 深度思考的思维链，只有 assistant 消息可能有。
+     *
+     * 可空列：老数据、不思考的模型、用户自己的发言都没有这一段，
+     * 空字符串会让界面上多一块空的「思考过程」标题。
+     */
+    val reasoning: String? = null
 )
 
 @Entity(tableName = "rooms")
@@ -90,7 +97,9 @@ data class RoomMessageEntity(
     val createdAt: Long,
     val seq: Long,
     /** 逗号分隔的 @ 成员 ID；null 表示全员可见。 */
-    val targetIds: String? = null
+    val targetIds: String? = null,
+    /** 这一条 AI 发言的思维链，可空。和 1:1 的消息表保持同一套语义。 */
+    val reasoning: String? = null
 )
 
 @Entity(tableName = "profile")

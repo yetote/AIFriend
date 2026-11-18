@@ -128,6 +128,11 @@ fun UIRoomChatPage(
     allFriends: List<UIRoomMember>,
     maxMembers: Int,
     messages: List<UIRoomMessage>,
+    /**
+     * 正在流式接收的回复。它们不属于 [messages]：那条列表是已经落库的对话，
+     * 要参与分页和导出，半成品混进去会被当成一句说完了的话。
+     */
+    streaming: List<UIRoomMessage> = emptyList(),
     input: String,
     userAvatarPath: String?,
     /** 首屏消息还在读：消息区转圈，顶栏和输入框照常显示，避免整页跳变。 */
@@ -162,7 +167,11 @@ fun UIRoomChatPage(
     val scope = rememberCoroutineScope()
     val memberNames = remember(members) { members.associate { it.id to it.name } }
     val listState = rememberLazyListState()
-    val totalItems = messages.size + pendingIds.size + errors.size
+    // 流式回复期间「没有新消息」，只有同一条在变长，所以定位要跟着它的长度走
+    val streamingLength = streaming.sumOf { it.content.length }
+    // 已经在流式吐字的人不再显示「正在输入」：两者同时出现像是两个人在答
+    val typingIds = pendingIds - streaming.mapNotNull { it.senderId }.toSet()
+    val totalItems = messages.size + streaming.size + typingIds.size + errors.size
     val topOffset = if (isLoadingMore) 1 else 0
     val lastItemIndex = topOffset + totalItems - 1
 
@@ -201,7 +210,7 @@ fun UIRoomChatPage(
                 label = "roomMessagesCover"
             )
 
-            LaunchedEffect(messages.lastOrNull()?.id, pendingIds.size, errors.size) {
+            LaunchedEffect(messages.lastOrNull()?.id, streamingLength, typingIds.size, errors.size) {
                 if (totalItems <= 0) {
                     // 没有可滚动的内容：读完了才算「已定位」，否则遮罩要一直盖着，
                     // 等消息到了再走正常的一次性底部定位。
@@ -211,6 +220,9 @@ fun UIRoomChatPage(
                 if (!didInitialScroll) {
                     listState.scrollToItem(lastItemIndex)
                     didInitialScroll = true
+                } else if (streamingLength > 0) {
+                    // 流式期间每 60ms 更新一次，动画会被反复打断，直接瞬时跟随
+                    listState.scrollToItem(lastItemIndex)
                 } else {
                     listState.animateScrollToItem(lastItemIndex)
                 }
@@ -325,7 +337,17 @@ fun UIRoomChatPage(
                             }
                         }
                     }
-                    pendingIds.forEach { friendId ->
+                    streaming.forEach { message ->
+                        item(key = message.id) {
+                            RoomMessageBubble(
+                                message = message,
+                                userAvatarPath = userAvatarPath,
+                                // 还没说完的一段，长按复制/引用都没有意义
+                                onLongPress = {}
+                            )
+                        }
+                    }
+                    typingIds.forEach { friendId ->
                         item {
                             TypingRow(
                                 name = memberNames[friendId] ?: "好友",
@@ -732,12 +754,33 @@ private fun RoomMessageBubble(
                     )
                     .padding(horizontal = 14.dp, vertical = 10.dp)
             ) {
-                Text(
-                    text = message.content,
-                    fontSize = 15.sp,
-                    lineHeight = 22.sp,
-                    color = if (message.isUser) Color.White else UIFriendBarTitleColor
-                )
+                Column {
+                    message.reasoning?.takeIf { it.isNotBlank() }?.let { reasoning ->
+                        RoomReasoningBlock(
+                            reasoning = reasoning,
+                            // 只想还没开始说时默认展开，否则气泡里除了折叠条什么都没有
+                            expandedByDefault = message.isStreaming && message.content.isBlank(),
+                            thinking = message.isStreaming && message.content.isBlank()
+                        )
+                        if (message.content.isNotBlank()) {
+                            Spacer(Modifier.height(8.dp))
+                        }
+                    }
+                    if (message.content.isNotBlank() || !message.isStreaming) {
+                        Text(
+                            text = if (message.isStreaming) message.content + "▌" else message.content,
+                            fontSize = 15.sp,
+                            lineHeight = 22.sp,
+                            color = if (message.isUser) Color.White else UIFriendBarTitleColor
+                        )
+                    } else if (message.reasoning.isNullOrBlank()) {
+                        Text(
+                            text = "…",
+                            fontSize = 15.sp,
+                            color = UIFriendBarItemMetaColor
+                        )
+                    }
+                }
             }
         }
         if (message.isUser) {
@@ -747,6 +790,53 @@ private fun RoomMessageBubble(
                 avatarPath = userAvatarPath,
                 size = 34.dp,
                 shape = CircleShape
+            )
+        }
+    }
+}
+
+@Composable
+private fun RoomReasoningBlock(
+    reasoning: String,
+    expandedByDefault: Boolean,
+    thinking: Boolean
+) {
+    // 纯展示的临时展开状态，不进 saveable：不然下次进来每条历史都摊着思考过程
+    var expanded by remember { mutableStateOf(expandedByDefault) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(UIFieldFill)
+            .padding(horizontal = 10.dp, vertical = 8.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded },
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = if (thinking) "正在思考…" else "思考过程",
+                modifier = Modifier.weight(1f),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                color = UIFriendBarItemMetaColor
+            )
+            Text(
+                text = if (expanded) "收起" else "展开",
+                fontSize = 10.sp,
+                color = UIFriendBarTagTextBlue
+            )
+        }
+        if (expanded) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = reasoning,
+                fontSize = 12.sp,
+                lineHeight = 18.sp,
+                color = UIFriendBarItemMetaColor
             )
         }
     }

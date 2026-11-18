@@ -16,15 +16,19 @@ import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logger
 import io.ktor.client.plugins.logging.Logging
+import io.ktor.client.plugins.timeout
 import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
+import io.ktor.client.request.preparePost
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsChannel
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
+import io.ktor.utils.io.readUTF8Line
 import kotlinx.serialization.json.Json
 import java.net.SocketTimeoutException
 
@@ -112,6 +116,46 @@ class KtorClient {
                 header(key, value)
             }
         }.body()
+
+    /**
+     * 流式 POST：按行读响应体，读一行回调一行。
+     *
+     * 不能用 `post(...).body()`：SSE 的响应要等模型把话说完才算「接收完」，
+     * 那样流式就退化成了普通请求。`preparePost` + `execute` 才能边到边读。
+     *
+     * 超时要单独放宽。全局 120 秒是给「一问一答」定的，一段长回复加上思考过程
+     * 很容易超过它，用同一个值会把话从中间掐断——而且断开时用户看到的是半句话，
+     * 比直接报错更让人困惑。socket 超时仍保留 120 秒：真的卡住不吐字时照样要断。
+     *
+     * 回调是 suspend 的，调用方可以在里面往 Flow 里 `send`。
+     * 这里不吞异常：HTTP 状态错误由 [client] 的校验器统一翻译，读取中断直接往上抛，
+     * 上层据此区分「说完了」和「被切断了」。
+     */
+    suspend fun streamPost(
+        url: String,
+        body: Any,
+        headers: Map<String, String>,
+        onLine: suspend (String) -> Unit
+    ) {
+        client.preparePost(url) {
+            contentType(ContentType.Application.Json)
+            setBody(body)
+            headers.forEach { (key, value) ->
+                header(key, value)
+            }
+            timeout {
+                requestTimeoutMillis = 600_000
+                socketTimeoutMillis = 120_000
+            }
+        }.execute { response ->
+            val channel = response.bodyAsChannel()
+            while (true) {
+                // 行尾可能是 \n 也可能是 \r\n，readUTF8Line 两种都吃得下
+                val line = channel.readUTF8Line() ?: break
+                onLine(line)
+            }
+        }
+    }
 
     /**
      * 取原始文本，用于抓网页。

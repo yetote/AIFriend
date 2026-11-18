@@ -34,5 +34,9 @@ data class UIRoomMessage(
     val senderName: String? = null,
     val avatarPath: String? = null,
     val content: String,
-    val createdAt: Long = 0L
+    val createdAt: Long = 0L,
+    /** AI 发言的思考过程，可空。折叠展示，不占正文位置。 */
+    val reasoning: String? = null,
+    /** 这条还在流式接收：末尾跟光标，长按菜单要禁用（内容还不完整）。 */
+    val isStreaming: Boolean = false
 )
