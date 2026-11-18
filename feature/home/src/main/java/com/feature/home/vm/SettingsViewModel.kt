@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.core.ai.model.ModelPriceRefresher
 import com.core.ai.model.ModelPrices
 import com.core.ai.model.OpenAIModelResponse
+import com.core.ai.model.VoiceCatalog
 import com.core.ai.model.toSelectableChatModelsWithPrices
 import com.core.common.BaseViewModel
 import com.core.repository.ApiConfig
@@ -17,13 +18,16 @@ import com.core.repository.storage.AICredential
 import com.core.repository.storage.AIProviderSettings
 import com.core.repository.storage.TTSCredential
 import com.core.repository.storage.TTSProviderSettings
+import com.core.tts.TTSPreviewPlayer
 import com.feature.agent.data.toUITone
 import com.ui.home.UIProviderOption
 import com.ui.home.UIModelSettingsState
 import com.ui.home.UISettingsModel
+import com.ui.home.UITTSTestResult
 import com.ui.home.UITTSProviderOption
 import com.ui.home.UITTSState
 import com.ui.home.UIVerifyResult
+import com.ui.home.UIVoiceOption
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -47,6 +51,9 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
     private val ttsSettings = TTSProviderSettings(application)
     private var savedTts: Map<String, TTSCredential> = emptyMap()
 
+    /** 设置页试听：和新凭证一起传进去，不依赖狼人杀那边读到的快照。 */
+    private val previewPlayer = TTSPreviewPlayer(application)
+
     private val priceRefresher = ModelPriceRefresher(application)
 
     private val _state = MutableStateFlow(UIModelSettingsState())
@@ -69,6 +76,11 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
         }
     }
 
+    override fun onCleared() {
+        previewPlayer.stop()
+        super.onCleared()
+    }
+
     /** 读 TTS 凭证，填进 TTS 区块。默认停在已配置的那家，否则 MiniMax。 */
     private suspend fun loadTts() {
         val credentials = withContext(Dispatchers.IO) { ttsSettings.load() }
@@ -84,6 +96,8 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
                 secretInput = "",
                 appIdInput = savedTts[selected.id]?.appId.orEmpty(),
                 baseUrlInput = savedTts[selected.id]?.baseUrl.orEmpty(),
+                voices = voicesFor(selected.id),
+                voiceId = VoiceCatalog.defaultVoiceOf(selected.id),
             )
         )
     }
@@ -453,32 +467,45 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
                 secretInput = "",
                 appIdInput = saved?.appId.orEmpty(),
                 baseUrlInput = saved?.baseUrl.orEmpty(),
-                hint = null
+                voices = voicesFor(id),
+                voiceId = VoiceCatalog.defaultVoiceOf(id),
+                hint = null,
+                testResult = null
             )
         )
     }
 
+    /** 切音色只影响试听；角色实际用哪个音色仍在建角色时决定。 */
+    fun selectTtsVoice(id: String?) {
+        _state.value = _state.value.copy(
+            tts = _state.value.tts.copy(voiceId = id, testResult = null)
+        )
+    }
+
+    private fun voicesFor(providerId: String): List<UIVoiceOption> =
+        VoiceCatalog.forProvider(providerId).map { UIVoiceOption(it.id, it.label) }
+
     fun setTtsKeyInput(value: String) {
         _state.value = _state.value.copy(
-            tts = _state.value.tts.copy(keyInput = value.trim(), hint = null)
+            tts = _state.value.tts.copy(keyInput = value.trim(), hint = null, testResult = null)
         )
     }
 
     fun setTtsSecretInput(value: String) {
         _state.value = _state.value.copy(
-            tts = _state.value.tts.copy(secretInput = value.trim(), hint = null)
+            tts = _state.value.tts.copy(secretInput = value.trim(), hint = null, testResult = null)
         )
     }
 
     fun setTtsAppIdInput(value: String) {
         _state.value = _state.value.copy(
-            tts = _state.value.tts.copy(appIdInput = value.trim(), hint = null)
+            tts = _state.value.tts.copy(appIdInput = value.trim(), hint = null, testResult = null)
         )
     }
 
     fun setTtsBaseUrlInput(value: String) {
         _state.value = _state.value.copy(
-            tts = _state.value.tts.copy(baseUrlInput = value.trim(), hint = null)
+            tts = _state.value.tts.copy(baseUrlInput = value.trim(), hint = null, testResult = null)
         )
     }
 
@@ -498,17 +525,20 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
                     keyInput = "",
                     secretInput = "",
                     appIdInput = "",
-                    hint = "已清除该服务的凭证"
+                    hint = "已清除该服务的凭证",
+                    testResult = null
                 )
             )
         }
     }
 
     /**
-     * 保存 TTS 凭证。TTS 各家协议不同，这里不强行发一次探活请求
-     * （没有统一的 /models 可测），存下即生效，朗读失败会有明确日志。
+     * 测试并保存 TTS 凭证。
+     *
+     * 以前这里只写盘，Key 错要等开局狼人杀才知道——太晚了。现在先拿输入框里的
+     * （或已保存的）凭证真的合成一句，播放成功才落盘；失败把原因摆在设置页上。
      */
-    fun saveTtsCredential() {
+    fun testAndSaveTtsCredential() {
         val tts = _state.value.tts
         val provider = TTSProviderCatalog.byId(tts.selectedId) ?: return
         val existing = savedTts[provider.id]
@@ -538,18 +568,58 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
             _state.value = _state.value.copy(tts = tts.copy(hint = problem))
             return
         }
+
         val credential = TTSCredential(provider.id, apiKey, baseUrl, secret, appId)
+        _state.value = _state.value.copy(
+            tts = tts.copy(testing = true, hint = null, testResult = null)
+        )
         viewModelScope.launch {
+            val result = try {
+                previewPlayer.preview(provider, credential, tts.voiceId)
+            } catch (t: Throwable) {
+                Result.failure<Unit>(t)
+            }
+            val error = result.exceptionOrNull()
+
+            if (error != null) {
+                _state.value = _state.value.copy(
+                    tts = _state.value.tts.copy(
+                        testing = false,
+                        testResult = UITTSTestResult.Failure(ttsReadableError(error, provider))
+                    )
+                )
+                return@launch
+            }
+
             val ok = withContext(Dispatchers.IO) { ttsSettings.save(credential) }
             if (ok) savedTts = savedTts + (provider.id to credential)
+            val voiceLabel = _state.value.tts.selectedVoiceLabel
             _state.value = _state.value.copy(
                 tts = _state.value.tts.copy(
+                    testing = false,
                     providers = TTSProviderCatalog.all.map { it.toTtsOption() },
                     keyInput = "",
                     secretInput = "",
-                    hint = if (ok) "已保存 ${provider.name} 的凭证" else "保存失败，请重试"
+                    hint = if (ok) null else "试听成功，但凭证保存失败（系统密钥库不可用），请重试",
+                    testResult = if (ok) UITTSTestResult.Success(voiceLabel) else null
                 )
             )
+        }
+    }
+
+    /** 鉴权失败单独点明「语音权限」，其余交给统一错误转换。 */
+    private fun ttsReadableError(throwable: Throwable, provider: com.core.repository.settings.TTSProvider): String {
+        var message = ""
+        throwable.handleError { message = it }
+        val lower = message.lowercase()
+        return when {
+            lower.contains("401") || lower.contains("403") || lower.contains("unauthorized") ||
+                lower.contains("invalid") || lower.contains("签名") ->
+                "${provider.name} 拒绝了这次请求。请确认 Key / AppID / Secret 填对，且已开通语音合成权限。"
+            lower.contains("合成失败") || lower.contains("播放失败") || lower.contains("空音频") -> message
+            lower.contains("timeout") || lower.contains("超时") ->
+                "连接超时。检查网络，或该语音接口在当前网络下不可达。"
+            else -> message.ifBlank { "试听失败，请稍后重试" }
         }
     }
 
@@ -564,6 +634,8 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
         keyLabel = keyLabel,
         secretLabel = secretLabel,
         appIdLabel = appIdLabel,
+        hasSecret = savedTts[id]?.apiSecret?.isNotBlank() == true,
+        hasAppId = savedTts[id]?.appId?.isNotBlank() == true,
     )
 
     private companion object {

@@ -14,6 +14,8 @@ dependencies {
     implementation(project(":core:ai"))
     implementation(project(":core:common"))
     implementation(project(":core:repository"))
+    // 设置页的「测试并保存语音凭证」要真的合成一句，直接复用 core:tts 的协议实现。
+    implementation(project(":core:tts"))
     implementation(project(":feature:agent"))
     implementation(project(":feature:room"))
     implementation(project(":feature:werewolf"))

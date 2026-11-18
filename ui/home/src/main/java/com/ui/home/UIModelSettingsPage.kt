@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -95,7 +96,8 @@ fun UIModelSettingsPage(
     onTtsAppIdChange: (String) -> Unit = {},
     onTtsBaseUrlChange: (String) -> Unit = {},
     onTtsToggleVisible: () -> Unit = {},
-    onTtsSave: () -> Unit = {},
+    onTtsVoiceSelect: (String?) -> Unit = {},
+    onTtsTestAndSave: () -> Unit = {},
     onTtsClearKey: () -> Unit = {},
     onTtsOpenConsole: (String) -> Unit = {},
 ) {
@@ -298,7 +300,8 @@ fun UIModelSettingsPage(
                     onAppIdChange = onTtsAppIdChange,
                     onBaseUrlChange = onTtsBaseUrlChange,
                     onToggleVisible = onTtsToggleVisible,
-                    onSave = onTtsSave,
+                    onVoiceSelect = onTtsVoiceSelect,
+                    onTestAndSave = onTtsTestAndSave,
                     onClearKey = onTtsClearKey,
                     onOpenConsole = onTtsOpenConsole,
                 )
@@ -314,7 +317,8 @@ fun UIModelSettingsPage(
  *
  * 和模型 Key 分开一块：语音的 Key 通常要在服务商控制台单独开通权限，
  * 混在模型 Key 那一栏里，用户会以为两把通用，出问题极难自查。
- * 存下即生效——TTS 各家没有统一的探活接口，朗读失败会在日志里写明原因。
+ * 「测试并保存」会真的合成一句并播放——每家语音权限要单独开通，
+ * 只在聊天/狼人杀里碰运气太晚，配完就能在这里确认 Key 和音色是不是能用。
  */
 @Composable
 private fun TTSSection(
@@ -325,7 +329,8 @@ private fun TTSSection(
     onAppIdChange: (String) -> Unit,
     onBaseUrlChange: (String) -> Unit,
     onToggleVisible: () -> Unit,
-    onSave: () -> Unit,
+    onVoiceSelect: (String?) -> Unit,
+    onTestAndSave: () -> Unit,
     onClearKey: () -> Unit,
     onOpenConsole: (String) -> Unit,
 ) {
@@ -426,7 +431,11 @@ private fun TTSSection(
                 onValueChange = onSecretChange,
                 visible = state.keyVisible,
                 onToggleVisible = onToggleVisible,
-                placeholder = "填写 ${provider.secretLabel}（留空沿用已保存值）"
+                placeholder = if (provider.hasSecret) {
+                    "已保存 ${provider.secretLabel}，留空保持不变"
+                } else {
+                    "填写 ${provider.secretLabel}"
+                }
             )
         }
 
@@ -442,6 +451,21 @@ private fun TTSSection(
                 placeholder = "https://your-host/v1",
                 password = false
             )
+        }
+
+        if (state.voices.isNotEmpty()) {
+            Spacer(Modifier.height(10.dp))
+            SectionLabel("试听音色")
+            Spacer(Modifier.height(8.dp))
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(state.voices) { voice ->
+                    VoiceChip(
+                        label = voice.label,
+                        selected = voice.id == state.voiceId,
+                        onClick = { onVoiceSelect(voice.id) }
+                    )
+                }
+            }
         }
 
         Spacer(Modifier.height(10.dp))
@@ -480,15 +504,64 @@ private fun TTSSection(
         Spacer(Modifier.height(12.dp))
         SaveButton(
             enabled = state.canSave,
-            loading = false,
-            text = "保存语音凭证",
-            onClick = onSave
+            loading = state.testing,
+            text = "测试并保存语音凭证",
+            onClick = onTestAndSave
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = "会实际朗读一句测试文本，合成成功才保存；不消耗对话额度。",
+            fontSize = 11.sp,
+            color = UIFriendBarItemMetaColor
         )
 
         state.hint?.let { hint ->
             Spacer(Modifier.height(8.dp))
             Text(text = hint, fontSize = 12.sp, color = UIFriendBarItemMetaColor)
         }
+        state.testResult?.let { result ->
+            Spacer(Modifier.height(8.dp))
+            TtsTestBanner(result)
+        }
+    }
+}
+
+@Composable
+private fun VoiceChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .uiControl(
+                shape = RoundedCornerShape(50),
+                color = if (selected) UIFriendBarTagBgBlue else Color.White.copy(alpha = 0.92f)
+            )
+            .clickable { onClick() }
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+    ) {
+        Text(
+            text = label,
+            fontSize = 12.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (selected) UIFriendBarTagTextBlue else UIFriendBarItemMetaColor
+        )
+    }
+}
+
+@Composable
+private fun TtsTestBanner(result: UITTSTestResult) {
+    val (text, color) = when (result) {
+        is UITTSTestResult.Success -> "试听成功：${result.voiceLabel}，凭证已验证" to UIFriendBarOnlineGreen
+        is UITTSTestResult.Failure -> result.message to UIFriendBarRed
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .uiCard(shape = RoundedCornerShape(UIRadiusControl))
+            .padding(horizontal = 14.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(modifier = Modifier.size(7.dp).background(color = color, shape = CircleShape))
+        Spacer(Modifier.width(9.dp))
+        Text(text = text, fontSize = 12.sp, color = UIFriendBarTitleColor, lineHeight = 17.sp)
     }
 }
 

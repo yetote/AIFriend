@@ -48,7 +48,8 @@ fun SettingsRoute(
         onTtsAppIdChange = viewModel::setTtsAppIdInput,
         onTtsBaseUrlChange = viewModel::setTtsBaseUrlInput,
         onTtsToggleVisible = viewModel::toggleTtsKeyVisible,
-        onTtsSave = viewModel::saveTtsCredential,
+        onTtsVoiceSelect = viewModel::selectTtsVoice,
+        onTtsTestAndSave = viewModel::testAndSaveTtsCredential,
         onTtsClearKey = viewModel::clearTtsKey,
         onTtsOpenConsole = { providerId ->
             val url = TTSProviderCatalog.byId(providerId)?.consoleUrl.orEmpty()
