@@ -100,6 +100,13 @@ fun UIWerewolfReviewScreen(
     onRestart: (() -> Unit)? = null,
     /** 导出成 Markdown 文件。null 表示不提供入口（例如没有可分享的环境）。 */
     onExport: (() -> Unit)? = null,
+    /**
+     * 演出这一局：把存档当成正在发生重放一遍（座位、昼夜、气泡、朗读）。
+     *
+     * 参数是「当前是不是上帝视角」——演出要按同一个视角放，否则用户在复盘里
+     * 打开了上帝视角、演出里又变回只看得见公开发言，会以为丢了一段。
+     */
+    onPlay: ((godView: Boolean) -> Unit)? = null,
 ) {
     // 「上帝视角」默认关闭：狼人夜聊、查验这些当时只有个别人看得到的内容，
     // 需要玩家主动打开。默认摊开的话，「原来那一夜他们商量的是这个」就没得发现了。
@@ -116,7 +123,11 @@ fun UIWerewolfReviewScreen(
             .pageInsetsTop()
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            ReviewTopBar(onBack = onBack, onExport = onExport)
+            ReviewTopBar(
+                onBack = onBack,
+                onExport = onExport,
+                onPlay = onPlay?.let { play -> { play(godView) } }
+            )
 
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
@@ -213,7 +224,11 @@ fun UIWerewolfReviewScreen(
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun ReviewTopBar(onBack: () -> Unit, onExport: (() -> Unit)? = null) {
+private fun ReviewTopBar(
+    onBack: () -> Unit,
+    onExport: (() -> Unit)? = null,
+    onPlay: (() -> Unit)? = null,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -241,6 +256,23 @@ private fun ReviewTopBar(onBack: () -> Unit, onExport: (() -> Unit)? = null) {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+        }
+        if (onPlay != null) {
+            // 演出放在导出左边、用实心按钮：它是这一页真正的「再看一遍」，
+            // 导出是事后动作。文字写「演出」而不是「回放」——这一页已经是复盘，
+            // 再叫「回放」会分不清是「回看记录」还是「重演一遍」。
+            Text(
+                text = "演出",
+                modifier = Modifier
+                    .clip(RoundedCornerShape(UIRadiusControl))
+                    .background(UIActionBrush)
+                    .clickable { onPlay() }
+                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White
+            )
+            Spacer(Modifier.width(6.dp))
         }
         if (onExport != null) {
             // 文字按钮而不是图标：分享图标在这里语义太宽（分享这一局？分享一局战绩？），

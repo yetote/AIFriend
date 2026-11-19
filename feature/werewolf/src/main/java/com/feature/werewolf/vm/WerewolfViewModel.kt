@@ -39,9 +39,13 @@ import com.feature.werewolf.game.WerewolfBoards
 import com.feature.werewolf.game.WerewolfConfig
 import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfPlayer
-import com.ui.werewolf.data.UIWerewolfPromptState
+import com.feature.werewolf.replay.ReplayFrame
+import com.feature.werewolf.replay.ReplayTimeline
 import com.feature.werewolf.store.WerewolfGameSummary
 import com.feature.werewolf.store.WerewolfStore
+import com.ui.werewolf.data.UIWerewolfFriend
+import com.ui.werewolf.data.UIWerewolfMissingSeat
+import com.ui.werewolf.data.UIWerewolfPromptState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -49,6 +53,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -94,6 +100,44 @@ data class WerewolfRecordView(
     /** 那一局我是几号；纯观战为 null。 */
     val humanSeat: Int?,
 )
+
+/**
+ * 开演出之前要补人的那几位。
+ *
+ * [candidates] 已经**排除这一局出现过的角色**：替身的名字和声音会直接出现在牌桌上，
+ * 撞上局内已有的人，用户根本分不清谁是谁。
+ */
+data class ReplaySetup(
+    /** 要演的那一局。存在这里而不是去 `_record` 拿：刚打完的局没有 record。 */
+    val record: WerewolfRecordView,
+    val missing: List<UIWerewolfMissingSeat>,
+    val candidates: List<UIWerewolfFriend>,
+    /** 演出要按哪个视角放（复盘页的上帝视角开关）。 */
+    val godView: Boolean,
+)
+
+/**
+ * 复盘演出的播放状态。
+ *
+ * [frames] 在开始时就一次性算好（见 `ReplayTimeline`），播放只是往前走游标：
+ * 每一步都重新过滤一遍 transcript 的话，暂停、跳条这些操作会各算一次，
+ * 出错时也是「有的地方算得对、有的地方算错了」，很难查。
+ */
+data class WerewolfReplay(
+    val recordId: String,
+    val table: WerewolfTable,
+    val humanSeat: Int?,
+    val godView: Boolean,
+    val frames: List<ReplayFrame>,
+    /** 已经演到第几帧，-1 = 还没开始。 */
+    val cursor: Int = -1,
+    val playing: Boolean = false,
+    /** 只影响句与句之间的停顿，朗读本身不加速（加速朗读会变调）。 */
+    val speed: Float = 1f,
+    val speakingSeat: Int? = null,
+) {
+    val hasContent: Boolean get() = frames.isNotEmpty()
+}
 
 /**
  * 狼人杀界面的 ViewModel。
@@ -506,6 +550,9 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
     }
 
     override fun onCleared() {
+        // 演出循环也要停：它和朗读共用一个喇叭，ViewModel 都没了还在演就是幽灵声音
+        replayJob?.cancel()
+        replayJob = null
         stopSpeech(clearQueue = true)
         speechEngine.onReady = null
         speechEngine.release()
@@ -765,7 +812,299 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
 
     /** 关掉复盘，回列表。 */
     fun closeRecord() {
+        closeReplay()
         _record.value = null
+    }
+
+    // ---------------------------------------------------------------------
+    // 复盘演出
+    //
+    // 把一局已经打完的存档当成「正在发生」重放：座位、昼夜、气泡、朗读都按当时的顺序。
+    // 播放器只做一件事——按帧往前走；「这一帧牌桌上是什么样」由 ReplayTimeline 算好。
+    // ---------------------------------------------------------------------
+
+    private val _replay = MutableStateFlow<WerewolfReplay?>(null)
+
+    /** 非空表示牌桌在放复盘演出（不是在对局）。 */
+    val replay: StateFlow<WerewolfReplay?> = _replay.asStateFlow()
+
+    private val _replaySetup = MutableStateFlow<ReplaySetup?>(null)
+
+    /** 非空表示演出前要先给几个「人已经不在了」的座位指定替身。 */
+    val replaySetup: StateFlow<ReplaySetup?> = _replaySetup.asStateFlow()
+
+    /** 演出用的座位音色。**和对局那两张表分开**：演出可能用替身，混用会串音。 */
+    private var replayVoiceIds: Map<Int, String?> = emptyMap()
+    private var replayTtsIds: Map<Int, String?> = emptyMap()
+
+    /** 明确选了「静音」的座位：照常显示文字，只是不出声。 */
+    private var replayMutedSeats: Set<Int> = emptySet()
+
+    private var replayJob: Job? = null
+
+    /**
+     * 用户点了复盘页的「演出」。
+     *
+     * 先查这一局的角色还在不在：存档里只有座位号和当时的名字，头像、音色都来自好友列表。
+     * 有人被删掉就不能直接放——那一格会既没声音也没脸。这时候停下来让用户指定替身，
+     * 每个座位各挑一个**不在这局里**的好友，或者让这一格只显示文字。
+     */
+    fun requestReplay(godView: Boolean) {
+        viewModelScope.launch {
+            // 两个入口：列表里翻出来的复盘（`_record`），和刚打完那一局的复盘（`state`）。
+            // 后者手里没有 record——直接拿终局局面拼一个出来，内容完全一样。
+            val record = _record.value ?: state.value.let { current ->
+                val table = current.table
+                if (!current.finished || table == null) {
+                    null
+                } else {
+                    WerewolfRecordView(
+                        id = current.gameId.orEmpty(),
+                        table = table,
+                        humanSeat = table.game.players.firstOrNull { it.id == SELF_PLAYER_ID }?.seat,
+                    )
+                }
+            } ?: return@launch
+            val friends = loadFriendsForReplay()
+            val byId = friends.associateBy { it.id }
+            val inGame = record.table.game.players.map { it.id }.toSet()
+
+            val missing = record.table.game.players.filter { it.id != SELF_PLAYER_ID && it.id !in byId }
+            if (missing.isEmpty()) {
+                startReplay(record, godView, emptyMap(), friends)
+                return@launch
+            }
+            _replaySetup.value = ReplaySetup(
+                record = record,
+                missing = missing.map { UIWerewolfMissingSeat(seat = it.seat, name = it.name) },
+                candidates = friends.filter { it.id !in inGame }.map {
+                    UIWerewolfFriend(
+                        id = it.id,
+                        name = it.name,
+                        avatarPath = it.avatarPath,
+                        role = it.role,
+                        model = it.model,
+                    )
+                },
+                godView = godView,
+            )
+        }
+    }
+
+    /** 补人页点了「开始演出」。[assignments] 座位 → 替身好友 id；null = 这个座位静音。 */
+    fun confirmReplaySetup(assignments: Map<Int, String?>) {
+        val setup = _replaySetup.value ?: return
+        _replaySetup.value = null
+        viewModelScope.launch {
+            startReplay(setup.record, setup.godView, assignments, loadFriendsForReplay())
+        }
+    }
+
+    fun cancelReplaySetup() {
+        _replaySetup.value = null
+    }
+
+    /** 好友列表在内存里就直接用，没有才回数据库读一次（读是挂起的，只能在这里做）。 */
+    private suspend fun loadFriendsForReplay(): List<Friend> =
+        _friends.value.ifEmpty {
+            runCatching { friendRepository.load().map { it.toFriend() } }.getOrDefault(emptyList())
+        }
+
+    /**
+     * 真正开始放。
+     *
+     * 替身按**座位**指定，但音色是按 `player.id` 查的（[buildSeatVoiceIds] 的入参规则），
+     * 所以这里把「替身好友」挂到原座位的 id 上，音色/配置的分配逻辑一行都不用改。
+     */
+    private fun startReplay(
+        record: WerewolfRecordView,
+        godView: Boolean,
+        assignments: Map<Int, String?>,
+        friends: List<Friend>,
+    ) {
+        val byId = friends.associateBy { it.id }
+        val players = record.table.game.players
+
+        val voiceBook = players.mapNotNull { player ->
+            val friend = byId[player.id]
+                ?: assignments[player.seat]?.let { byId[it] }
+                ?: return@mapNotNull null
+            player.id to friend
+        }.toMap()
+
+        replayVoiceIds = buildSeatVoiceIds(players, voiceBook, record.humanSeat)
+        replayTtsIds = buildSeatTtsConfigIds(players, voiceBook)
+        // 只有「原来那个人没了、又明确选了静音」的座位才静音；
+        // 有替身的座位照常出声，否则用户会以为替身没生效
+        replayMutedSeats = assignments.filterValues { it == null }.keys
+
+        val frames = ReplayTimeline.build(record.table, record.humanSeat, godView)
+        if (frames.isEmpty()) {
+            _error.value = "这一局的记录里还没有任何消息，没法演出"
+            return
+        }
+        // 演出用的是同一个喇叭，开局前先把对局那边的东西停干净，否则两边抢着说话
+        stopSpeech(clearQueue = true)
+        _replay.value = WerewolfReplay(
+            recordId = record.id,
+            table = record.table,
+            humanSeat = record.humanSeat,
+            godView = godView,
+            frames = frames,
+            playing = true,
+        )
+        startReplayLoop()
+    }
+
+    fun closeReplay() {
+        replayJob?.cancel()
+        replayJob = null
+        speechEngine.stop()
+        _replay.value = null
+        _replaySetup.value = null
+    }
+
+    /** 播放 / 暂停。已经演到结尾时再点播放，从头再来一遍。 */
+    fun toggleReplay() {
+        val current = _replay.value ?: return
+        if (current.playing) {
+            pauseReplay()
+            return
+        }
+        val atEnd = current.cursor >= current.frames.lastIndex
+        _replay.update { state ->
+            if (state == null) {
+                null
+            } else {
+                // 演到结尾再点播放 = 「再看一遍」，游标退回去
+                state.copy(playing = true, cursor = if (atEnd) -1 else state.cursor)
+            }
+        }
+        startReplayLoop()
+    }
+
+    private fun pauseReplay() {
+        // 取消协程就够了：读句子时挂在那里的续体会走 invokeOnCancellation 把喇叭关掉，
+        // 剩下的半句不再念，下次继续从下一帧开始
+        replayJob?.cancel()
+        replayJob = null
+        speechEngine.stop()
+        _replay.update { it?.copy(playing = false, speakingSeat = null) }
+    }
+
+    fun replayNext() = seekReplay((_replay.value?.cursor ?: -1) + 1)
+
+    fun replayPrev() = seekReplay((_replay.value?.cursor ?: 0) - 1)
+
+    /**
+     * 跳到某一帧。
+     *
+     * 播放中跳条要「跳过去并接着说」，所以游标先退一帧，让循环把它当成下一帧来演；
+     * 暂停时跳条只是把那一条显示出来，不退。
+     */
+    private fun seekReplay(target: Int) {
+        val current = _replay.value ?: return
+        val index = target.coerceIn(-1, current.frames.lastIndex)
+        replayJob?.cancel()
+        replayJob = null
+        speechEngine.stop()
+        if (current.playing) {
+            // 退到「目标的前一帧」，让循环把目标当成下一帧来演。
+            // 下限夹在 -1：目标是第 0 帧时退到 -2 会让循环拿到一个不存在的帧，
+            // 于是原地空转（每轮都取不到帧、立刻返回），表现为界面狂刷新但画面不动。
+            _replay.update { it?.copy(cursor = (index - 1).coerceAtLeast(-1), speakingSeat = null) }
+            startReplayLoop()
+        } else {
+            _replay.update { it?.copy(cursor = index, speakingSeat = null) }
+        }
+    }
+
+    /** 1x → 1.5x → 2x → 1x。 */
+    fun cycleReplaySpeed() {
+        _replay.update {
+            val next = when (it?.speed) {
+                1f -> 1.5f
+                1.5f -> 2f
+                else -> 1f
+            }
+            it?.copy(speed = next)
+        }
+    }
+
+    /**
+     * 演出循环：每次演一帧。
+     *
+     * 循环本身**读游标**往前走，所以暂停、跳条只要改游标 + 取消当前这一帧就够了。
+     * 收尾时清 `speakingSeat` 要认准自己还是不是当前循环：跳条会先起一个新循环、
+     * 老循环的 finally 稍后才跑，不认的话它会把新循环刚点亮的座位按灭。
+     */
+    private fun startReplayLoop() {
+        replayJob?.cancel()
+        replayJob = viewModelScope.launch {
+            val self = coroutineContext[Job]
+            try {
+                while (isActive) {
+                    val current = _replay.value ?: break
+                    if (!current.playing) break
+                    val next = current.cursor + 1
+                    if (next > current.frames.lastIndex) {
+                        _replay.update { it?.copy(playing = false) }
+                        break
+                    }
+                    // 拿不到帧就收工。少了这一条，游标一旦越界，循环会原地空转：
+                    // 画面上什么都不动，CPU 却转个不停
+                    if (current.frames.getOrNull(next) == null) break
+                    speakReplayFrame(next)
+                }
+            } finally {
+                if (replayJob === self) {
+                    _replay.update { it?.copy(speakingSeat = null) }
+                }
+            }
+        }
+    }
+
+    /** 演一帧：先把进度推上去（文字立刻出现），再决定要不要念。 */
+    private suspend fun speakReplayFrame(index: Int) {
+        val current = _replay.value ?: return
+        val frame = current.frames.getOrNull(index) ?: return
+        _replay.update { it?.copy(cursor = index) }
+
+        val gap = (REPLAY_GAP_MS / current.speed).toLong()
+        val seat = frame.message.seat
+        val shouldSpeak = frame.speakable && _autoSpeak.value && _speechReady.value &&
+            seat != null && seat !in replayMutedSeats
+
+        if (!shouldSpeak) {
+            // 不出声的行按**字数**给阅读时间：固定 700ms 对一句话太短（字还没看清就翻过去了），
+            // 对「我投 3 号」又太长。上限 4 秒，再长就等于是卡住了。
+            val reading = (350 + frame.message.text.length * 55L).coerceAtMost(4_000L)
+            delay((reading / current.speed).toLong())
+            return
+        }
+
+        _replay.update { it?.copy(speakingSeat = seat) }
+        try {
+            // 一句一个超时：合成被挂住时宁可这句不出声，也不能把演出永久卡在这一帧
+            withTimeoutOrNull(SpeechTiming.totalTimeoutMs(frame.message.text)) {
+                suspendCancellableCoroutine<Unit> { cont ->
+                    speechEngine.speak(
+                        text = frame.message.text,
+                        utteranceId = "replay-$index",
+                        onDone = { if (cont.isActive) cont.resume(Unit) },
+                        voiceId = seat?.let { replayVoiceIds[it] },
+                        ttsConfigId = seat?.let { replayTtsIds[it] },
+                    )
+                    cont.invokeOnCancellation { speechEngine.stop() }
+                }
+            }
+        } finally {
+            // 被取消（暂停 / 跳条）说明这一帧已经不算数了，别再动高亮——
+            // 新的循环可能已经把下一个座位点亮了
+            if (currentCoroutineContext().isActive) _replay.update { it?.copy(speakingSeat = null) }
+        }
+        // 句与句之间留一口气：接得太紧像连读，完全不留又像卡了一下
+        delay(gap / 2)
     }
 
     /** 放弃当前这局，存档一并删掉。 */
@@ -987,5 +1326,14 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
 
     private companion object {
         const val TAG = "WerewolfViewModel"
+
+        /**
+         * 演出里两条之间的停顿（读秒的一条也按这个停）。
+         *
+         * 定在 700ms：比页面的 60–80ms 推送节流慢得多，所以「一次冒出半句」
+         * 那种对局里的观感在这里不存在——演出是**一条一条**出现的。
+         * 再快就成了一屏字一起刷出来，慢下来才看得出牌桌上的你来我往。
+         */
+        const val REPLAY_GAP_MS = 700f
     }
 }

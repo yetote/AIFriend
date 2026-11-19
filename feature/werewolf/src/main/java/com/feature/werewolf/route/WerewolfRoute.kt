@@ -34,9 +34,11 @@ import com.feature.werewolf.store.WerewolfGameSummary
 import com.feature.werewolf.vm.ApiCheck
 import com.feature.werewolf.vm.ApiCheckState
 import com.feature.werewolf.vm.WerewolfMode
+import com.feature.werewolf.vm.WerewolfReplay
 import com.feature.werewolf.vm.WerewolfViewModel
 import com.ui.werewolf.UIWerewolfHistoryScreen
 import com.ui.werewolf.UIWerewolfPromptSettingsScreen
+import com.ui.werewolf.UIWerewolfReplaySetupScreen
 import com.ui.werewolf.UIWerewolfReviewScreen
 import com.ui.werewolf.UIWerewolfSetupScreen
 import com.ui.werewolf.UIWerewolfTableScreen
@@ -57,6 +59,7 @@ import com.ui.werewolf.data.UIWerewolfNightReport
 import com.ui.werewolf.data.UIWerewolfNightDetail
 import com.ui.werewolf.data.UIWerewolfPreset
 import com.ui.werewolf.data.UIWerewolfRecord
+import com.ui.werewolf.data.UIWerewolfReplay
 import com.ui.werewolf.data.UIWerewolfReview
 import com.ui.werewolf.data.UIWerewolfRevealedSeat
 import com.ui.werewolf.data.UIWerewolfRoleGroup
@@ -88,6 +91,9 @@ fun WerewolfRoute(
     val apiChecks by viewModel.apiChecks.collectAsState()
     val verifying by viewModel.verifying.collectAsState()
     val recordView by viewModel.record.collectAsState()
+    // 复盘演出：非空就是牌桌在放存档（`replay`），或者正等着补替身（`replaySetup`）
+    val replayState by viewModel.replay.collectAsState()
+    val replaySetup by viewModel.replaySetup.collectAsState()
     val autoSpeak by viewModel.autoSpeak.collectAsState()
     val speechReady by viewModel.speechReady.collectAsState()
     val revealedIndex by viewModel.revealedIndex.collectAsState()
@@ -140,9 +146,11 @@ fun WerewolfRoute(
         if (!state.finished) showReview = false
     }
 
-    // 返回键逐层退：列表翻开的复盘 → 牌桌上的复盘 → 牌桌 → 配置页 → 列表 → 退出
+    // 返回键逐层退：演出 → 补替身页 → 列表翻开的复盘 → 牌桌上的复盘 → 牌桌 → 配置页 → 列表 → 退出
     BackHandler {
         when {
+            replayState != null -> viewModel.closeReplay()
+            replaySetup != null -> viewModel.cancelReplaySetup()
             recordView != null -> viewModel.closeRecord()
             screen == WerewolfScreen.Table && showReview -> showReview = false
             screen == WerewolfScreen.Table -> {
@@ -171,6 +179,37 @@ fun WerewolfRoute(
         }
     }
 
+    // 演出盖在复盘上面：它是从复盘页点进来的，退回去应该回到复盘，而不是直接回列表
+    val replay = replayState
+    if (replay != null) {
+        UIWerewolfTableScreen(
+            live = remember(replay, avatars, autoSpeak, speechReady) {
+                replay.toLive(avatars, autoSpeak, speechReady)
+            },
+            onExit = viewModel::closeReplay,
+            onToggleSpeak = {
+                if (speechReady) viewModel.setAutoSpeak(!autoSpeak) else viewModel.retrySpeech()
+            },
+            onReplayToggle = viewModel::toggleReplay,
+            onReplayPrev = viewModel::replayPrev,
+            onReplayNext = viewModel::replayNext,
+            onReplaySpeed = viewModel::cycleReplaySpeed,
+        )
+        return
+    }
+
+    // 局内角色被删了：先补人，补完才开始演
+    val setup = replaySetup
+    if (setup != null) {
+        UIWerewolfReplaySetupScreen(
+            missing = setup.missing,
+            candidates = setup.candidates,
+            onCancel = viewModel::cancelReplaySetup,
+            onConfirm = viewModel::confirmReplaySetup,
+        )
+        return
+    }
+
     if (recordReview != null) {
         UIWerewolfReviewScreen(
             review = recordReview,
@@ -180,6 +219,7 @@ fun WerewolfRoute(
                 screen = WerewolfScreen.Setup
             },
             onExport = { WerewolfExport.share(context, recordReview) },
+            onPlay = viewModel::requestReplay,
         )
         return
     }
@@ -286,6 +326,9 @@ fun WerewolfRoute(
                         screen = WerewolfScreen.Setup
                     },
                     onExport = { WerewolfExport.share(context, review) },
+                    // 刚打完这一局也能直接演一遍：ViewModel 会拿终局局面拼出记录，
+                    // 不需要先回列表翻存档
+                    onPlay = viewModel::requestReplay,
                 )
             } else {
                 UIWerewolfTableScreen(
@@ -1051,6 +1094,108 @@ internal fun WerewolfUiState.toLive(
         // 闸门没生效时一律当作「不忙」：关朗读/已结束/没语音包的时候，
         // 界面必须照常显示正在生成的内容，否则看起来就是卡住了。
         speechBusy = speechBusy && gated,
+    )
+}
+
+/**
+ * 复盘演出的一帧画面。
+ *
+ * 和 [toLive] 是两套东西：那个是「引擎在跑，界面跟着状态走」，这个是「引擎不存在，
+ * 界面跟着播放游标走」。所以这里没有闸门、没有进度、没有轮到我——只有
+ * 「已经演到第几条」和「那一刻的牌桌长什么样」。
+ *
+ * 三件事必须**只从帧里取**，不能偷看终局状态：
+ * - 出局：`frame.deadSeats`（终局里所有人都死了，直接拿终局去画，开场就一地尸体）
+ * - 警徽：`frame.sheriffSeat`（终局那个是最后接手的人）
+ * - 舞台：`frame.day / frame.phase`（终局永远是最后一夜）
+ */
+internal fun WerewolfReplay.toLive(
+    avatars: Map<String, String?>,
+    autoSpeak: Boolean,
+    speechReady: Boolean,
+): UIWerewolfLive {
+    val game = table.game
+    val shown = frames.take((cursor + 1).coerceAtLeast(0))
+    val stage = shown.lastOrNull() ?: frames.firstOrNull()
+    val day = stage?.day ?: 1
+    val phase = stage?.phase ?: game.phase
+    val deadSeats = stage?.deadSeats.orEmpty()
+    val sheriffSeat = stage?.sheriffSeat
+    val me = game.players.firstOrNull { it.seat == humanSeat }
+
+    val seats = game.players.map { player ->
+        val out = player.seat in deadSeats
+        UIWerewolfSeatLive(
+            seat = player.seat,
+            name = player.name,
+            avatarPath = avatars[player.id],
+            isSelf = player.seat == humanSeat,
+            alive = !out,
+            // 死因是终局才知道的事（刀还是毒），和出局这个事实分开看：
+            // 出局名单跟着进度走，死因只在身份公开时有意义
+            fate = if (out) player.deathCause?.toFate() else null,
+            // 身份只在上帝视角下写在脸上。普通视角里那一局当时就是不知道，
+            // 演出一遍却提前标出来，等于把「猜身份」这个玩法直接删掉
+            roleLabel = if (godView) player.role.displayName else null,
+            wolf = player.role.isWerewolf,
+            active = speakingSeat != null && speakingSeat == player.seat,
+            votes = null,
+            sheriff = sheriffSeat == player.seat,
+        )
+    }
+
+    val lines = shown.mapIndexed { index, frame ->
+        val message = frame.message
+        val speaker = message.seat?.let { seat -> game.players.firstOrNull { it.seat == seat } }
+        UIWerewolfLine(
+            index = index,
+            kind = lineKindOf(message.kind),
+            seat = message.seat,
+            speaker = speaker?.name,
+            avatarPath = speaker?.id?.let { avatars[it] },
+            text = message.text,
+            innerLabel = innerLabelOf(message),
+            secret = !message.isPublic,
+        )
+    }
+
+    val total = frames.size
+    val position = (cursor + 1).coerceIn(0, total)
+    return UIWerewolfLive(
+        day = day,
+        phaseLabel = phase.displayName,
+        night = phase.isNightPhase(),
+        // running / finished 一律 false：演出没有引擎，也不该让牌桌切到「看复盘」那一版
+        running = false,
+        finished = false,
+        winnerLabel = null,
+        progressLabel = null,
+        progressFraction = null,
+        seats = seats,
+        lines = lines,
+        streaming = null,
+        selfSeat = humanSeat,
+        selfRoleLabel = me?.role?.displayName,
+        selfFactionLabel = me?.role?.faction?.displayName,
+        // 上帝视角在演出里就是「上帝视角」这个标签本身，和观战是同一件事
+        spectating = godView,
+        turn = null,
+        error = null,
+        autoSpeak = autoSpeak,
+        speechReady = speechReady,
+        speechBusy = speakingSeat != null,
+        replay = UIWerewolfReplay(
+            playing = playing,
+            speedLabel = when (speed) {
+                1.5f -> "1.5x"
+                2f -> "2x"
+                else -> "1x"
+            },
+            positionLabel = "第 $position / $total 条",
+            progress = if (total == 0) 0f else position.toFloat() / total,
+            canPrev = cursor > -1,
+            canNext = cursor < total - 1,
+        ),
     )
 }
 

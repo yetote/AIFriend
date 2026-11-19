@@ -84,6 +84,7 @@ import com.ui.werewolf.data.UIWerewolfBubbleKind
 import com.ui.werewolf.data.UIWerewolfLineKind
 import com.ui.werewolf.data.bubbleStyle
 import com.ui.werewolf.data.UIWerewolfLive
+import com.ui.werewolf.data.UIWerewolfReplay
 import com.ui.werewolf.data.UIWerewolfSeatLive
 import com.ui.werewolf.data.UIWerewolfStreaming
 import com.ui.werewolf.data.UIWerewolfTarget
@@ -222,7 +223,14 @@ fun UIWerewolfTableScreen(
     onWitch: (heal: Boolean, poison: Int?) -> Unit = { _, _ -> },
     onReview: (() -> Unit)? = null,
     onToggleSpeak: () -> Unit = {},
+    /** 复盘演出：播放 / 暂停。 */
+    onReplayToggle: () -> Unit = {},
+    onReplayPrev: () -> Unit = {},
+    onReplayNext: () -> Unit = {},
+    /** 循环切换 1x / 1.5x / 2x。 */
+    onReplaySpeed: () -> Unit = {},
 ) {
+    val replay = live.replay
     val night = live.night && !live.finished
     val textColor by animateColorAsState(
         targetValue = if (night) NightText else UIFriendBarTitleColor,
@@ -258,8 +266,19 @@ fun UIWerewolfTableScreen(
 
         Column(modifier = Modifier.fillMaxSize().pageInsetsTop()) {
             TableTopBar(
-                title = if (live.finished) "对局结束" else if (night) "第 ${live.day} 夜" else "第 ${live.day} 天",
-                subtitle = live.progressLabel,
+                // 演出时标题换成「复盘演出」：播放条上有播放/暂停，很容易被当成
+                // 「这一局还在打」。写清楚是回放，用户才不会去等一个不会来的回合。
+                title = when {
+                    replay != null -> "复盘演出"
+                    live.finished -> "对局结束"
+                    night -> "第 ${live.day} 夜"
+                    else -> "第 ${live.day} 天"
+                },
+                subtitle = if (replay != null) {
+                    "第 ${live.day} 天 · ${live.phaseLabel}"
+                } else {
+                    live.progressLabel
+                },
                 night = night,
                 textColor = textColor,
                 dimColor = dimColor,
@@ -295,6 +314,20 @@ fun UIWerewolfTableScreen(
 
             val turn = live.turn
             when {
+                // 演出：底下是播放条。这一条必须排在 finished 之前——演出时
+                // `finished` 是 false，但哪怕将来变了，也不该把「看复盘」按钮顶上来。
+                replay != null -> ReplayBar(
+                    replay = replay,
+                    surface = surface,
+                    textColor = textColor,
+                    dimColor = dimColor,
+                    onToggle = onReplayToggle,
+                    onPrev = onReplayPrev,
+                    onNext = onReplayNext,
+                    onSpeed = onReplaySpeed,
+                    modifier = Modifier.pageInsetsBottom()
+                )
+
                 // 结束了就只留一个出口。原本这里是输入区，输入区已经没有任何意义，
                 // 但空着会让人以为界面坏了——空位必须被「下一步做什么」填上。
                 live.finished && onReview != null -> ReviewBar(
@@ -1678,6 +1711,140 @@ private fun WitchPanel(
  * 只放一个动作：看复盘。不做「再来一局」——刚被投出去的人未必想立刻重开，
  * 而重开的入口在配置页，从复盘页回去比在这里塞两个按钮清楚。
  */
+/**
+ * 复盘演出的播放条。
+ *
+ * 位置和输入区一样在最底下：演出一场可能几十条，手要一直按在同一个地方。
+ * 上面那行字（第几条 · 倍速）和进度条是给「还要看多久」用的——
+ * 没有进度条的话，一条一条往下演会让人不知道自己在哪。
+ *
+ * 不用图标而用文字：播放/暂停在圆形按钮里放一个三角和两条竖线很容易认错，
+ * 而「播放 / 暂停」两个字不会有歧义；上一条、下一条同理。
+ */
+@Composable
+private fun ReplayBar(
+    replay: UIWerewolfReplay,
+    surface: Color,
+    textColor: Color,
+    dimColor: Color,
+    onToggle: () -> Unit,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
+    onSpeed: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(surface)
+            .padding(horizontal = 14.dp, vertical = 10.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = replay.positionLabel,
+                fontSize = FsMeta,
+                color = dimColor,
+                modifier = Modifier.weight(1f)
+            )
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(UIRadiusControl))
+                    .background(dimColor.copy(alpha = 0.12f))
+                    .clickable { onSpeed() }
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    text = "${replay.speedLabel} 倍速",
+                    fontSize = FsMeta,
+                    color = textColor
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        // 进度条：一条能看出「演到哪」的线，比百分比数字更省事
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(3.dp)
+                .clip(CircleShape)
+                .background(dimColor.copy(alpha = 0.18f))
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(replay.progress.coerceIn(0f, 1f))
+                    .fillMaxHeight()
+                    .background(textColor.copy(alpha = 0.5f))
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            ReplayButton(
+                label = "上一条",
+                enabled = replay.canPrev,
+                textColor = textColor,
+                dimColor = dimColor,
+                onClick = onPrev,
+                modifier = Modifier.weight(1f)
+            )
+            ReplayButton(
+                label = if (replay.playing) "暂停" else "播放",
+                enabled = true,
+                textColor = Color.White,
+                dimColor = dimColor,
+                primary = true,
+                onClick = onToggle,
+                modifier = Modifier.weight(1.2f)
+            )
+            ReplayButton(
+                label = "下一条",
+                enabled = replay.canNext,
+                textColor = textColor,
+                dimColor = dimColor,
+                onClick = onNext,
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReplayButton(
+    label: String,
+    enabled: Boolean,
+    textColor: Color,
+    dimColor: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    primary: Boolean = false,
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(UIRadiusControl))
+            .then(
+                if (primary) {
+                    Modifier.background(UIActionBrush)
+                } else {
+                    Modifier.background(dimColor.copy(alpha = if (enabled) 0.12f else 0.06f))
+                }
+            )
+            // 不 disable 点击：禁用态只有「上一条在第一条」这种边界，
+            // 点了没反应比按不动更容易让人以为界面坏了——统一在 VM 里夹到合法范围
+            .clickable { onClick() }
+            .padding(vertical = 11.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = label,
+            fontSize = 14.sp,
+            fontWeight = if (primary) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (primary) Color.White else textColor.copy(alpha = if (enabled) 1f else 0.4f)
+        )
+    }
+}
+
 @Composable
 private fun ReviewBar(
     surface: Color,

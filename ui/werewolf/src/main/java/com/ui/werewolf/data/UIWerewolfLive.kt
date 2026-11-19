@@ -230,4 +230,9 @@ data class UIWerewolfLive(
      * 但 A 还在响。这时把 B 的打字打出来，用户看到的是「B 的对话框冒出来又消失」。
      */
     val speechBusy: Boolean = false,
+    /**
+     * 非 null 表示这张牌桌在放**复盘演出**：没有引擎、没有轮到我，
+     * 底下那条是播放条而不是输入区。null = 正常对局。
+     */
+    val replay: UIWerewolfReplay? = null,
 )
