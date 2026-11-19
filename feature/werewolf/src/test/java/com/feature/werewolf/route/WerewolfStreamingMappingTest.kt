@@ -54,9 +54,10 @@ class WerewolfStreamingMappingTest {
         speechBusy: Boolean = false,
         text: String = "我觉得",
         reasoning: String = "先看他的表态",
+        isDecision: Boolean = false,
     ): UIWerewolfLive = WerewolfUiState(
         table = WerewolfTable(standard9().copy(phase = phase), transcript),
-        live = WerewolfLive(seat = seat, phase = phase, text = text, reasoning = reasoning),
+        live = WerewolfLive(seat = seat, phase = phase, text = text, reasoning = reasoning, isDecision = isDecision),
         running = running,
     ).toLive(
         humanSeat = humanSeat,
@@ -89,6 +90,19 @@ class WerewolfStreamingMappingTest {
         val streaming = ui.streaming
         assertNotNull("他正在公开说话，这句本身是公开的", streaming)
         assertEquals("我觉得", streaming!!.text)
+    }
+
+    @Test
+    fun `决策还是发言由引擎标注，不靠正文是不是空来猜`() {
+        // 决策：正文恒空，reasoning 有内容
+        val decision = live(Phase.DAY_VOTE, seat = 4, humanSeat = null, text = "", isDecision = true)
+        assertNotNull(decision.streaming)
+        assertEquals("决策要标成决策", true, decision.streaming!!.isDecision)
+
+        // 发言刚开始：正文还没吐出来，但它是发言——旧逻辑靠 text.isBlank() 会误判成决策
+        val speechThinking = live(Phase.DAY_DISCUSSION, seat = 4, humanSeat = null, text = "", isDecision = false)
+        assertNotNull(speechThinking.streaming)
+        assertEquals("还在思考的发言也必须标成发言", false, speechThinking.streaming!!.isDecision)
     }
 
     @Test

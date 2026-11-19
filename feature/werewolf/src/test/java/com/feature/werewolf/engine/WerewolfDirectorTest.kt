@@ -764,6 +764,21 @@ class WerewolfDirectorTest {
         // 竞选结束、当天没有死者，所以直接进白天讨论
         assertEquals(Phase.DAY_DISCUSSION, voted.game.phase)
         assertTrue(voted.game.history.any { it is GameEvent.SheriffElected })
+
+        // 警长投票是私下的：每条只对投票人自己可见，不进别人的上下文。
+        // 理由里写着「我选一个看着有主意的」——这句不能让被投的 1 号或其他人看见。
+        val ballots = voted.transcript.filter {
+            it.phase == Phase.DAY_SHERIFF_VOTE && it.kind == MessageKind.VOTE
+        }
+        assertEquals("7 个警下的人各投一票", 7, ballots.size)
+        assertTrue("没有一条是全员可见的", ballots.none { it.isPublic })
+        ballots.forEach { ballot ->
+            val voter = ballot.seat!!
+            assertEquals("${voter} 号的票只有他自己看得见", setOf(voter), ballot.audience)
+            assertTrue("投票人看得到自己的票", ballot.visibleTo(voter))
+            val other = if (voter == 1) 2 else 1
+            assertTrue("别人看不到这票", !ballot.visibleTo(other))
+        }
     }
 
     @Test

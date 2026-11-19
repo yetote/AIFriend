@@ -261,9 +261,10 @@ fun UIWerewolfTableScreen(
                 anchor = anchor,
                 night = night,
                 seat = stream.seat,
-                // 有正文说明这是在发言，否则是在憋一个决策（投票/查验/下刀），
-                // 两者上限不同，各自显示各自的那一个
-                limitSeconds = if (stream.text.isBlank()) {
+                // 用引擎标注的「决策还是发言」选时限，不靠 text 是不是空来猜：
+                // 发言一开始也在思考、还没吐字，text 同样是空的，猜成决策就会拿
+                // 短时限去掐一段实际按长时限走的话（气泡时间到了人还在说）。
+                limitSeconds = if (stream.isDecision) {
                     live.thinkingDecisionSeconds
                 } else {
                     live.thinkingSpeechSeconds

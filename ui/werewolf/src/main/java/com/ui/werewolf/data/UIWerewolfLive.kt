@@ -134,6 +134,11 @@ data class UIWerewolfStreaming(
      * （见 `WerewolfLiveMapping.toLive` 的 `showThinking`）。
      */
     val reasoning: String = "",
+    /**
+     * 这一步是决策还是发言。气泡秒表按它选时限，不靠 text 是不是空来猜——
+     * 发言一开始也在思考、还没吐字，text 同样是空的。
+     */
+    val isDecision: Boolean = false,
 )
 
 /** 轮到人类时要做的事。UI 按这个决定弹哪种输入面板。 */

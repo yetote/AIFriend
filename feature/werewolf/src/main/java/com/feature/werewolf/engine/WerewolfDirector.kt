@@ -596,6 +596,11 @@ class WerewolfDirector(
                         seat = seat,
                         kind = MessageKind.VOTE,
                         text = (if (target == null) "我弃票。" else "我选 $target 号当警长。") + outcome.value.reason,
+                        // 警长投票是私下的：理由只有投票人自己看得到，不进别人的上下文，
+                        // 别人在牌桌上也看不到。这和 INNER_REASON_HINT 里告诉模型的
+                        // 「没人听见」终于对上了（放逐投票是另一回事，它明说了会公开）。
+                        // 观战是上帝视角，emergedVisible 对 humanSeat==null 不过滤，照样看得见。
+                        audience = setOf(seat),
                         reasoning = outcome.reasoning,
                     )
                 )
@@ -986,6 +991,7 @@ class WerewolfDirector(
                             phase = game.phase,
                             text = content.toString(),
                             reasoning = reasoning.toString(),
+                            isDecision = false,
                         )
                     )
                 }
@@ -1095,7 +1101,7 @@ class WerewolfDirector(
                     val now = System.currentTimeMillis()
                     if (lastPush == 0L || now - lastPush >= streamIntervalMs) {
                         lastPush = now
-                        onLive(WerewolfLive(seat = seat, phase = phase, reasoning = reasoning))
+                        onLive(WerewolfLive(seat = seat, phase = phase, reasoning = reasoning, isDecision = true))
                     }
                 }
             }

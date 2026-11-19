@@ -198,6 +198,7 @@ internal fun WerewolfUiState.toLive(
                     speaker = speaker.name,
                     avatarPath = avatars[speaker.id],
                     text = item.text,
+                    isDecision = item.isDecision,
                     // 思考内容是别人的心里话：观战/结束、或者用户自己开了开关才给
                     reasoning = if (reveal || showThinking) item.reasoning else "",
                 )
