@@ -137,7 +137,43 @@ data class WerewolfGame(
      * 事后没法还原「第一天投了几轮、每轮是谁投的谁」。复盘需要这个还原，所以另存一份。
      */
     val voteRounds: List<VoteRound> = emptyList(),
+    /**
+     * 阶段内逐座位发言的续档进度：**哪一天、哪个阶段**已经说过话的座位。
+     *
+     * 讨论、竞选发言、狼人商议都是「一个阶段里若干座位依次发言」，落档粒度却是整个
+     * 阶段。中途退出再续档，如果不知道说到哪，引擎会从阶段开头把每个人重问一遍——
+     * 用户看到的就是「这一轮重新开始，发言记录乱了」。
+     *
+     * [spokenPhaseKey] 记下这话属于哪个阶段（天+阶段名）。阶段一变 key 就对不上，
+     * 进度自动作废，不必在每个 phase 推进处手动清空；平票重谈、警长 PK 之间都要经过
+     * 别的阶段，因此会自然地重新说一轮，不会误用上一轮的名单。
+     *
+     * 只用于发言这类逐座位阶段，不参与任何规则判定。
+     */
+    val spokenPhaseKey: String = "",
+    val spokenSeats: Set<Int> = emptySet(),
 ) {
+    /**
+     * 当前发言进度的作用域标识。
+     *
+     * 天+阶段是基础；狼人商议平票重谈会「商议→定刀→商议」兜一圈回到同一个 phase，
+     * 光看 phase 会误用上一轮的名单，所以把狼刀轮次也拼进去。警长 PK 同理（它经过
+     * 投票阶段，phase 已经变过，但拼上轮次更保险）。
+     */
+    val currentPhaseKey: String get() = "$day|${phase.name}|w$wolfVoteRound|s$sheriffRound"
+
+    /** 这个座位在本阶段是否已经发过言（续档时据此跳过）。 */
+    fun hasSpoken(seat: Int): Boolean =
+        spokenPhaseKey == currentPhaseKey && seat in spokenSeats
+
+    /** 登记一个座位本阶段已发言。换了阶段先从空名单记起。 */
+    fun markSpoken(seat: Int): WerewolfGame =
+        if (spokenPhaseKey == currentPhaseKey) {
+            copy(spokenSeats = spokenSeats + seat)
+        } else {
+            copy(spokenPhaseKey = currentPhaseKey, spokenSeats = setOf(seat))
+        }
+
     val alivePlayers: List<WerewolfPlayer> get() = players.filter { it.alive }
     val aliveSeats: List<Int> get() = alivePlayers.map { it.seat }
     val isFinished: Boolean get() = winner != null
@@ -1294,7 +1330,10 @@ data class WerewolfGame(
             }
 
             val players = roster.mapIndexed { index, entry ->
-                WerewolfPlayer(seat = index + 1, id = entry.id, name = entry.name, role = arranged[index])
+                WerewolfPlayer(
+                    seat = index + 1, id = entry.id, name = entry.name,
+                    role = arranged[index], model = entry.model,
+                )
             }
             // 有守卫的板子从守护阶段入夜，否则狼人先动——守卫必须盲守，这是规则不是实现细节
             val opening = if (config.has(WerewolfRole.GUARD)) {

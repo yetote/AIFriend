@@ -290,12 +290,14 @@ class WerewolfDirector(
 
         val audience = wolves.map { it.seat }.toSet()
         var current = table
-        ordered.forEachIndexed { index, wolf ->
+        // 续档跳过本阶段已发言的狼。轮次变了 key 就变（见 currentPhaseKey），
+        // 平票重谈会重新说一轮，不会误用上一轮的名单。
+        ordered.filterNot { current.game.hasSpoken(it.seat) }.forEachIndexed { index, wolf ->
             onProgress(
                 WerewolfProgress(
                     day = game.day,
                     phase = Phase.NIGHT_WOLF_CHAT,
-                    step = index + 1,
+                    step = ordered.indexOf(wolf) + 1,
                     total = wolves.size,
                     seat = wolf.seat,
                     note = note,
@@ -332,6 +334,7 @@ class WerewolfDirector(
             if (isHead) {
                 current = current.copy(game = current.game.copy(wolfPlan = text.text))
             }
+            current = current.copy(game = current.game.markSpoken(wolf.seat))
             // 说一句推一次：界面上一个一个冒出来，看得出来现在轮到谁在想
             onTranscript(current)
         }
@@ -412,13 +415,15 @@ class WerewolfDirector(
         if (current.game.phase != Phase.DAY_DISCUSSION) return current
 
         val speakers = current.game.discussionOrder
-        speakers.forEachIndexed { index, seat ->
+        // 续档：本阶段已经说过的不再问一遍。见 WerewolfGame.spokenPhaseKey。
+        val pending = speakers.filterNot { current.game.hasSpoken(it) }
+        pending.forEachIndexed { index, seat ->
             if (current.game.phase != Phase.DAY_DISCUSSION) return current
             onProgress(
                 WerewolfProgress(
                     day = current.game.day,
                     phase = Phase.DAY_DISCUSSION,
-                    step = index + 1,
+                    step = speakers.indexOf(seat) + 1,
                     total = speakers.size,
                     seat = seat,
                 )
@@ -429,7 +434,7 @@ class WerewolfDirector(
                 Phase.DAY_DISCUSSION,
                 text.text,
                 reasoning = text.reasoning,
-            )
+            ).let { it.copy(game = it.game.markSpoken(seat)) }
             // 说完一个就推一次。下一位要看到的上下文里已经有这句（current 已带），
             // 界面拿到的也是同一份，不存在「显示的和模型看到的不是一回事」
             onTranscript(current)
@@ -491,14 +496,16 @@ class WerewolfDirector(
         if (current.game.phase != Phase.DAY_SHERIFF_SPEECH) return current
         val speakers = current.game.sheriffCandidates.sorted()
         val pk = current.game.sheriffRound > 1
+        // 续档跳过本阶段已发过言的座位（PK 会经过投票阶段再回来，key 变了会重新说）
+        val pending = speakers.filterNot { current.game.hasSpoken(it) }
 
-        speakers.forEachIndexed { index, seat ->
+        pending.forEachIndexed { index, seat ->
             if (current.game.phase != Phase.DAY_SHERIFF_SPEECH) return current
             onProgress(
                 WerewolfProgress(
                     day = current.game.day,
                     phase = Phase.DAY_SHERIFF_SPEECH,
-                    step = index + 1,
+                    step = speakers.indexOf(seat) + 1,
                     total = speakers.size,
                     seat = seat,
                     note = if (pk) "平票 PK" else null,
@@ -520,7 +527,7 @@ class WerewolfDirector(
                 Phase.DAY_SHERIFF_SPEECH,
                 text.text,
                 reasoning = text.reasoning,
-            )
+            ).let { it.copy(game = it.game.markSpoken(seat)) }
             onTranscript(current)
         }
 
@@ -618,7 +625,7 @@ class WerewolfDirector(
         if (current.game.phase != Phase.DAY_LAST_WORDS) return current
 
         val pending = current.game.pendingLastWords
-        pending.forEachIndexed { index, seat ->
+        pending.filterNot { current.game.hasSpoken(it) }.forEachIndexed { index, seat ->
             if (current.game.phase != Phase.DAY_LAST_WORDS) return current
             onProgress(
                 WerewolfProgress(
@@ -664,6 +671,7 @@ class WerewolfDirector(
                     )
                 )
             }
+            current = current.copy(game = current.game.markSpoken(seat))
             onTranscript(current)
         }
         return current.copy(game = current.game.finishLastWords())

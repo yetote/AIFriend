@@ -443,4 +443,37 @@ class WerewolfSnapshotTest {
         assertNotNull("老档照样能续上", restored)
         assertTrue("老档案位没有模型名", restored!!.game.players.all { it.model.isEmpty() })
     }
+
+    @Test
+    fun `阶段内发言进度跟着存档走，续档不会让说过的人重来`() {
+        // 讨论/竞选这类阶段中途退出，flush 会把「谁说过」写进 game 一起落档。
+        // 续档据此跳过，否则整阶段重跑，用户看到「这一轮重新开始」。
+        val table = richTable()
+        val withProgress = table.copy(
+            game = table.game.copy(
+                phase = Phase.DAY_DISCUSSION,
+                spokenPhaseKey = table.game.copy(phase = Phase.DAY_DISCUSSION).currentPhaseKey,
+                spokenSeats = setOf(1, 4, 6),
+            ),
+        )
+        val restored = WerewolfSnapshot.decode(WerewolfSnapshot.encode(withProgress))
+
+        assertNotNull(restored)
+        assertEquals(setOf(1, 4, 6), restored!!.game.spokenSeats)
+        assertTrue("阶段 key 也要带回来", restored.game.spokenPhaseKey.isNotBlank())
+        assertEquals(table.game.players, restored.game.players)
+    }
+
+    @Test
+    fun `旧档没有发言进度时按空处理，照常能续`() {
+        val text = WerewolfSnapshot.encode(richTable())
+            .replace("\"spokenPhaseKey\":\"\",", "")
+            .replace("\"spokenSeats\":[],", "")
+            .replaceFirst("\"version\":${WerewolfSnapshot.VERSION}", "\"version\":14")
+
+        assertTrue("替换没生效：$text", !text.contains("spokenPhaseKey"))
+        val restored = WerewolfSnapshot.decode(text)
+        assertNotNull("旧档照样能续", restored)
+        assertEquals("没有进度就是谁都没说过", emptySet<Int>(), restored!!.game.spokenSeats)
+    }
 }

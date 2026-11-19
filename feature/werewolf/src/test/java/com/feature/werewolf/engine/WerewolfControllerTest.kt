@@ -4,6 +4,7 @@ import com.core.ai.entity.IAI
 import com.core.ai.model.ChatMessage
 import com.feature.werewolf.game.RosterEntry
 import com.feature.werewolf.game.WerewolfConfig
+import com.feature.werewolf.game.Phase
 import com.feature.werewolf.game.SELF_PLAYER_ID
 import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfTurnLimit
@@ -274,5 +275,40 @@ class WerewolfControllerTest {
 
         assertTrue("存档应该被删掉", store.saves.isEmpty())
         assertNull(c.state.value.table)
+    }
+
+    @Test
+    fun `阶段中途退出续档后，已经说过的话不该重来一遍`() = runBlocking {
+        // 真机反馈：退出再进去「像这一轮重新开始」。根因是落档粒度=阶段，
+        // 而讨论/发言是一个多座位阶段：中途退出时 flush 存下的是 phase 仍在进行、
+        // transcript 已经有前几句的局面。续档从同一阶段开头重跑，前几个人又说一遍。
+        // 这里验证：阶段函数必须跳过本阶段已经发言过的座位。
+        val store = FakeStore()
+        val game = WerewolfGame.deal(WerewolfConfig(), roster(8))
+            .copy(phase = Phase.DAY_DISCUSSION)
+        // 假设 1、2 号已经发过言，3～8 还没说。真实 flush 时 markSpoken 会把进度
+        // 写进 game（随快照落档），这里照着那个存档状态构造。
+        val midTable = WerewolfTable(
+            game = game.copy(
+                spokenPhaseKey = game.currentPhaseKey,
+                spokenSeats = setOf(1, 2),
+            ),
+            transcript = listOf(
+                WerewolfMessage(1, Phase.DAY_DISCUSSION, 1, MessageKind.SPEECH, "1 号已经说过"),
+                WerewolfMessage(1, Phase.DAY_DISCUSSION, 2, MessageKind.SPEECH, "2 号已经说过"),
+            ),
+        )
+        val c = controller(store)
+
+        c.start("g1", midTable)
+        c.play()
+
+        val discussionSpeech = c.state.value.table!!.transcript.filter {
+            it.day == 1 && it.phase == Phase.DAY_DISCUSSION && it.kind == MessageKind.SPEECH
+        }
+        val seat1Count = discussionSpeech.count { it.seat == 1 }
+        val seat2Count = discussionSpeech.count { it.seat == 2 }
+        assertEquals("1 号只该有一句，不该重说", 1, seat1Count)
+        assertEquals("2 号只该有一句，不该重说", 1, seat2Count)
     }
 }

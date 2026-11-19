@@ -51,8 +51,12 @@ object WerewolfSnapshot {
      *
      * v14：玩家多出 `model`（每个座位背后跑的模型名，牌桌/回放要显示）。
      * 同样是带默认值的新增字段，旧档读到空串就不显示，语义没变。
+     *
+     * v15：多出 `spokenPhaseKey` / `spokenSeats`（逐座位发言阶段的续档进度）。
+     * 带默认值的新增字段，旧档读出来是空进度——那种存档本来就是整阶段落档的，
+     * 续档最多重说当前阶段一遍，不会有语义错乱。
      */
-    const val VERSION = 14
+    const val VERSION = 15
 
     private val json = Json {
         ignoreUnknownKeys = true   // 旧档多出来的字段不该让新版本读不出来
@@ -207,6 +211,9 @@ internal data class TableSnapshot(
     val nights: List<NightSnapshot> = emptyList(),
     /** v2 起：逐轮投票历史，复盘用。 */
     val voteRounds: List<VoteRoundSnapshot> = emptyList(),
+    /** v15 起：逐座位发言的续档进度。见 [WerewolfGame.spokenPhaseKey]。 */
+    val spokenPhaseKey: String = "",
+    val spokenSeats: List<Int> = emptyList(),
     val transcript: List<MessageSnapshot> = emptyList(),
 )
 
@@ -389,6 +396,8 @@ internal fun WerewolfTable.toSnapshot(
         pendingLastWords = game.pendingLastWords,
         afterLastWordsPhase = game.afterLastWordsPhase.name,
         afterHunterPhase = game.afterHunterPhase.name,
+        spokenPhaseKey = game.spokenPhaseKey,
+        spokenSeats = game.spokenSeats.sorted(),
         history = game.history.map { it.toSnapshot() },
         winner = game.winner?.name,
         nights = game.nights.map {
@@ -508,6 +517,8 @@ internal fun TableSnapshot.toTable(): WerewolfTable = WerewolfTable(
         pendingLastWords = pendingLastWords,
         afterLastWordsPhase = enumOf<Phase>(afterLastWordsPhase),
         afterHunterPhase = enumOf<Phase>(afterHunterPhase),
+        spokenPhaseKey = spokenPhaseKey,
+        spokenSeats = spokenSeats.toSet(),
         history = history.map { it.toEvent() },
         winner = winner?.let { enumOf<Faction>(it) },
         nights = nights.map {
