@@ -1003,9 +1003,11 @@ internal fun WerewolfUiState.toLive(
         finished = finished,
         winnerLabel = game?.winner?.let { "${it.displayName}胜" },
         // 舞台还停在过去时，「轮到谁、走到第几个」属于未来的阶段，一律不显示。
-        progressLabel = progress?.takeIf { onStage }?.label,
-        // 「谁在忙」夜里不给：夜里谁在动就等于把身份摊给好人看
-        busyLabel = progress?.takeIf { onStage && !progress.phase.isNightPhase() }?.busyLabel,
+        // 「谁在忙」并进这一行（「第 1 天 · 发言 3/8 · 5 号」）。
+        // 夜里不给座位：夜里谁在动就等于把身份摊给好人看。
+        progressLabel = progress?.takeIf { onStage }?.let { p ->
+            if (p.phase.isNightPhase()) p.plainLabel else p.label
+        },
         // 并发阶段（狼人商议、投票）没有确定的「第几个」，那时宁可不画进度
         progressFraction = progress?.takeIf { onStage }?.let { p ->
             if (p.step > 0 && p.total > 0) p.step.toFloat() / p.total else null

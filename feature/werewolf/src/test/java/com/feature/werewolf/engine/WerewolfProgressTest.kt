@@ -98,8 +98,9 @@ class WerewolfProgressTest {
     }
 
     @Test
-    fun `能说出现在是谁在忙`() {
-        // 顶栏放「第 1 天 · 投票 7/11」，「谁在投票」放在底部状态条
+    fun `谁在忙跟在顶栏那一行后面`() {
+        // 顶栏本来就显示「第 1 天 · 投票 7/11」，把座位接在后面就够了，
+        // 不用在底下另开一条
         val concurrent = WerewolfProgress(
             day = 1,
             phase = Phase.DAY_VOTE,
@@ -107,7 +108,9 @@ class WerewolfProgressTest {
             total = 11,
             seats = listOf(3, 5, 7),
         )
-        assertEquals("3、5、7 号正在投票", concurrent.busyLabel)
+        assertEquals("第 1 天 · 投票 2/11 · 3、5、7 号", concurrent.label)
+        // 不带座位的那版给夜里用
+        assertEquals("第 1 天 · 投票 2/11", concurrent.plainLabel)
 
         // 串行阶段是当前这个座位
         val serial = WerewolfProgress(
@@ -117,9 +120,13 @@ class WerewolfProgressTest {
             total = 8,
             seat = 5,
         )
-        assertEquals("5 号发言", serial.busyLabel)
+        assertEquals("第 1 天 · 发言 1/8 · 5 号", serial.label)
 
-        assertNull("没人可报时就不该有这句", concurrent.copy(seats = emptyList(), seat = null).busyLabel)
+        assertEquals(
+            "没人可报时就不该多这一截",
+            "第 1 天 · 投票 2/11",
+            concurrent.copy(seats = emptyList()).label,
+        )
     }
 
     // ------------------------------------------------------------------
