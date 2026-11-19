@@ -968,6 +968,30 @@ class WerewolfDirectorTest {
         assertTrue("至少要看几次请求，否则等于没测", checked >= 9)
     }
 
+    @Test
+    fun `狼人的每次请求都重申队友，好人看不到`() = runBlocking {
+        // 实测：狼白天「盘身份」时把队友写进了怀疑名单，甚至把票投给自己人。
+        // 队友名单只在很长的 system prompt 里出现一次，十几段中文压下来就被冲掉了。
+        // 修法是在每次请求的正文开头钉一条硬事实——短、硬、只进本人的请求。
+        val aiBySeat = (1..9).associateWith { ScriptedAI(listOf("我怀疑 5 号。")) }
+        val director = WerewolfDirector(
+            aiBySeat.mapValues { (_, ai) -> SeatAgent(ai, "test-model") },
+        )
+
+        director.discussion(WerewolfTable(standard9().copy(phase = Phase.DAY_DISCUSSION)))
+
+        val wolf = aiBySeat.getValue(1).calls.first().userText
+        assertTrue("1 号必须知道 2、3 号是队友", wolf.contains("你的狼队友是 2 号"))
+        assertTrue("队友要全部列出", wolf.contains("3 号"))
+        assertTrue(
+            "只写「不许提」会让模型以为「不知道」，必须同时说清不能投",
+            wolf.contains("不要把票投给他们"),
+        )
+
+        val good = aiBySeat.getValue(5).calls.first().userText
+        assertFalse("好人不能看到任何队友信息", good.contains("狼队友"))
+    }
+
     private companion object {
         val SEAT_IN_PROMPT = Regex("""你是 (\d+) 号玩家""")
         val CANDIDATE_LINE = Regex("""只能从 ([^中]*) 中选""")

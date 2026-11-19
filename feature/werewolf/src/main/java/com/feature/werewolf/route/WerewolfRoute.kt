@@ -927,6 +927,17 @@ internal fun WerewolfUiState.toLive(
         running = running,
     )
 
+    // 你是狼时，队友名单本来就是你的已知信息（线下睁眼就认识）。
+    // 观战 / 已结束时 roleLabel 已经把身份写在脸上，不需要再标一遍。
+    val wolfMateSeats = if (!reveal && me?.role?.isWerewolf == true && game != null) {
+        game.players.asSequence()
+            .filter { it.role.isWerewolf && it.seat != humanSeat }
+            .map { it.seat }
+            .toSet()
+    } else {
+        emptySet()
+    }
+
     val seats = game?.players?.map { player ->
         // 翻过牌的白痴身份是公开的：牌桌上必须给所有人看见，
         // 否则会留下一个「没有身份标记却还活着」的座位，读起来自相矛盾
@@ -953,6 +964,7 @@ internal fun WerewolfUiState.toLive(
             votes = voteCounts[player.seat],
             // 警长是公开身份，牌桌上必须一直挂着——它是「谁的一票值 1.5」的唯一提示
             sheriff = game.sheriffSeat == player.seat,
+            isWolfMate = player.seat in wolfMateSeats,
         )
     }.orEmpty()
 

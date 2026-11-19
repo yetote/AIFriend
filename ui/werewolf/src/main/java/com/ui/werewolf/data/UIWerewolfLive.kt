@@ -31,6 +31,14 @@ data class UIWerewolfSeatLive(
      * 牌桌上必须一直显示：警长的一票值 1.5，不标出来，玩家会算不明白票型。
      */
     val sheriff: Boolean = false,
+    /**
+     * 这个座位是「你」的狼队友。
+     *
+     * 只在你本人是狼时才会有 true——那不是剧透，而是你本来就有的信息
+     * （线下入夜睁眼，第一件事就是认队友）。不标出来，人类玩家只能靠夜聊猜，
+     * 白天连「不能投自己人」都做不到。
+     */
+    val isWolfMate: Boolean = false,
 )
 
 /**

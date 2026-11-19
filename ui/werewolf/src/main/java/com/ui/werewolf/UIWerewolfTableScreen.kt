@@ -773,6 +773,25 @@ private fun SeatTile(
                     )
                 }
             }
+
+            // 狼队友：戴在头像右上角，和左上的警徽、右下的票数各占一角。
+            // 只在本人是狼时出现——那是已经知道的事，不标反而要靠猜。
+            if (seat.isWolfMate) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .size(15.dp)
+                        .background(FateRed, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "狼",
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White
+                    )
+                }
+            }
         }
 
         Text(

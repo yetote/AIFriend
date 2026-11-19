@@ -341,6 +341,17 @@ class WerewolfPromptTest {
     }
 
     @Test
+    fun `狼人盘身份只盘好人，票不许落到队友身上`() {
+        // 实测：狼白天按「盘身份」的要求认真分析全场，把队友也归进了「很可疑」，
+        // 最后一票砸在队友身上。盘身份是演给好人看的，队友不在候选里。
+        val wolf = WerewolfPrompt.systemPrompt(standardGame(), seat = 1)
+
+        assertTrue(wolf.contains("只盘好人"))
+        assertTrue(wolf.contains("绝不能出现在你的怀疑名单上"))
+        assertTrue(wolf.contains("票永远不能落在他身上"))
+    }
+
+    @Test
     fun `狼人被明确要求白天不许提狼队内部的事`() {
         // 线上实际出现的两句话：「顺手往队友节奏里搅屎」「昨夜四狼一致刀 4 号」。
         // 只写「不要说队友的名字」挡不住这种不点名但等于摊牌的表述。

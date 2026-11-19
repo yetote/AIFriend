@@ -1012,6 +1012,12 @@ class WerewolfDirector(
         val recent = table.transcriptFor(seat)
             .filter { it.day >= from }
             .filter { !daytime || it.isPublic }
+        // 身份与队友放在**最前面**再重申一遍。
+        // system 里已经有一份私有简报，但它排在规则、板子、打法、公共局势之后，
+        // 十几段中文压下来，模型对这种「一句话事实」的注意力会被稀释——实测表现为
+        // 白天盘身份时把队友当成可疑对象，甚至投票落到队友身上，等于白送一张狼。
+        // 所以每次请求的正文开头都钉一条，短、硬、只在本人的请求里出现。
+        appendMemoryAnchor(game, seat)
         val lines = recentlySaid(renderRecent(recent, game.day))
         if (lines.isNotEmpty()) {
             append("【本日进程】\n")
@@ -1050,8 +1056,36 @@ class WerewolfDirector(
         append("对别人刚说的那句话的回应，或者对自己上一票的解释。\n\n")
     }
 
-    /** 复述自己旧发言时，每条摘要留多少字。够认出「这是同一段」，又不占预算。 */
-
+    /**
+     * 每次请求开头重申「我是谁、我的队友是谁」。
+     *
+     * 只给狼人。这不是给模型补规则，而是补**记性**：队友名单是一条硬事实，
+     * 一旦在长上下文里被冲掉，狼队就在白天互踩、把票砸在自己人身上，
+     * 而这在外人看来完全是好人的正常推理，连复盘都不好发现。
+     *
+     * 措辞上必须两头都说到：白天绝不能说出去，但心里绝不能不认。只写前者，
+     * 模型会把「不提队友」执行成「不知道队友」。
+     */
+    private fun StringBuilder.appendMemoryAnchor(game: WerewolfGame, seat: Int) {
+        val player = game.playerAt(seat)
+        if (!player.role.isWerewolf) return
+        val mates = game.wolves().filter { it.seat != seat }
+        append("【别忘了你是谁】你是 ").append(seat).append(" 号")
+        append(if (player.role == WerewolfRole.WEREWOLF_KING) "狼王" else "狼人").append("。")
+        if (mates.isEmpty()) {
+            append("这一局只有你一只狼，场上再没有你的同伙。\n\n")
+            return
+        }
+        append("你的狼队友是 ")
+        append(
+            mates.joinToString("、") { mate ->
+                "${mate.seat} 号「${mate.name}」" + if (mate.alive) "" else "（已出局）"
+            }
+        )
+        append("。\n")
+        append("白天**一个字都不能提他们**，但你自己心里必须清楚：他们不是候选，")
+        append("永远不要把他们写进怀疑名单，更不要把票投给他们——那等于白送狼队一张牌。\n\n")
+    }
 
     /**
      * 跨天渲染。昨天和今天分开标，只有一天时不留标题——白天的预算全给发言原文。
