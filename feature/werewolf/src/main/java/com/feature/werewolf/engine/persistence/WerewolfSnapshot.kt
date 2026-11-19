@@ -55,12 +55,25 @@ object WerewolfSnapshot {
      */
     fun decode(text: String): WerewolfTable? {
         val dto = runCatching { json.decodeFromString<TableSnapshot>(text) }.getOrNull() ?: return null
+        return decode(dto)
+    }
+
+    /**
+     * 已经解析出来的快照 → 局面。
+     *
+     * 单独开一个入口是给「对局文件」用的：那个格式把快照包在自己的信封里，
+     * 解出来的还是同一个 [TableSnapshot]，不该为了取一个局面再把 JSON 拼回去重解一遍。
+     */
+    internal fun decode(dto: TableSnapshot): WerewolfTable? {
         // v2 相对 v1、v3 相对 v2，都只是**新增**带默认值的字段，语义一个字都没改，
         // 所以旧档可以直接读：v1 缺复盘那两段，v2 缺守卫/白痴的状态（那时也没有这两个身份）。
         // 这比「一声不响把玩家没打完的局丢掉」要好。真正的语义变更才该拒绝旧档。
         if (dto.version !in MIN_SUPPORTED_VERSION..VERSION) return null
         return runCatching { dto.toTable() }.getOrNull()
     }
+
+    /** 这份快照是不是**太新**了（来自更高版本）。用来区分「坏了」和「请你升级」。 */
+    internal fun isFromFuture(dto: TableSnapshot): Boolean = dto.version > VERSION
 
     /** 最低可读版本。低于它的档语义已经对不上，宁可当作没有存档。 */
     private const val MIN_SUPPORTED_VERSION = 1

@@ -1,6 +1,8 @@
 package com.feature.werewolf.route
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -17,6 +19,7 @@ import com.feature.werewolf.export.WerewolfExport
 import com.feature.werewolf.engine.HumanTurn
 import com.feature.werewolf.engine.MessageKind
 import com.feature.werewolf.engine.WerewolfMessage
+import com.feature.werewolf.engine.WerewolfTable
 import com.feature.werewolf.engine.WerewolfUiState
 import com.feature.werewolf.game.DeathCause
 import com.feature.werewolf.game.Faction
@@ -56,6 +59,7 @@ import com.ui.werewolf.data.UIWerewolfLineKind
 import com.ui.werewolf.data.UIWerewolfLive
 import com.ui.werewolf.data.UIWerewolfMode
 import com.ui.werewolf.data.UIWerewolfNightReport
+import com.ui.werewolf.data.UIWerewolfNotice
 import com.ui.werewolf.data.UIWerewolfNightDetail
 import com.ui.werewolf.data.UIWerewolfPreset
 import com.ui.werewolf.data.UIWerewolfRecord
@@ -99,8 +103,20 @@ fun WerewolfRoute(
     val revealedIndex by viewModel.revealedIndex.collectAsState()
     val speechBusy by viewModel.speechBusy.collectAsState()
     val speakingSeat by viewModel.speakingSeat.collectAsState()
+    val notice by viewModel.notice.collectAsState()
     // 导出复盘要用它写缓存文件并拉起系统分享
     val context = LocalContext.current
+
+    /**
+     * 导入对局文件用的文件选择器。
+     *
+     * MIME 不限类型（传通配符）：`.wwg` 是自定义后缀，Android 没有它对应的类型，
+     * 收窄成 json 会让文件在选择器里直接变灰。认不认得出这个文件交给解析层判断——
+     * 那一步能说清楚原因，而在这儿筛一遍只会让用户点不到自己的文件。
+     */
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> if (uri != null) viewModel.importGame(uri) }
 
     // 入口是列表，不是配置页，更不是上次的牌桌
     var screen by remember { mutableStateOf<WerewolfScreen>(WerewolfScreen.History) }
@@ -179,6 +195,19 @@ fun WerewolfRoute(
         }
     }
 
+    /**
+     * 导出对局文件。两个复盘入口（列表翻出来的 / 刚打完的）都走这里。
+     *
+     * 开局时间从存档摘要里取：文件里必须带着它，换台手机导回来列表才排得对。
+     * 取不到（摘要还没刷新）才退回当前时间——宁可排序差一点，也不能让导出失败。
+     */
+    fun shareGameFile(table: WerewolfTable?, gameId: String?) {
+        if (table == null || gameId.isNullOrBlank()) return
+        val createdAt = summaries.firstOrNull { it.id == gameId }?.createdAt
+            ?: System.currentTimeMillis()
+        WerewolfExport.shareGame(context, table, gameId, createdAt)
+    }
+
     // 演出盖在复盘上面：它是从复盘页点进来的，退回去应该回到复盘，而不是直接回列表
     val replay = replayState
     if (replay != null) {
@@ -219,6 +248,7 @@ fun WerewolfRoute(
                 screen = WerewolfScreen.Setup
             },
             onExport = { WerewolfExport.share(context, recordReview) },
+            onExportGame = { shareGameFile(recordView?.table, recordView?.id) },
             onPlay = viewModel::requestReplay,
         )
         return
@@ -240,6 +270,10 @@ fun WerewolfRoute(
             onClearFinished = viewModel::clearFinished,
             onNewGame = { screen = WerewolfScreen.Setup },
             onBack = onExit,
+            // 文件选择器按 MIME 过滤，自定义后缀没有对应的类型，只能放开到全部
+            onImport = { importLauncher.launch(arrayOf("*/*")) },
+            notice = notice?.let { UIWerewolfNotice(text = it.text, error = it.error) },
+            onClearNotice = viewModel::clearNotice,
         )
 
         WerewolfScreen.Setup -> UIWerewolfSetupScreen(
@@ -326,6 +360,7 @@ fun WerewolfRoute(
                         screen = WerewolfScreen.Setup
                     },
                     onExport = { WerewolfExport.share(context, review) },
+                    onExportGame = { shareGameFile(state.table, state.gameId) },
                     // 刚打完这一局也能直接演一遍：ViewModel 会拿终局局面拼出记录，
                     // 不需要先回列表翻存档
                     onPlay = viewModel::requestReplay,

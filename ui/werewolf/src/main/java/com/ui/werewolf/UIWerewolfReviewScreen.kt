@@ -22,9 +22,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -107,7 +109,17 @@ fun UIWerewolfReviewScreen(
      * 打开了上帝视角、演出里又变回只看得见公开发言，会以为丢了一段。
      */
     onPlay: ((godView: Boolean) -> Unit)? = null,
+    /**
+     * 导出「对局文件」：一份能再导入回 App 的完整存档，换台手机也能接着重看、重演。
+     *
+     * 和 [onExport] 并列而不是替代它：Markdown 是给人读的，对局文件是给 App 读的。
+     * 两个都给的时候，顶栏那个「导出」会变成一个二选一的小弹窗。
+     */
+    onExportGame: (() -> Unit)? = null,
 ) {
+    // 「导出」点开之后的选择框。只有一种导出方式时不弹，直接执行——
+    // 一个只有一项的菜单比按钮本身更麻烦。
+    var exportChoice by rememberSaveable { mutableStateOf(false) }
     // 「上帝视角」默认关闭：狼人夜聊、查验这些当时只有个别人看得到的内容，
     // 需要玩家主动打开。默认摊开的话，「原来那一夜他们商量的是这个」就没得发现了。
     var godView by rememberSaveable { mutableStateOf(false) }
@@ -123,9 +135,14 @@ fun UIWerewolfReviewScreen(
             .pageInsetsTop()
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
+            val bothExports = onExport != null && onExportGame != null
             ReviewTopBar(
                 onBack = onBack,
-                onExport = onExport,
+                onExport = when {
+                    bothExports -> ({ exportChoice = true })
+                    else -> onExport ?: onExportGame
+                },
+                exportLabel = if (bothExports || onExportGame != null) "导出" else "导出 MD",
                 onPlay = onPlay?.let { play -> { play(godView) } }
             )
 
@@ -216,6 +233,83 @@ fun UIWerewolfReviewScreen(
                 }
             }
         }
+
+        if (exportChoice) {
+            ExportDialog(
+                onDismiss = { exportChoice = false },
+                onMarkdown = onExport?.let { action ->
+                    {
+                        exportChoice = false
+                        action()
+                    }
+                },
+                onGame = onExportGame?.let { action ->
+                    {
+                        exportChoice = false
+                        action()
+                    }
+                },
+            )
+        }
+    }
+}
+
+/**
+ * 「导出什么」的选择框。
+ *
+ * 两种导出的读法完全不同：Markdown 是拿给别人读的文档，对局文件只有 App 认得。
+ * 挤成一个按钮上写两个名字，用户只能靠猜；分成两个按钮又太占顶栏。
+ */
+@Composable
+private fun ExportDialog(
+    onDismiss: () -> Unit,
+    onMarkdown: (() -> Unit)?,
+    onGame: (() -> Unit)?,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(text = "导出这一局", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = ReviewTitle)
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (onMarkdown != null) {
+                    ExportOption(
+                        title = "复盘文档 · Markdown",
+                        subtitle = "一份能直接读、能贴进笔记软件的复盘",
+                        onClick = onMarkdown,
+                    )
+                }
+                if (onGame != null) {
+                    ExportOption(
+                        title = "对局文件 · .wwg",
+                        subtitle = "导回 App 就能重看、重演，换台手机也能带走",
+                        onClick = onGame,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = "取消", color = ReviewDim)
+            }
+        },
+        containerColor = Color.White,
+    )
+}
+
+@Composable
+private fun ExportOption(title: String, subtitle: String, onClick: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(UIRadiusControl))
+            .background(UIFieldFill)
+            .clickable { onClick() }
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+    ) {
+        Text(text = title, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = ReviewTitle)
+        Text(text = subtitle, fontSize = 11.sp, color = ReviewDim)
     }
 }
 
@@ -228,6 +322,7 @@ private fun ReviewTopBar(
     onBack: () -> Unit,
     onExport: (() -> Unit)? = null,
     onPlay: (() -> Unit)? = null,
+    exportLabel: String = "导出 MD",
 ) {
     Row(
         modifier = Modifier
@@ -276,9 +371,9 @@ private fun ReviewTopBar(
         }
         if (onExport != null) {
             // 文字按钮而不是图标：分享图标在这里语义太宽（分享这一局？分享一局战绩？），
-            // 写「导出 MD」不用猜，也说明了导出的格式
+            // 写「导出 MD」不用猜，也说明了导出的格式；两种导出都在时写「导出」，点开再选
             Text(
-                text = "导出 MD",
+                text = exportLabel,
                 modifier = Modifier
                     .clip(RoundedCornerShape(UIRadiusControl))
                     .clickable { onExport() }

@@ -51,6 +51,7 @@ import com.ui.common.theme.UIRadiusCard
 import com.ui.common.theme.UIRadiusControl
 import com.ui.common.theme.UITopBar
 import com.ui.common.theme.uiCard
+import com.ui.werewolf.data.UIWerewolfNotice
 import com.ui.werewolf.data.UIWerewolfRecord
 
 /**
@@ -75,6 +76,11 @@ fun UIWerewolfHistoryScreen(
     onClearFinished: () -> Unit,
     onNewGame: () -> Unit,
     onBack: () -> Unit,
+    /** 导入对局文件。null 表示这个环境没有文件选择器（例如预览）。 */
+    onImport: (() -> Unit)? = null,
+    /** 导入结果这类「做成了 / 没做成」的提示，和 [error] 分开：它是蓝的，不是红的。 */
+    notice: UIWerewolfNotice? = null,
+    onClearNotice: () -> Unit = {},
 ) {
     // 未打完的排前面：一类是「接着打」，一类是「翻旧账」，混在一起排会看不出区别
     val unfinished = remember(records) { records.filter { !it.finished } }
@@ -87,6 +93,20 @@ fun UIWerewolfHistoryScreen(
     UIGradientBackground(modifier = Modifier.pageInsetsTop()) {
         Column(modifier = Modifier.fillMaxSize()) {
             UITopBar(title = "狼人杀", onBack = onBack) {
+                // 导入放在「几局」前面：它是个动作，不是统计。列表为空时也在，
+                // 否则第一台新手机没有任何存档，用户根本找不到导入的入口
+                if (onImport != null) {
+                    Text(
+                        text = "导入",
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(UIRadiusControl))
+                            .clickable { onImport() }
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = UIFriendBarTagTextBlue
+                    )
+                }
                 if (records.isNotEmpty()) {
                     Text(
                         text = "${records.size} 局",
@@ -100,9 +120,18 @@ fun UIWerewolfHistoryScreen(
             // 读档失败、续档时连通不上之类都落在这条上。列表页也要能说出来，
             // 否则点「接着打」之后什么都没发生，用户只会以为按钮坏了
             if (error != null) {
-                HistoryErrorBar(
+                HistoryBar(
                     text = error,
+                    tint = UIFriendBarRed,
                     onDismiss = onClearError,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+            }
+            if (notice != null) {
+                HistoryBar(
+                    text = notice.text,
+                    tint = if (notice.error) UIFriendBarRed else UIFriendBarTagTextBlue,
+                    onDismiss = onClearNotice,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                 )
             }
@@ -236,9 +265,16 @@ fun UIWerewolfHistoryScreen(
 // 各区块
 // ---------------------------------------------------------------------------
 
+/**
+ * 列表页顶部的一条横条。
+ *
+ * 失败和成功共用一套骨架，只换颜色：两条横条各写一份的话，
+ * 圆角、内边距、「知道了」这三个细节迟早会长歪，看起来像两个不同的控件。
+ */
 @Composable
-private fun HistoryErrorBar(
+private fun HistoryBar(
     text: String,
+    tint: Color,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -246,7 +282,7 @@ private fun HistoryErrorBar(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(UIRadiusControl))
-            .background(UIFriendBarRed.copy(alpha = 0.08f))
+            .background(tint.copy(alpha = 0.08f))
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -254,7 +290,7 @@ private fun HistoryErrorBar(
             text = text,
             modifier = Modifier.weight(1f),
             fontSize = 12.sp,
-            color = UIFriendBarRed
+            color = tint
         )
         Text(
             text = "知道了",
@@ -264,7 +300,7 @@ private fun HistoryErrorBar(
                 .padding(horizontal = 8.dp, vertical = 2.dp),
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
-            color = UIFriendBarRed
+            color = tint
         )
     }
 }

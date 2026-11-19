@@ -1,6 +1,7 @@
 package com.feature.werewolf.vm
 
 import android.app.Application
+import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -33,6 +34,7 @@ import com.feature.werewolf.engine.MessageKind
 import com.feature.werewolf.engine.WerewolfController
 import com.feature.werewolf.engine.WerewolfTable
 import com.feature.werewolf.engine.WerewolfUiState
+import com.feature.werewolf.engine.persistence.WerewolfGameFile
 import com.feature.werewolf.game.RosterEntry
 import com.feature.werewolf.game.SELF_PLAYER_ID
 import com.feature.werewolf.game.WerewolfBoards
@@ -100,6 +102,9 @@ data class WerewolfRecordView(
     /** 那一局我是几号；纯观战为 null。 */
     val humanSeat: Int?,
 )
+
+/** 一条非错误的提示。红色错误条管失败，这个管「做成了」。 */
+data class WerewolfNotice(val text: String, val error: Boolean = false)
 
 /**
  * 开演出之前要补人的那几位。
@@ -318,6 +323,19 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
 
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
+
+    /**
+     * 一条**不是错误**的提示（导入成功、导入后另存了一份……）。
+     *
+     * 单独一条流而不是塞进 [error]：红色提示条是「出事了」，绿色的是「做成了」。
+     * 混在一起用，导入成功也会红着脸出现，用户第一反应是「又失败了」。
+     */
+    private val _notice = MutableStateFlow<WerewolfNotice?>(null)
+    val notice: StateFlow<WerewolfNotice?> = _notice.asStateFlow()
+
+    fun clearNotice() {
+        _notice.value = null
+    }
 
     /** 好友 id → 那个模型的连通状况。只存内存，不进存档。 */
     private val _apiChecks = MutableStateFlow<Map<String, ApiCheck>>(emptyMap())
@@ -766,6 +784,101 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
             store.deleteFinished()
             refresh()
         }
+    }
+
+    /**
+     * 从文件管理器挑回来的一个对局文件，落进列表。
+     *
+     * 读文件、解析、落库全在这里做，界面只负责把 Uri 递过来：文件可能不在本地
+     * （云盘、下载目录的挂载点），读它是一次真正的 IO，不能放在组合函数里。
+     *
+     * **不覆盖已有的局**：同一个文件导第二次、或者导的正好是本机自己打的那一局，
+     * 都另存一份。用户手里的进度比「id 唯一」重要得多——真要覆盖，他自己会先删。
+     */
+    fun importGame(uri: Uri) {
+        viewModelScope.launch {
+            _notice.value = null
+            _error.value = null
+
+            val text = withContext(Dispatchers.IO) {
+                runCatching { readImportText(uri) }
+            }.getOrElse { error ->
+                _notice.value = WerewolfNotice("这个文件读不出来：${error.message ?: "没有读取权限"}", error = true)
+                return@launch
+            }
+
+            when (val read = WerewolfGameFile.read(text)) {
+                is WerewolfGameFile.Read.Rejected ->
+                    _notice.value = WerewolfNotice(read.reason, error = true)
+
+                is WerewolfGameFile.Read.Ok -> {
+                    val game = read.game
+                    val (id, copied) = resolveImportId(game.id)
+                    // 没写开局时间的文件（早期裸快照）只能拿现在顶上：
+                    // 时间是列表唯一的排序依据，缺了就排到最后，用户会以为没导进来
+                    val createdAt = game.createdAt.takeIf { it > 0 } ?: System.currentTimeMillis()
+                    runCatching { store.save(id, game.table, createdAt) }
+                        .onFailure {
+                            _notice.value = WerewolfNotice("写入存档失败：${it.message ?: "存储空间不足"}", error = true)
+                            return@launch
+                        }
+                    refresh()
+                    _notice.value = WerewolfNotice(importMessage(game.table.game, copied))
+                }
+            }
+        }
+    }
+
+    /** 一个文件最多读这么多。一局几十 KB，8MB 只可能是挑错了文件。 */
+    private val maxImportBytes = 8 * 1024 * 1024
+
+    private fun readImportText(uri: Uri): String {
+        val resolver = getApplication<Application>().contentResolver
+        val stream = resolver.openInputStream(uri)
+            ?: throw IllegalStateException("拿不到文件内容")
+        stream.use { input ->
+            val out = java.io.ByteArrayOutputStream()
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                val n = input.read(buffer)
+                if (n < 0) break
+                out.write(buffer, 0, n)
+                if (out.size() > maxImportBytes) {
+                    throw IllegalStateException("文件超过 8MB，不像是一局对局")
+                }
+            }
+            return out.toString("UTF-8")
+        }
+    }
+
+    /**
+     * 给导入的这一局找个没被占用的 id。
+     *
+     * 文件里带的是**导出那一台机器**上的 id。同一个文件导两次、或者导回自己刚打完的那一局，
+     * id 就会撞上。这里不覆盖，接一个后缀另存——覆盖等于悄悄丢掉一局，
+     * 而它可能正是用户手上打到一半的那一局。
+     *
+     * 返回「用的 id」和「是不是另存的一份」：后者要写在提示里，否则列表上多出一局
+     * 一模一样的对局，看起来像导入出错了。
+     */
+    private suspend fun resolveImportId(preferred: String): Pair<String, Boolean> {
+        val base = preferred.ifBlank { UUID.randomUUID().toString() }
+        if (!exists(base)) return base to false
+        var n = 2
+        while (exists("$base-import$n")) n++
+        return "$base-import$n" to true
+    }
+
+    private suspend fun exists(id: String): Boolean = store.load(id) != null
+
+    private fun importMessage(game: WerewolfGame, copied: Boolean): String {
+        val shape = "${game.players.size} 人局 · 第 ${game.day} 天" +
+            if (game.isFinished) "结束" else "，还没打完"
+        val head = if (copied) "这一局列表里已经有了，已另存一份：" else "已导入："
+        // 没打完的局要能续上，靠的是「参与的角色都还在这台机器的好友里」。
+        // 文件里只有座位号和当时的名字，通知一下，免得点「接着打」才知道缺人。
+        val tail = if (game.isFinished) "" else "。要接着打，参与的 AI 角色得都在这台手机上"
+        return head + shape + tail
     }
 
     /** 丢掉某一局存档。这一局若正在跑，会先停下来。 */
