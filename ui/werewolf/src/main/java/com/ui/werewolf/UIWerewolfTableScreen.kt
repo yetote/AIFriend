@@ -900,12 +900,12 @@ private fun ThinkingBubble(
             .lines()
             .map { it.trim() }
             .filter { it.isNotEmpty() && it.length <= 60 }
-            .takeLast(3)
+            .takeLast(5)
     }
     var bubbleSize by remember { mutableStateOf(IntSize.Zero) }
 
     // 半透明：气泡会盖住一小块牌桌，压暗一点才不至于挡住下面的发言
-    val fill = if (night) Color(0xD9221D2E) else Color(0xE6FFFFFF)
+    val fill = if (night) Color(0xF0221D2E) else Color(0xF5FFFFFF)
     val border = if (night) Color(0x59A894FF) else Color(0x336B4BD9)
     val textColor = if (night) Color(0xFFE6EAF3) else Color(0xFF3A4152)
 
@@ -915,16 +915,11 @@ private fun ThinkingBubble(
             // 气泡会被撑成全屏大，把整个牌桌盖住。
             // 尺寸由下面的 width 定死，offset 负责把它搬到头像上方。
             .offset {
-                // 往**屏幕内侧**展开：座位列在两边，气泡朝中间长，
-                // 盖住的是对话流的一小条，而不是同列的其他人的头像。
-                // 尖角始终在气泡靠头像的那一端（尖角自己按 anchor 定位）。
-                val onLeft = anchor.x < screenWidth.value / 2f
-                val edge = if (onLeft) {
-                    anchor.x - with(density) { 4.dp.toPx() }
-                } else {
-                    anchor.x + with(density) { 4.dp.toPx() } - bubbleSize.width
-                }
-                val x = edge.coerceIn(8f, (screenWidth.value - bubbleSize.width - 8f).coerceAtLeast(8f))
+                // 居中对齐头像：漫画对白框就是这么挂的。
+                // 盖住一点对话流没关系——气泡本来就是浮层，等它说完就消失。
+                // 窄屏上会夹到屏幕边缘，尖角仍旧指着头像。
+                val x = (anchor.x - bubbleSize.width / 2f)
+                    .coerceIn(8f, (screenWidth.value - bubbleSize.width - 8f).coerceAtLeast(8f))
                 // 头顶放不下就放到身下：漫画对白框可以斜着、也可以在身侧，
                 // 但绝不能盖住说话人自己的脸，也不能盖住顶栏。
                 val gap = with(density) { 26.dp.toPx() }
@@ -940,7 +935,7 @@ private fun ThinkingBubble(
                 IntOffset(x.toInt(), y.toInt())
             }
             .onSizeChanged { bubbleSize = it }
-            .width(132.dp)
+            .width(196.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(fill)
             .border(1.dp, border, RoundedCornerShape(12.dp))
@@ -959,7 +954,7 @@ private fun ThinkingBubble(
                 fontSize = 11.sp,
                 lineHeight = 15.sp,
                 color = textColor.copy(alpha = 0.85f),
-                maxLines = 3,
+                maxLines = 5,
                 overflow = TextOverflow.Ellipsis
             )
         }
@@ -997,7 +992,7 @@ private fun BubbleTail(
             lineTo(size.width / 2f, size.height)
             close()
         }
-        drawPath(path, color = if (night) Color(0xD9221D2E) else Color(0xE6FFFFFF))
+        drawPath(path, color = if (night) Color(0xF0221D2E) else Color(0xF5FFFFFF))
         drawPath(
             path,
             color = border,
