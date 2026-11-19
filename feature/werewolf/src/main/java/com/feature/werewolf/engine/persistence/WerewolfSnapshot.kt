@@ -39,15 +39,28 @@ import kotlinx.serialization.json.Json
 object WerewolfSnapshot {
 
     /** 当前存档格式版本。改动 DTO 结构时必须加一。 */
-    const val VERSION = 10
+    const val VERSION = 11
 
     private val json = Json {
         ignoreUnknownKeys = true   // 旧档多出来的字段不该让新版本读不出来
         encodeDefaults = true      // 保证 round-trip 一致，缺省值也要写出来
     }
 
-    fun encode(table: WerewolfTable): String =
-        json.encodeToString(table.toSnapshot())
+    fun encode(table: WerewolfTable, customPrompt: String? = null): String =
+        json.encodeToString(table.toSnapshot(customPrompt))
+
+    /**
+     * 只取「这一局用的玩家设定」，不还原局面。
+     *
+     * 复盘要知道当时是按什么设定打的：改过提示词之后，旧局的发言风格
+     * 在设置页里已经查不到了。而提示词是**请求参数**、不是局面状态，
+     * `toTable()` 不该把它带进 [WerewolfTable]——所以单独开一个入口读。
+     *
+     * 旧档没有这一段，返回 null。
+     */
+    fun decodePrompt(text: String): String? =
+        runCatching { json.decodeFromString<TableSnapshot>(text) }.getOrNull()
+            ?.customPrompt?.takeIf { it.isNotBlank() }
 
     /**
      * 反序列化。失败返回 null，不抛异常——存档损坏只是丢一局游戏，
@@ -89,6 +102,17 @@ private const val SNAPSHOT_VERSION = WerewolfSnapshot.VERSION
 internal data class TableSnapshot(
     val version: Int = SNAPSHOT_VERSION,
     val config: ConfigSnapshot,
+    /**
+     * 落档当时生效的玩家设定（全局那段 + 板子那段拼好的）。
+     *
+     * **只给复盘看，不参与局面还原**：提示词是请求参数，不是状态。
+     * 续档也仍然用设置页里的当前值——玩家改完设定希望立刻生效，
+     * 而不是被一局三天前的存档按回旧设定。
+     *
+     * 每次落档都会覆盖它，所以值是「最后一次落档时生效的那份」。
+     * 旧档（v10 及以前）没有这一段，读出来是 null。
+     */
+    val customPrompt: String? = null,
     val players: List<PlayerSnapshot>,
     val day: Int,
     val phase: String,
@@ -248,9 +272,10 @@ internal data class MessageSnapshot(
 // 领域 → DTO
 // ---------------------------------------------------------------------------
 
-internal fun WerewolfTable.toSnapshot(): TableSnapshot {
+internal fun WerewolfTable.toSnapshot(customPrompt: String? = null): TableSnapshot {
     val game = this.game
     return TableSnapshot(
+        customPrompt = customPrompt?.takeIf { it.isNotBlank() },
         config = ConfigSnapshot(
             composition = game.config.composition.entries.associate { it.key.name to it.value },
             winRule = game.config.winRule.name,

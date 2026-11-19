@@ -37,7 +37,8 @@ internal fun WerewolfUiState.toLive(
      * 要不要把 AI 的思考过程给界面。
      *
      * 参与局看到别人的思考等于读心——那会把「猜谁在想什么」变成主要玩法。
-     * 所以默认不给，只有观战（或者对局结束）才给；用户可以自己在设置里打开。
+     * 所以默认不给，只有观战（或者对局结束）才给；参与局里用户可以自己在牌桌顶栏打开，
+     * 界面会明写着「这是作弊」。开关的值记在设置里，开了就一直是开的。
      */
     showThinking: Boolean = false,
 ): UIWerewolfLive {
@@ -171,10 +172,10 @@ internal fun WerewolfUiState.toLive(
     //    看起来追平了，但 A 还在响。这时把 B 的打字打出来，用户看到的就是
     //    「下一个人的对话框冒出来、然后又消失」（等 B 真念到才重新出现）。
     //    所以要等队列真的空下来（speechBusy=false）才允许显示；
-    // 4. **思考过程一律不给**——不参与局不给（别人推理=作弊），观战也不给：
-    //    一旦能看 AI 的推理，看推理本身就成了主要玩法，牌桌上的发言反倒没人读了。
-    //    思考过程随消息存进 transcript，复盘时才摊开（玩家原话：「别显示在对局里，
-    //    在复盘里展示出来就行」）。
+    // 4. **思考过程给不给看**——参与局默认不给（别人推理=作弊），观战/已结束一律给；
+    //    参与局里自己打开「思考」开关也就有了，界面上会写清楚那是作弊。
+    //    开关只放行「想的内容」，不放行「谁在动」：夜里的思考框照样受第 1 条管，
+    //    否则一开开关就等于把每个角色的身份摊在桌上。
     val streaming = live
         ?.takeIf { running && !finished }
         ?.takeIf { item -> actorVisible(item.seat, item.phase) && item.seat != humanSeat }
@@ -203,14 +204,10 @@ internal fun WerewolfUiState.toLive(
         finished = finished,
         winnerLabel = game?.winner?.let { "${it.displayName}胜" },
         // 舞台还停在过去时，「轮到谁、走到第几个」属于未来的阶段，一律不显示。
-        // 「谁在忙」并进这一行（「第 1 天 · 发言 3/8 · 5 号」）。
-        // 夜里不给座位：夜里谁在动就等于把身份摊给好人看。
-        progressLabel = progress?.takeIf { onStage }?.let { p ->
-            if (p.phase.isNightPhase()) p.plainLabel else p.label
-        },
-        // 并发阶段（狼人商议、投票）没有确定的「第几个」，那时宁可不画进度
-        progressFraction = progress?.takeIf { onStage }?.let { p ->
-            if (p.step > 0 && p.total > 0) p.step.toFloat() / p.total else null
+        // 「谁在忙」并进这一行（「发言 3/8 · 5 号」），天数不重复：顶栏标题已经在报。
+        // 夜里只给不带座位的那版：夜里谁在动就等于把身份摊给好人看。
+        stageLabel = progress?.takeIf { onStage }?.let { p ->
+            if (p.phase.isNightPhase()) p.stageText else p.stageLabel
         },
         seats = seats,
         lines = lines,
@@ -223,6 +220,9 @@ internal fun WerewolfUiState.toLive(
         error = error,
         autoSpeak = autoSpeak,
         speechReady = speechReady,
+        // 界面拿它点亮顶栏那个「思考」开关。观战 / 已结束恒为开：那两个视角本来就能看
+        // 整段思考（复盘里也摊着），不给才是怪事
+        showThinking = reveal || showThinking,
         // 闸门没生效时一律当作「不忙」：关朗读/已结束/没语音包的时候，
         // 界面必须照常显示正在生成的内容，否则看起来就是卡住了。
         speechBusy = speechBusy && gated,

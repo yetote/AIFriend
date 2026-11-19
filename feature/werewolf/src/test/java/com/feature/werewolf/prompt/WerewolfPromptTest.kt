@@ -4,12 +4,15 @@ import com.feature.werewolf.game.GameEvent
 import com.feature.werewolf.game.Phase
 import com.feature.werewolf.game.RosterEntry
 import com.feature.werewolf.game.SeerCheck
+import com.feature.werewolf.game.WerewolfBoards
 import com.feature.werewolf.game.WerewolfConfig
 import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.NightRecord
 import com.feature.werewolf.game.PendingDawn
 import com.feature.werewolf.game.WerewolfRole
 import com.feature.werewolf.game.WitchStock
+import com.feature.werewolf.prompt.boards.Boards
+import com.feature.werewolf.prompt.boards.BoardText
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -218,7 +221,9 @@ class WerewolfPromptTest {
         val wolf = WerewolfPrompt.systemPrompt(gameWithGuard(), seat = 1)
 
         assertTrue(wolf.contains("诈守卫"))
-        assertTrue(wolf.contains("守卫不能连守的是同一个人"))
+        // 推理前提必须写对：守卫的限制是「不能连续两夜守同一个人」，
+        // 不是「守过谁以后就不能再守谁」——后者会让狼把没被守过的人当成裸位
+        assertTrue(wolf.contains("不能连续两夜守同一个人"))
     }
 
     @Test
@@ -730,5 +735,146 @@ class WerewolfPromptTest {
         assertTrue(
             WerewolfPrompt.privateBriefing(guardPhase, seat = 5).contains("你昨夜守的是 7 号")
         )
+    }
+
+    // ------------------------------------------------------------------
+    // 和守卫博弈（狼队的下刀思路）
+    // ------------------------------------------------------------------
+
+    /**
+     * 第 2 夜的局面：昨夜（第 1 夜）狼刀了 [target]，[deaths] 是那一夜的实际死亡名单。
+     *
+     * 死亡名单是**播报过**的事实，狼从上帝播报里听得到；守卫守了谁听不到，
+     * 所以这里刻意不填 `guarded`——填了也不能出现在狼的提示词里。
+     */
+    private fun nightTwo(target: Int, deaths: List<Int>) = gameWithGuard().copy(
+        day = 2,
+        phase = Phase.NIGHT_WOLF,
+        nights = listOf(NightRecord(day = 1, wolfTarget = target, deaths = deaths)),
+        history = listOf(GameEvent.Dawn(1, deaths)),
+    )
+
+    @Test
+    fun `有守卫时，昨夜没死的刀口今晚该补而不是换人`() {
+        // 真机案例：狼第二夜照旧闷头刀预言家，撞上守卫的守，空了一整夜还以为是运气差。
+        val wolf = WerewolfPrompt.systemPrompt(nightTwo(target = 6, deaths = emptyList()), seat = 1)
+
+        assertTrue("要写清撞守等于这一夜白过", wolf.contains("完全无效"))
+        assertTrue("要指出守卫不能连守这个破绽", wolf.contains("不能再守"))
+        assertTrue("要给出可执行结论：连刀 6 号", wolf.contains("今晚连刀 6 号"))
+    }
+
+    @Test
+    fun `有守卫时，昨夜刀死了就该防着守卫今晚去守预言家`() {
+        val wolf = WerewolfPrompt.systemPrompt(nightTwo(target = 6, deaths = listOf(6)), seat = 1)
+
+        assertTrue(wolf.contains("他**出局了**"))
+        assertTrue("要提醒别把刀预言家当默认选项", wolf.contains("别把「刀预言家」当成默认选项"))
+        assertTrue("要给外置位这条路", wolf.contains("外置位"))
+        assertFalse("刀口已经死了，就不该再说连刀他", wolf.contains("今晚连刀 6 号"))
+    }
+
+    @Test
+    fun `没有守卫的板子不讲守卫博弈，改讲女巫的解药`() {
+        val plain = standardGame().copy(
+            day = 2,
+            phase = Phase.NIGHT_WOLF,
+            nights = listOf(NightRecord(day = 1, wolfTarget = 6, deaths = emptyList())),
+            history = listOf(GameEvent.Dawn(1, emptyList())),
+        )
+        val wolf = WerewolfPrompt.systemPrompt(plain, seat = 1)
+
+        assertTrue(wolf.contains("本局没有守卫"))
+        assertTrue("平安夜只可能是解药，要说清", wolf.contains("解药"))
+        assertFalse("不能讲一个本局不存在的身份", wolf.contains("和守卫博弈"))
+        // 打法清单也要按板子裁：没有守卫却让狼去「盘守卫」，等于教它找一个不存在的人
+        assertFalse("没有守卫就不该叫它盘守卫", wolf.contains("盘守卫"))
+        assertFalse("没有守卫时「有人自称守人」不可能是诈守卫", wolf.contains("诈守卫"))
+    }
+
+    @Test
+    fun `白天不占篇幅讲下刀博弈`() {
+        val day = nightTwo(target = 6, deaths = emptyList()).copy(phase = Phase.DAY_DISCUSSION)
+
+        assertFalse(WerewolfPrompt.systemPrompt(day, seat = 1).contains("和守卫博弈"))
+    }
+
+    @Test
+    fun `守卫守了谁不会漏进狼的提示词`() {
+        // 刀口和守人对不上时，狼只能知道「刀口没死」，不能知道守卫守的是谁。
+        // 一旦漏了，狼第二天就能按守人路线挑裸位，守卫这个身份等于白拿。
+        val game = nightTwo(target = 6, deaths = emptyList()).copy(lastGuardedSeat = 7)
+
+        val wolf = WerewolfPrompt.systemPrompt(game, seat = 1)
+        val guard = WerewolfPrompt.systemPrompt(game, seat = 5)
+
+        assertFalse("守卫的守人路线不能给狼", wolf.contains("守的是 7 号"))
+        assertTrue("但守卫自己要知道", guard.contains("你昨夜守的是 7 号"))
+    }
+
+    // ------------------------------------------------------------------
+    // 板型打法：按板子分开，且不串给对面
+    // ------------------------------------------------------------------
+
+    /** 按板子的身份构成摆一局，座位顺序 = 构成声明顺序。 */
+    private fun deal(config: WerewolfConfig): WerewolfGame {
+        val n = config.playerCount
+        val roles = config.composition.flatMap { (role, count) -> List(count) { role } }
+        return WerewolfGame.withRoles(config, roster(n), roles)
+    }
+
+    @Test
+    fun `每张板子都有自己的板型打法`() {
+        // 8 张板子的人数结构差得很远（6 人局两边各两刀、12 人熊局打民边只要 3 刀），
+        // 不给这一层，模型只能按 8 人局的经验硬套。
+        WerewolfBoards.all.forEach { board ->
+            val text = Boards.text(board.config)
+            assertTrue("${board.key} 缺板型容错", text.common.isNotEmpty())
+            assertTrue("${board.key} 缺狼队打法", text.wolves.isNotEmpty())
+        }
+    }
+
+    @Test
+    fun `板型打法按阵营分开：狼的那段不给好人`() {
+        WerewolfBoards.all.forEach { board ->
+            val game = deal(board.config)
+            val text = Boards.text(board.config)
+            val wolf = game.players.first { it.role.isWerewolf }.seat
+            val good = game.players.first { !it.role.isWerewolf }.seat
+
+            val goodPrompt = WerewolfPrompt.systemPrompt(game, good)
+            assertTrue("${board.key} 好人看不到板上的人数算术", goodPrompt.contains(text.common.first()))
+            assertFalse("${board.key} 狼的打法漏给了好人", goodPrompt.contains(text.wolves.first()))
+
+            assertTrue(
+                "${board.key} 狼看不到自己的板型打法",
+                WerewolfPrompt.systemPrompt(game, wolf).contains(text.wolves.first()),
+            )
+        }
+    }
+
+    @Test
+    fun `没配过的板子不会硬套别张板子的结论`() {
+        // 自定义局（或少见人数）不该拿到「打民边只要 3 刀」这种只对某张板子成立的结论。
+        val custom = WerewolfConfig(
+            composition = mapOf(
+                WerewolfRole.WEREWOLF to 2,
+                WerewolfRole.SEER to 1,
+                WerewolfRole.VILLAGER to 3,
+            )
+        )
+
+        assertEquals(BoardText(), Boards.text(custom))
+        assertFalse(WerewolfPrompt.systemPrompt(deal(custom), seat = 1).contains("打民边"))
+    }
+
+    @Test
+    fun `身份规则跟着身份走，换张板子也还在`() {
+        val guard10 = WerewolfPrompt.boardBrief(WerewolfBoards.configOf(WerewolfBoards.GUARD_10))
+        val guard12 = WerewolfPrompt.boardBrief(WerewolfBoards.configOf(WerewolfBoards.GUARD_12))
+
+        assertTrue(guard10.contains("守卫每夜先于狼人守一个人"))
+        assertTrue("同一份守卫规则不该只在 10 人局出现", guard12.contains("守卫每夜先于狼人守一个人"))
+        assertFalse("没守卫的板子不该出现守卫规则", WerewolfPrompt.boardBrief(WerewolfConfig()).contains("守卫每夜"))
     }
 }

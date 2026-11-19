@@ -71,6 +71,89 @@ internal val BUBBLE_HEIGHT = 104.dp
 // ---------------------------------------------------------------------------
 
 /**
+ * 思考气泡里显示的那几行。
+ *
+ * 这曾经是「按整行过滤 + takeLast(4)」：把超过 60 字的行当作
+ * 「厂商把 system prompt 回显了」整行丢掉。问题是流式文本**一直在长**，
+ * 正在生长的这一句迟早超过 60 字——那一刻它被删掉，`takeLast(4)` 的窗口
+ * 整体退回**上一句**，等它写完换行又跳回来。看着就像气泡在自己往回翻页。
+ *
+ * 流式本身不是毛病，毛病在「用长度判断整行合格」这件事：正在长的行和不合格的长行
+ * 长得一模一样。所以改成**先切段、再从尾部取**：文本变长时窗口只会向上滚，
+ * 永远不会整体回退，也顺便保证「最新的想法」一定在气泡里。
+ */
+internal object ThinkingTail {
+
+    /**
+     * 一行放得下多少「全角字」。
+     *
+     * 气泡 196dp 宽、减去左右内边距剩 176dp；11sp 时一个汉字正好一个字宽，
+     * 所以中文一行 16 个。英文按半个算，一行约 32 个字符——思考内容经常是英文，
+     * 按字数硬切会把单词劈成两半，白扔半行地方。
+     */
+    private const val LINE_UNITS = 16
+
+    /** 气泡能放几行。高度 104dp 扣掉「思考中」标签和留白，正好 4 行 15sp。 */
+    private const val MAX_LINES = 4
+
+    /** 优先在这些字符后面断句，别把「，」掰成两行。 */
+    private const val BREAKS = "。！？；：，、.,!?;: "
+
+    fun lines(reasoning: String): List<String> {
+        val segments = ArrayList<String>()
+        reasoning.replace("\r", "").lineSequence().forEach { raw ->
+            val line = raw.trim()
+            if (line.isEmpty()) return@forEach
+            var start = 0
+            while (start < line.length) {
+                var end = start
+                var used = 0.0
+                while (end < line.length && used + unitOf(line[end]) <= LINE_UNITS) {
+                    used += unitOf(line[end])
+                    end++
+                }
+                // 一个全角字就超宽（理论上不会），硬推一个，免得原地打转
+                if (end == start) end = start + 1
+                if (end < line.length) {
+                    // 只在后半段找断点：前半段就断会切出「我」「觉得」这种碎片
+                    val cut = (end - 1 downTo start + (end - start) / 2)
+                        .firstOrNull { line[it] in BREAKS }
+                    if (cut != null) end = cut + 1
+                }
+                val piece = line.substring(start, end).trim()
+                if (piece.isNotEmpty()) segments += piece
+                start = end
+            }
+        }
+
+        // 从尾部往前取：宁可少显示开头，也不能把正在写的这一句挤掉。
+        // 段数也要卡：每段之间是硬换行，5 个短段一样会占 5 行。
+        val budget = LINE_UNITS * MAX_LINES
+        val picked = ArrayList<String>()
+        var used = 0.0
+        for (i in segments.indices.reversed()) {
+            if (picked.size >= MAX_LINES) break
+            val s = segments[i]
+            val u = unitsOf(s) + 1
+            // 至少留一段：万一单段就超预算，也比空白好
+            if (picked.isNotEmpty() && used + u > budget) break
+            picked += s
+            used += u
+        }
+        return picked.asReversed()
+    }
+
+    /** 半角 0.5、全角 1。够用了：这里只要「这一行塞不塞得下」，不做排版。 */
+    private fun unitOf(c: Char): Double = if (c.code < 0x80) 0.5 else 1.0
+
+    private fun unitsOf(s: CharSequence): Double {
+        var u = 0.0
+        for (c in s) u += unitOf(c)
+        return u
+    }
+}
+
+/**
  * 思考气泡：漫画对白框。
  *
  * 挂在说话人附近，但**不贴着他**：贴着边缘看着局促，飘在中间又不像是谁在说话。
@@ -98,16 +181,10 @@ internal fun ThinkingBubble(
     val screenWidth = LocalConfiguration.current.screenWidthDp.dp
     val screenHeight = LocalConfiguration.current.screenHeightDp.dp
 
-    // 只留「像人话」的短行：有些厂商会把 system prompt 里的指令原样回显到思考里
-    // （"Must give judgment: who I suspect…" 这种），一整行几百个字符，
-    // 塞进气泡里既难看又挤地方。超过 60 个字的行基本都不是人话。
-    val lines = remember(reasoning) {
-        reasoning.trim()
-            .lines()
-            .map { it.trim() }
-            .filter { it.isNotEmpty() && it.length <= 60 }
-            .takeLast(4)
-    }
+    // 只留「像人话」的最后几段：有些厂商会把 system prompt 里的指令原样回显到思考里
+    // （"Must give judgment: who I suspect…" 这种），而切段取尾之后就只剩最新的一小截，
+    // 既难看又挤地方的问题自然被预算挡住了。
+    val lines = remember(reasoning) { ThinkingTail.lines(reasoning) }
 
     val fill = if (night) Color(0xF0221D2E) else Color(0xF5FFFFFF)
     val border = if (night) Color(0x59A894FF) else Color(0x336B4BD9)
@@ -201,7 +278,8 @@ internal fun ThinkingBubble(
                     fontSize = 11.sp,
                     lineHeight = 15.sp,
                     color = textColor.copy(alpha = 0.85f),
-                    maxLines = 4,
+                    // 比预算多留一行：中文混英文时偶尔会多折一行，别让最末尾那句被裁掉
+                    maxLines = 5,
                     overflow = TextOverflow.Ellipsis,
                 )
             }

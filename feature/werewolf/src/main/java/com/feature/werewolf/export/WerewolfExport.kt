@@ -64,8 +64,14 @@ object WerewolfExport {
      *
      * 同样走 `cacheDir/export/`：递完就没用了，不值得让用户去文件管理器里清理。
      */
-    fun shareGame(context: Context, table: WerewolfTable, gameId: String, createdAt: Long) {
-        val text = WerewolfGameFile.encode(table, gameId, createdAt)
+    fun shareGame(
+        context: Context,
+        table: WerewolfTable,
+        gameId: String,
+        createdAt: Long,
+        customPrompt: String? = null,
+    ) {
+        val text = WerewolfGameFile.encode(table, gameId, createdAt, customPrompt)
         val uri = runCatching {
             val dir = File(context.cacheDir, "export").apply { mkdirs() }
             val file = File(dir, gameFileName())

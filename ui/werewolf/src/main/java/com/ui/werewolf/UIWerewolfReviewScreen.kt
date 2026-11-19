@@ -157,6 +157,12 @@ fun UIWerewolfReviewScreen(
                     item { SelfStrip(line = line) }
                 }
 
+                // 这一局按什么设定打的。改过设置之后旧局在设置页里就查不到了，
+                // 而「AI 今天怎么这么打」的第一嫌疑对象就是它。
+                review.customPrompt?.let { prompt ->
+                    item { PromptCard(prompt) }
+                }
+
                 item { SectionTitle(title = "底牌", hint = "全部公开") }
                 review.groups.forEach { group ->
                     item(key = "group-${group.title}") { RoleGroupCard(group) }
@@ -451,6 +457,52 @@ private fun SelfStrip(line: String) {
             fontSize = 12.sp,
             lineHeight = 17.sp,
             color = ReviewBody
+        )
+    }
+}
+
+/**
+ * 这一局生效的玩家设定（提示词）。
+ *
+ * 默认只显示三行，点开看全文：提示词经常是几百字，全摊开会把底牌挤到屏幕外，
+ * 而它多半是「AI 今天怎么这么打」时的查证材料，不是要逐字读完的东西。
+ *
+ * 只读。想改就去设置页——那里改的是之后所有局，这一局的记录不该被覆盖。
+ */
+@Composable
+private fun PromptCard(text: String) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(UIRadiusCard))
+            .background(Color.White)
+            .border(0.5.dp, Color(0x14202A46), RoundedCornerShape(UIRadiusCard))
+            .clickable { expanded = !expanded }
+            .padding(horizontal = 14.dp, vertical = 11.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "这一局用的提示词",
+                modifier = Modifier.weight(1f),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = ReviewTitle
+            )
+            Text(
+                text = if (expanded) "收起" else "展开",
+                fontSize = 11.sp,
+                color = GodBlue
+            )
+        }
+        Text(
+            text = text.trim(),
+            modifier = Modifier.padding(top = 6.dp),
+            fontSize = 11.sp,
+            lineHeight = 17.sp,
+            color = ReviewBody,
+            maxLines = if (expanded) Int.MAX_VALUE else 3,
+            overflow = if (expanded) TextOverflow.Clip else TextOverflow.Ellipsis,
         )
     }
 }

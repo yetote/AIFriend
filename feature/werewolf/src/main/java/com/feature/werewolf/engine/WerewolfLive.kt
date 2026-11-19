@@ -10,8 +10,9 @@ import com.feature.werewolf.game.Phase
  * 消息要进上下文、要落档、要被朗读；半句话任何一件都不能做——
  * 否则下一轮别的 AI 会看到一句说到一半的话，存档里也会多出一个残缺的字。
  *
- * [reasoning] 是模型的思维链，只有观战视角才允许显示（见 `WerewolfRoute.toLive`）：
- * 线下牌桌上听不到别人的心里话，参与了这局就不该看得见。
+ * [reasoning] 是模型的思维链。默认**只有观战视角**看得到：线下牌桌上听不到别人的心里话，
+ * 参与了这局就不该看得见。参与局里用户可以自己在牌桌顶栏把「思考」打开——那等于读心，
+ * 是一种明写在界面上的作弊开关（见 `WerewolfRoute.toLive` 的 `showThinking`）。
  */
 data class WerewolfLive(
     val seat: Int,

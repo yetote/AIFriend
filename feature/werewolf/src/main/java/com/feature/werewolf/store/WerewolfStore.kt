@@ -84,10 +84,23 @@ interface WerewolfGameDao {
  */
 interface WerewolfGameStore {
 
-    /** 保存（或覆盖）一局。[createdAt] 传开局时间，不要用当前时间，否则列表排序会乱。 */
-    suspend fun save(id: String, table: WerewolfTable, createdAt: Long)
+    /**
+     * 保存（或覆盖）一局。[createdAt] 传开局时间，不要用当前时间，否则列表排序会乱。
+     *
+     * [customPrompt] 是这一局生效的玩家设定，写进快照只给复盘看——
+     * 续档不会用它覆盖设置页，见 [WerewolfSnapshot.decodePrompt]。
+     */
+    suspend fun save(
+        id: String,
+        table: WerewolfTable,
+        createdAt: Long,
+        customPrompt: String? = null,
+    )
 
     suspend fun load(id: String): WerewolfTable?
+
+    /** 这一局用的玩家设定。旧档（v10 及以前）或没写设定时是 null。 */
+    suspend fun customPrompt(id: String): String?
 
     suspend fun summaries(): List<WerewolfGameSummary>
 
@@ -162,7 +175,12 @@ class WerewolfStore(
      *
      * [createdAt] 由调用方传，保证反复保存不会把开局时间刷新成最后一次行动的时间。
      */
-    override suspend fun save(id: String, table: WerewolfTable, createdAt: Long) {
+    override suspend fun save(
+        id: String,
+        table: WerewolfTable,
+        createdAt: Long,
+        customPrompt: String?,
+    ) {
         dao.upsert(
             WerewolfGameEntity(
                 id = id,
@@ -174,7 +192,7 @@ class WerewolfStore(
                 winner = table.game.winner?.name,
                 playerCount = table.game.players.size,
                 withHuman = table.game.players.any { it.id == SELF_PLAYER_ID },
-                snapshot = WerewolfSnapshot.encode(table),
+                snapshot = WerewolfSnapshot.encode(table, customPrompt),
             )
         )
     }
@@ -182,6 +200,9 @@ class WerewolfStore(
     /** 读一局。存档损坏或版本不匹配时返回 null，调用方当作没有存档处理。 */
     override suspend fun load(id: String): WerewolfTable? =
         dao.byId(id)?.let { WerewolfSnapshot.decode(it.snapshot) }
+
+    override suspend fun customPrompt(id: String): String? =
+        dao.byId(id)?.snapshot?.let { WerewolfSnapshot.decodePrompt(it) }
 
     override suspend fun summaries(): List<WerewolfGameSummary> = dao.summaries()
 

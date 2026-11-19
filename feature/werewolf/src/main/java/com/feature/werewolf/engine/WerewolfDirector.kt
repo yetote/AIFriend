@@ -63,11 +63,15 @@ class WerewolfDirector(
     /**
      * 有位 AI 正在逐字开口时回调，说完了给 null 收尾。
      *
-     * 只在**发言**这条路径上触发（[askSpeech]）。投票、查验、用药这些决策返回的是一段
-     * JSON，逐字吐出来的中间态既没法解析也没法显示；而发言本来就是给人听的话，
-     * 让它一个字一个字地出现，牌桌才像有人真的在说话，而不是等十几秒后整段蹦出来。
+     * 两条路径会触发：
      *
-     * 回调的是**半句话**：调用方只能拿去显示，不能落档、不能进上下文、不能被朗读。
+     * - **发言**（[askSpeech]）：正文逐字长出来，牌桌才像有人真的在说话；
+     * - **决策**（[ask]，投票/查验/用药这些）：只推**思维链**，正文是 JSON，中间态既不能解析也不能显示。
+     *   只在开了深度思考的座位上推——没有思维链可推时多开一条流，只是多一处会出问题的地方。
+     *
+     * 并发阶段同时有好几个座位在想，这里靠 [thinkingOwner] 保证屏幕上只有一个思考框。
+     *
+     * 回调的是**半截内容**：调用方只能拿去显示，不能落档、不能进上下文、不能被朗读。
      */
     private val onLive: suspend (WerewolfLive?) -> Unit = {},
     /**
@@ -113,6 +117,8 @@ class WerewolfDirector(
                     kind = MessageKind.NIGHT_ACT,
                     text = if (target == null) "这晚我不守人。" + outcome.value.reason
                     else "我守 $target 号。" + outcome.value.reason,
+                    // 思维链跟着这条记录存：对局里靠开关决定给不给看，复盘里点开就能看
+                    reasoning = outcome.reasoning,
                     audience = setOf(guard.seat),
                 )
             )
@@ -324,6 +330,7 @@ class WerewolfDirector(
                     seat = seer.seat,
                     kind = MessageKind.NIGHT_ACT,
                     text = "查验 ${outcome.value.target} 号。" + outcome.value.reason,
+                    reasoning = outcome.reasoning,
                     audience = setOf(seer.seat),
                 )
             )
@@ -352,6 +359,7 @@ class WerewolfDirector(
                     seat = witch.seat,
                     kind = MessageKind.NIGHT_ACT,
                     text = describeWitchChoice(choice.heal, choice.poison) + choice.reason,
+                    reasoning = outcome.reasoning,
                     audience = setOf(witch.seat),
                 )
             )
@@ -556,6 +564,7 @@ class WerewolfDirector(
                         seat = seat,
                         kind = MessageKind.VOTE,
                         text = (if (target == null) "我弃票。" else "我选 $target 号当警长。") + outcome.value.reason,
+                        reasoning = outcome.reasoning,
                     )
                 )
             }
@@ -685,6 +694,7 @@ class WerewolfDirector(
                         seat = seat,
                         kind = MessageKind.VOTE,
                         text = voteText(target, outcome.value.reason),
+                        reasoning = outcome.reasoning,
                     )
                 )
             }
@@ -977,6 +987,16 @@ class WerewolfDirector(
     /** 一句流式发言的成品。思考过程跟正文一起回来，各走各的去处。 */
     private data class SpeechResult(val text: String, val reasoning: String)
 
+    /**
+     * 一次结构化决策（投票、查验、用药、狼刀……）。
+     *
+     * **开了深度思考的座位会边想边推给界面**：这类请求拿回来的是一段 JSON，其中间态
+     * 既不能显示也不能用，但模型在写 JSON 之前的那段推理，恰恰是「他为什么这么打」。
+     * 关着深度思考时仍然走一次性请求——没有思维链可显示，多开一条流只是多一处风险。
+     *
+     * 和 [askSpeech] 一样，不管成功、失败还是被取消，`finally` 都会把「正在思考」收回；
+     * 取消时用 [NonCancellable]，否则牌桌上会永久留着一个飘在半空的思考框。
+     */
     private suspend fun <T> ask(
         table: WerewolfTable,
         seat: Int,
@@ -985,14 +1005,43 @@ class WerewolfDirector(
         task: String,
     ): StructuredOutcome<T> {
         val agent = agentOf(seat)
-        return agent.ai.decide(
-            messages = listOf(ChatMessage.user(context(table, seat, task))),
-            model = agent.model,
-            spec = spec,
-            fallback = fallback,
-            systemPrompt = WerewolfPrompt.systemPrompt(table.game, seat, agent.persona, customPrompt),
-            enableThinking = agent.thinkingEnabled,
-        )
+        val phase = table.game.phase
+        var lastPush = 0L
+        // 抢到思考框才推：并发阶段好几个人同时在响，见 [thinkingOwner]
+        var holdsBubble = false
+        // 节流和发言同源：模型一秒能吐几十段，每段都刷一次界面只会让气泡抖
+        val pushReasoning: (suspend (String) -> Unit)? = if (agent.thinkingEnabled) {
+            { reasoning ->
+                if (!holdsBubble) holdsBubble = claimThinking(seat)
+                if (holdsBubble) {
+                    val now = System.currentTimeMillis()
+                    if (lastPush == 0L || now - lastPush >= streamIntervalMs) {
+                        lastPush = now
+                        onLive(WerewolfLive(seat = seat, phase = phase, reasoning = reasoning))
+                    }
+                }
+            }
+        } else {
+            null
+        }
+
+        try {
+            return agent.ai.decide(
+                messages = listOf(ChatMessage.user(context(table, seat, task))),
+                model = agent.model,
+                spec = spec,
+                fallback = fallback,
+                systemPrompt = WerewolfPrompt.systemPrompt(table.game, seat, agent.persona, customPrompt),
+                enableThinking = agent.thinkingEnabled,
+                onReasoning = pushReasoning,
+            )
+        } finally {
+            if (holdsBubble) {
+                // 先收回再让位：反过来的话，下一位刚推上来的一段会被这里清掉
+                withContext(NonCancellable) { onLive(null) }
+                releaseThinking(seat)
+            }
+        }
     }
 
     // ---------------------------------------------------------------------
@@ -1317,6 +1366,32 @@ class WerewolfDirector(
     private fun voteText(target: Int?, reason: String): String {
         val head = if (target == null) "我弃票。" else "我投 $target 号。"
         return head + reason
+    }
+
+    /**
+     * 此刻占着思考气泡的座位。
+     *
+     * 并发阶段（投票、狼刀、上警报名）有好几个座位同时在思考。都往界面上推的话，
+     * 屏幕上那**唯一**一个思考框会在四张脸之间一秒跳几十次，谁也读不完一句。
+     * 所以先开口的那个占着，他结束了下一个才接手——同一时刻屏幕上永远只有一段完整的思路。
+     * 没抢到的照样把思维链写进自己的消息里，复盘时一行都不少。
+     */
+    private var thinkingOwner: Int? = null
+    private val thinkingLock = Any()
+
+    private fun claimThinking(seat: Int): Boolean = synchronized(thinkingLock) {
+        if (thinkingOwner == null || thinkingOwner == seat) {
+            thinkingOwner = seat
+            true
+        } else {
+            false
+        }
+    }
+
+    private fun releaseThinking(seat: Int) {
+        synchronized(thinkingLock) {
+            if (thinkingOwner == seat) thinkingOwner = null
+        }
     }
 
     /**

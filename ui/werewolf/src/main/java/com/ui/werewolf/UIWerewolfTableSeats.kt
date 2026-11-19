@@ -99,19 +99,19 @@ internal fun SeatColumns(
             modifier = Modifier.width(COLUMN_WIDTH).fillMaxHeight()
         )
 
-        Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
-            StatusStrip(live = live, night = night, textColor = textColor, dimColor = dimColor)
-            Feed(
-                live = live,
-                night = night,
-                textColor = textColor,
-                dimColor = dimColor,
-                surface = surface,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-            )
-        }
+        // 这里原来还有一条 StatusStrip（「第 3 天 · 发言 · 等 5 号」），和顶栏副标题
+        // 说的是同一句话——两处都在报「现在到谁」。合并进顶栏之后，夜里还少了一个隐患：
+        // 那条用的是「正在闪的座位」，而夜里的座位号本身就是身份。
+        Feed(
+            live = live,
+            night = night,
+            textColor = textColor,
+            dimColor = dimColor,
+            surface = surface,
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
+        )
 
         SeatColumn(
             seats = right,

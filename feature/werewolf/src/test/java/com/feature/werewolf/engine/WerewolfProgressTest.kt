@@ -109,8 +109,11 @@ class WerewolfProgressTest {
             seats = listOf(3, 5, 7),
         )
         assertEquals("第 1 天 · 投票 2/11 · 3、5、7 号", concurrent.label)
-        // 不带座位的那版给夜里用
-        assertEquals("第 1 天 · 投票 2/11", concurrent.plainLabel)
+        // 牌桌顶栏用的是这两个：标题那一行已经在报「第 1 天」，
+        // 副标题再写一遍就是同一句话写两遍
+        assertEquals("投票 2/11 · 3、5、7 号", concurrent.stageLabel)
+        // 不带座位的那版给夜里用：夜里谁在动、动的那个座位本身就是秘密
+        assertEquals("投票 2/11", concurrent.stageText)
 
         // 串行阶段是当前这个座位
         val serial = WerewolfProgress(
@@ -121,11 +124,18 @@ class WerewolfProgressTest {
             seat = 5,
         )
         assertEquals("第 1 天 · 发言 1/8 · 5 号", serial.label)
+        assertEquals("发言 1/8 · 5 号", serial.stageLabel)
+        assertEquals("发言 1/8", serial.stageText)
 
         assertEquals(
             "没人可报时就不该多这一截",
             "第 1 天 · 投票 2/11",
             concurrent.copy(seats = emptyList()).label,
+        )
+        assertEquals(
+            "夜里那一版必须连座位都不带",
+            "发言 1/8",
+            serial.stageText,
         )
     }
 

@@ -231,6 +231,21 @@ class WerewolfMarkdownTest {
     }
 
     @Test
+    fun `玩家设定跟着文档一起导出`() {
+        // 文件到了别人手里，设置页那一份早就不是当时的了——
+        // 复盘页上有这一块，导出里就必须有
+        val md = WerewolfMarkdown.of(review().copy(customPrompt = "说话短一点。\n别写小作文。"))
+        assertTrue(md.contains("## 这一局用的提示词"))
+        assertTrue("多行设定要逐行加引用标记", md.contains("> 说话短一点。\n> 别写小作文。"))
+    }
+
+    @Test
+    fun `没写设定就不多一段空标题`() {
+        val md = WerewolfMarkdown.of(review())
+        assertFalse(md.contains("这一局用的提示词"))
+    }
+
+    @Test
     fun `表格里的竖线要转义，否则一行会劈成两列`() {
         val md = WerewolfMarkdown.of(
             review().copy(

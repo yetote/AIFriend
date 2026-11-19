@@ -228,4 +228,74 @@ class WerewolfStreamTest {
         assertEquals(setOf(1, 2, 3), chats.first().audience)
         assertEquals("好人拿不到狼人夜话", false, chats.first().visibleTo(4))
     }
+
+    // ------------------------------------------------------------------
+    // 决策的思考
+    // ------------------------------------------------------------------
+
+    /** 10 人守卫局，7 号是守卫，开局第一夜。 */
+    private fun guardNight(): WerewolfGame = WerewolfGame.withRoles(
+        config = WerewolfConfig(composition = WerewolfConfig.Guard10),
+        roster = roster(10),
+        roles = listOf(
+            WerewolfRole.WEREWOLF,
+            WerewolfRole.WEREWOLF,
+            WerewolfRole.WEREWOLF,
+            WerewolfRole.SEER,
+            WerewolfRole.WITCH,
+            WerewolfRole.HUNTER,
+            WerewolfRole.GUARD,
+            WerewolfRole.VILLAGER,
+            WerewolfRole.VILLAGER,
+            WerewolfRole.VILLAGER,
+        ),
+    ).let { it.copy(phase = Phase.NIGHT_GUARD) }
+
+    @Test
+    fun `投验用药这些决策也会边想边推给牌桌`() = runBlocking {
+        // 决策回的是 JSON，正文的中间态没法用；但开深度思考的座位在写 JSON 之前
+        // 想的那一段，正是「他为什么这么打」。不推的话，一整局下来能看见思考的
+        // 只有发言那几次，投票、查验、用药全是黑箱。
+        val ai = StreamingAI(
+            pieces = listOf("""{"target": null, "reason": "先不守。"}"""),
+            reasonings = listOf("第一夜没把握，空守一轮。"),
+        )
+        val lives = mutableListOf<WerewolfLive?>()
+        val director = WerewolfDirector(
+            agents = mapOf(7 to SeatAgent(ai, "test-model", thinkingEnabled = true)),
+            onLive = { lives += it },
+            streamIntervalMs = 0,
+        )
+
+        val result = director.nightGuard(WerewolfTable(guardNight()))
+
+        val pushes = lives.filterNotNull()
+        assertEquals("推的是思维链，正文一个字都不能漏出去", "", pushes.last().text)
+        assertEquals("第一夜没把握，空守一轮。", pushes.last().reasoning)
+        assertEquals("推的是正在行动的座位", 7, pushes.last().seat)
+        assertNull("想完了要收回，否则牌桌上一直飘着框", lives.last())
+
+        // 存进消息里：复盘点开还能看到这段推理
+        val message = result.transcript.single()
+        assertEquals("第一夜没把握，空守一轮。", message.reasoning)
+    }
+
+    @Test
+    fun `没开深度思考的座位不为决策多开一条流`() = runBlocking {
+        // 没有思维链可推。这时走一次性请求就够了，不必押「厂商支不支持 stream + JSON」
+        val ai = StreamingAI(
+            pieces = listOf("""{"target": null, "reason": "先不守。"}"""),
+            reasonings = listOf("想了点东西。"),
+            chatReply = """{"target": null, "reason": "先不守。"}""",
+        )
+        val director = WerewolfDirector(
+            agents = mapOf(7 to SeatAgent(ai, "test-model", thinkingEnabled = false)),
+            streamIntervalMs = 0,
+        )
+
+        director.nightGuard(WerewolfTable(guardNight()))
+
+        assertEquals("关着思考就该走一次性请求", 1, ai.chatCalls)
+        assertEquals("不该开流", 0, ai.streamCalls)
+    }
 }

@@ -4,6 +4,7 @@ import com.core.ai.entity.IAI
 import com.core.ai.isTimeoutLike
 import com.core.ai.model.ChatMessage
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 
 /** 默认尝试次数：1 次原始请求 + 1 次带纠正提示的重试。 */
 const val DEFAULT_STRUCTURED_ATTEMPTS = 2
@@ -34,6 +35,10 @@ class StructuredParseException(message: String) : Exception(message)
  *
  * @param fallback 兜底值。必须是**合法动作**（从存活玩家/可选目标里挑），
  *   这样即使模型完全失灵，游戏规则也不会被破坏。
+ * @param onReasoning 思维链回调。传了它就改走**流式**请求：思考过程边生成边回调，
+ *   决策照样在收完之后才解析。不传则走原来的**一次性**请求——没有思维链可显示时，
+ *   多开一条流只是多一处可能出问题的地方（流式对 `stream + json_object` 的支持，
+ *   各家兼容层并不整齐）。
  */
 suspend fun <T> IAI.decide(
     messages: List<ChatMessage>,
@@ -43,6 +48,7 @@ suspend fun <T> IAI.decide(
     systemPrompt: String? = null,
     enableThinking: Boolean = false,
     maxAttempts: Int = DEFAULT_STRUCTURED_ATTEMPTS,
+    onReasoning: (suspend (String) -> Unit)? = null,
 ): StructuredOutcome<T> {
     require(maxAttempts >= 1) { "至少要有一次尝试" }
 
@@ -51,15 +57,18 @@ suspend fun <T> IAI.decide(
     var lastError: String? = null
     // 重试时可以换一种更省时间的打法，见下面的超时分支
     var thinking = enableThinking
+    // 只有最后一次尝试的思维链有意义：前面那几次的答案已经被判为不可用
+    var reasoning = ""
 
     for (attempt in 1..maxAttempts) {
-        val raw = try {
-            chat(
+        val reply = try {
+            askOnce(
                 messages = conversation,
                 model = model,
-                systemPrompt = system,
-                enableThinking = thinking,
+                system = system,
+                thinking = thinking,
                 jsonMode = supportsJsonMode,
+                onReasoning = onReasoning,
             )
         } catch (error: Throwable) {
             // 超时值得再试一次：模型排队、网抖、客户端长连接被回收都可能，
@@ -88,9 +97,13 @@ suspend fun <T> IAI.decide(
             throw error
         }
 
+        reasoning = reply.reasoning
+        val raw = reply.content
         val parsed = parseReply(raw, spec)
         parsed.fold(
-            onSuccess = { return StructuredOutcome(it, attempt, usedFallback = false) },
+            onSuccess = {
+                return StructuredOutcome(it, attempt, usedFallback = false, reasoning = reasoning)
+            },
             onFailure = { error ->
                 lastError = error.message ?: "输出格式不符合要求"
                 conversation = conversation + buildRetryMessages(raw, lastError!!)
@@ -103,7 +116,59 @@ suspend fun <T> IAI.decide(
         attempts = maxAttempts,
         usedFallback = true,
         lastError = lastError,
+        reasoning = reasoning,
     )
+}
+
+/** 一次请求的完整答复：正文 + 思维链。 */
+private data class Reply(val content: String, val reasoning: String)
+
+/**
+ * 走一次请求。
+ *
+ * [onReasoning] 为空时用 `chat()`：一次拿全，没有任何中间态。
+ * 给了它就用 `chatStream()`：思维链边到边回调，正文照样攒齐了再交给解析器，
+ * 因为决策的价值全在解析完的那个对象上，半截 JSON 既不能用也不能显示。
+ */
+private suspend fun IAI.askOnce(
+    messages: List<ChatMessage>,
+    model: String,
+    system: String,
+    thinking: Boolean,
+    jsonMode: Boolean,
+    onReasoning: (suspend (String) -> Unit)?,
+): Reply {
+    if (onReasoning == null) {
+        return Reply(
+            content = chat(
+                messages = messages,
+                model = model,
+                systemPrompt = system,
+                enableThinking = thinking,
+                jsonMode = jsonMode,
+            ),
+            reasoning = "",
+        )
+    }
+
+    val content = StringBuilder()
+    val chain = StringBuilder()
+    chatStream(
+        messages = messages,
+        model = model,
+        systemPrompt = system,
+        enableThinking = thinking,
+        jsonMode = jsonMode,
+    ).collect { delta ->
+        content.append(delta.content)
+        if (delta.reasoning.isNotEmpty()) {
+            chain.append(delta.reasoning)
+            // 回调的是**累计**后的全量，不是增量：显示方只做整体替换，
+            // 断线重连或重试时也不会拼出重复的半句
+            onReasoning(chain.toString())
+        }
+    }
+    return Reply(content = content.toString(), reasoning = chain.toString())
 }
 
 /**

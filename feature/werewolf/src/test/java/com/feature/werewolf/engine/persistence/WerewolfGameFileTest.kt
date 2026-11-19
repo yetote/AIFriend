@@ -5,6 +5,7 @@ import com.feature.werewolf.game.RosterEntry
 import com.feature.werewolf.game.WerewolfConfig
 import com.feature.werewolf.game.WerewolfGame
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -100,6 +101,26 @@ class WerewolfGameFileTest {
         // 没写 id 和开局时间：交给上层补，不能拿空串当 id 落库
         assertEquals("", game.id)
         assertEquals(0L, game.createdAt)
+    }
+
+    @Test
+    fun `玩家设定跟着对局文件一起搬走`() {
+        val original = WerewolfTable(WerewolfGame.deal(WerewolfConfig(), roster(8)))
+        val prompt = "你们说话短一点。"
+
+        val game = ok(WerewolfGameFile.read(WerewolfGameFile.encode(original, "g1", 1000L, prompt))).game
+
+        assertEquals("换台手机导回来，复盘的设定不该少一块", prompt, game.customPrompt)
+        assertEquals(original, game.table)
+    }
+
+    @Test
+    fun `没有设定的文件导进来就是 null`() {
+        val original = WerewolfTable(WerewolfGame.deal(WerewolfConfig(), roster(8)))
+
+        val game = ok(WerewolfGameFile.read(WerewolfGameFile.encode(original, "g1", 1000L))).game
+
+        assertNull(game.customPrompt)
     }
 
     @Test

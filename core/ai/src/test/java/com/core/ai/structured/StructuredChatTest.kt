@@ -1,7 +1,10 @@
 package com.core.ai.structured
 
 import com.core.ai.entity.IAI
+import com.core.ai.model.ChatDelta
 import com.core.ai.model.ChatMessage
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
 import org.junit.Assert.assertEquals
@@ -65,9 +68,99 @@ class StructuredChatTest {
             chat(listOf(ChatMessage.user(message)), model)
     }
 
+    /**
+     * 边想边答的假模型：先把思维链一段段吐出来，最后才给正文。
+     *
+     * 分别记 `chatStream` 和 `chat` 的调用次数——这条测试要锁住的就是
+     * 「要思维链才走流式，不要就别多开一条流」。
+     */
+    private class ThinkingAI(
+        private val reasoningPieces: List<String>,
+        private val content: String,
+    ) : IAI {
+        var chatCalls = 0
+        var streamCalls = 0
+
+        override suspend fun requestModel() = Unit
+        override var modelSet: MutableSet<String> = mutableSetOf()
+        override var brandName: String = "测试厂商"
+        override var company: String = "测试"
+
+        override suspend fun chat(
+            messages: List<ChatMessage>,
+            model: String,
+            systemPrompt: String?,
+            enableThinking: Boolean,
+            jsonMode: Boolean,
+        ): String {
+            chatCalls++
+            return content
+        }
+
+        override fun chatStream(
+            messages: List<ChatMessage>,
+            model: String,
+            systemPrompt: String?,
+            enableThinking: Boolean,
+            jsonMode: Boolean,
+        ): Flow<ChatDelta> = flow {
+            streamCalls++
+            reasoningPieces.forEach { emit(ChatDelta(content = "", reasoning = it)) }
+            emit(ChatDelta(content = content))
+        }
+
+        @Deprecated("测试用不到")
+        override suspend fun chat(message: String, model: String): String =
+            chat(listOf(ChatMessage.user(message)), model)
+    }
+
+    // ------------------------------------------------------------------
+    // 思维链
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `要思维链时走流式，思考边生成边回调`() = runBlocking {
+        // 投票、查验这些决策回的是 JSON，正文的中间态没法用；但开深度思考的座位
+        // 在写 JSON 之前想的那一大段，是「他为什么这么打」——牌桌要能边想边看到它。
+        val ai = ThinkingAI(
+            reasoningPieces = listOf("先看 3 号", "的票型，", "他可疑。"),
+            content = """{"target": 3}""",
+        )
+        val seen = mutableListOf<String>()
+
+        val outcome = ai.decide(
+            userMessage, "m", spec,
+            fallback = { VoteDecision(1) },
+            onReasoning = { seen += it },
+        )
+
+        assertEquals(3, outcome.value.target)
+        assertEquals(1, ai.streamCalls)
+        assertEquals("要走流式就不该再补一次一次性请求", 0, ai.chatCalls)
+        // 回调的是**累计**文本，不是增量：显示方只做整体替换
+        assertEquals(
+            listOf("先看 3 号", "先看 3 号的票型，", "先看 3 号的票型，他可疑。"),
+            seen,
+        )
+        assertEquals("先看 3 号的票型，他可疑。", outcome.reasoning)
+    }
+
+    @Test
+    fun `不要思维链时仍走一次性请求，不多开一条流`() = runBlocking {
+        // 关着深度思考的座位没有思维链可显示。这种时候多开一条流，
+        // 只是多押一处「厂商支不支持 stream + json_object」的风险。
+        val ai = ThinkingAI(listOf("想了很多"), """{"target": 4}""")
+
+        val outcome = ai.decide(userMessage, "m", spec, fallback = { VoteDecision(1) })
+
+        assertEquals(4, outcome.value.target)
+        assertEquals(1, ai.chatCalls)
+        assertEquals(0, ai.streamCalls)
+        assertEquals("", outcome.reasoning)
+    }
+
     /** 模拟网络/模型超时。 */
-    private class TimeoutAI : IAI {
-        var calls = 0
+    private class TimeoutAI : IAI {        var calls = 0
 
         /** 每次调用开的思考开关，用来断言「超时后有没有降级」。 */
         val thinkingFlags = mutableListOf<Boolean>()

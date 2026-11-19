@@ -59,4 +59,17 @@ object WerewolfBoards {
     /** 按 key 取板子名。 */
     fun titleOf(boardKey: String): String =
         all.firstOrNull { it.key == boardKey }?.title ?: "自定义局"
+
+    /**
+     * 按配置**反查**板子的 key：认不出就回空串。
+     *
+     * 续档时用得上：存档里只有 `WerewolfConfig`（没有 key，key 是界面概念），
+     * 而这一局专属的提示词自定义是按 key 存的。不反查就只能按「全局」那一层接着打，
+     * 玩家给这张板子单独写的要求会在暂停/继续之后悄悄消失。
+     *
+     * 比对的是整个配置（data class 相等），不是像提示词认板子那样只比结构三件套——
+     * 反查出来的 key 要去取一段**存储**，认错就等于把别张板子的要求套上来，宁可认不出。
+     */
+    fun keyOf(config: WerewolfConfig): String =
+        all.firstOrNull { it.config == config }?.key.orEmpty()
 }

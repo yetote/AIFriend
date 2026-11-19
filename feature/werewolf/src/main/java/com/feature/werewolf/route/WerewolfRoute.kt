@@ -147,7 +147,12 @@ fun WerewolfRoute(
     // 从列表点开的那一局。它和「正在打的这一局」是两件事，所以单独一层盖在最上面。
     val recordReview = remember(recordView, avatars) {
         recordView?.let { view ->
-            WerewolfUiState(table = view.table, finished = true).toReview(view.humanSeat, avatars)
+            // customPrompt 从存档里带过来：复盘要说明这一局是按什么设定打的
+            WerewolfUiState(
+                table = view.table,
+                finished = true,
+                customPrompt = view.customPrompt,
+            ).toReview(view.humanSeat, avatars)
         }
     }
 
@@ -157,11 +162,12 @@ fun WerewolfRoute(
      * 开局时间从存档摘要里取：文件里必须带着它，换台手机导回来列表才排得对。
      * 取不到（摘要还没刷新）才退回当前时间——宁可排序差一点，也不能让导出失败。
      */
-    fun shareGameFile(table: WerewolfTable?, gameId: String?) {
+    fun shareGameFile(table: WerewolfTable?, gameId: String?, customPrompt: String?) {
         if (table == null || gameId.isNullOrBlank()) return
         val createdAt = summaries.firstOrNull { it.id == gameId }?.createdAt
             ?: System.currentTimeMillis()
-        WerewolfExport.shareGame(context, table, gameId, createdAt)
+        // 设定也一起带走：换台手机导回来之后，复盘里那一块不该平白空着
+        WerewolfExport.shareGame(context, table, gameId, createdAt, customPrompt)
     }
 
     // 演出盖在复盘上面：它是从复盘页点进来的，退回去应该回到复盘，而不是直接回列表
@@ -204,7 +210,7 @@ fun WerewolfRoute(
                 screen = WerewolfScreen.Setup
             },
             onExport = { WerewolfExport.share(context, recordReview) },
-            onExportGame = { shareGameFile(recordView?.table, recordView?.id) },
+            onExportGame = { shareGameFile(recordView?.table, recordView?.id, recordView?.customPrompt) },
             onPlay = viewModel::requestReplay,
         )
         return
@@ -316,7 +322,7 @@ fun WerewolfRoute(
                         screen = WerewolfScreen.Setup
                     },
                     onExport = { WerewolfExport.share(context, review) },
-                    onExportGame = { shareGameFile(state.table, state.gameId) },
+                    onExportGame = { shareGameFile(state.table, state.gameId, state.customPrompt) },
                     // 刚打完这一局也能直接演一遍：ViewModel 会拿终局局面拼出记录，
                     // 不需要先回列表翻存档
                     onPlay = viewModel::requestReplay,
@@ -349,6 +355,8 @@ fun WerewolfRoute(
                         if (speechReady) viewModel.setAutoSpeak(!autoSpeak)
                         else viewModel.retrySpeech()
                     },
+                    // 参与局里打开思考 = 读心。默认关着，牌桌上挂一条提示条提醒
+                    onToggleThinking = { viewModel.setShowThinking(!showThinking) },
                 )
             }
         }

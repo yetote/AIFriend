@@ -101,6 +101,14 @@ data class WerewolfRecordView(
     val table: WerewolfTable,
     /** 那一局我是几号；纯观战为 null。 */
     val humanSeat: Int?,
+    /**
+     * 那一局生效的玩家设定（提示词）。
+     *
+     * 从存档里读：设置页只保留最新那份，改过之后旧局就查不到了，
+     * 而复盘最常问的一句正是「这局是按什么设定打的」。
+     * 旧档（v10 及以前）没有这一段，为 null。
+     */
+    val customPrompt: String? = null,
 )
 
 /** 一条非错误的提示。红色错误条管失败，这个管「做成了」。 */
@@ -723,8 +731,12 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
                 val humanSeat = table.game.players.firstOrNull { it.id == SELF_PLAYER_ID }?.seat
 
                 // 续档同样要带上玩家写的额外设定：提示词不进存档，
-                // 用的是**当前**设置——玩家可能刚在设置里改过
-                controller.applyCustomPrompt(loadCustomPrompt(""))
+                // 用的是**当前**设置——玩家可能刚在设置里改过。
+                //
+                // 但设置分两层（全局 + 按板子），板子那一层是按 key 存的，而存档里只有
+                // config。所以得先按规则反查这一局是哪张板子，否则续档会把玩家给这张
+                // 板子单独写的那段丢掉：开局时生效、一暂停一继续就没了，看着像设置被吃了。
+                controller.applyCustomPrompt(loadCustomPrompt(WerewolfBoards.keyOf(table.game.config)))
 
                 // 续档也要检：这一局可能是昨天开的，Key 过期、模型下线都在这中间发生过
                 val participants = table.game.players
@@ -817,7 +829,7 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
                     // 没写开局时间的文件（早期裸快照）只能拿现在顶上：
                     // 时间是列表唯一的排序依据，缺了就排到最后，用户会以为没导进来
                     val createdAt = game.createdAt.takeIf { it > 0 } ?: System.currentTimeMillis()
-                    runCatching { store.save(id, game.table, createdAt) }
+                    runCatching { store.save(id, game.table, createdAt, game.customPrompt) }
                         .onFailure {
                             _notice.value = WerewolfNotice("写入存档失败：${it.message ?: "存储空间不足"}", error = true)
                             return@launch
@@ -919,6 +931,7 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
                 id = id,
                 table = table,
                 humanSeat = table.game.players.firstOrNull { it.id == SELF_PLAYER_ID }?.seat,
+                customPrompt = store.customPrompt(id),
             )
         }
     }
@@ -975,6 +988,8 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
                         id = current.gameId.orEmpty(),
                         table = table,
                         humanSeat = table.game.players.firstOrNull { it.id == SELF_PLAYER_ID }?.seat,
+                        // 手上这局还没从库里读回来，直接用控制器状态里的那份
+                        customPrompt = current.customPrompt,
                     )
                 }
             } ?: return@launch

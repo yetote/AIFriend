@@ -34,6 +34,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ui.common.theme.UIActionBrush
+import com.ui.common.theme.UIFieldFill
 import com.ui.common.theme.UIRadiusControl
 import com.ui.werewolf.data.UIWerewolfLive
 import com.ui.werewolf.data.UIWerewolfReplay
@@ -66,6 +67,9 @@ internal fun TableTopBar(
     spectating: Boolean,
     autoSpeak: Boolean,
     speechReady: Boolean,
+    showThinking: Boolean,
+    /** 传 null 就不画「思考」开关（观战、复盘演出里没有意义）。 */
+    onToggleThinking: (() -> Unit)?,
     onToggleSpeak: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -102,6 +106,25 @@ internal fun TableTopBar(
         if (spectating) {
             Tag(text = "上帝视角", night = night, color = dimColor)
             Spacer(Modifier.width(12.dp))
+        }
+        // 思考开关：参与局默认关着，开了就等于读心。做成一个词而不是图标：
+        // 「思考」两个字自己会解释，一个气泡图标得点一次才知道是什么。
+        if (onToggleThinking != null) {
+            Text(
+                text = "思考",
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(
+                        if (showThinking) SelfBlue.copy(alpha = if (night) 0.34f else 0.16f)
+                        else if (night) NightStroke else UIFieldFill
+                    )
+                    .clickable(onClick = onToggleThinking)
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
+                fontSize = FsMeta,
+                fontWeight = if (showThinking) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (showThinking) (if (night) Color(0xFFB9C8FF) else SelfBlue) else dimColor,
+            )
+            Spacer(Modifier.width(4.dp))
         }
         IconButton(
             onClick = onToggleSpeak,
@@ -147,8 +170,14 @@ internal fun SelfBar(
     ) {
         if (live.spectating) {
             Tag(text = "观战", night = night, color = dimColor)
+            // 人数按这一局的实际座位报：8 人、9 人、12 人都走这条分支，
+            // 写死「八个人」的话 12 人局一开局就在说假话
             Text(
-                text = "八个人各说各话，你只负责看",
+                text = if (live.seats.isEmpty()) {
+                    "各说各话，你只负责看"
+                } else {
+                    "${live.seats.size} 个人各说各话，你只负责看"
+                },
                 fontSize = FsName,
                 color = dimColor
             )
@@ -185,62 +214,6 @@ internal fun SelfBar(
         }
         Spacer(Modifier.weight(1f))
         if (live.running) ThinkingDot(color = if (night) NightText else SelfBlue)
-    }
-}
-
-/**
- * 中间栏的顶条：第几天、什么阶段、正在等谁。
- *
- * 原来这些字摆在牌桌正中央，现在中央让给了对话，它们退成一条窄带。
- * 但不能删：等待模型的那几十秒里，「现在到谁了」是唯一能确认程序没卡死的东西。
- */
-@Composable
-internal fun StatusStrip(
-    live: UIWerewolfLive,
-    night: Boolean,
-    textColor: Color,
-    dimColor: Color,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        if (live.finished) {
-            Text(
-                text = live.winnerLabel ?: "对局结束",
-                fontSize = FsAction,
-                fontWeight = FontWeight.SemiBold,
-                color = textColor,
-                maxLines = 1
-            )
-            return@Row
-        }
-
-        Text(
-            text = if (night) "第 ${live.day} 夜" else "第 ${live.day} 天",
-            fontSize = 12.sp,
-            color = dimColor
-        )
-        Text(
-            text = live.phaseLabel,
-            fontSize = FsAction,
-            fontWeight = FontWeight.SemiBold,
-            color = textColor,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-        val acting = live.seats.firstOrNull { it.active }
-        if (acting != null) {
-            Text(
-                text = "· 等 ${acting.seat} 号",
-                fontSize = 12.sp,
-                color = if (night) Color(0xFF8FB0FF) else SelfBlue,
-                maxLines = 1
-            )
-        }
     }
 }
 

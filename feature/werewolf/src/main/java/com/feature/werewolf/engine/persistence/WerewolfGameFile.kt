@@ -42,8 +42,18 @@ object WerewolfGameFile {
         prettyPrint = false
     }
 
-    /** 文件里除了局面，还有「这是哪一局、什么时候开的」——列表排序和续档都靠它。 */
-    data class Game(val id: String, val createdAt: Long, val table: WerewolfTable)
+    /**
+     * 文件里除了局面，还有「这是哪一局、什么时候开的」——列表排序和续档都靠它。
+     *
+     * [customPrompt] 是那一局生效的玩家设定：复盘页会显示它，
+     * 换台手机导回来之后不该平白少一块。旧文件没有这一段，为 null。
+     */
+    data class Game(
+        val id: String,
+        val createdAt: Long,
+        val table: WerewolfTable,
+        val customPrompt: String? = null,
+    )
 
     /** 读文件的结果。失败必须带原因：用户手里只有一个文件，不知道该怪文件还是怪 App。 */
     sealed interface Read {
@@ -51,14 +61,19 @@ object WerewolfGameFile {
         data class Rejected(val reason: String) : Read
     }
 
-    fun encode(table: WerewolfTable, id: String, createdAt: Long): String =
+    fun encode(
+        table: WerewolfTable,
+        id: String,
+        createdAt: Long,
+        customPrompt: String? = null,
+    ): String =
         json.encodeToString(
             GameFileDto(
                 format = FORMAT,
                 fileVersion = VERSION,
                 gameId = id,
                 createdAt = createdAt,
-                table = table.toSnapshot(),
+                table = table.toSnapshot(customPrompt),
             )
         )
 
@@ -87,7 +102,14 @@ object WerewolfGameFile {
             val dto = runCatching { json.decodeFromString<TableSnapshot>(body) }.getOrNull()
                 ?: return Read.Rejected("这个文件不是对局文件（内容不完整）")
             val table = restore(dto) ?: return Read.Rejected(futureOrBroken(dto))
-            return Read.Ok(Game(id = "", createdAt = 0L, table = table))
+            return Read.Ok(
+                Game(
+                    id = "",
+                    createdAt = 0L,
+                    table = table,
+                    customPrompt = dto.customPrompt?.takeIf { it.isNotBlank() },
+                )
+            )
         }
 
         if (format != FORMAT) {
@@ -108,6 +130,7 @@ object WerewolfGameFile {
                 id = dto.gameId.takeIf { it.isNotBlank() } ?: "",
                 createdAt = dto.createdAt.coerceAtLeast(0L),
                 table = table,
+                customPrompt = dto.table.customPrompt?.takeIf { it.isNotBlank() },
             )
         )
     }

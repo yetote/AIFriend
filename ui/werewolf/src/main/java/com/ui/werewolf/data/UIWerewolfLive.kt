@@ -112,8 +112,8 @@ data class UIWerewolfLine(
  * [isSelf] 为 true 时说明是「我」在说——那不可能是模型在打字，而是界面在等自己输入，
  * 这时不该显示「正在组织语言」，所以映射时就置空。
  *
- * 不带思考过程：对局里一律不显示推理（观战也一样），思考随消息存档，
- * 复盘时才摊开。
+ * 不带思考过程：要显示哪一段由 [UIWerewolfLive.showThinking] 决定，
+ * 映射那一层已经把不该给的部分清成空串了。
  */
 data class UIWerewolfStreaming(
     val seat: Int,
@@ -124,8 +124,9 @@ data class UIWerewolfStreaming(
     /**
      * 已经生成的思考过程。
      *
-     * **只有有权限的人拿得到**：参与局看到别人的思考等于读心，
-     * 所以界面上默认不给（见 `WerewolfRoute.toLive`）。观战和结束后才有。
+     * **只有有权限的人拿得到**：参与局看到别人的思考等于读心，所以默认清成空串；
+     * 观战、已结束、以及参与局里自己打开了「思考」开关时才有
+     * （见 `WerewolfLiveMapping.toLive` 的 `showThinking`）。
      */
     val reasoning: String = "",
 )
@@ -193,10 +194,12 @@ data class UIWerewolfLive(
     val finished: Boolean,
     /** 已结束时的胜负，「狼人胜」/「好人胜」。 */
     val winnerLabel: String?,
-    /** 例如「第 2 天 · 发言 3/8」。还没开始时为 null。 */
-    val progressLabel: String?,
-    /** 当前阶段内部进度，0..1。并发阶段为 null（不知道中间态，就不假装知道）。 */
-    val progressFraction: Float?,
+    /**
+     * 顶栏标题下面那一行，例如「发言 3/8 · 5 号」。还没开始时为 null。
+     *
+     * 不带天数：标题本身就在报「第 3 天」，副标题再写一遍就是重复。
+     */
+    val stageLabel: String?,
     val seats: List<UIWerewolfSeatLive> = emptyList(),
     /** 记录流，时间正序，最后一条最新。可见性已按视角过滤，界面不再判断。 */
     val lines: List<UIWerewolfLine> = emptyList(),
@@ -223,6 +226,14 @@ data class UIWerewolfLive(
     val autoSpeak: Boolean = true,
     /** 系统中文语音是否可用。false 时开关点了也不出声，界面要说明原因。 */
     val speechReady: Boolean = true,
+    /**
+     * 思考气泡现在给不给看。
+     *
+     * 观战与已结束恒为 true——那个视角本来就能翻思考（复盘里也摊着）；
+     * 参与局默认 false，跟顶栏那个「思考」开关走。打开它等于读心，
+     * 所以界面要同时在牌桌上挂一句提醒，别让人忘了自己在作弊。
+     */
+    val showThinking: Boolean = false,
     /**
      * 喇叭手里还有没念完的行（含正在念的这一句）。
      *

@@ -278,6 +278,33 @@ class WerewolfSnapshotTest {
     }
 
     @Test
+    fun `玩家设定随存档一起走，但不是局面的一部分`() {
+        val prompt = "你们说话尽量短，别写小作文。"
+        val table = richTable()
+        val text = WerewolfSnapshot.encode(table, prompt)
+
+        assertEquals("复盘要能查到当时那份设定", prompt, WerewolfSnapshot.decodePrompt(text))
+        // 提示词是请求参数、不是状态：读回来的局面不该因为它有任何差别
+        assertEquals(table, WerewolfSnapshot.decode(text))
+        // 没写设定就没有这一段
+        assertNull(WerewolfSnapshot.decodePrompt(WerewolfSnapshot.encode(table)))
+    }
+
+    @Test
+    fun `旧档没有玩家设定时读出来是 null，整局照样能读`() {
+        val prompt = "旧的那份设定"
+        val text = WerewolfSnapshot.encode(richTable(), prompt)
+        // 模拟 v10 的档：没有 customPrompt 这个键，版本号也更低
+        val legacy = text
+            .replace("\"customPrompt\":\"$prompt\",", "")
+            .replaceFirst("\"version\":${WerewolfSnapshot.VERSION}", "\"version\":10")
+
+        assertTrue("替换没生效，序列化格式变了：$text", legacy != text)
+        assertNull("旧档没有这一段", WerewolfSnapshot.decodePrompt(legacy))
+        assertNotNull("但局面必须还能续上", WerewolfSnapshot.decode(legacy))
+    }
+
+    @Test
     fun `上一版存档还能读`() {
         // v2/v3 相对前一代都只是新增带默认值的字段，语义没变，所以老档必须能继续续玩——
         // 升级一次就把玩家没打完的局丢掉，比缺一段复盘难受得多

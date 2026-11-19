@@ -69,6 +69,12 @@ fun UIWerewolfTableScreen(
     onWitch: (heal: Boolean, poison: Int?) -> Unit = { _, _ -> },
     onReview: (() -> Unit)? = null,
     onToggleSpeak: () -> Unit = {},
+    /**
+     * 切换「思考气泡」。
+     *
+     * 传 null 就不画这个开关：观战（本来就能看）和复盘演出（放的是已经结束的对局）不需要。
+     */
+    onToggleThinking: (() -> Unit)? = null,
     /** 复盘演出：播放 / 暂停。 */
     onReplayToggle: () -> Unit = {},
     onReplayPrev: () -> Unit = {},
@@ -112,18 +118,25 @@ fun UIWerewolfTableScreen(
 
         Column(modifier = Modifier.fillMaxSize().pageInsetsTop()) {
             TableTopBar(
+                // 标题报「在哪一天」，副标题报「这一步走到哪」——同一件事只在一处说。
+                // 原来底下还有一条状态条也写着「第 N 天 · 某阶段 · 等 N 号」，
+                // 三行说同一句话，白占了对话流的地。
+                //
                 // 演出时标题换成「复盘演出」：播放条上有播放/暂停，很容易被当成
                 // 「这一局还在打」。写清楚是回放，用户才不会去等一个不会来的回合。
                 title = when {
                     replay != null -> "复盘演出"
-                    live.finished -> "对局结束"
+                    // 结束时胜负最重要：原来它挤在底下那条状态条里，现在直接当标题
+                    live.finished -> live.winnerLabel ?: "对局结束"
                     night -> "第 ${live.day} 夜"
                     else -> "第 ${live.day} 天"
                 },
-                subtitle = if (replay != null) {
-                    "第 ${live.day} 天 · ${live.phaseLabel}"
-                } else {
-                    live.progressLabel
+                subtitle = when {
+                    replay != null -> "第 ${live.day} ${if (night) "夜" else "天"} · ${live.phaseLabel}"
+                    live.finished -> null
+                    // 进度还没轮到（准备中、或是舞台还停在上一段朗读里）就只报阶段，
+                    // 不编一个「0/8」出来
+                    else -> live.stageLabel ?: live.phaseLabel
                 },
                 night = night,
                 textColor = textColor,
@@ -131,6 +144,11 @@ fun UIWerewolfTableScreen(
                 spectating = live.spectating,
                 autoSpeak = live.autoSpeak,
                 speechReady = live.speechReady,
+                showThinking = live.showThinking,
+                // 观战和演出都不给这个开关：观战本来就能看思考（上帝视角），
+                // 演出放的是已经打完的局，开着它只会让人以为还能操作什么
+                onToggleThinking = onToggleThinking
+                    ?.takeIf { !live.spectating && replay == null && !live.finished },
                 onToggleSpeak = onToggleSpeak,
                 onBack = onExit
             )
@@ -141,6 +159,12 @@ fun UIWerewolfTableScreen(
                 textColor = textColor,
                 dimColor = dimColor
             )
+
+            // 开着思考就是作弊：这一条必须一直挂在桌上，不能只在点开那一下闪一句。
+            // 人一旦看惯了别人的心里话，会忘记自己手里的信息比 AI 还多。
+            if (live.showThinking && !live.spectating && live.running) {
+                CheatStrip(night = night)
+            }
 
             if (live.error != null) {
                 ErrorStrip(message = live.error, night = night)
@@ -243,6 +267,35 @@ internal fun ErrorStrip(message: String, night: Boolean) {
             fontSize = FsName,
             lineHeight = 19.sp,
             color = if (night) Color(0xFFFFB4B0) else UIFriendBarRed
+        )
+    }
+}
+
+/**
+ * 「你在读心」提示条。
+ *
+ * 顶栏那个「思考」一开，桌上就会浮出 AI 的心里话。这件事必须**一直**挂在牌桌上，
+ * 不能只在点开时闪一句提示：作弊是个持续状态，人会很快看惯，
+ * 然后忘了自己手里的信息比牌桌上任何人都多。
+ */
+@Composable
+private fun CheatStrip(night: Boolean) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp)
+            .padding(bottom = 6.dp)
+            .background(
+                SelfBlue.copy(alpha = if (night) 0.22f else 0.08f),
+                RoundedCornerShape(UIRadiusControl)
+            )
+            .padding(horizontal = 10.dp, vertical = 6.dp)
+    ) {
+        Text(
+            text = "思考气泡已打开：桌上浮的是 AI 的心里话，这等于读心，打出来的结果别当真。",
+            fontSize = 11.sp,
+            lineHeight = 16.sp,
+            color = if (night) Color(0xFFB9C8FF) else SelfBlue
         )
     }
 }

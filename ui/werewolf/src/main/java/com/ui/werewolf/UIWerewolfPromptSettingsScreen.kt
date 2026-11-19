@@ -126,14 +126,16 @@ fun UIWerewolfPromptSettingsScreen(
                 SwitchRow(
                     title = "牌桌上显示 AI 的思考过程",
                     subtitle = "开启后，AI 思考时会在他头顶浮出一个对白框，边想边显示。" +
-                        "默认关闭——参与局看到别人的思考等于读心，会把「猜谁在想什么」变成主要玩法。",
+                        "默认关闭——参与局看到别人的思考等于读心，会把「猜谁在想什么」变成主要玩法。" +
+                        "牌桌顶栏也有同一个开关，对局中等不及回设置页可以直接点。",
                     checked = showThinking,
                     onCheckedChange = onShowThinkingChange,
                 )
 
                 Text(
                     text = "这段话会加在每位 AI 的系统提示词最后，优先级高于内置打法。" +
-                        "它只影响 AI 怎么打，不会出现在牌桌上——写「让 3 号当预言家」这类内容没有意义。",
+                        "它只影响 AI 怎么打，不会出现在牌桌上——写「让 3 号当预言家」这类内容没有意义。\n" +
+                        "保存后从下一局生效；已经开局的对局要先「暂停」再「继续」，才会用上新写的这段。",
                     fontSize = 12.sp,
                     lineHeight = 17.sp,
                     color = UIFriendBarItemMetaColor,

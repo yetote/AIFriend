@@ -26,6 +26,14 @@ data class WerewolfUiState(
      */
     val gameId: String? = null,
     val table: WerewolfTable? = null,
+    /**
+     * 这一局生效的玩家设定（全局那段 + 板子那段拼好的）。
+     *
+     * 放在状态里是给复盘用的：复盘页要能说清「这一局是按什么设定打的」，
+     * 而设置页只保留最新那份——改过之后旧局就再也查不到了。
+     * 它不参与任何规则判定，续档也不会用它覆盖设置页。
+     */
+    val customPrompt: String? = null,
     val progress: WerewolfProgress? = null,
     /**
      * 有位 AI 此刻正在逐字说话。说完了就回到 null。
@@ -59,7 +67,11 @@ class WerewolfController(
      * 玩家为这一局写的额外设定。
      *
      * 可以在开局前后改（[applyCustomPrompt]）：设置页改完直接生效，
-     * 不用重开一局。续档也用它——提示词不进存档，续上时用当前设置接着打。
+     * 不用重开一局。续档也用它——**续档读的是设置页里的当前值**，
+     * 不会被存档里那份按回旧设定（玩家改完设定就是希望立刻生效）。
+     *
+     * 但落档时会把它一起写进快照，只给复盘看：复盘要回答
+     * 「这一局按什么设定打的」，而设置页只保留最新的那份。
      */
     private var customPrompt: String? = null,
 ) {
@@ -79,15 +91,23 @@ class WerewolfController(
      * 必须在 [play] 之前调：导演是在 play 里创建的，它拿的是当时的值。
      */
     fun applyCustomPrompt(text: String?) {
-        customPrompt = text?.takeIf { it.isNotBlank() }
+        // 两端空白没有意义，只会白占请求里的位置
+        customPrompt = text?.trim()?.takeIf { it.isNotBlank() }
+        // 一起放进状态：复盘页要显示「这一局按什么设定打的」
+        _state.update { it.copy(customPrompt = customPrompt) }
     }
 
     /** 开一局新的，立刻落档——先存再打，中途被杀进程也不会丢。 */
     suspend fun start(id: String, table: WerewolfTable) {
         gameId = id
         createdAt = clock()
-        _state.value = WerewolfUiState(gameId = id, table = table, finished = table.game.isFinished)
-        store.save(id, table, createdAt)
+        _state.value = WerewolfUiState(
+            gameId = id,
+            table = table,
+            finished = table.game.isFinished,
+            customPrompt = customPrompt,
+        )
+        store.save(id, table, createdAt, customPrompt)
     }
 
     /**
@@ -102,7 +122,13 @@ class WerewolfController(
         val table = store.load(id) ?: return false
         gameId = id
         createdAt = store.summaries().firstOrNull { it.id == id }?.createdAt ?: clock()
-        _state.value = WerewolfUiState(gameId = id, table = table, finished = table.game.isFinished)
+        // customPrompt 用**调用方刚设的当前值**（续档不用存档里那份，见字段注释）
+        _state.value = WerewolfUiState(
+            gameId = id,
+            table = table,
+            finished = table.game.isFinished,
+            customPrompt = customPrompt,
+        )
         return true
     }
 
@@ -138,7 +164,7 @@ class WerewolfController(
         try {
             val result = director.play(initial) { snapshot ->
                 _state.update { it.copy(table = snapshot) }
-                store.save(id, snapshot, createdAt)
+                store.save(id, snapshot, createdAt, customPrompt)
                 // 落档之后停一下：这一阶段产生的话要先念给人听完，再往下走。
                 // 放在落档之后而不是之前——等的时候进程被杀，存档已经是最新的。
                 awaitStage()
@@ -146,7 +172,7 @@ class WerewolfController(
             _state.update {
                 it.copy(table = result, running = false, finished = true, progress = null, live = null)
             }
-            store.save(id, result, createdAt)
+            store.save(id, result, createdAt, customPrompt)
         } catch (cancelled: CancellationException) {
             // 用户退出页面：局面已经按阶段存过了，这里只需要收起 running。
             // live 必须一起清掉——半句话不属于任何存档，留着会让下次进来先看到一个鬼影
@@ -175,7 +201,7 @@ class WerewolfController(
         val id = gameId ?: return
         val table = _state.value.table ?: return
         if (table.game.isFinished) return
-        store.save(id, table, createdAt)
+        store.save(id, table, createdAt, customPrompt)
     }
 
     /** 清掉当前这局（比如玩家主动放弃）。 */

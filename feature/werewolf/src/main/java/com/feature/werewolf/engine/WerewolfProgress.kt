@@ -32,15 +32,29 @@ data class WerewolfProgress(
 ) {
 
     /**
-     * 只讲阶段和进度，不带座位：「第 2 天 · 发言 3/8」。
+     * 阶段、进度和「在等谁」：「发言 3/8 · 5 号」。
+     *
+     * **不带天数**：牌桌顶栏的标题那一行已经在报「第 3 天」，副标题再报一遍
+     * 就是同一句话写两遍——原来底下还另有一条状态条，三处报的是同一件事。
+     * 座位跟在后面说明「在等谁」，比在底下另开一条省地方。
+     */
+    val stageLabel: String
+        get() = buildString {
+            append(stageText)
+            val busy = if (seats.isNotEmpty()) seats else listOfNotNull(seat)
+            if (busy.isNotEmpty()) {
+                append(" · ").append(busy.joinToString("、")).append(" 号")
+            }
+        }
+
+    /**
+     * 只讲阶段和进度，既不带天数也不带座位：「狼人商议 1/3」。
      *
      * 夜里只能用这个：夜里谁在动、动的那个座位是谁，本身就是秘密
      * （狼人在商议、守卫在守人、预言家在查验——亮出来等于报身份）。
      */
-    val plainLabel: String
+    val stageText: String
         get() = buildString {
-            append("第 ").append(day)
-            append(if (phase.isNight) " 夜 · " else " 天 · ")
             append(action)
             when {
                 step <= 0 -> append(" 准备中")
@@ -50,18 +64,16 @@ data class WerewolfProgress(
         }
 
     /**
-     * 直接给界面显示的一句话，例如「第 2 天 · 发言 3/8 · 5 号」。
+     * 整天一句：「第 2 天 · 发言 3/8 · 5 号」。
      *
-     * 座位紧跟在后面：顶栏这一行本来就在显示阶段和进度，多几个字说明「在等谁」，
-     * 比在底下另开一条更省地方。
+     * 界面上不分两行显示，所以顶栏不用它；日志、存档摘要这类
+     * 「脱离牌桌单独出现」的地方才需要把天数带上。
      */
     val label: String
         get() = buildString {
-            append(plainLabel)
-            val busy = if (seats.isNotEmpty()) seats else listOfNotNull(seat)
-            if (busy.isNotEmpty()) {
-                append(" · ").append(busy.joinToString("、")).append(" 号")
-            }
+            append("第 ").append(day)
+            append(if (phase.isNight) " 夜 · " else " 天 · ")
+            append(stageLabel)
         }
 
     private val action: String

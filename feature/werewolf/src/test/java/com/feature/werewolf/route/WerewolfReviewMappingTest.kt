@@ -116,6 +116,25 @@ class WerewolfReviewMappingTest {
     ).toReview(humanSeat = humanSeat, avatars = emptyMap())
 
     @Test
+    fun `这一局的玩家设定跟着进复盘`() {
+        val game = playOut(WerewolfGame.deal(WerewolfConfig(), roster(8), Random(3)), Random(11))
+        val state = WerewolfUiState(
+            table = WerewolfTable(game),
+            finished = true,
+            customPrompt = "你们说话短一点。",
+        )
+
+        val review = state.toReview(humanSeat = 1, avatars = emptyMap())
+
+        assertEquals("你们说话短一点。", review?.customPrompt)
+        // 没写设定就不显示那一块
+        assertNull(
+            WerewolfUiState(table = WerewolfTable(game), finished = true)
+                .toReview(humanSeat = 1, avatars = emptyMap())?.customPrompt,
+        )
+    }
+
+    @Test
     fun `随机对局都能翻成复盘，而且不丢人`() {
         repeat(24) { seed ->
             val game = playOut(WerewolfGame.deal(WerewolfConfig(), roster(8), Random(seed)), Random(seed + 7_000))
@@ -259,6 +278,11 @@ class WerewolfReviewMappingTest {
             live.reasoning,
             withSwitch.streaming?.reasoning,
         )
+
+        // 顶栏那个开关的状态：观战恒为开（本来就能看），参与局跟着设置走
+        assertTrue("观战视角的思考开关不该是灰的", asObserver.showThinking)
+        assertFalse("参与局默认关着", asPlayer.showThinking)
+        assertTrue("打开了就点亮", withSwitch.showThinking)
     }
 
     @Test

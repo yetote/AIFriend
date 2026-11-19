@@ -36,4 +36,12 @@ data class StructuredOutcome<T>(
     val attempts: Int,
     val usedFallback: Boolean,
     val lastError: String? = null,
+    /**
+     * 这次决策的思维链。
+     *
+     * 只有调用方要求「边想边看」（[decide] 的 `onReasoning`）时才有内容——
+     * 走一次性请求时厂商根本不回 `reasoning_content`，拿不到也就没有。
+     * 关掉深度思考的座位全程为空。
+     */
+    val reasoning: String = "",
 )

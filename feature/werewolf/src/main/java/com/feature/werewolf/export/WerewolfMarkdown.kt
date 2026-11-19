@@ -28,6 +28,14 @@ object WerewolfMarkdown {
             append("\n").append(it).append("\n")
         }
 
+        // 这一局按什么设定打的。导出给人看的时候尤其重要：
+        // 文件到了别人手里，设置页那一份早就不是当时的了
+        review.customPrompt?.let { prompt ->
+            append("\n## 这一局用的提示词\n\n")
+            quote(prompt.trim())
+            append("\n")
+        }
+
         if (review.groups.isNotEmpty()) {
             append("\n## 底牌\n")
             review.groups.forEach { group ->

@@ -283,6 +283,8 @@ internal fun WerewolfUiState.toReview(
         reason = finishReason(game, winner),
         facts = "${game.players.size} 人局 · 打到第 ${game.day} 天 · $deaths 人出局",
         selfLine = selfLine,
+        // 这一局生效的玩家设定。旧档没记这一段，为 null，复盘页就不显示那一块
+        customPrompt = customPrompt?.takeIf { it.isNotBlank() },
         groups = groups,
         days = days,
         nights = nights,

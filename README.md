@@ -2,10 +2,12 @@
 
 Android 端「AI 好友 / AI 智能体团队」应用：用户创建带角色设定的 AI 好友，选择模型，与它多轮对话，并在首页统一管理。
 
+当前版本 **0.0.60**（`versionCode = 60`）。
+
 ## 当前进度
 
 - ✅ 首页：智能体列表、搜索、创建入口、状态卡（数据已接真实状态）
-- ✅ **7 家厂商对话闭环**：DeepSeek、豆包（火山方舟）、智谱清言、Kimi、通义千问、讯飞星火、Gemini
+- ✅ **10 家官方厂商 + 3 个聚合平台**：Deepseek、豆包（火山方舟）、智谱清言、Kimi、通义千问、混元（TokenHub）、MiniMax、小米 MiMo、星火、Gemini；外加硅基流动、OpenRouter、自定义（任意 OpenAI 兼容地址，本地部署用这个）
 - ✅ 创建页支持切换模型提供方，模型列表按厂商分别拉取并缓存
 - ✅ 统一走 OpenAI 兼容的 Chat Completions 协议，角色 system prompt + 多轮历史
 - ✅ **关闭深度思考**：创建好友时可切换（默认关闭），按厂商发送 `thinking` / `enable_thinking` / `reasoning_effort`
@@ -19,33 +21,35 @@ Android 端「AI 好友 / AI 智能体团队」应用：用户创建带角色设
 - ✅ **人格模板**：56 个内置人格/角色（闲聊 / AI 拟人 / Galgame / 专业 / 创作 / 生活六类），创建与编辑时可搜索筛选后一键套用，套用后仍可自由修改
 - ✅ **批量创建**：一次建 1–12 个智能体，人设、模型、音色分别随机搭配——模型只从已配好 Key 的厂商里挑，音色只从已配好凭证的语音服务里挑，同批尽量不重复；建完可逐个微调
 - ✅ **流式输出与思考过程**：1:1 对话、聊天室、狼人杀发言都逐字上屏，深度思考模型的思维链折叠展示并可展开；生成中可随时停止，已说出的半句会保留；不支持流式的厂商自动降级成一次性返回
-- ✅ **云端朗读（TTS）**：MiniMax、科大讯飞、火山引擎、阿里百炼、腾讯云五家，凭证独立配置（不和对话 Key 共用）；内置 113 个音色（含粤语、四川话、东北话、童声、老年音，火山已接 2.0 大模型音色），建角色页点开**音色面板**按女声/男声/童声/方言分类挑选、可搜索、**每个都能当场试听**，并支持**手填音色 ID**——克隆/复刻音色、国际站音色、需单独开通的精品音色都能直接用；设置页只负责凭证与连通性（真合成一句验证 Key 和语音权限）
+- ✅ **云端朗读（TTS）**：MiniMax、科大讯飞、火山引擎、阿里百炼、腾讯云五家，凭证独立配置（不和对话 Key 共用）；内置 170+ 个音色（含粤语、四川话、东北话、童声、老年音，火山已接 2.0 大模型音色），建角色页点开**音色面板**按女声/男声/童声/方言分类挑选、可搜索、**每个都能当场试听**，并支持**手填音色 ID**——克隆/复刻音色、国际站音色、需单独开通的精品音色都能直接用；设置页只负责凭证与连通性（真合成一句验证 Key 和语音权限）
 - ✅ **iOS 风格 UI**：全局浅灰蓝渐变底 + 毛玻璃卡片、大圆角、柔和投影，统一到首页 / 1:1 对话 / 聊天室 / 创建与设置 / 全部弹窗
-- ✅ **AI 狼人杀**：八套板子（6/8/9/10/12 人，含守卫、白痴、狼王、熊）、人机混合与纯观战、规则由状态机判定、白天串行发言 + 并发投票、狼人先商议再定刀、私有信息按座位隔离、阶段进度、断点续玩、逐日票型与夜间行动复盘、逐日对话回放（可切上帝视角看当时的密谈）
+- ✅ **AI 狼人杀**：八套板子（6/8/9/10/12 人，含守卫、白痴、狼王、熊）、人机混合与纯观战、规则由状态机判定、白天串行发言 + 并发投票、狼人先商议再定刀、私有信息按座位隔离、阶段进度、断点续玩、逐日票型与夜间行动复盘、逐日对话回放（可切上帝视角看当时的密谈）、**复盘演出**、**整局导入导出（`.wwg`）**、**按板子的提示词微调**
   - 狼王：夜里照常下刀，白天被票出可以开枪；最后一枪若打穿屠边，狼队即使全灭也能翻盘
   - 熊：夜里不行动，天亮时左右邻座有存活狼人就公开咆哮；熊死了或邻居死了都不咆哮
   - 发言逐字上屏（流式），深度思考模型的思维链可折叠展开；夜里单人行动的发言不流出来，思考过程只在观战视角可见（参与的局听不到别人的心里话）；朗读开着时，流式文字会等语音追平再出现，不抢跑
   - 自动朗读：每人一个音色，好友自己配过的优先，没配的按座位自动分互不相同的内置音色（八个人同一个声音会分不清谁在说）
+  - 详细规则见 [AI 狼人杀](#ai-狼人杀) 一节
 
 ## 模块
 
-| 模块 | 职责 |
-|---|---|
-| `app` | 单 Activity 入口，挂载 `HomeRoute` |
-| `feature:home` | 首页状态、搜索、统计、删除/置顶、导航 |
-| `feature:agent` | 智能体创建/编辑、1:1 会话、`AgentViewModel` / `AgentRoute` |
-| `feature:room` | 聊天室创建/设置、消息与成员、`RoomViewModel` / `RoomRoute` |
-| `feature:werewolf` | 狼人杀规则引擎、编排（发言串行 / 决策并发）、提示词、整局存档、`WerewolfViewModel` / `WerewolfRoute` |
-| `ui:common` | 头像、裁剪、PageInsets、主题 |
-| `ui:agent` | 1:1 对话、创建/编辑、好友列表组件 |
-| `ui:room` | 房间对话、创建、设置 |
-| `ui:werewolf` | 狼人杀配置页、牌桌（两列座位 + 昼夜背景）、复盘页 |
-| `ui:home` | 首页 Compose 组件 |
-| `core:ai` | `IAI` 抽象、各厂商实现、对话与模型 DTO |
-| `core:persona` | 内置人格/角色模板目录，纯数据 + 过滤，无 Android 依赖 |
-| `core:repository` | `WebRepository`、各厂商 `ApiConfig`、Room 数据库与 Repository |
-| `core:network` | Ktor 客户端、超时、错误映射 |
-| `core:common` | 全局 Toast 事件、BaseViewModel、主题工具 |
+| 模块                 | 职责                                                                                                                                                                  |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `app`              | 单 Activity 入口，挂载 `HomeRoute`                                                                                                                                        |
+| `feature:home`     | 首页状态、搜索、统计、删除/置顶、导航                                                                                                                                                 |
+| `feature:agent`    | 智能体创建/编辑、1:1 会话、批量创建、`AgentViewModel` / `AgentRoute`                                                                                                                |
+| `feature:room`     | 聊天室创建/设置、消息与成员、`RoomViewModel` / `RoomRoute`                                                                                                                        |
+| `feature:werewolf` | 狼人杀规则引擎（`game`）、编排（`engine`，发言串行 / 决策并发）、提示词（`prompt`，按身份 + 板子分层）、决策协议（`decision`）、复盘时间线（`replay`）、存档（`store`）、导入导出（`export`）、`WerewolfViewModel` / `WerewolfRoute` |
+| `ui:common`        | 头像、裁剪、PageInsets、主题                                                                                                                                                 |
+| `ui:agent`         | 1:1 对话、创建/编辑、好友列表组件、音色选择面板                                                                                                                                          |
+| `ui:room`          | 房间对话、创建、设置                                                                                                                                                          |
+| `ui:werewolf`      | 狼人杀配置页、牌桌（两列座位 + 昼夜背景 + 思考气泡）、复盘页、提示词微调页                                                                                                                            |
+| `ui:home`          | 首页 Compose 组件                                                                                                                                                       |
+| `core:ai`          | `IAI` 抽象、各厂商实现、对话与模型 DTO、音色目录、模型价位                                                                                                                                  |
+| `core:persona`     | 内置人格/角色模板目录，纯数据 + 过滤，无 Android 依赖                                                                                                                                   |
+| `core:tts`         | 朗读引擎（系统 TTS / 五家云服务）、文本清洗、朗读队列与计时                                                                                                                                   |
+| `core:repository`  | `WebRepository`、各厂商 `ApiConfig`、Room 数据库与 Repository、Token 设置                                                                                                       |
+| `core:network`     | Ktor 客户端、超时、错误映射                                                                                                                                                    |
+| `core:common`      | 全局 Toast 事件、BaseViewModel、主题工具                                                                                                                                      |
 
 ## 构建
 
@@ -61,35 +65,48 @@ cp core/network/key.example.kt core/network/src/main/java/com/core/network/key.k
 ```bash
 ./gradlew :app:assembleDebug
 ./gradlew :core:ai:testDebugUnitTest
+./gradlew :feature:werewolf:testDebugUnitTest   # 规则引擎 + 提示词 + 存档，350+ 条
+./gradlew :ui:werewolf:testDebugUnitTest        # 牌桌文案与思考气泡取尾
 ```
 
 ## 对话协议
 
 所有厂商共用 `core:ai/entity/OpenAICompatibleAI.kt`：请求体为 `{ model, messages: [{role, content}], stream }`，回复取 `choices[0].message.content`；差异只在 `ApiConfig` 和模型列表解析。`Friend.systemPrompt` 把「昵称 + 角色 + 详细设定」拼成 `system` 消息放在历史之前。
 
-| 厂商 | 对话地址 | 模型列表 | 过滤规则 / 备注 |
-|---|---|---|---|
-| DeepSeek | `api.deepseek.com/chat/completions` | `GET /models` | 直接用 |
-| 豆包（方舟） | `ark.cn-beijing.volces.com/api/v3/chat/completions` | `GET /api/v3/models` | `api_supported["chat/completions"]`、非 Retiring、`doubao-` 前缀 |
-| 智谱清言 | `open.bigmodel.cn/api/paas/v4/chat/completions` | `GET /api/paas/v4/models` | `glm-` 前缀 |
-| Kimi | `api.moonshot.cn/v1/chat/completions` | `GET /v1/models` | 直接用 |
-| 通义千问 | `dashscope.aliyuncs.com/compatible-mode/v1/chat/completions` | `GET /compatible-mode/v1/models` | 183 个模型中排除向量/重排/语音/图像/翻译等，只留 `qwen` 对话模型 |
-| 讯飞星火 | `spark-api-open.xf-yun.com/x2/chat/completions` | 无（404） | 固定 `x1` |
-| Gemini | `generativelanguage.googleapis.com/v1beta/openai/chat/completions` | `GET /v1beta/openai/models` | 官方 OpenAI 兼容层，去掉 `models/` 前缀；排除 embedding / live / audio / image / omni 等 |
+| 服务商            | 对话地址（`baseUrl` + `/chat/completions`）             | 模型列表                             | 过滤规则 / 备注                                                                  |
+| -------------- | ------------------------------------------------- | -------------------------------- | -------------------------------------------------------------------------- |
+| Deepseek       | `api.deepseek.com`                                | `GET /models`                    | 直接用                                                                        |
+| 豆包（方舟）         | `ark.cn-beijing.volces.com/api/v3`                | `GET /api/v3/models`             | `api_supported["chat/completions"]`、非 Retiring、`doubao-` 前缀                |
+| 智谱清言           | `open.bigmodel.cn/api/paas/v4`                    | `GET /api/paas/v4/models`        | `glm-` 前缀                                                                  |
+| Kimi           | `api.moonshot.cn/v1`                              | `GET /v1/models`                 | 直接用                                                                        |
+| 通义千问           | `dashscope.aliyuncs.com/compatible-mode/v1`       | `GET /compatible-mode/v1/models` | 183 个模型中排除向量/重排/语音/图像/翻译等，只留 `qwen` 对话模型                                   |
+| 混元             | `tokenhub.tencentmaas.com/v1`                     | `GET /v1/models`                 | `hy` 前缀；控制台列出代理来的别家模型，未开通调用会 404                                           |
+| MiniMax        | `api.minimaxi.com/v1`                             | `GET /v1/models`                 | 无思考开关（M3.1-Flash 恒定思考，传 disabled 会 400）                                    |
+| 小米             | `api.xiaomimimo.com/v1`                           | `GET /v1/models`                 | `mimo` 前缀                                                                  |
+| 星火             | `spark-api-open.xf-yun.com/x2`                    | 无（404）                           | 固定 `x1`                                                                    |
+| Gemini         | `generativelanguage.googleapis.com/v1beta/openai` | `GET /v1beta/openai/models`      | 官方 OpenAI 兼容层，去掉 `models/` 前缀；排除 embedding / live / audio / image / omni 等 |
+| 硅基流动（聚合）       | `api.siliconflow.cn/v1`                           | `GET /v1/models`                 | 一把 Key 调数十家模型；有实时价位                                                        |
+| OpenRouter（聚合） | `openrouter.ai/api/v1`                            | `GET /v1/models`                 | `/models` 自带 pricing，是唯一能拿到真价格的来源之一                                        |
+| 自定义（聚合）        | 用户填                                               | 按填的地址                            | 任意 OpenAI 兼容服务，本地部署（Ollama 等）选这个；Key 可留空                                   |
+
+> **列表里有 ≠ 能调**：方舟、百炼、TokenHub、小米这些平台的 `GET /models` 会把代理来的别家模型一起列出来，未在控制台单独开通的模型调用会 404。批量创建角色时只从 `ownModelPrefixes`（自家模型前缀）里挑，就是为了避免「建完当天说不了话」；手动选中时，界面会按错误信息提示去控制台开通。
 
 ## 关闭深度思考
 
 创建好友时可以切换「深度思考」，默认关闭。各厂商参数不同，已在 `AI*` 实现里覆盖：
 
-| 厂商 | 关闭方式 | 实测 |
-|---|---|---|
-| DeepSeek | `thinking: {"type":"disabled"}` | reasoning 归零 |
-| 豆包 | `thinking: {"type":"disabled"}` | reasoning 归零 |
-| Kimi | `thinking: {"type":"disabled"}` | reasoning 归零 |
-| 通义千问 | `enable_thinking: false` | reasoning 归零 |
-| 智谱 GLM-4.x | `thinking: {"type":"disabled"}` | reasoning 归零 |
-| 智谱 GLM-5.x | 只能降档：`reasoning_effort: "low"`（传 disabled 会 400） | reasoning 明显缩短 |
-| 星火 / Gemini | 暂无对应参数，UI 不显示开关 | — |
+| 厂商          | 关闭方式                                             | 实测             |
+| ----------- | ------------------------------------------------ | -------------- |
+| Deepseek    | `thinking: {"type":"disabled"}`                  | reasoning 归零   |
+| 豆包          | `thinking: {"type":"disabled"}`                  | reasoning 归零   |
+| Kimi        | `thinking: {"type":"disabled"}`                  | reasoning 归零   |
+| 通义千问        | `enable_thinking: false`                         | reasoning 归零   |
+| 混元          | `thinking: {"type":"disabled"}`                  | reasoning 归零   |
+| 小米 MiMo     | `thinking: {"type":"disabled"}`                  | reasoning 归零   |
+| 智谱 GLM-4.x  | `thinking: {"type":"disabled"}`                  | reasoning 归零   |
+| 智谱 GLM-5.x  | 只能降档：`reasoning_effort: "low"`（传 disabled 会 400） | reasoning 明显缩短 |
+| MiniMax     | 无开关：M3.1-Flash 恒定思考，发 disabled 直接 400            | UI 不显示开关       |
+| 星火 / Gemini | 暂无对应参数，UI 不显示开关                                  | —              |
 
 > 方舟账号需要先在控制台「开通」具体模型，未开通的模型即便出现在 `/models` 里，调用也会返回 `404 ModelNotOpen`。当前测试账号只开通了 `doubao-seed-evolving`，因此它被设为豆包默认模型。
 
@@ -137,9 +154,98 @@ cp core/network/key.example.kt core/network/src/main/java/com/core/network/key.k
 - Token 估算：设置页显示「本轮约 N 次请求、单个 AI 上下文约 X tokens」，按字符估算，仅作参考
 - 系统消息：创建房间、「X 加入了聊天室」「X 退出了聊天室」会插入灰色居中的系统提示；这些通知会以「（聊天室通知）」前缀作为 user 消息同步给房间内的 AI，保证它们知道人员变化（不用 system 角色是为了兼容只允许首条 system 的厂商，如 Moonshot）
 - 新成员：`Room.memberJoinSeq` 记录每个成员的加入位置，新加入的 AI 只看得到加入之后的消息，不会同步历史；加入时会自动发一条自我介绍式问候（创建房间时不自动打招呼）
-- 持久化：房间、成员、消息都在 Room 的 `rooms` / `room_members` / `room_messages` 表；数据库 `version = 7`，`rooms` 表保存房间设定 `prompt`、讨论开关 `discussionEnabled`、回看窗口 `discussionWindow`、自由对话开关 `autoChatEnabled`、接话次数 `autoChatTurns`、置顶 `pinned`、头像 `avatarPath`；`room_messages` 保存定向 @ 的成员 `targetIds`（v1 → v2 → … → v7 都有 Migration）。旧的 `sequentialSpeaking` 列随 v7 废弃，保留列以兼容历史库，代码不再读写
+- 持久化：房间、成员、消息都在 Room 的 `rooms` / `room_members` / `room_messages` 表（库当前 `version = 10`），`rooms` 表保存房间设定 `prompt`、讨论开关 `discussionEnabled`、回看窗口 `discussionWindow`、自由对话开关 `autoChatEnabled`、接话次数 `autoChatTurns`、置顶 `pinned`、头像 `avatarPath`；`room_messages` 保存定向 @ 的成员 `targetIds`。旧的 `sequentialSpeaking` 列已废弃，保留列以兼容历史库，代码不再读写
 - 消息 `seq` 在应用启动时会从历史最大值继续（`seqCounter` 种子），避免重启后新消息的 seq 小于成员 `joinSeq`，导致新成员看不到新消息
 - 已有消息在成员被移除后仍保留，界面上会显示「已移除」
+
+## 云端朗读（TTS）
+
+朗读是独立于对话的一条链路：凭证在设置页单独填（`tts_*`），不和对话 Key 共用，可以只配对话不配朗读，也可以反过来。
+
+| 服务      | 协议                                                           | 备注                                                                                                                                              |
+| ------- | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| MiniMax | `POST {baseUrl}/t2a_v2`                                      | 非流式 JSON，`data.audio` 是 hex 编码 mp3                                                                                                              |
+| 科大讯飞    | `wss://tts-api.xfyun.cn/v2/tts`                              | WS 流式，HMAC-SHA256 签名；必须 `aue=raw`（`lame` 分片各自带 LAME 头，会让 MediaPlayer 反复重置出「叽里咕噜」）                                                               |
+| 火山引擎    | `POST {baseUrl}/api/v3/tts/unidirectional`                   | HTTP Chunked 多帧 JSON，按 `{}` 层级切帧（不能按行读）；旧 v1 不支持 2.0 音色；鉴权两套头——旧控制台 `X-Api-App-Id` + `X-Api-Access-Key`，新控制台 `X-Api-Key`，先按一种试、被拒（401/403）再换另一种 |
+| 阿里百炼    | `POST {baseUrl}/api/v1/services/audio/tts/SpeechSynthesizer` | 返回音频 URL，再下载                                                                                                                                    |
+| 腾讯云     | `POST tts.tencentcloudapi.com`                               | TC3-HMAC-SHA256 签名，`Response.Audio` 是 base64                                                                                                    |
+
+- 音色是**角色属性**（`Friend.voiceId`），不是全局设置：设置页只管凭证和「真合成一句」验证，挑音色在建角色页的音色面板里
+- 面板按 女声 / 男声 / 童声 / 方言 / 其他 分组（方言优先于性别），可搜索，每个音色都能当场试听；内置列表只放官方文档能查到的 ID，并留了**手填 ID** 兜住克隆音色、国际站音色和需单独开通的精品音色
+- **朗读前必须清洗文本**（`SpeechText.forSpeech`）：去掉旁白、markdown 标记、emoji、重复标点，补句末标点；清完没有字母数字就整条跳过
+- 失败文案统一走 `TTSReadableError.of(t, provider)`，把「Key 错了」「音色没开通」「网络断了」分开说，而不是把原始异常抛给用户
+
+
+## AI 狼人杀
+
+一局游戏由 `feature:werewolf` 的规则引擎驱动，AI 只负责「说话」和「做决定」，规则判定与隐私隔离全在客户端。
+
+### 板子
+
+| 板子          | 身份构成                  | 特点                    |
+| ----------- | --------------------- | --------------------- |
+| 6 人快局       | 2 狼 + 预言家 / 女巫 + 2 民  | 屠边，狼人打穿任意一边即赢，两边各只需两刀 |
+| 8 人标准局      | 2 狼 + 预女猎 + 3 民       | 默认板子，容错高              |
+| 9 人标准局      | 3 狼 + 预女猎 + 3 民       | 3 狼票权 3:6，必须拆票才推得动人   |
+| 10 人守卫局     | 3 狼 + 预女猎守 + 3 民      | 民只有 3 个，打民边比打神边快      |
+| 10 人狼王局     | 狼王 + 2 狼 + 预女猎守 + 3 民 | 狼王被票出的那一枪可能直接打穿屠边翻盘   |
+| 12 人守卫局（警长） | 4 狼 + 预女猎守 + 4 民      | 4 狼已接近绑票线，警徽归属决定白天节奏  |
+| 12 人白痴局（警长） | 4 狼 + 预女猎白 + 4 民      | 白痴挡一次放逐，好人多一次试错       |
+| 12 人熊局（警长）  | 4 狼 + 预女猎白熊 + 3 民     | 熊每天给一条公开线索，好人按邻座推     |
+
+### 规则要点
+
+- **第 1 天先上警竞选 + 警长投票，再公布昨夜死讯**——否则等于给死者一张选票
+- 遗言只有三种人：首夜死者、每次被票出者、任何原因出局的警长（第 2 夜起夜里死的不再发言）
+- **被猎人枪带走的人不留遗言，但警徽照样要处理**——遗言和警徽是两条独立规则
+- 守卫守 + 女巫救 = 死（守救同归），会写给全场；守卫不能连守
+- 票出白痴不死、只是失去票权；狼王只有被票出能开枪
+- 白天串行发言（后一位能看到前一位），投票 / 狼刀 / 上警并发求解
+
+### 提示词
+
+分三层，缺一层 AI 就会「弱智」：
+
+- `ruleBrief`：这局按什么规则判定
+- `boardBrief`：这张板子几狼几神几民、打哪边省刀、容错几次
+- `strategyBrief`：这个身份该用什么方法判断
+
+源码按「身份 + 板子」两层组织，因为**板子只是身份的集合**——按板子写守卫规则要抄三遍：
+
+```
+prompt/
+  rules/GameRules.kt        所有人共用的规则（胜负、绑票、投票、遗言、自爆）
+  roles/XxxKit.kt           一个身份一个 Kit：机制 / 白天打法 / 私有简报 / 收尾叮嘱
+  boards/XxxBoard.kt        一张板子一个 Board：人数结构 + 狼边打法
+  tasks/TaskBriefs.kt       按阶段：这一步要做什么
+  WerewolfPrompt.kt         只做拼装
+```
+
+- 打板子按**规则**认，不按 key：`Boards.of(config)` 比对身份构成 + 有无警长 + 胜负规则，三样全中才算同一张板子；对不上（自定义局）返回空文案，绝不把别张板子的结论套上去
+- 狼下刀单独有一段 `wolfKillBrief`，把「规则」翻译成「用法」：撞守等于这一夜白过；昨夜刀口没死说明守住了或救了 → 今晚连刀；刀死了说明守卫今晚会守最该守又没守过的位 → 该往外置位动刀。它只吃公开信息（昨夜刀口 + 实际出局名单），**绝不读守卫守了谁**
+- **提示词微调**（设置页「提示词微调」）：分「全局」和「当前板子专属」两栏，两段拼起来加在每位 AI 的 system prompt **最末**，因此优先级高于内置打法。它只影响 AI 怎么打，不进公共播报、不进 transcript，信息隔离不受影响
+- 续档时按存档里的 `config` 反查板子 key（`WerewolfBoards.keyOf`），所以「暂停 → 继续」不会丢掉板子那栏的设定；已开局的对局要暂停再继续才会用上新改的内容
+- 落档时把当时生效的那段提示词写进快照（`TableSnapshot.customPrompt`），复盘页和导出文件里都能看到这一局是按什么设定打的
+
+### 思考过程与作弊边界
+
+深度思考模型的思维链会以**浮动漫画框**挂在本人头像旁，边想边长：
+
+- 观战局和已结束的局恒开，且不给开关
+- 参与的局默认关闭——看到别人的思考等于读心，「猜谁在想什么」就变成了主玩法；要打开就顶栏点「思考」胶囊，同时会常驻一条提醒自己是在作弊
+- 开关只放行「想的内容」，**不放行「谁在动」**：夜里的行动者高亮照样遮住，泄露身份比作弊更严重
+- 决策类请求（投票、狼刀、上警）也有思维链：`StructuredChat.decide` 带 `onReasoning` 回调时走流式，攒齐正文再解析 JSON；并发阶段用占位锁保证同一时刻只有一个气泡在长
+
+### 复盘
+
+- 复盘演出按**时间线重新构建画面**，绝不读终局状态——直接画终局就是开场一地尸体、警徽挂在最后那个人身上。出局名单、警徽归属、谁能看见哪句话，都跟着事件逐条推进
+- 支持上一条 / 播放暂停 / 下一条 / 倍速；不朗读时按字数给阅读时间
+- 局内好友被删也能复盘：进入前逐个座位挑一个替身（或静音），替身复用原来的座位音色
+- 导出分两种：**Markdown**（给人读，不可反解）和 **`.wwg` 对局文件**（给 App 读，导入后还能重演一遍）。导入永不覆盖已有对局，撞 id 会另存一份
+
+### 存档
+
+对局存在独立的 `werewolf.db`，权威是 `werewolf_games.snapshot` 一列（整局快照，含 transcript），快照有版本号，旧档自动升级。没有消息表——会话本身就是快照的一部分，拆表只会制造两个真相。
 
 ## 自定义头像
 
@@ -218,21 +324,22 @@ cp core/network/key.example.kt core/network/src/main/java/com/core/network/key.k
   - 删除好友：级联删除会话消息，同时清理房间成员和它在房间里的消息
 - 读取：ViewModel 初始化时通过 `FriendRepository` / `RoomRepository` 加载
 - 迁移：首次启动 `LegacyMigration` 会把旧 DataStore 的 `friends_v1` / `rooms_v1` / `room_messages_v1` / `user_avatar_v1` 一次性导入 Room，成功后清掉旧 key；DataStore 现在只用于这次迁移
-- 版本：数据库 `version = 6`，后续加字段需要补 Room `Migration`
+- 版本：`aifriend.db` 当前 `version = 10`（v1 → v10 全部有 `Migration`）；狼人杀用独立的 `werewolf.db`（`version = 2`），对局存 `werewolf_games.snapshot` 一列整局快照，不建消息表
+- 偏好类数据（各厂商 Key、TTS 凭证、狼人杀设置与提示词微调）仍在 DataStore，不进 Room：它们不属于任何一条业务记录
 
 > 构建用 KSP 做 Room 注解处理（`ksp = 2.3.6`，匹配 AGP 9 内置 Kotlin）。AGP 9 默认禁止 KSP 通过 `kotlin.sourceSets` 注入生成目录，`gradle.properties` 里用 `android.disallowKotlinSourceSets=false` 放行。
 
 ## 已知待办
 
 - `core/network/src/main/java/com/core/network/key.kt` 是本地密钥文件，已被 `.gitignore` 忽略（模板见 `core/network/key.example.kt`）；但它仍会被编译进 APK，正式发布前必须轮换并改为用户自带 Key 或后端代理
-- 好友与对话历史已持久化；支持长按编辑/删除好友、长按删除聊天室，但暂不支持重命名、清空单个会话、批量删除和导出功能
-- 编辑好友时暂不支持切换厂商 / 模型
-- Room 当前是 `version = 1`，加字段时要写 Migration；消息表目前全量加载，没有分页
+- 编辑好友时暂不支持切换厂商 / 模型（换模型会让历史上下文语义不一致，目前要删除后重建）
 - 头像裁剪暂不支持旋转/翻转手势；相机照片的 EXIF 旋转也还没处理
 - 上下文目前用「滑动窗口 + 字符估算」控制，早期内容会直接丢弃；需要长期记忆时应改成摘要压缩或向量检索
 - 聊天室下一步：滚动摘要（共享纪要）、单条消息删除、Markdown 渲染
-- 聊天记录已改成 Room 分页读取，长期使用后单房间消息量变大时，重点在滚动性能和索引，而不是整包快照
+- 狼人杀：`WerewolfViewModel` 里的朗读播放器 / 回放播放器该抽成独立类（历史三次朗读事故都出在这块）；`WerewolfController` 还在 `engine` 包，应挪出去与规则引擎分开
+- 狼人杀还缺「中途换人」：某位好友的模型在局中失效时只能暂停整局，不能换一个模型接着打
 - 豆包模型选择列表包含账号未开通的模型，选中后会提示 404，后续可在控制台开通或按账号能力过滤
 - Gemini 需要能访问 Google（本机需走代理），且测试账号返回 `402 预付款额度耗尽`，代码链路已通但无法实际对话
-- 讯飞星火只确认了 `x1` 可用，且没有模型列表接口；后续需要按官方文档补齐其它模型
-- 智谱 GLM-5 系列不支持完全关闭思考，只能降到 low
+- 星火只确认了 `x1` 可用，且没有模型列表接口；后续需要按官方文档补齐其它模型
+- 智谱 GLM-5 系列不支持完全关闭思考，只能降到 low；MiniMax 恒定思考，连降档参数都不接受
+- 狼人杀规则表之外的身份（骑士、盗贼、丘比特等）尚未实现，加新身份要同时改 `roles/`、胜利判定和夜晚阶段

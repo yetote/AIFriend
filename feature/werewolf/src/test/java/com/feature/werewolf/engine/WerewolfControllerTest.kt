@@ -28,18 +28,31 @@ class WerewolfControllerTest {
 
     private fun roster(n: Int) = (1..n).map { RosterEntry("p$it", "玩家$it") }
 
-    private data class Saved(val id: String, val table: WerewolfTable, val createdAt: Long)
+    private data class Saved(
+        val id: String,
+        val table: WerewolfTable,
+        val createdAt: Long,
+        val customPrompt: String? = null,
+    )
 
     /** 内存版存档，行为跟真库一致，但不碰 Room。 */
     private class FakeStore : WerewolfGameStore {
         val saves = mutableListOf<Saved>()
 
-        override suspend fun save(id: String, table: WerewolfTable, createdAt: Long) {
-            saves += Saved(id, table, createdAt)
+        override suspend fun save(
+            id: String,
+            table: WerewolfTable,
+            createdAt: Long,
+            customPrompt: String?,
+        ) {
+            saves += Saved(id, table, createdAt, customPrompt)
         }
 
         override suspend fun load(id: String): WerewolfTable? =
             saves.lastOrNull { it.id == id }?.table
+
+        override suspend fun customPrompt(id: String): String? =
+            saves.lastOrNull { it.id == id }?.customPrompt
 
         override suspend fun summaries(): List<WerewolfGameSummary> =
             saves.groupBy { it.id }.map { (id, list) ->
@@ -119,6 +132,31 @@ class WerewolfControllerTest {
         assertEquals(1, store.saves.size)
         assertFalse("刚开局当然没结束", store.saves.single().table.game.isFinished)
         assertEquals("开局时间要落下来", 1000L, store.saves.single().createdAt)
+    }
+
+    @Test
+    fun `这一局的玩家设定跟着每一档写进存档`() = runBlocking {
+        // 复盘要能回答「这局是按什么设定打的」：设置页只保留最新那份，
+        // 改过之后旧局就再也查不到了，所以落档时必须自己记一份
+        val store = FakeStore()
+        val table = WerewolfGame.deal(WerewolfConfig(), roster(8))
+
+        val controller = controller(store)
+        controller.applyCustomPrompt("  说话短一点，别写小作文  ")
+        // 首尾空白要去掉：提示词是拼出来的一整段，两端空行只会在请求里浪费 token
+        assertEquals("说话短一点，别写小作文", controller.state.value.customPrompt)
+        controller.start("g1", table)
+
+        assertEquals("说话短一点，别写小作文", store.saves.single().customPrompt)
+        assertEquals("说话短一点，别写小作文", store.customPrompt("g1"))
+    }
+
+    @Test
+    fun `没写设定时存档里就是 null，不写空串`() = runBlocking {
+        val store = FakeStore()
+        controller(store).start("g1", WerewolfGame.deal(WerewolfConfig(), roster(8)))
+
+        assertNull(store.saves.single().customPrompt)
     }
 
     @Test

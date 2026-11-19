@@ -87,8 +87,8 @@ internal fun WerewolfReplay.toLive(
         running = false,
         finished = false,
         winnerLabel = null,
-        progressLabel = null,
-        progressFraction = null,
+        // 演出的进度在底下播放条上（第几条 · 进度），顶栏这一行让给「第几天 · 阶段」
+        stageLabel = null,
         seats = seats,
         lines = lines,
         streaming = null,

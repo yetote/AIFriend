@@ -18,6 +18,14 @@ data class UIWerewolfReview(
     val facts: String,
     /** 你在这局里是谁。观战为 null。 */
     val selfLine: String?,
+    /**
+     * 这一局生效的玩家设定（提示词微调拼好的那段）。
+     *
+     * 复盘常问的一句是「这局是按什么设定打的」——尤其当 AI 打得不像平时。
+     * 设置页只保留最新那份，所以这里存的是**当时**的值。
+     * null 表示这一局没写设定，或者存档太旧（v10 及以前不记这一段）。
+     */
+    val customPrompt: String? = null,
     /** 按阵营分好组的底牌。 */
     val groups: List<UIWerewolfRoleGroup> = emptyList(),
     /** 逐日票型，按天正序。 */
