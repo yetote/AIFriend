@@ -22,6 +22,7 @@ import com.feature.werewolf.game.DeathCause
 import com.feature.werewolf.game.Faction
 import com.feature.werewolf.game.GameEvent
 import com.feature.werewolf.game.Phase
+import com.feature.werewolf.game.WerewolfBoards
 import com.feature.werewolf.game.WerewolfConfig
 import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfPlayer
@@ -35,6 +36,7 @@ import com.feature.werewolf.vm.ApiCheckState
 import com.feature.werewolf.vm.WerewolfMode
 import com.feature.werewolf.vm.WerewolfViewModel
 import com.ui.werewolf.UIWerewolfHistoryScreen
+import com.ui.werewolf.UIWerewolfPromptSettingsScreen
 import com.ui.werewolf.UIWerewolfReviewScreen
 import com.ui.werewolf.UIWerewolfSetupScreen
 import com.ui.werewolf.UIWerewolfTableScreen
@@ -98,7 +100,7 @@ fun WerewolfRoute(
     var screen by remember { mutableStateOf<WerewolfScreen>(WerewolfScreen.History) }
     var showReview by remember { mutableStateOf(false) }
     var mode by remember { mutableStateOf(UIWerewolfMode.PLAY) }
-    var presetKey by remember { mutableStateOf(PRESET_STANDARD_8) }
+    var presetKey by remember { mutableStateOf(WerewolfBoards.STANDARD_8) }
 
     /**
      * 「用户刚点了接着打或新开一局」。
@@ -159,6 +161,7 @@ fun WerewolfRoute(
     val records = remember(summaries) { summaries.map { it.toRecord() } }
     val preset = PRESETS.firstOrNull { it.key == presetKey } ?: PRESETS.first()
     val uiApiChecks = remember(apiChecks) { apiChecks.mapValues { it.value.toUiCheck() } }
+    val promptState by viewModel.promptState.collectAsState()
 
     // 从列表点开的那一局。它和「正在打的这一局」是两件事，所以单独一层盖在最上面。
     val recordReview = remember(recordView, avatars) {
@@ -230,6 +233,7 @@ fun WerewolfRoute(
             },
             onClearError = viewModel::clearError,
             onCheckApi = { viewModel.checkApi(selectedIds) },
+            onOpenPromptSettings = { screen = WerewolfScreen.PromptSettings },
             // 回列表而不是退出页面：配置页是从列表进来的，退出去等于多按一次
             onBack = { screen = WerewolfScreen.History },
             onStart = {
@@ -238,6 +242,7 @@ fun WerewolfRoute(
                     mode = mode.toMode(),
                     friendIds = selectedIds.toList(),
                     config = configOf(presetKey),
+                    boardKey = presetKey,
                 )
             },
             onStartAnyway = {
@@ -246,11 +251,24 @@ fun WerewolfRoute(
                     mode = mode.toMode(),
                     friendIds = selectedIds.toList(),
                     config = configOf(presetKey),
+                    boardKey = presetKey,
                     // 走到这里说明用户已经看见红灯并选择继续，不必再拦一次
                     skipCheck = true,
                 )
             },
         )
+
+        WerewolfScreen.PromptSettings -> {
+            // 每次进页面重读一次：用户可能在别处改过，页面要显示磁盘上的最新值
+            LaunchedEffect(presetKey) { viewModel.loadPromptSettings(presetKey) }
+            UIWerewolfPromptSettingsScreen(
+                state = promptState,
+                onSave = { global, board -> viewModel.savePromptSettings(global, board) },
+                onClearGlobal = { viewModel.clearPromptSettings(global = true) },
+                onClearBoard = { viewModel.clearPromptSettings(global = false) },
+                onBack = { screen = WerewolfScreen.Setup },
+            )
+        }
 
         WerewolfScreen.Table -> {
             val review = remember(state, humanSeat, avatars) {
@@ -303,60 +321,17 @@ fun WerewolfRoute(
 // 展示模型映射
 // ---------------------------------------------------------------------------
 
-private const val PRESET_QUICK_6 = "quick6"
-private const val PRESET_STANDARD_8 = "standard8"
-private const val PRESET_STANDARD_9 = "standard9"
-private const val PRESET_GUARD_10 = "guard10"
-private const val PRESET_KING_10 = "king10"
-private const val PRESET_GUARD_12 = "guard12"
-private const val PRESET_FOOL_12 = "fool12"
-private const val PRESET_BEAR_12 = "bear12"
-
-/**
- * 板子列表。
- *
- * 身份构成文案由这里根据 `WerewolfConfig` 现拼，不在 UI 里再写一份——
- * 规则改了文案会自动跟着变，不会出现「界面写着 3 神、引擎发 2 神」。
- *
- * 顺序按人数排，不是按推荐度：玩家挑板子时先问「凑得齐几个人」，
- * 把 6 人局放在最后会让人以为要凑满 12 个才能开局。
- *
- * 12 人局默认带警长（线下 12 人标准局就是这样打的），所以这两张卡片是
- * `sheriffBoard(...)` 而不是裸配置；[configOf] 也从这同一份表取，
- * 不再各写一份映射——以前两处都得改一次，改漏了就是「卡片写着带警长、开局却没有」。
- */
-private val BOARDS: List<Triple<String, String, WerewolfConfig>> = listOf(
-    Triple(PRESET_QUICK_6, "6 人快局", WerewolfConfig(composition = WerewolfConfig.Quick6)),
-    Triple(PRESET_STANDARD_8, "8 人标准局", WerewolfConfig(composition = WerewolfConfig.Standard8)),
-    Triple(PRESET_STANDARD_9, "9 人标准局", WerewolfConfig(composition = WerewolfConfig.Standard9)),
-    Triple(PRESET_GUARD_10, "10 人守卫局", WerewolfConfig(composition = WerewolfConfig.Guard10)),
-    Triple(PRESET_KING_10, "10 人狼王局", WerewolfConfig(composition = WerewolfConfig.King10)),
-    Triple(PRESET_GUARD_12, "12 人守卫局", sheriffBoard(WerewolfConfig.Guard12)),
-    Triple(PRESET_FOOL_12, "12 人白痴局", sheriffBoard(WerewolfConfig.Fool12)),
-    Triple(PRESET_BEAR_12, "12 人熊局", sheriffBoard(WerewolfConfig.Bear12)),
-)
-
-private val PRESETS = BOARDS.map { (key, title, config) -> preset(key, title, config) }
-
-/**
- * 开警长的板子。
- *
- * `maxVoteRounds = 2` 跟着一起开：警长在场上才能主持 PK，这两个开关是配套的。
- * 只开警长而把加投关掉，等于有一位「票权 1.5 但按不出第二轮」的警长。
- */
-private fun sheriffBoard(composition: Map<WerewolfRole, Int>): WerewolfConfig =
-    WerewolfConfig(composition = composition, hasSheriff = true, maxVoteRounds = 2)
-
-private fun preset(key: String, title: String, config: WerewolfConfig): UIWerewolfPreset =
+private val PRESETS = WerewolfBoards.all.map { board ->
     UIWerewolfPreset(
-        key = key,
-        title = title,
-        playerCount = config.playerCount,
-        composition = compositionText(config.composition) + if (config.hasSheriff) " · 警长" else "",
+        key = board.key,
+        title = board.title,
+        playerCount = board.config.playerCount,
+        composition = compositionText(board.config.composition) +
+            if (board.config.hasSheriff) " · 警长" else "",
     )
+}
 
-private fun configOf(presetKey: String): WerewolfConfig =
-    BOARDS.firstOrNull { it.first == presetKey }?.third ?: WerewolfConfig()
+private fun configOf(presetKey: String): WerewolfConfig = WerewolfBoards.configOf(presetKey)
 
 /**
  * 身份构成文案，例如「4 狼 · 预女猎守 · 4 民」。

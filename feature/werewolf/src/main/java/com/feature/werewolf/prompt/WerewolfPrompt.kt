@@ -38,6 +38,14 @@ object WerewolfPrompt {
         game: WerewolfGame,
         seat: Int,
         persona: String? = null,
+        /**
+         * 用户自定义的补充设定（全局 + 当前板子拼在一起）。
+         *
+         * 放在**最后**：后写的优先，用户想微调策略时，这段能压过内置的默认打法。
+         * 但它进不了公共播报、也不进 transcript——只在这一个座位的 system prompt 里，
+         * 信息隔离不受影响。
+         */
+        custom: String? = null,
     ): String {
         val player = game.playerAt(seat)
         return buildString {
@@ -61,6 +69,13 @@ object WerewolfPrompt {
             append(publicSituation(game).trimEnd()).append("\n\n")
             append(privateBriefing(game, seat)).append("\n\n")
             append(task(game, seat))
+            // 用户自定义放最后：它是「玩家对这一局玩法的要求」，
+            // 位置太靠前会被后面固定的几段稀释掉，模型照着内置打法走就白改了。
+            if (!custom.isNullOrBlank()) {
+                append("\n\n")
+                append("【本局额外设定（玩家写的，优先级高于上面所有默认打法）】\n")
+                append(custom.trim())
+            }
         }
     }
 

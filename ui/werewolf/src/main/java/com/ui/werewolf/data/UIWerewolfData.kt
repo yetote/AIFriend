@@ -73,6 +73,26 @@ data class UIWerewolfPreset(
     val composition: String,
 )
 
+/**
+ * 提示词微调页的状态。
+ *
+ * 分两段：**全局**（所有板子都生效）和**当前板子**（只对这一张板子生效）。
+ * 用户微调的多半是「这张板子怎么打」——12 人守卫局和 6 人快局该用不同的打法。
+ */
+data class UIWerewolfPromptState(
+    /** 全局补充设定。 */
+    val global: String = "",
+    /** 当前板子的补充设定。 */
+    val board: String = "",
+    /** 当前板子的名字，页面上要写清楚这段是给谁用的。 */
+    val boardTitle: String = "",
+    /** 当前板子的稳定标识，保存时用它当 key。 */
+    val boardKey: String = "",
+    /** 有没有已经存过的东西（决定「恢复默认」按钮亮不亮）。 */
+    val hasGlobal: Boolean = false,
+    val hasBoard: Boolean = false,
+)
+
 /** 一次连通性检查的状态。 */
 enum class UIWerewolfApiState {
     /** 还没查过。不给任何标记——灰色问号会让「没查」看起来像「查出了问题」。 */

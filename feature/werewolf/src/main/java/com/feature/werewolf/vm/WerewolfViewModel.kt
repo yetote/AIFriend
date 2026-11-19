@@ -14,6 +14,7 @@ import com.core.repository.storage.AIProviderSettings
 import com.core.repository.settings.TTSProviderCatalog
 import com.core.repository.storage.FriendRepository
 import com.core.repository.storage.TTSProviderSettings
+import com.core.repository.storage.WerewolfPromptSettings
 import com.core.repository.storage.WerewolfSettings
 import com.core.tts.CloudSpeechEngine
 import com.core.tts.SpeechCandidate
@@ -34,9 +35,11 @@ import com.feature.werewolf.engine.WerewolfTable
 import com.feature.werewolf.engine.WerewolfUiState
 import com.feature.werewolf.game.RosterEntry
 import com.feature.werewolf.game.SELF_PLAYER_ID
+import com.feature.werewolf.game.WerewolfBoards
 import com.feature.werewolf.game.WerewolfConfig
 import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfPlayer
+import com.ui.werewolf.data.UIWerewolfPromptState
 import com.feature.werewolf.store.WerewolfGameSummary
 import com.feature.werewolf.store.WerewolfStore
 import kotlinx.coroutines.CancellationException
@@ -197,6 +200,52 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
 
     /** 座位 → 该座位好友指定的 TTS 配置（TTSProvider.id），null = 默认配置。 */
     private var seatTtsConfigIds: Map<Int, String?> = emptyMap()
+
+    /** 提示词自定义的存储。只存 DataStore，不进存档。 */
+    private val promptSettings = WerewolfPromptSettings(getApplication())
+
+    private val _promptState = MutableStateFlow(UIWerewolfPromptState())
+    val promptState: StateFlow<UIWerewolfPromptState> = _promptState.asStateFlow()
+
+    /**
+     * 读出提示词微调页要显示的内容。
+     *
+     * 每次进页面都重读：用户可能在别的页面改过（或者刚在设置里清空过），
+     * 页面显示的必须是磁盘上的最新值，不是打开时的那一份。
+     */
+    fun loadPromptSettings(boardKey: String) {
+        viewModelScope.launch {
+            val global = promptSettings.global.first()
+            val board = promptSettings.board(boardKey).first()
+            _promptState.value = UIWerewolfPromptState(
+                global = global,
+                board = board,
+                boardTitle = WerewolfBoards.titleOf(boardKey),
+                boardKey = boardKey,
+                hasGlobal = global.isNotBlank(),
+                hasBoard = board.isNotBlank(),
+            )
+        }
+    }
+
+    /** 保存两段自定义。 */
+    fun savePromptSettings(global: String, board: String) {
+        val key = _promptState.value.boardKey
+        viewModelScope.launch {
+            promptSettings.setGlobal(global)
+            promptSettings.setBoard(key, board)
+            loadPromptSettings(key)
+        }
+    }
+
+    /** 清掉某一段，回到内置提示词。 */
+    fun clearPromptSettings(global: Boolean) {
+        val key = _promptState.value.boardKey
+        viewModelScope.launch {
+            if (global) promptSettings.clearGlobal() else promptSettings.clearBoard(key)
+            loadPromptSettings(key)
+        }
+    }
 
     private val controller = WerewolfController(
         store = store,
@@ -497,11 +546,26 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
      * [skipCheck] 跳过连通性检查。只在用户已经看见红灯、仍然选择开局时用：
      * 请求能从配置页一路走到这里，说明他读过失败原因了。
      */
+    /**
+     * 读出这一局要用的额外设定：全局的那段 + 这张板子专属的那段。
+     *
+     * 两段拼在一起交给导演，导演塞进每个座位的 system prompt 最后——
+     * 位置在那里，用户写的话才压得过内置的默认打法。
+     */
+    private suspend fun loadCustomPrompt(boardKey: String): String? {
+        val global = promptSettings.global.first()
+        val board = if (boardKey.isBlank()) "" else promptSettings.board(boardKey).first()
+        val parts = listOf(global, board).filter { it.isNotBlank() }
+        return parts.joinToString("\n\n").takeIf { it.isNotBlank() }
+    }
+
     fun startGame(
         mode: WerewolfMode,
         friendIds: List<String>,
         config: WerewolfConfig = WerewolfConfig(),
         skipCheck: Boolean = false,
+        /** 板子的稳定标识，用来取这一局专属的提示词自定义。 */
+        boardKey: String = "",
     ) {
         val previous = playJob
         playJob = viewModelScope.launch {
@@ -517,6 +581,10 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
                     _error.value = "需要选 $expected 位好友，当前选了 ${chosen.size} 位"
                     return@launch
                 }
+
+                // 玩家写的额外设定：全局的那段 + 这张板子专属的那段。
+                // 在这里读一次就够了——导演是在 play 里创建的，它拿的是当时的值。
+                controller.applyCustomPrompt(loadCustomPrompt(boardKey))
 
                 // 开局前先确认每个模型真的能回话。这一步失败比打到第三天某个 AI 突然
                 // 报错要好得多：那时牌桌已经铺开，用户分不清是游戏坏了还是模型坏了
@@ -577,6 +645,10 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
                 }
                 val friends = _friends.value.ifEmpty { friendRepository.load().map { it.toFriend() } }
                 val humanSeat = table.game.players.firstOrNull { it.id == SELF_PLAYER_ID }?.seat
+
+                // 续档同样要带上玩家写的额外设定：提示词不进存档，
+                // 用的是**当前**设置——玩家可能刚在设置里改过
+                controller.applyCustomPrompt(loadCustomPrompt(""))
 
                 // 续档也要检：这一局可能是昨天开的，Key 过期、模型下线都在这中间发生过
                 val participants = table.game.players

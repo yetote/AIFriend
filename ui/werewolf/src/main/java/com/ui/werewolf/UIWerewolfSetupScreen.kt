@@ -101,6 +101,8 @@ fun UIWerewolfSetupScreen(
     onToggleFriend: (String) -> Unit,
     onClearError: () -> Unit,
     onCheckApi: () -> Unit,
+    /** 去微调这一局的提示词。 */
+    onOpenPromptSettings: () -> Unit,
     onBack: () -> Unit,
     onStart: () -> Unit,
     onStartAnyway: () -> Unit,
@@ -173,6 +175,14 @@ fun UIWerewolfSetupScreen(
                     presets = presets,
                     presetKey = presetKey,
                     onPresetChange = onPresetChange
+                )
+
+                SectionTitle(
+                    title = "提示词微调",
+                    subtitle = "嫌 AI 打得太套路？给这张板子写几句自己的要求"
+                )
+                PromptEntryCard(
+                    onClick = onOpenPromptSettings
                 )
 
                 // 座位条：这是整页的主视觉，把「还差几位」变成几个空位
@@ -282,6 +292,40 @@ fun UIWerewolfSetupScreen(
 // ---------------------------------------------------------------------------
 // 各区块
 // ---------------------------------------------------------------------------
+
+/** 「去微调提示词」的入口卡。 */
+@Composable
+private fun PromptEntryCard(onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(UIRadiusControl))
+            .background(UIGlassSurfaceStrong)
+            .clickable { onClick() }
+            .padding(horizontal = 14.dp, vertical = 13.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "给这一局写点要求",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = UIFriendBarTitleColor
+            )
+            Text(
+                text = "狼人更凶一点、预言家每天报两个验人…只影响 AI 怎么打",
+                fontSize = 11.sp,
+                color = UIFriendBarItemSubtitleColor,
+                modifier = Modifier.padding(top = 2.dp)
+            )
+        }
+        Text(
+            text = "›",
+            fontSize = 18.sp,
+            color = UIFriendBarTagTextBlue
+        )
+    }
+}
 
 @Composable
 private fun SectionTitle(title: String, subtitle: String, modifier: Modifier = Modifier) {

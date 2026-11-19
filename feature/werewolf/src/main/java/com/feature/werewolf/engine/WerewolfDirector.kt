@@ -68,6 +68,13 @@ class WerewolfDirector(
      */
     private val onLive: suspend (WerewolfLive?) -> Unit = {},
     /**
+     * 玩家为这一局写的额外设定（全局 + 当前板子拼在一起）。
+     *
+     * 走构造参数而不是从哪读设置：导演层不该知道 DataStore 存在，
+     * 谁在开局时读到设置、拼成一段话传进来，是外面的事。
+     */
+    private val customPrompt: String? = null,
+    /**
      * 两次 [onLive] 之间的最小间隔。
      *
      * 模型一秒能吐几十个片段，每片都刷一次界面纯属浪费——牌桌一次重排要重建整张记录流。
@@ -897,7 +904,7 @@ class WerewolfDirector(
         val agent = agentOf(seat)
         val game = table.game
         val messages = listOf(ChatMessage.user(context(table, seat, task)))
-        val system = WerewolfPrompt.systemPrompt(game, seat, agent.persona)
+        val system = WerewolfPrompt.systemPrompt(game, seat, agent.persona, customPrompt)
         val content = StringBuilder()
         val reasoning = StringBuilder()
         var lastPush = 0L
@@ -967,7 +974,7 @@ class WerewolfDirector(
             model = agent.model,
             spec = spec,
             fallback = fallback,
-            systemPrompt = WerewolfPrompt.systemPrompt(table.game, seat, agent.persona),
+            systemPrompt = WerewolfPrompt.systemPrompt(table.game, seat, agent.persona, customPrompt),
             enableThinking = agent.thinkingEnabled,
         )
     }

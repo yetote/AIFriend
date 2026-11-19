@@ -55,6 +55,13 @@ class WerewolfController(
     private val agentsFor: (WerewolfPlayer) -> SeatAgent,
     private val random: Random = Random.Default,
     private val clock: () -> Long = System::currentTimeMillis,
+    /**
+     * 玩家为这一局写的额外设定。
+     *
+     * 可以在开局前后改（[applyCustomPrompt]）：设置页改完直接生效，
+     * 不用重开一局。续档也用它——提示词不进存档，续上时用当前设置接着打。
+     */
+    private var customPrompt: String? = null,
 ) {
 
     private val _state = MutableStateFlow(WerewolfUiState())
@@ -65,6 +72,15 @@ class WerewolfController(
 
     /** 开一局新的（还没有任何消息时用这个）。 */
     suspend fun start(id: String, game: WerewolfGame) = start(id, WerewolfTable(game))
+
+    /**
+     * 换掉这一局的额外设定。
+     *
+     * 必须在 [play] 之前调：导演是在 play 里创建的，它拿的是当时的值。
+     */
+    fun applyCustomPrompt(text: String?) {
+        customPrompt = text?.takeIf { it.isNotBlank() }
+    }
 
     /** 开一局新的，立刻落档——先存再打，中途被杀进程也不会丢。 */
     suspend fun start(id: String, table: WerewolfTable) {
@@ -115,6 +131,7 @@ class WerewolfController(
             onTranscript = { snapshot -> _state.update { it.copy(table = snapshot) } },
             // 流式发言同样只刷界面。它比 onTranscript 更细：一条消息还没成型就先显示半句
             onLive = { live -> _state.update { it.copy(live = live) } },
+            customPrompt = customPrompt,
         )
 
         _state.update { it.copy(running = true, error = null) }

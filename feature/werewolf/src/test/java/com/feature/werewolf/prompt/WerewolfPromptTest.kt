@@ -271,6 +271,42 @@ class WerewolfPromptTest {
     }
 
     @Test
+    fun `玩家写的额外设定进提示词的最后`() {
+        // 位置很要紧：放在最后才压得过内置打法。放前面会被后面固定的几段稀释掉，
+        // 模型照着内置打法走，玩家写的东西等于白写。
+        val game = gameWithGuard()
+        val prompt = WerewolfPrompt.systemPrompt(game, seat = 3, custom = "狼人白天要更凶一点")
+
+        assertTrue(prompt.contains("狼人白天要更凶一点"))
+        val customIndex = prompt.indexOf("本局额外设定")
+        assertTrue("自定义段要标出来", customIndex > 0)
+        assertTrue(
+            "自定义段必须在最后",
+            customIndex > prompt.indexOf("预言家查验") &&
+                customIndex > prompt.indexOf("基本打法"),
+        )
+    }
+
+    @Test
+    fun `没写自定义时不加那一段`() {
+        val prompt = WerewolfPrompt.systemPrompt(gameWithGuard(), seat = 3)
+        assertFalse(prompt.contains("本局额外设定"))
+    }
+
+    @Test
+    fun `自定义设定不会泄进公共播报`() {
+        // 信息隔离的红线：玩家写的这段只进 system prompt，
+        // 不进 transcript、不进播报——不然就是全场都知道
+        val game = gameWithGuard()
+        val prompt = WerewolfPrompt.systemPrompt(game, seat = 3, custom = "3 号是预言家")
+        assertTrue(prompt.contains("3 号是预言家"))
+
+        // 播报里不能出现
+        val broadcast = WerewolfPrompt.describe(GameEvent.Dawn(day = 1, deadSeats = listOf(2)))
+        assertFalse(broadcast.contains("3 号是预言家"))
+    }
+
+    @Test
     fun `身份和座位出现在提示词里`() {
         val game = standardGame()
         val prompt = WerewolfPrompt.systemPrompt(game, seat = 3)

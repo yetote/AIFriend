@@ -19,4 +19,11 @@ sealed interface WerewolfScreen {
 
     /** 对局进行中（牌桌未落地前先用进度页顶上）。 */
     data object Table : WerewolfScreen
+
+    /**
+     * 提示词微调：玩家为这一局写的额外设定。
+     *
+     * 从开局配置页进——那个页面上正挑着板子，「按这张板子微调」才说得清。
+     */
+    data object PromptSettings : WerewolfScreen
 }
