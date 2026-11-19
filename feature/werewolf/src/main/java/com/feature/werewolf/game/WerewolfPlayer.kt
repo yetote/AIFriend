@@ -40,6 +40,14 @@ data class WerewolfPlayer(
     val alive: Boolean = true,
     val deathCause: DeathCause? = null,
     val deathDay: Int? = null,
+    /**
+     * 这个座位背后跑的模型名，给牌桌/回放显示用。
+     *
+     * 开局时从好友表填入，跟着 [WerewolfSnapshot] 一起存档——所以回放能显示
+     * **原局真正用的模型**，而不是事后改过的好友表。人类座位是 "human"，界面据此不显示。
+     * 留在领域层而不是只塞进 UI 映射，是为了让存档和牌桌读同一份数据，不会各说各话。
+     */
+    val model: String = "",
 ) {
     val faction: Faction get() = role.faction
 }
@@ -53,6 +61,8 @@ data class WerewolfPlayer(
 data class RosterEntry(
     val id: String,
     val name: String,
+    /** 这个席位背后跑的模型名，开局时从好友表带入，存档后跟着 player 走。 */
+    val model: String = "",
 )
 
 /**

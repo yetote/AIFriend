@@ -48,8 +48,11 @@ object WerewolfSnapshot {
      *
      * v13：多出 `turnLimit` / `thinkingOff`（这一局的思考时限与本局被关思考的座位）。
      * 都是带默认值的**新增**字段，语义没变，旧档照样能读。
+     *
+     * v14：玩家多出 `model`（每个座位背后跑的模型名，牌桌/回放要显示）。
+     * 同样是带默认值的新增字段，旧档读到空串就不显示，语义没变。
      */
-    const val VERSION = 13
+    const val VERSION = 14
 
     private val json = Json {
         ignoreUnknownKeys = true   // 旧档多出来的字段不该让新版本读不出来
@@ -227,6 +230,8 @@ internal data class PlayerSnapshot(
     val alive: Boolean,
     val deathCause: String? = null,
     val deathDay: Int? = null,
+    /** 这个座位背后跑的模型名。老档没有这一段，默认空串，界面据此不显示。 */
+    val model: String = "",
 )
 
 @Serializable
@@ -350,6 +355,7 @@ internal fun WerewolfTable.toSnapshot(
                 alive = it.alive,
                 deathCause = it.deathCause?.name,
                 deathDay = it.deathDay,
+                model = it.model,
             )
         },
         day = game.day,
@@ -468,6 +474,7 @@ internal fun TableSnapshot.toTable(): WerewolfTable = WerewolfTable(
                 alive = it.alive,
                 deathCause = it.deathCause?.let { name -> enumOf<DeathCause>(name) },
                 deathDay = it.deathDay,
+                model = it.model,
             )
         },
         day = day,

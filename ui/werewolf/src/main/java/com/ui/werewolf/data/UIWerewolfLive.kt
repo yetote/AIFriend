@@ -11,6 +11,11 @@ data class UIWerewolfSeatLive(
     val seat: Int,
     val name: String,
     val avatarPath: String? = null,
+    /**
+     * 这个座位背后跑的模型名，显示在名字下方。
+     * 空串表示不显示（人类座位是 "human"，老存档没有这一段）。
+     */
+    val model: String = "",
     /** 是不是「你」。座位环上要圈出来，不然切回页面会找不到自己。 */
     val isSelf: Boolean = false,
     val alive: Boolean = true,

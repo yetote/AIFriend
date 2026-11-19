@@ -47,6 +47,8 @@ internal fun WerewolfReplay.toLive(
             seat = player.seat,
             name = player.name,
             avatarPath = avatars[player.id],
+            // 回放显示原局真正跑的模型（存档里的值），不是替身/当前好友表的模型
+            model = player.model.takeIf { it != "human" }.orEmpty(),
             isSelf = player.seat == humanSeat,
             alive = !out,
             // 死因是终局才知道的事（刀还是毒），和出局这个事实分开看：

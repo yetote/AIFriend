@@ -36,6 +36,12 @@ internal val FsSeatName = 11.sp
 /** 身份/死因徽标。压在名字下面，再小就认不出「刀」「票」两个字了。 */
 internal val FsBadge = 9.5.sp
 
+/**
+ * 座位卡最底下的模型名。比徽标再小一档：它是排查「这个 AI 是谁」时才看的东西，
+ * 不该抢走名字和身份的注意力；窄列里也只放得下这么多。
+ */
+internal val FsModel = 8.sp
+
 internal val NightText = Color(0xFFE9EEF9)
 
 internal val NightDim = Color(0xFF97A3BC)

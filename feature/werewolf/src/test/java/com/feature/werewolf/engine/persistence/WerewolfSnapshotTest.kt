@@ -401,4 +401,46 @@ class WerewolfSnapshotTest {
             .replace("\"HUNTER_SHOT\"", "\"SOMETHING_NEW\"")
         assertNull(WerewolfSnapshot.decode(text))
     }
+
+    @Test
+    fun `每个座位用的模型跟着存档走，回放显示的是原局那一份`() {
+        // 用 withRoles 不洗牌，保证 players 顺序和名单一致，断言才能对上号
+        val game = WerewolfGame.withRoles(
+            WerewolfConfig(),
+            listOf(
+                RosterEntry("p1", "玩家1", "deepseek/deepseek-chat:free"),
+                RosterEntry("p2", "玩家2", "qwen3.8-max"),
+                RosterEntry("p3", "玩家3", "human"),
+                RosterEntry("p4", "玩家4", "tencent/Hunyuan-MT-7B"),
+                RosterEntry("p5", "玩家5", "grok-pro"),
+                RosterEntry("p6", "玩家6", "doubao-seed-2.1-lite"),
+                RosterEntry("p7", "玩家7", ""),
+                RosterEntry("p8", "玩家8", "MiniMax-M3"),
+            ),
+            listOf(
+                WerewolfRole.WEREWOLF, WerewolfRole.VILLAGER, WerewolfRole.SEER, WerewolfRole.WITCH,
+                WerewolfRole.HUNTER, WerewolfRole.WEREWOLF, WerewolfRole.VILLAGER, WerewolfRole.VILLAGER,
+            ),
+        )
+        val table = WerewolfTable(game)
+        val restored = WerewolfSnapshot.decode(WerewolfSnapshot.encode(table))!!
+
+        assertEquals("整局仍然完全相等", table, restored)
+        assertEquals("聚合平台的完整 id 原样存档", "deepseek/deepseek-chat:free", restored.game.players[0].model)
+        assertEquals("自家短名原样存档", "qwen3.8-max", restored.game.players[1].model)
+        assertEquals("人座也存着，界面据此不显示", "human", restored.game.players[2].model)
+        assertEquals("空模型也原样带回", "", restored.game.players[6].model)
+    }
+
+    @Test
+    fun `v13 老档没有模型字段也能读，model 回落到空串`() {
+        // 把当前档的版本号改成 13，并删掉所有 "model":"..." 字段，模拟升级前的存档
+        val legacy = WerewolfSnapshot.encode(richTable())
+            .replaceFirst("\"version\":${WerewolfSnapshot.VERSION}", "\"version\":13")
+            .replace(Regex(",\"model\":\"[^\"]*\""), "")
+        val restored = WerewolfSnapshot.decode(legacy)
+
+        assertNotNull("老档照样能续上", restored)
+        assertTrue("老档案位没有模型名", restored!!.game.players.all { it.model.isEmpty() })
+    }
 }

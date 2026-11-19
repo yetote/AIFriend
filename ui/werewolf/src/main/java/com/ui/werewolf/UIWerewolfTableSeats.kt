@@ -43,6 +43,7 @@ import com.ui.common.UIAvatar
 import com.ui.common.theme.UIFieldFill
 import com.ui.werewolf.data.UIWerewolfLive
 import com.ui.werewolf.data.UIWerewolfSeatLive
+import com.ui.werewolf.data.shortModelLabel
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.ui.geometry.Offset
 
@@ -369,6 +370,25 @@ internal fun SeatTile(
                     seat.fate != null -> FateRed
                     seat.wolf -> FateRed
                     else -> if (night) NightDim else SelfBlue
+                }
+            )
+        }
+
+        // 座位最底下一行：这个 AI 背后跑的模型。
+        // 不显示的情况：人类座位、老存档没记模型、模型名缩写后为空。
+        // 字号比徽标再小一档、颜色压到近无关紧要——它是排查问题时才看的东西，
+        // 不能抢走名字和身份的注意力。仍然单行省略，绝不让这一行把 12 人局撑出屏。
+        val modelLabel = shortModelLabel(seat.model)
+        if (modelLabel.isNotEmpty()) {
+            Text(
+                text = modelLabel,
+                modifier = Modifier.padding(top = 0.5.dp),
+                fontSize = FsModel,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = when {
+                    !seat.alive -> dimColor.copy(alpha = 0.5f)
+                    else -> dimColor
                 }
             )
         }

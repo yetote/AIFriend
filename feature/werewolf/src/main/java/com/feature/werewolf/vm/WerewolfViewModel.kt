@@ -732,9 +732,9 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
                 // 报错要好得多：那时牌桌已经铺开，用户分不清是游戏坏了还是模型坏了
                 if (!skipCheck && !verifyReachable(chosen)) return@launch
 
-                val roster = chosen.map { RosterEntry(id = it.id, name = it.name) } +
+                val roster = chosen.map { RosterEntry(id = it.id, name = it.name, model = it.model) } +
                     if (mode == WerewolfMode.PLAY) {
-                        listOf(RosterEntry(id = SELF_PLAYER_ID, name = "你"))
+                        listOf(RosterEntry(id = SELF_PLAYER_ID, name = "你", model = "human"))
                     } else {
                         emptyList()
                     }

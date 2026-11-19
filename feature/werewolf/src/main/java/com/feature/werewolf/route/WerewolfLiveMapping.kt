@@ -128,6 +128,8 @@ internal fun WerewolfUiState.toLive(
             seat = player.seat,
             name = player.name,
             avatarPath = avatars[player.id],
+            // 人座是 "human"，界面据此不显示；AI 座显示存档里记下的原局模型
+            model = player.model.takeIf { it != "human" }.orEmpty(),
             isSelf = player.seat == humanSeat,
             alive = player.alive,
             // 参与中的局不暴露刀/毒：那是 AI 玩家拿不到的私有信息。
