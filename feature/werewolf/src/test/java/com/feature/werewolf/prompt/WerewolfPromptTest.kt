@@ -182,19 +182,19 @@ class WerewolfPromptTest {
     }
 
     @Test
-    fun `第1天只有一条验人链不该被当成悍跳`() {
-        // 真机案例：真预言家第 1 夜验的正好是当夜被刀的人，一条链被说成「死无对证」，
-        // 好人全票投他，狼人顺势拿到警徽——真预言家第一天就走了。
+    fun `第1天只报了一个验人不该被当成悍跳`() {
+        // 真机案例：真预言家第 1 夜验的正好是当夜被刀的人，只报了一个人就被说成
+        // 「死无对证」，好人全票投他，狼人顺势拿到警徽——真预言家第一天就走了。
         val prompt = WerewolfPrompt.systemPrompt(gameWithGuard(), seat = 3)
 
-        assertTrue(prompt.contains("第 1 天只有一条验人记录是正常的"))
+        assertTrue(prompt.contains("第 1 天只报了一个验人是正常的"))
         assertTrue(prompt.contains("验到死人只是运气不好"))
     }
 
     @Test
     fun `预言家不许编警徽流`() {
         // 真机案例：真预言家只验了 7 号，却在竞选时说「警徽流先验 8 号再验 10 号」，
-        // 编出来的链子对不上，全场当场认定他是悍跳
+        // 编出来的警徽流对不上，全场当场认定他是悍跳
         val prompt = WerewolfPrompt.systemPrompt(gameWithGuard(), seat = 3)
 
         assertTrue(prompt.contains("警徽流只报你真的验过的人"))

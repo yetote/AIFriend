@@ -1,6 +1,7 @@
 package com.feature.werewolf.decision
 
 import com.core.ai.structured.StructuredSpec
+import com.feature.werewolf.game.DeathCause
 import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfRole
 import kotlinx.serialization.Serializable
@@ -204,14 +205,30 @@ object WerewolfDecisions {
         )
     }
 
-    /** 警徽移交。出局的警长决定交给谁，或者撕掉。 */
+    /**
+     * 警徽移交。出局的警长决定交给谁，或者撕掉。
+     *
+     * 两种情况要分开写：[seat] 是被猎人一枪带走的时候，他**没有遗言**，
+     * 这一句是唯一能留下的信息——不能让他以为自己在发表遗言，
+     * 否则模型会写出一大段悼词，牌桌上一具尸体突然开始长篇大论。
+     */
     fun badgeTransfer(game: WerewolfGame, seat: Int): StructuredSpec<VoteChoice> {
         val valid = game.aliveSeats.filter { it != seat }
+        val shot = game.playerAt(seat).deathCause == DeathCause.HUNTER_SHOOT
+        val lead = if (shot) {
+            "你被猎人开枪带走，当场出局，**没有遗言**。只有一个动作：处理警徽。"
+        } else {
+            "你在遗言里要交代警徽。"
+        }
+        val tail = if (shot) {
+            "reason 只写你挑这个人的一句理由，不超过 20 字，它会作为你的最后一句话显示。"
+        } else {
+            "reason 会被当成你的遗言公开说出来，用 1-2 句中文交代你的判断。"
+        }
         return StructuredSpec(
-            instruction = "遗言里还要交代警徽。输出 {\"target\": 座位号或 null, \"reason\": \"你的遗言\"}。" +
+            instruction = lead + "输出 {\"target\": 座位号或 null, \"reason\": \"一句话理由\"}。" +
                 "target 是你把警徽交给的人，只能从 ${list(valid)} 中选；" +
-                "想撕掉警徽（谁也不给）就填 null。" +
-                "reason 会被当成你的遗言公开说出来，用 1-2 句中文交代你的判断。" +
+                "想撕掉警徽（谁也不给）就填 null。" + tail +
                 "注意：把警徽交给一个可能是狼的人，比撕掉更糟。",
             serializer = VoteChoice.serializer(),
             validate = { it.target == null || it.target in valid },

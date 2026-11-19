@@ -1091,13 +1091,15 @@ internal fun buildTurn(
         )
 
         Phase.DAY_LAST_WORDS -> if (game.sheriffSeat == humanSeat) {
-            // 警长的遗言要同时交代警徽。用 SEAT 面板：选一个人就是交给他，
-            // 「撕掉警徽」走弃权那条路
+            // 警长的出局处理要同时交代警徽。用 SEAT 面板：选一个人就是交给他，
+            // 「撕掉警徽」走弃权那条路。
+            // 被枪带走时没有遗言，这一步只剩交徽，标题不能再写「遗言」。
+            val shot = game.playerAt(humanSeat).deathCause == DeathCause.HUNTER_SHOOT
             UIWerewolfTurn(
                 kind = UIWerewolfTurnKind.SEAT,
                 seat = humanSeat,
-                title = "遗言：警徽交给谁",
-                hint = "交错了人，比撕掉更糟",
+                title = if (shot) "警徽交给谁" else "遗言：警徽交给谁",
+                hint = if (shot) "被枪带走，没有遗言——只能处理警徽" else "交错了人，比撕掉更糟",
                 targets = others,
                 canAbstain = true,
                 abstainLabel = "撕掉警徽",

@@ -77,9 +77,9 @@ data class WerewolfGame(
     /**
      * 警长座位。null 表示此刻没有警长：没开警长、还没选出来，或者警徽已经流失。
      *
-     * 警长死了之后这个字段**不会立刻清空**——如果他有遗言，警徽要等他在遗言里
-     * 指定继任者；指定的那一刻才改。没指定（或根本没遗言）才作废，
-     * 由 `dropDeadBadge()` 统一处理。
+     * 警长死了之后这个字段**不会立刻清空**——他要先办完出局处理再决定继任者：
+     * 有遗言的就在遗言里说，被猎人一枪带走的没有遗言，但照样要交徽（或撕掉）。
+     * 指定的那一刻才改；一直没指定才作废，由 `dropDeadBadge()` 统一处理。
      */
     val sheriffSeat: Int? = null,
     /**
@@ -263,10 +263,11 @@ data class WerewolfGame(
             playerAt(seat).role.isWerewolf
 
     /**
-     * 警长此刻能不能移交警徽：必须正在办遗言，并且说话的人就是那位已出局的警长。
+     * 警长此刻能不能移交警徽：正在办这位已出局警长的「出局处理」，并且他就是现任警长。
      *
-     * 只判断「是不是警长的遗言」，不判断他是不是刚死——警徽只在遗言里移交，
-     * 这是线下流程，也是唯一能拿到他本人意愿的时机。
+     * 注意这里判的是**出局处理**，不是遗言：警徽移交和遗言是两条独立规则。
+     * 被猎人一枪带走的警长说不了话，但警徽照样要在他出局时处理掉——
+     * 否则那 1.5 票和义务归票权会随着枪响一起蒸发。
      */
     fun canTransferBadge(seat: Int): Boolean =
         phase == Phase.DAY_LAST_WORDS && sheriffSeat == seat && !playerAt(seat).alive
@@ -535,10 +536,6 @@ data class WerewolfGame(
         )
         if (targetSeat != null) {
             next = next.applyDeaths(listOf(targetSeat to DeathCause.HUNTER_SHOOT))
-            // 枪可能带走的是警长：只清**被枪打死的那位**的警徽。
-            // 不能调用全局 dropDeadBadge()——开枪的猎人自己如果就是警长，
-            // 那样会在他还没说遗言之前先把徽吞掉，他想交也交不出去了。
-            if (next.sheriffSeat == targetSeat) next = next.dropDeadBadge()
         }
         // 开枪（或放弃）之后才判胜负：猎人那一枪可能打断绑票，
         // 狼王那一枪则可能在狼队全灭后靠屠边翻盘。
@@ -551,6 +548,23 @@ data class WerewolfGame(
                 winner = winnerFaction,
                 pendingHunterSeat = null,
                 history = next.history + GameEvent.GameOver(next.day, winnerFaction),
+            )
+        }
+        // 被枪带走的警长：**不留遗言，但警徽还是要交**。
+        // 这两件事经常被混成一件，其实是两条规则：
+        // - 遗言是「出局后能不能说话」，枪杀者不能说；
+        // - 警徽移交是「警长一死就必须处理的东西」，任何死因都躲不掉，否则那 1.5 票
+        //   连同归票权一起凭空消失，等于猎人一枪白送好人一张牌。
+        // 所以这里不 dropDeadBadge()，而是给他一个「只交徽、不说话」的位置：
+        // 复用遗言阶段，lastWords() 看到 canTransferBadge 就只问交徽。
+        val shotSheriff = targetSeat?.takeIf { next.sheriffSeat == it }
+        if (shotSheriff != null) {
+            return next.copy(
+                phase = Phase.DAY_LAST_WORDS,
+                pendingLastWords = (next.pendingLastWords + shotSheriff).distinct(),
+                // 交完徽回到开枪前本该去的地方：天亮被刀回白天开场，白天被票出入夜
+                afterLastWordsPhase = afterHunterPhase,
+                pendingHunterSeat = null,
             )
         }
         return next.afterHunter()
@@ -1098,8 +1112,9 @@ data class WerewolfGame(
     /**
      * 死掉的警长如果没把警徽交出去，警徽就作废。
      *
-     * 三个调用点（天亮开场、入夜、被枪带走）都不是「死亡那一刻」——因为死亡那一刻
-     * 他可能还有遗言，还有机会改主意。等遗言说完再清，是唯一不会抢在他前面的时机。
+     * 调用点（天亮开场、入夜）都不是「死亡那一刻」——因为死亡那一刻他可能还有遗言，
+     * 或者像被枪带走那样还有一个「只交徽」的位置，都还有机会改主意。
+     * 等他这段出局处理走完再清，是唯一不会抢在他前面的时机。
      */
     private fun dropDeadBadge(): WerewolfGame {
         val sheriff = sheriffSeat ?: return this

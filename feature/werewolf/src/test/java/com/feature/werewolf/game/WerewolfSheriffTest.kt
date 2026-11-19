@@ -6,6 +6,7 @@ import com.feature.werewolf.game.WerewolfRole.VILLAGER
 import com.feature.werewolf.game.WerewolfRole.WEREWOLF
 import com.feature.werewolf.game.WerewolfRole.WITCH
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -257,5 +258,66 @@ class WerewolfSheriffTest {
         assertThrows(IllegalArgumentException::class.java) {
             elected.transferBadge(4, 8)
         }
+    }
+
+    // ------------------------------------------------------------------
+    // 被猎人带走
+    // ------------------------------------------------------------------
+
+    /**
+     * 停在第 2 天的开枪阶段：6 号猎人要开枪，7 号是现任警长。
+     *
+     * 用 copy 直接搭局面而不是打一整夜——这里要验的是「枪杀与警徽」两条规则的交叉，
+     * 夜里谁被刀、谁被毒跟结论无关。
+     */
+    private fun atHunterShoot(): WerewolfGame = atSignup().signUpSheriff(setOf(7)).copy(
+        day = 2,
+        phase = Phase.HUNTER_SHOOT,
+        pendingHunterSeat = 6,
+        afterHunterPhase = Phase.NIGHT_WOLF,
+    )
+
+    @Test
+    fun `被枪带走的警长没有遗言，但警徽照样能交`() {
+        val shot = atHunterShoot().hunterShoot(7)
+
+        // 进队列不是为了说话，是为了「只交徽」这一个动作
+        assertEquals(Phase.DAY_LAST_WORDS, shot.phase)
+        assertEquals(listOf(7), shot.pendingLastWords)
+        assertFalse(shot.playerAt(7).alive)
+        assertTrue(shot.canTransferBadge(7))
+
+        val next = shot.transferBadge(7, 8).finishLastWords()
+        assertEquals("被枪带走不等于连徽一起没了", 8, next.sheriffSeat)
+        assertEquals(Phase.NIGHT_WOLF_CHAT, next.phase)
+    }
+
+    @Test
+    fun `被枪带走的警长也能撕掉警徽`() {
+        val torn = atHunterShoot().hunterShoot(7).transferBadge(7, null)
+
+        assertNull(torn.sheriffSeat)
+    }
+
+    @Test
+    fun `天亮被枪带走的警长，交完徽才回白天`() {
+        val dawn = atHunterShoot().copy(afterHunterPhase = Phase.DAY_DISCUSSION)
+        val shot = dawn.hunterShoot(7)
+
+        assertEquals(Phase.DAY_LAST_WORDS, shot.phase)
+        assertEquals(Phase.DAY_DISCUSSION, shot.afterLastWordsPhase)
+
+        val next = shot.transferBadge(7, 8).finishLastWords()
+        assertEquals(Phase.DAY_DISCUSSION, next.phase)
+        assertEquals(8, next.sheriffSeat)
+    }
+
+    @Test
+    fun `被枪打死的普通人没有遗言`() {
+        val shot = atHunterShoot().hunterShoot(3)
+
+        assertFalse(shot.playerAt(3).alive)
+        assertTrue("枪杀者不留遗言", shot.pendingLastWords.isEmpty())
+        assertEquals(Phase.NIGHT_WOLF_CHAT, shot.phase)
     }
 }

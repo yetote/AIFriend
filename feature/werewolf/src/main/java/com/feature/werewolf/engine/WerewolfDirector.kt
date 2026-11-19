@@ -8,6 +8,7 @@ import com.feature.werewolf.decision.SeatChoice
 import com.feature.werewolf.decision.VoteChoice
 import com.feature.werewolf.decision.WerewolfDecisions
 import com.feature.werewolf.decision.WitchChoice
+import com.feature.werewolf.game.DeathCause
 import com.feature.werewolf.game.Phase
 import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfRole
@@ -596,13 +597,16 @@ class WerewolfDirector(
                 val outcome = askBadge(current, seat)
                 val target = outcome.value.target
                 val head = if (target == null) "我把警徽撕了。" else "我把警徽交给 $target 号。"
+                // 被猎人一枪带走的警长没有遗言：他只有「处理警徽」这一个动作，
+                // 多出来的 reason 不能当成他的话念出去，否则牌桌上会冒出一具尸体的长篇大论。
+                val silent = current.game.playerAt(seat).deathCause == DeathCause.HUNTER_SHOOT
                 current = current.append(
                     WerewolfMessage(
                         day = current.game.day,
                         phase = Phase.DAY_LAST_WORDS,
                         seat = seat,
                         kind = MessageKind.SPEECH,
-                        text = head + outcome.value.reason,
+                        text = if (silent) head else head + outcome.value.reason,
                     )
                 )
                 val before = current.game
