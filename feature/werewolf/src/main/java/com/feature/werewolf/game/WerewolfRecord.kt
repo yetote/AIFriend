@@ -58,6 +58,22 @@ data class NightRecord(
     val mutualProtection: Boolean = false,
 )
 
+/**
+ * 还没公布的天亮播报。
+ *
+ * 第一天的流程是「**先警上竞选，再公布昨夜死讯**」——竞选发言是在还看不见死讯的时候说的，
+ * 顺序反了等于让所有人先看到谁死了再去竞选，竞选就变成了对着尸体聊天。
+ * 所以这段时间死讯先存在这儿，警长选举结束后才写进 history 并播报。
+ */
+data class PendingDawn(
+    /** 这是第几夜的死讯。 */
+    val day: Int,
+    /** 昨夜出局的人。空即平安夜。 */
+    val deaths: List<Int> = emptyList(),
+    /** 熊咆哮的座位（熊还活着且左右邻座有狼时）。 */
+    val bearRoarSeat: Int? = null,
+)
+
 /** 一轮投票的结局。加投时同一 [VoteRound.day] 会有多条记录，靠 [VoteRound.round] 区分。 */
 enum class VoteOutcome {
     /** 有人被放逐。 */

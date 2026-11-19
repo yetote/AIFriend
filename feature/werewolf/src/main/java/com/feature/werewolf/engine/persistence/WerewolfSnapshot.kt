@@ -8,6 +8,7 @@ import com.feature.werewolf.game.DeathCause
 import com.feature.werewolf.game.Faction
 import com.feature.werewolf.game.GameEvent
 import com.feature.werewolf.game.NightRecord
+import com.feature.werewolf.game.PendingDawn
 import com.feature.werewolf.game.Phase
 import com.feature.werewolf.game.SeerCheck
 import com.feature.werewolf.game.VoteOutcome
@@ -38,7 +39,7 @@ import kotlinx.serialization.json.Json
 object WerewolfSnapshot {
 
     /** 当前存档格式版本。改动 DTO 结构时必须加一。 */
-    const val VERSION = 9
+    const val VERSION = 10
 
     private val json = Json {
         ignoreUnknownKeys = true   // 旧档多出来的字段不该让新版本读不出来
@@ -91,6 +92,8 @@ internal data class TableSnapshot(
     val wolfPlan: String? = null,
     /** v3 起：白痴是否已翻牌。 */
     val idiotRevealed: Boolean = false,
+    /** v10 起：还没公布的天亮播报（第一天先竞选、后公布死讯）。旧档没有这一项。 */
+    val pendingDawn: PendingDawnSnapshot? = null,
     val seerChecks: List<CheckSnapshot> = emptyList(),
     val voteRound: Int = 1,
     val voteCandidates: List<Int>? = null,
@@ -154,6 +157,13 @@ internal data class CheckSnapshot(
 internal data class BallotSnapshot(
     val voterSeat: Int,
     val targetSeat: Int? = null,
+)
+
+@Serializable
+internal data class PendingDawnSnapshot(
+    val day: Int,
+    val deaths: List<Int> = emptyList(),
+    val bearRoarSeat: Int? = null,
 )
 
 @Serializable
@@ -257,6 +267,13 @@ internal fun WerewolfTable.toSnapshot(): TableSnapshot {
         nightHead = game.nightHead,
         wolfPlan = game.wolfPlan,
         idiotRevealed = game.idiotRevealed,
+        pendingDawn = game.pendingDawn?.let {
+            PendingDawnSnapshot(
+                day = it.day,
+                deaths = it.deaths,
+                bearRoarSeat = it.bearRoarSeat,
+            )
+        },
         seerChecks = game.seerChecks.map { CheckSnapshot(it.day, it.targetSeat, it.isWerewolf) },
         voteRound = game.voteRound,
         voteCandidates = game.voteCandidates,
@@ -368,6 +385,13 @@ internal fun TableSnapshot.toTable(): WerewolfTable = WerewolfTable(
         nightHead = nightHead,
         wolfPlan = wolfPlan,
         idiotRevealed = idiotRevealed,
+        pendingDawn = pendingDawn?.let {
+            PendingDawn(
+                day = it.day,
+                deaths = it.deaths,
+                bearRoarSeat = it.bearRoarSeat,
+            )
+        },
         seerChecks = seerChecks.map { SeerCheck(it.day, it.targetSeat, it.isWerewolf) },
         voteRound = voteRound,
         voteCandidates = voteCandidates,

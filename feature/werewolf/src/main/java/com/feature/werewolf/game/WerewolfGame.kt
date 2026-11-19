@@ -58,6 +58,14 @@ data class WerewolfGame(
     val lastGuardedSeat: Int? = null,
     /** 白痴是否已经翻过牌。翻牌之后他没有投票权，也不能再被投。 */
     val idiotRevealed: Boolean = false,
+    /**
+     * 还没公布的天亮播报（死讯 + 熊咆哮）。
+     *
+     * 第一天先竞选、后公布死讯：竞选发言是在看不见死讯的时候说的，
+     * 死讯这段时间先存在这儿，警长选举结束后才写进 [history] 并播报。
+     * 见 [PendingDawn]。
+     */
+    val pendingDawn: PendingDawn? = null,
     /** 预言家历史查验，私有信息。 */
     val seerChecks: List<SeerCheck> = emptyList(),
     val voteRound: Int = 1,
@@ -840,11 +848,27 @@ data class WerewolfGame(
         // 熊在结算完之后判断：他可能刚死，左右邻居也可能刚死。只看天亮那一刻的存活状态，
         // 所以「今天没咆哮」并不等于「两边都是好人」——这条区别要写进播报文案。
         val bearRoar = next.bearRoarSeat()?.let { GameEvent.BearRoar(next.day, it) }
+        // 第一天有警长选举时，死讯要**等竞选结束再公布**：竞选发言是在看不见死讯的时候说的。
+        // 所以这段时间它不进 history，只暂存在 [pendingDawn] 里。
+        val holdDawn = config.hasSheriff && next.day == 1 && !next.sheriffElectionDone
         next = next.copy(
-            history = buildList {
-                addAll(next.history)
-                add(GameEvent.Dawn(next.day, deadSeats))
-                if (bearRoar != null) add(bearRoar)
+            history = if (holdDawn) {
+                next.history
+            } else {
+                buildList {
+                    addAll(next.history)
+                    add(GameEvent.Dawn(next.day, deadSeats))
+                    if (bearRoar != null) add(bearRoar)
+                }
+            },
+            pendingDawn = if (holdDawn) {
+                PendingDawn(
+                    day = next.day,
+                    deaths = deadSeats,
+                    bearRoarSeat = bearRoar?.seat,
+                )
+            } else {
+                null
             },
             nights = nights + NightRecord(
                 day = day,
@@ -1046,10 +1070,20 @@ data class WerewolfGame(
             sheriffRunners = emptyList(),
             sheriffElectionDone = true,
         )
-        return if (closed.pendingLastWords.isNotEmpty()) {
-            closed.copy(phase = Phase.DAY_LAST_WORDS, afterLastWordsPhase = Phase.DAY_DISCUSSION)
+        // 竞选结束，现在可以公布昨夜的死讯了（见 [pendingDawn]）。
+        val announced = closed.pendingDawn?.let { pending ->
+            closed.copy(
+                history = closed.history + buildList {
+                    add(GameEvent.Dawn(pending.day, pending.deaths))
+                    pending.bearRoarSeat?.let { add(GameEvent.BearRoar(pending.day, it)) }
+                },
+                pendingDawn = null,
+            )
+        } ?: closed
+        return if (announced.pendingLastWords.isNotEmpty()) {
+            announced.copy(phase = Phase.DAY_LAST_WORDS, afterLastWordsPhase = Phase.DAY_DISCUSSION)
         } else {
-            closed.copy(phase = Phase.DAY_DISCUSSION)
+            announced.copy(phase = Phase.DAY_DISCUSSION)
         }
     }
 

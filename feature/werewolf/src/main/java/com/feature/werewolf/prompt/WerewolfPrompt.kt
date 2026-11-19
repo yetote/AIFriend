@@ -68,14 +68,37 @@ object WerewolfPrompt {
     // 公开局势
     // ---------------------------------------------------------------------
 
+    /**
+     * 已经公开过的死亡座位。
+     *
+     * 只认**播报过**的死讯：还没公布的不算（第一天死讯压在警长竞选之后）。
+     * 白痴翻牌不算死，所以 [GameEvent.IdiotRevealed] 不在列表里。
+     */
+    private fun announcedDeadSeats(game: WerewolfGame): List<Int> = game.history
+        .flatMap { event ->
+            when (event) {
+                is GameEvent.Dawn -> event.deadSeats
+                is GameEvent.Exiled -> listOf(event.seat)
+                is GameEvent.HunterShot -> listOfNotNull(event.targetSeat)
+                is GameEvent.WolfExploded -> listOf(event.seat)
+                else -> emptyList()
+            }
+        }
+        .distinct()
+        .sorted()
+
     /** 所有人看到都一样的部分：天数、阶段、存活与出局、已经播报过的事。 */
     fun publicSituation(game: WerewolfGame): String = buildString {
         append("【当前局势】第 ").append(game.day).append(" 天 · ").append(game.phase.displayName).append("\n")
-        append("存活：").append(seats(game.aliveSeats))
-            .append("（共 ").append(game.aliveSeats.size).append(" 人）\n")
-        val dead = game.players.filter { !it.alive }.map { it.seat }
-        if (dead.isNotEmpty()) {
-            append("已出局：").append(seats(dead)).append("\n")
+        // 存活与出局都按**已经公开过的**事实算，不能直接读引擎状态：
+        // 第一天死讯要等警长竞选结束后才公布，而死掉的人已经不在 aliveSeats 里了——
+        // 「存活名单少一个人」本身就是死讯。直接读状态等于提前泄底。
+        val announcedDead = announcedDeadSeats(game)
+        val alive = game.players.map { it.seat }.filter { it !in announcedDead }
+        append("存活：").append(seats(alive))
+            .append("（共 ").append(alive.size).append(" 人）\n")
+        if (announcedDead.isNotEmpty()) {
+            append("已出局：").append(seats(announcedDead)).append("\n")
         }
         if (game.config.hasSheriff) {
             val sheriff = game.aliveSheriffSeat
@@ -262,7 +285,7 @@ object WerewolfPrompt {
         ).append("\n")
         if (config.has(WerewolfRole.GUARD)) {
             append("守卫每夜先于狼人守一个人，被守的人当夜不会被刀死；不能连续两夜守同一个人，可以守自己。")
-            append("守卫和解药同时作用在一个人身上时，那个人活下来。\n")
+            append("守卫和解药同时作用在一个人身上时，那个人**还是会死**（守救同归）。\n")
         }
         if (config.has(WerewolfRole.IDIOT)) {
             append("白痴被投票放逐时翻开身份，不会死，但从此不能再投票、也不能再被投；夜里被刀或被毒照常会死。\n")
@@ -278,7 +301,8 @@ object WerewolfPrompt {
         }
         if (config.hasSheriff) {
             append(
-                "本局有警长：第 1 天天亮先竞选——想当的人上警、各说一段，再由**没上警的人**投票选出。" +
+                "本局有警长：第 1 天**先竞选、后公布昨夜死讯**——想当的人上警、各说一段，" +
+                    "再由**没上警的人**投票选出；竞选和投票结束时才公布昨夜谁出局。" +
                     "警长的一票算 1.5 票，并且决定当天从谁开始发言（他自己最后说）。" +
                     "警长出局时要在遗言里移交警徽，没人接手或没来得及交代就作废。\n"
             )
@@ -385,6 +409,12 @@ object WerewolfPrompt {
                 if (game.phase == Phase.NIGHT_WOLF) {
                     lines += "商议已经结束，现在各自动手：只要有一只狼指了别人，今晚就可能空刀。"
                 }
+                // 「上一夜定了谁」狼队任何时候都要知道（那是他们自己定的），
+                // 但**结果**不归他们管——刀口最后死没死，是天亮上帝播报的事。
+                // 夜里他们还不知道结果（要等播报），白天播报早就过了，所以他们也就知道了。
+                game.nights.lastOrNull { it.day == game.day - 1 }?.wolfTarget?.let { target ->
+                    lines += "上一夜你们定了刀 $target 号。"
+                }
                 if (game.phase.isNight) {
                     // 只有**正在加商**的时候才说「没谈拢」。
                     // 白天还说这句是错的：wolfVoteRound 到定刀成功后还停在 2，
@@ -397,14 +427,9 @@ object WerewolfPrompt {
                             "。这一轮必须定下来，再平票今晚就空刀。"
                     }
                 } else {
-                    // 白天狼要知道昨晚定了谁，不然四个人白天各演各的，
-                    // 说的和昨晚商量出来的对不上。
-                    // 但这条是**私有信息**：说了就等于自曝，所以要连着「怎么用」一起交代，
-                    // 否则模型会直接顺着它说「昨晚我们刀了 X 号」。
-                    game.nights.lastOrNull { it.day == game.day - 1 }?.wolfTarget?.let { target ->
-                        lines += "昨晚你们定了刀 $target 号。白天**一个字都不许提这件事**，"
-                        lines += "也别刻意回避他——刚刀完就绕着一个人走，那种回避本身就像狼。"
-                    }
+                    // 白天：这件事一个字都不许提，也别刻意回避他——
+                    // 刚刀完就绕着一个人走，那种回避本身就像狼。
+                    lines += "白天**一个字都不许提你们刀过谁**，也别刻意回避他。"
                 }
             }
 

@@ -8,6 +8,7 @@ import com.feature.werewolf.game.DeathCause
 import com.feature.werewolf.game.Faction
 import com.feature.werewolf.game.GameEvent
 import com.feature.werewolf.game.NightRecord
+import com.feature.werewolf.game.PendingDawn
 import com.feature.werewolf.game.Phase
 import com.feature.werewolf.game.RosterEntry
 import com.feature.werewolf.game.SeerCheck
@@ -239,6 +240,16 @@ class WerewolfSnapshotTest {
             "他昨晚的发言在避重就轻。",
             public.reasoning,
         )
+    }
+
+    @Test
+    fun `还没公布的天亮播报跟着存档走`() {
+        // 第一天死讯压在警长竞选之后：中途存档再续上，不能把死讯提前播出去
+        val table = richTable().let { it.copy(game = it.game.copy(pendingDawn = PendingDawn(day = 1, deaths = listOf(5)))) }
+        val restored = WerewolfSnapshot.decode(WerewolfSnapshot.encode(table))!!
+
+        assertEquals(listOf(5), restored.game.pendingDawn?.deaths)
+        assertEquals(1, restored.game.pendingDawn?.day)
     }
 
     @Test

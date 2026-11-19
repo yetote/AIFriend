@@ -9,7 +9,9 @@ import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.NightRecord
 import com.feature.werewolf.game.WerewolfRole
 import com.feature.werewolf.game.WitchStock
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -92,6 +94,89 @@ class WerewolfPromptTest {
         assertTrue(WerewolfPrompt.systemPrompt(game, seat = 1).contains("守救同归"))
         assertTrue(WerewolfPrompt.systemPrompt(game, seat = 4).contains("守救同归"))
         assertTrue(WerewolfPrompt.systemPrompt(game, seat = 7).contains("守救同归"))
+    }
+
+    @Test
+    fun `第一天死讯压在警长竞选之后`() {
+        // 线上标准流程：第 1 天先上警竞选，竞选和投票结束才公布昨夜死讯。
+        // 顺序反了等于让所有人先看到谁死了，再对着尸体竞选。
+        val game = WerewolfGame.withRoles(
+            config = WerewolfConfig(
+                composition = mapOf(
+                    WerewolfRole.WEREWOLF to 2,
+                    WerewolfRole.SEER to 1,
+                    WerewolfRole.WITCH to 1,
+                    WerewolfRole.GUARD to 1,
+                    WerewolfRole.HUNTER to 1,
+                    WerewolfRole.VILLAGER to 2,
+                ),
+                hasSheriff = true,
+            ),
+            roster = roster(8),
+            roles = listOf(
+                WerewolfRole.WEREWOLF,
+                WerewolfRole.WEREWOLF,
+                WerewolfRole.SEER,
+                WerewolfRole.WITCH,
+                WerewolfRole.GUARD,
+                WerewolfRole.HUNTER,
+                WerewolfRole.VILLAGER,
+                WerewolfRole.VILLAGER,
+            ),
+        ).guardProtect(3).beginWolfVote()
+
+        // 夜里狼刀了 4 号（女巫），女巫没用解药
+        val dawn = game.wolfVote(mapOf(1 to 4, 2 to 4)).seerCheck(6).witchAct(heal = false)
+
+        assertEquals(Phase.DAY_SHERIFF_SIGNUP, dawn.phase)
+        assertTrue("死讯还没公布", dawn.history.none { it is GameEvent.Dawn })
+        assertEquals("死讯先存着", listOf(4), dawn.pendingDawn?.deaths)
+
+        // 竞选发言阶段，模型看不到死讯
+        val prompt = WerewolfPrompt.systemPrompt(dawn, seat = 3)
+        assertFalse("竞选时不能看到谁出局了", prompt.contains("已出局"))
+        assertFalse(prompt.contains("4 号出局"))
+        assertTrue(
+            "没公布死讯时，死者还在存活名单里（不然名单本身就泄底）",
+            prompt.contains("共 8 人"),
+        )
+
+        // 竞选 + 投票结束，死讯才公布
+        val elected = dawn.signUpSheriff(setOf(3, 7))
+            .beginSheriffVote()
+            .castSheriffVotes(mapOf(1 to 3, 2 to 3, 5 to 3, 6 to 3, 8 to 3))
+
+        assertTrue("竞选结束后死讯才播报", elected.history.any { it is GameEvent.Dawn })
+        assertNull("暂存的死讯已经清掉", elected.pendingDawn)
+    }
+
+    @Test
+    fun `狼人知道上一夜定了谁，但结果不归他们管`() {
+        // 刀口是狼队自己定的，他们当然知道；死没死是天亮上帝播报说了算。
+        // 夜里他们还不知道结果，播报要等第二天早上。
+        val game = WerewolfGame.withRoles(
+            config = WerewolfConfig(),
+            roster = roster(8),
+            roles = listOf(
+                WerewolfRole.WEREWOLF,
+                WerewolfRole.WEREWOLF,
+                WerewolfRole.SEER,
+                WerewolfRole.WITCH,
+                WerewolfRole.HUNTER,
+                WerewolfRole.VILLAGER,
+                WerewolfRole.VILLAGER,
+                WerewolfRole.VILLAGER,
+            ),
+        ).copy(
+            day = 2,
+            phase = Phase.NIGHT_WOLF_CHAT,
+            nights = listOf(NightRecord(day = 1, wolfTarget = 5, deaths = listOf(5))),
+        )
+
+        val wolf = WerewolfPrompt.systemPrompt(game, seat = 1)
+
+        assertTrue("狼人要知道自己定了谁", wolf.contains("上一夜你们定了刀 5 号"))
+        assertFalse("结果不来自私有信息", wolf.contains("5 号出局"))
     }
 
     @Test
@@ -255,7 +340,7 @@ class WerewolfPromptTest {
 
         val wolf = WerewolfPrompt.systemPrompt(game, seat = 1)
         assertFalse("定完刀就不该再说没谈拢", wolf.contains("没能统一意见"))
-        assertTrue("白天要知道昨晚定了谁", wolf.contains("昨晚你们定了刀 5 号"))
+        assertTrue("白天要知道昨晚定了谁", wolf.contains("上一夜你们定了刀 5 号"))
     }
 
     @Test
