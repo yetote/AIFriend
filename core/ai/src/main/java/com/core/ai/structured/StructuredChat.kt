@@ -2,12 +2,27 @@ package com.core.ai.structured
 
 import com.core.ai.entity.IAI
 import com.core.ai.model.ChatMessage
+import kotlinx.coroutines.delay
 
 /** 默认尝试次数：1 次原始请求 + 1 次带纠正提示的重试。 */
 const val DEFAULT_STRUCTURED_ATTEMPTS = 2
 
 /** 重试时把上一次的回复原样带回去，让模型看到自己错在哪。太长的截断，避免上下文被撑爆。 */
 private const val MAX_ECHO_LENGTH = 600
+
+/** 超时后重试前等多久。给服务端一点喘息，别紧接着再打一次。 */
+private const val RETRY_BACKOFF_MS = 3_000L
+
+/**
+ * 这个异常是不是「等太久了」。
+ *
+ * 用类名判断而不是引用具体类型：core:ai 不依赖 core:network（依赖方向是反的），
+ * 而且不同厂商的超时异常类不一样（Socket/Connect/HttpRequest…），
+ * 但名字里都带着 Timeout。
+ */
+private fun Throwable.isTimeoutLike(): Boolean =
+    generateSequence(this) { it.cause }
+        .any { cause -> cause::class.simpleName?.contains("Timeout", ignoreCase = true) == true }
 
 /** 解析失败。带上原因，重试时会把原因告诉模型，比单纯「再试一次」有效得多。 */
 class StructuredParseException(message: String) : Exception(message)
@@ -46,13 +61,35 @@ suspend fun <T> IAI.decide(
     var lastError: String? = null
 
     for (attempt in 1..maxAttempts) {
-        val raw = chat(
-            messages = conversation,
-            model = model,
-            systemPrompt = system,
-            enableThinking = enableThinking,
-            jsonMode = supportsJsonMode,
-        )
+        val raw = try {
+            chat(
+                messages = conversation,
+                model = model,
+                systemPrompt = system,
+                enableThinking = enableThinking,
+                jsonMode = supportsJsonMode,
+            )
+        } catch (error: Throwable) {
+            // 超时值得再试一次：模型排队、网抖、客户端长连接被回收都可能，
+            // 而 Key 错误、参数错误重试多少次都一样。
+            if (error.isTimeoutLike() && attempt < maxAttempts) {
+                delay(RETRY_BACKOFF_MS)
+                continue
+            }
+            if (error.isTimeoutLike()) {
+                // 超时是「这个座位这一次没答上来」，不是「整局废了」。
+                // 兜底值在规则上合法（随机投一个候选、随机刀一个好人），
+                // 这一局能继续打完；把异常抛出去会让整个阶段卡死，
+                // 用户点「继续」还会再撞一次同样的超时。
+                return StructuredOutcome(
+                    value = fallback(),
+                    attempts = attempt,
+                    usedFallback = true,
+                    lastError = "响应超时，已用兜底选择",
+                )
+            }
+            throw error
+        }
 
         val parsed = parseReply(raw, spec)
         parsed.fold(

@@ -48,7 +48,12 @@ fun getReadableMessage(throwable: Throwable): String {
         is DomainException.NetworkException -> "网络开小差了，请检查网络连接"
         is ConnectTimeoutException,
         is SocketTimeoutException,
-        is HttpRequestTimeoutException -> "网络连接超时，请稍后重试"
+        is HttpRequestTimeoutException ->
+            // 说清楚是「模型那边没回话」，而不是「网络坏了」——
+            // 开了深度思考的模型光思考就要一两分钟，这时候网络好得很，
+            // 但用户看到「网络连接超时」只会去折腾自己的网。
+            "模型响应超时（开了深度思考时最容易碰上）。可以稍后重试，" +
+                "或者先关掉深度思考、换个更快的模型"
         else -> throwable.message?.takeIf { it.isNotBlank() } ?: "发生未知错误"
     }
 }

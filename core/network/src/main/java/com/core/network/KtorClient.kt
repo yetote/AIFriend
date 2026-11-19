@@ -48,8 +48,11 @@ class KtorClient {
         }
         install(HttpTimeout) {
             connectTimeoutMillis = 15_000
-            requestTimeoutMillis = 120_000
-            socketTimeoutMillis = 120_000
+            // 120 秒是给「一问一答」定的，但开了深度思考的模型光思考就要一两分钟，
+            // 再算上输入长、排队慢，120 秒很容易被打穿——用户看到的是「网络连接超时」，
+            // 而网络其实好得很。放到 180 秒：够深度思考跑完，又不至于无底洞。
+            requestTimeoutMillis = 180_000
+            socketTimeoutMillis = 180_000
         }
         // 讯飞在线合成用 WebSocket；默认 ping/pong 关掉，避免长时间朗读被服务端超时踢掉。
         install(WebSockets) {
@@ -156,7 +159,10 @@ class KtorClient {
             attributes.put(SkipCallLogging, Unit)
             timeout {
                 requestTimeoutMillis = 600_000
-                socketTimeoutMillis = 120_000
+                // socket 超时是「两个数据包之间最长等多久」。深度思考模型在流式下
+                // 常常先沉默着思考完再吐第一个字，这段沉默也算「没吐字」——
+                // 原来 120 秒会把还在思考的请求直接掐断，用户看到的是半句话。
+                socketTimeoutMillis = 180_000
             }
         }.execute { response ->
             Log.d(LOG_TAG, "SSE 开始 ${response.status.value} $url")

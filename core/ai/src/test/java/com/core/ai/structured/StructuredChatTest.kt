@@ -65,6 +65,79 @@ class StructuredChatTest {
             chat(listOf(ChatMessage.user(message)), model)
     }
 
+    /** 模拟网络/模型超时。 */
+    private class TimeoutAI : IAI {
+        var calls = 0
+
+        override suspend fun requestModel() = Unit
+        override var modelSet: MutableSet<String> = mutableSetOf()
+        override var brandName: String = "测试厂商"
+        override var company: String = "测试"
+
+        override suspend fun chat(
+            messages: List<ChatMessage>,
+            model: String,
+            systemPrompt: String?,
+            enableThinking: Boolean,
+            jsonMode: Boolean,
+        ): String {
+            calls++
+            throw java.net.SocketTimeoutException("模型响应超时")
+        }
+
+        @Deprecated("测试用不到")
+        override suspend fun chat(message: String, model: String): String =
+            chat(listOf(ChatMessage.user(message)), model)
+    }
+
+    // ------------------------------------------------------------------
+    // 超时
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `超时不该把整局卡死，用兜底值继续`() = runBlocking {
+        // 真机案例：所有 AI 都开深度思考，警长投票阶段（十几个人同时深度思考）
+        // 有人请求超时。超时是「这个座位这一次没答上来」，不是「整局废了」——
+        // 抛出去会让用户点「继续」再撞一次同样的超时，这一局永远打不完。
+        val ai = TimeoutAI()
+
+        val outcome = ai.decide(userMessage, "m", spec, fallback = { VoteDecision(1) })
+
+        assertEquals(1, outcome.value.target)
+        assertTrue("要标记成用了兜底", outcome.usedFallback)
+        assertTrue("两次机会都用过了", outcome.attempts >= 2)
+    }
+
+    @Test
+    fun `Key 这类硬错误照样抛出去`() = runBlocking {
+        // 超时可以兜底，认证失败不行：兜底会让 AI 开始乱投票，
+        // 而用户真正该看到的是「Key 无效」
+        val ai = object : IAI {
+            override suspend fun requestModel() = Unit
+            override var modelSet: MutableSet<String> = mutableSetOf()
+            override var brandName: String = "测试厂商"
+            override var company: String = "测试"
+
+            override suspend fun chat(
+                messages: List<ChatMessage>,
+                model: String,
+                systemPrompt: String?,
+                enableThinking: Boolean,
+                jsonMode: Boolean,
+            ): String = throw IllegalStateException("Key 无效")
+
+            @Deprecated("测试用不到")
+            override suspend fun chat(message: String, model: String): String =
+                chat(listOf(ChatMessage.user(message)), model)
+        }
+
+        val error = runCatching {
+            ai.decide(userMessage, "m", spec, fallback = { VoteDecision(1) })
+        }.exceptionOrNull()
+
+        assertTrue("应该抛出去：$error", error is IllegalStateException)
+    }
+
     // ------------------------------------------------------------------
     // 正常路径
     // ------------------------------------------------------------------

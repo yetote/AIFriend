@@ -413,9 +413,7 @@ class WerewolfDirector(
         if (game.phase != Phase.DAY_SHERIFF_SIGNUP) return table
 
         onProgress(WerewolfProgress(game.day, Phase.DAY_SHERIFF_SIGNUP, 0, game.aliveSeats.size))
-        val outcomes = coroutineScope {
-            game.aliveSeats.map { seat -> async { seat to askSheriffSignup(table, seat) } }.awaitAll()
-        }
+        val outcomes = chunkedAsync(game.aliveSeats) { seat -> seat to askSheriffSignup(table, seat) }
         onProgress(WerewolfProgress(game.day, Phase.DAY_SHERIFF_SIGNUP, game.aliveSeats.size, game.aliveSeats.size))
 
         val runners = outcomes.filter { (seat, outcome) -> outcome.value.target == seat }
@@ -507,9 +505,7 @@ class WerewolfDirector(
                     note = if (game.sheriffRound > 1) "PK 后重投" else null,
                 )
             )
-            val outcomes = coroutineScope {
-                voters.map { seat -> async { seat to askSheriffVote(current, seat, candidates) } }.awaitAll()
-            }
+            val outcomes = chunkedAsync(voters) { seat -> seat to askSheriffVote(current, seat, candidates) }
             onProgress(WerewolfProgress(game.day, Phase.DAY_SHERIFF_VOTE, voters.size, voters.size))
 
             var next = current
@@ -1265,6 +1261,27 @@ class WerewolfDirector(
     private fun voteText(target: Int?, reason: String): String {
         val head = if (target == null) "我弃票。" else "我投 $target 号。"
         return head + reason
+    }
+
+    /**
+     * 分批并发。
+     *
+     * 全量并发在**深度思考**模型上会互相拖死：十二个人同时思考，服务端要排队，
+     * 本机带宽也要分，每个请求都慢到超时——而且十二个全超时比一个一个来还慢。
+     * 分批之后总时长反而更短，单个请求也能拿到更多带宽。
+     *
+     * 批次大小取 4：够并行又不至于把服务打爆。
+     */
+    private suspend fun <T, R> chunkedAsync(
+        items: List<T>,
+        chunkSize: Int = 4,
+        block: suspend (T) -> R,
+    ): List<R> {
+        val out = ArrayList<R>(items.size)
+        items.chunked(chunkSize).forEach { chunk ->
+            out += coroutineScope { chunk.map { item -> async { block(item) } }.awaitAll() }
+        }
+        return out
     }
 
     private companion object {
