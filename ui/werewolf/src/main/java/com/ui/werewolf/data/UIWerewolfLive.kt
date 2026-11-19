@@ -180,6 +180,13 @@ data class UIWerewolfLive(
     val winnerLabel: String?,
     /** 例如「第 2 天 · 发言 3/8」。还没开始时为 null。 */
     val progressLabel: String?,
+    /**
+     * 「现在是谁在忙」，例如「9、11 号 正在投票」。
+     *
+     * 顶栏放不下两句（「第 1 天 · 警长投票 7/11」已经占满一行），
+     * 所以「在等谁」放在底部状态条——那里本来就在转圈。
+     */
+    val busyLabel: String? = null,
     /** 当前阶段内部进度，0..1。并发阶段为 null（不知道中间态，就不假装知道）。 */
     val progressFraction: Float?,
     val seats: List<UIWerewolfSeatLive> = emptyList(),

@@ -16,8 +16,17 @@ data class WerewolfProgress(
     val phase: Phase,
     val step: Int,
     val total: Int,
-    /** 正在进行的是谁。并发阶段（狼人商议、投票）没有确定的「当前」，为 null。 */
+    /** 正在进行的是谁。串行阶段（发言、遗言）有确定的「当前」，并发阶段为 null。 */
     val seat: Int? = null,
+    /**
+     * 并发阶段**正在请求**的座位们。
+     *
+     * 警长投票、上警报名、狼人商议、夜间投票都是好几个人同时在问模型，
+     * 这时候没有唯一的「当前」——但界面上不能只写「准备中」：
+     * 用户看到的是一个转圈 Eleven 秒，却不知道场上在发生什么。
+     * 把这一批人的座位报出来，顶栏就能写「3、5、7 号在投票」。
+     */
+    val seats: List<Int> = emptyList(),
     /** 补充说明，比如「平票，重新商定」。 */
     val note: String? = null,
 ) {
@@ -31,6 +40,24 @@ data class WerewolfProgress(
             when {
                 step <= 0 -> append(" 准备中")
                 total > 1 -> append(' ').append(step).append('/').append(total)
+            }
+            note?.let { append(" · ").append(it) }
+        }
+
+    /**
+     * 「现在是谁在忙」，例如「9、11 号 正在投票」。
+     *
+     * 和 [label] 分开是因为顶栏放不下两句：顶栏写「第 1 天 · 警长投票 7/11」，
+     * 谁在投票放在底部状态条——那里本来就在转圈，加几个字正好补上「在等谁」。
+     */
+    val busyLabel: String?
+        get() {
+            val busy = if (seats.isNotEmpty()) seats else listOfNotNull(seat)
+            if (busy.isEmpty()) return null
+            return buildString {
+                append(busy.joinToString("、")).append(" 号")
+                if (busy.size > 1) append("正在")
+                append(phase.verb)
             }
         }
 
@@ -51,6 +78,29 @@ data class WerewolfProgress(
             Phase.FINISHED -> "结算"
         }
 }
+
+/**
+ * 这一阶段在做什么的**动词**，用来拼「X 号正在……」。
+ *
+ * 和 [WerewolfProgress.label] 里的动作名不是一回事：那个是阶段名（「警长投票」），
+ * 这个要能塞进「正在……」里（「投票」）。
+ */
+private val Phase.verb: String
+    get() = when (this) {
+        Phase.NIGHT_GUARD -> "守人"
+        Phase.NIGHT_WOLF_CHAT -> "商量"
+        Phase.NIGHT_WOLF -> "定刀"
+        Phase.NIGHT_SEER -> "查验"
+        Phase.NIGHT_WITCH -> "用药"
+        Phase.DAY_SHERIFF_SIGNUP -> "报名上警"
+        Phase.DAY_SHERIFF_SPEECH -> "竞选发言"
+        Phase.DAY_SHERIFF_VOTE -> "投票"
+        Phase.DAY_DISCUSSION -> "发言"
+        Phase.DAY_VOTE -> "投票"
+        Phase.DAY_LAST_WORDS -> "留遗言"
+        Phase.HUNTER_SHOOT -> "开枪"
+        Phase.FINISHED -> "结算"
+    }
 
 /**
  * 夜晚阶段算「夜」，其余都算「天」。守卫在狼人之前，所以第一个算进来。

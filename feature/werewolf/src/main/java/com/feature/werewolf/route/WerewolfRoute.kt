@@ -823,8 +823,13 @@ internal fun emergedVisible(
  * [speakingSeat] 的安全性不在这一层：它只由朗读队列里 `speakable=true` 的行产生，
  * 而筛选已经保证了参与局里只有 AI 的公开发言会出声（见 SpeechFilter）。
  */
-internal fun litSeats(actorSeat: Int?, speakingSeat: Int?, running: Boolean): Set<Int> =
-    if (!running) emptySet() else setOfNotNull(actorSeat, speakingSeat)
+internal fun litSeats(
+    actorSeat: Int?,
+    busySeats: Set<Int> = emptySet(),
+    speakingSeat: Int?,
+    running: Boolean,
+): Set<Int> =
+    if (!running) emptySet() else setOfNotNull(actorSeat, speakingSeat) + busySeats
 
 /**
  * 一条消息在界面上的排版性质。
@@ -920,7 +925,21 @@ internal fun WerewolfUiState.toLive(
         ?.takeIf { onStage }
         ?.takeIf { seat -> actorVisible(seat, progress.phase) }
 
-    val litSeats = litSeats(actorSeat = actorSeat, speakingSeat = speakingSeat, running = running)
+    // 并发阶段（投票、上警报名）正在请求的是**一批**座位，不是一个。
+    // 白天亮出来是有用的——「他们几个正在投票」一眼就懂；
+    // 夜里绝不能亮：夜里谁在动就等于把身份摊给好人看（见上面 actorVisible 的注释）。
+    val busySeats = progress?.seats
+        ?.takeIf { onStage && !progress.phase.isNightPhase() }
+        ?.filter { seat -> actorVisible(seat, progress.phase) }
+        ?.toSet()
+        .orEmpty()
+
+    val litSeats = litSeats(
+        actorSeat = actorSeat,
+        busySeats = busySeats,
+        speakingSeat = speakingSeat,
+        running = running,
+    )
 
     val seats = game?.players?.map { player ->
         // 翻过牌的白痴身份是公开的：牌桌上必须给所有人看见，
@@ -1010,6 +1029,8 @@ internal fun WerewolfUiState.toLive(
         winnerLabel = game?.winner?.let { "${it.displayName}胜" },
         // 舞台还停在过去时，「轮到谁、走到第几个」属于未来的阶段，一律不显示。
         progressLabel = progress?.takeIf { onStage }?.label,
+        // 「谁在忙」夜里不给：夜里谁在动就等于把身份摊给好人看
+        busyLabel = progress?.takeIf { onStage && !progress.phase.isNightPhase() }?.busyLabel,
         // 并发阶段（狼人商议、投票）没有确定的「第几个」，那时宁可不画进度
         progressFraction = progress?.takeIf { onStage }?.let { p ->
             if (p.step > 0 && p.total > 0) p.step.toFloat() / p.total else null

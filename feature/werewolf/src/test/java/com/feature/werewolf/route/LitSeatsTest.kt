@@ -38,6 +38,21 @@ class LitSeatsTest {
 
     @Test
     fun `两个都为 null 时是空集`() {
-        assertTrue(litSeats(null, null, running = true).isEmpty())
+        assertTrue(litSeats(actorSeat = null, speakingSeat = null, running = true).isEmpty())
+    }
+
+    @Test
+    fun `并发阶段亮的是整批座位`() {
+        // 投票是十来个人同时在问模型，亮一个座位毫无意义，
+        // 要让用户看见「这一批人正在投票」
+        assertEquals(
+            setOf(3, 5, 7),
+            litSeats(
+                actorSeat = null,
+                busySeats = setOf(3, 5, 7),
+                speakingSeat = null,
+                running = true,
+            ),
+        )
     }
 }

@@ -154,19 +154,21 @@ class WerewolfDirector(
             val wolves = game.aliveWolves()
             if (wolves.isEmpty()) break
 
-            onProgress(
-                WerewolfProgress(
-                    day = game.day,
-                    phase = Phase.NIGHT_WOLF,
-                    step = 0,
-                    total = wolves.size,
-                    note = if (rounds > 0) "平票，重新定刀" else null,
-                )
-            )
-
-            val outcomes = coroutineScope {
-                wolves.map { wolf -> async { wolf.seat to askWolf(current, wolf.seat) } }.awaitAll()
-            }
+            val outcomes = chunkedAsync(
+                wolves.map { it.seat },
+                onTick = { done, total, pending ->
+                    onProgress(
+                        WerewolfProgress(
+                            day = game.day,
+                            phase = Phase.NIGHT_WOLF,
+                            step = done,
+                            total = total,
+                            seats = pending,
+                            note = if (rounds > 0) "平票，重新定刀" else null,
+                        )
+                    )
+                },
+            ) { seat -> seat to askWolf(current, seat) }
 
             // 并发阶段没有确定的「当前是谁」，所以到齐之后才报一次完成
             onProgress(WerewolfProgress(game.day, Phase.NIGHT_WOLF, wolves.size, wolves.size))
@@ -412,8 +414,20 @@ class WerewolfDirector(
         val game = table.game
         if (game.phase != Phase.DAY_SHERIFF_SIGNUP) return table
 
-        onProgress(WerewolfProgress(game.day, Phase.DAY_SHERIFF_SIGNUP, 0, game.aliveSeats.size))
-        val outcomes = chunkedAsync(game.aliveSeats) { seat -> seat to askSheriffSignup(table, seat) }
+        val outcomes = chunkedAsync(
+            game.aliveSeats,
+            onTick = { done, total, pending ->
+                onProgress(
+                    WerewolfProgress(
+                        day = game.day,
+                        phase = Phase.DAY_SHERIFF_SIGNUP,
+                        step = done,
+                        total = total,
+                        seats = pending,
+                    )
+                )
+            },
+        ) { seat -> seat to askSheriffSignup(table, seat) }
         onProgress(WerewolfProgress(game.day, Phase.DAY_SHERIFF_SIGNUP, game.aliveSeats.size, game.aliveSeats.size))
 
         val runners = outcomes.filter { (seat, outcome) -> outcome.value.target == seat }
@@ -505,7 +519,21 @@ class WerewolfDirector(
                     note = if (game.sheriffRound > 1) "PK 后重投" else null,
                 )
             )
-            val outcomes = chunkedAsync(voters) { seat -> seat to askSheriffVote(current, seat, candidates) }
+            val outcomes = chunkedAsync(
+                voters,
+                onTick = { done, total, pending ->
+                    onProgress(
+                        WerewolfProgress(
+                            day = game.day,
+                            phase = Phase.DAY_SHERIFF_VOTE,
+                            step = done,
+                            total = total,
+                            seats = pending,
+                            note = if (rounds > 0) "PK 后重投" else null,
+                        )
+                    )
+                },
+            ) { seat -> seat to askSheriffVote(current, seat, candidates) }
             onProgress(WerewolfProgress(game.day, Phase.DAY_SHERIFF_VOTE, voters.size, voters.size))
 
             var next = current
@@ -611,53 +639,24 @@ class WerewolfDirector(
             val voters = game.votingSeats
             val candidates = game.voteCandidates ?: voters
 
-            onProgress(
-                WerewolfProgress(
-                    day = game.day,
-                    phase = Phase.DAY_VOTE,
-                    step = 0,
-                    total = voters.size,
-                    note = if (rounds > 0) "平票，重新投票" else null,
-                )
-            )
-
-            val outcomes = coroutineScope {
-                // 每个座位投完就发一个完成信号，主协程逐个收、逐个报进度。
-                // 不在 async 里直接调 onProgress：那样并发写 StateFlow 虽然安全，
-                // 但到达顺序由调度决定，step 会 3、1、2 乱跳。收回这里报才严格单调。
-                // 信号里带 voters 的下标而非座位号：归位顺序要和改动前的
-                // `map{async}.awaitAll()` 逐字节一致，不依赖座位号恰好升序。
-                val finished = Channel<Result<Pair<Int, Pair<Int, StructuredOutcome<VoteChoice>>>>>(
-                    voters.size
-                )
-                voters.forEachIndexed { index, seat ->
-                    launch {
-                        // 异常必须随信号一起收回主协程再抛：若在这里直接抛，coroutineScope
-                        // 只会给上层一个 CancellationException，Controller 会误当成「用户退出」
-                        // 而不显示错误。也不能失败就不发信号——那样 receive 会永远挂起。
-                        finished.send(
-                            runCatching { index to (seat to askVote(current, seat, candidates)) }
-                        )
-                    }
-                }
-                val collected = arrayOfNulls<Pair<Int, StructuredOutcome<VoteChoice>>>(voters.size)
-                repeat(voters.size) { step ->
-                    // getOrThrow 把网络/Key 错误原样抛回 Controller 的 catch(t: Throwable)
-                    val (index, outcome) = finished.receive().getOrThrow()
-                    collected[index] = outcome
+            // 分批并发，每回一票就报一次进度，并带上「这一批还没回话的人」。
+            // 十二个人同时问模型，服务端要排队、本机带宽也要分，
+            // 深度思考时更会互相拖到超时——分批之后总时长反而更短。
+            val outcomes = chunkedAsync(
+                voters,
+                onTick = { done, total, pending ->
                     onProgress(
                         WerewolfProgress(
                             day = game.day,
                             phase = Phase.DAY_VOTE,
-                            step = step + 1,
-                            total = voters.size,
+                            step = done,
+                            total = total,
+                            seats = pending,
                             note = if (rounds > 0) "平票，重新投票" else null,
                         )
                     )
-                }
-                // 按原始下标归位：票型顺序不能随模型返回快慢变化
-                collected.map { it!! }
-            }
+                },
+            ) { seat -> seat to askVote(current, seat, candidates) }
 
             onProgress(
                 WerewolfProgress(game.day, Phase.DAY_VOTE, voters.size, voters.size)
@@ -1275,11 +1274,34 @@ class WerewolfDirector(
     private suspend fun <T, R> chunkedAsync(
         items: List<T>,
         chunkSize: Int = 4,
+        /**
+         * 进度回调：(已完成数, 总数, 这一批还没回话的人)。
+         *
+         * 「还没回话的人」就是界面上要显示的「谁在忙」——并发阶段同时有好几个请求
+         * 在飞，只报一个座位会指错，只报总数又看不出在等谁。
+         */
+        onTick: suspend (done: Int, total: Int, pending: List<T>) -> Unit = { _, _, _ -> },
         block: suspend (T) -> R,
     ): List<R> {
         val out = ArrayList<R>(items.size)
+        var done = 0
         items.chunked(chunkSize).forEach { chunk ->
-            out += coroutineScope { chunk.map { item -> async { block(item) } }.awaitAll() }
+            val pending = chunk.toMutableList()
+            val lock = Any()
+            onTick(done, items.size, pending.toList())
+            out += coroutineScope {
+                chunk.map { item ->
+                    async {
+                        val result = block(item)
+                        synchronized(lock) {
+                            done++
+                            pending.remove(item)
+                        }
+                        onTick(done, items.size, pending.toList())
+                        result
+                    }
+                }.awaitAll()
+            }
         }
         return out
     }

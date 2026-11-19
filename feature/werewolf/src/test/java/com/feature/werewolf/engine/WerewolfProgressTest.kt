@@ -97,6 +97,31 @@ class WerewolfProgressTest {
         assertTrue("每一步都知道总数是 9", events.all { it.total == 9 })
     }
 
+    @Test
+    fun `能说出现在是谁在忙`() {
+        // 顶栏放「第 1 天 · 投票 7/11」，「谁在投票」放在底部状态条
+        val concurrent = WerewolfProgress(
+            day = 1,
+            phase = Phase.DAY_VOTE,
+            step = 2,
+            total = 11,
+            seats = listOf(3, 5, 7),
+        )
+        assertEquals("3、5、7 号正在投票", concurrent.busyLabel)
+
+        // 串行阶段是当前这个座位
+        val serial = WerewolfProgress(
+            day = 1,
+            phase = Phase.DAY_DISCUSSION,
+            step = 1,
+            total = 8,
+            seat = 5,
+        )
+        assertEquals("5 号发言", serial.busyLabel)
+
+        assertNull("没人可报时就不该有这句", concurrent.copy(seats = emptyList(), seat = null).busyLabel)
+    }
+
     // ------------------------------------------------------------------
     // 夜聊：并发的，报完再报完成；平票要说明
     // ------------------------------------------------------------------
@@ -113,11 +138,18 @@ class WerewolfProgressTest {
 
         director.nightWolf(WerewolfTable(standard9().beginWolfVote()))
 
-        assertEquals("一轮两条：开始 + 完成", 2, events.size)
-        assertEquals(0, events[0].step)
-        assertEquals(3, events[0].total)
-        assertEquals(3, events[1].step)
-        assertNull("没平票就不该有提示", events[0].note)
+        // 并发阶段现在是「开始报一次 + 每回一个报一次 + 收齐报一次」，
+        // 比原来的「开始 + 完成」细——界面能说出「现在是谁在定刀」
+        assertEquals("开始时报准备中", 0, events.first().step)
+        assertEquals(3, events.first().total)
+        assertEquals("收齐时报满", 3, events.last().step)
+        assertEquals(
+            "进度只能往前，不能乱跳",
+            events.map { it.step }.sorted(),
+            events.map { it.step },
+        )
+        assertNull("没平票就不该有提示", events.first().note)
+        assertTrue("要报出谁在忙", events.any { it.seats.isNotEmpty() })
     }
 
     @Test
@@ -151,11 +183,16 @@ class WerewolfProgressTest {
 
         // 一轮：定刀 开始 + 完成（2 条）→ 平票回到商议（3 条，按座位）
         // → 再定刀（2 条，开头那句带「平票，重新定刀」）
-        assertEquals(7, events.size)
+        // 事件条数随进度粒度变（现在每回一个报一次），所以断言的是**顺序和内容**：
+        // 先定刀 → 平票回商议 → 再定刀，且两处提示都在
         assertNull(events[0].note)
-        assertEquals("平票之后先回到商议，不是直接再投一次", Phase.NIGHT_WOLF_CHAT, events[2].phase)
-        assertEquals("平票，再商一次", events[2].note)
-        assertEquals("平票，重新定刀", events[5].note)
+        val chatIndex = events.indexOfFirst { it.phase == Phase.NIGHT_WOLF_CHAT }
+        assertTrue("平票之后要回到商议", chatIndex > 0)
+        assertEquals("平票，再商一次", events[chatIndex].note)
+        val secondWolfIndex = events.indexOfLast {
+            it.phase == Phase.NIGHT_WOLF && it.note == "平票，重新定刀"
+        }
+        assertTrue("再定刀时要说明是平票重来", secondWolfIndex > chatIndex)
     }
 
     // ------------------------------------------------------------------
@@ -189,12 +226,20 @@ class WerewolfProgressTest {
         director.vote(WerewolfTable(standard9().copy(phase = Phase.DAY_VOTE)))
 
         val steps = events.map { it.step }
+        assertEquals("0 起步", 0, steps.first())
+        assertEquals("最后报满", 9, steps.last())
         assertEquals(
-            "0 起步，逐票推进到 9，最后再报一次满格",
-            listOf(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 9),
+            "进度只能往前，不能乱跳",
+            steps.sorted(),
             steps,
         )
+        // 中间不能干等：9 个人投票，step 要一路推到 9，不能只有 0 和 9
+        assertTrue("中途要有推进：$steps", steps.size >= 10)
         assertNull("没有平票就不该有提示", events.first().note)
+        assertTrue(
+            "要报出谁在忙",
+            events.any { it.seats.isNotEmpty() },
+        )
     }
 
     // ------------------------------------------------------------------

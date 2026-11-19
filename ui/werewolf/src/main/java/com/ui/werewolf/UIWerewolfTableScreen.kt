@@ -444,6 +444,17 @@ private fun SelfBar(
             )
         }
         Spacer(Modifier.weight(1f))
+        // 「在等谁」：并发阶段顶栏放不下这句，底部本来就在转圈，正好补上
+        live.busyLabel?.let { label ->
+            Text(
+                text = label,
+                fontSize = FsMeta,
+                color = dimColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.width(8.dp))
+        }
         if (live.running) ThinkingDot(color = if (night) NightText else SelfBlue)
     }
 }
