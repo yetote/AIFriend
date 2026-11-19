@@ -51,6 +51,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
@@ -147,6 +149,10 @@ private const val STREAM_SCROLL_CHARS = 60
  * 再高就压到顶栏了——顶栏上有阶段进度和朗读开关，被盖住就点不到了。
  */
 private val MIN_BUBBLE_TOP = 104.dp
+
+/** 思考气泡的固定尺寸。高度必须固定：高度乱跳最伤眼睛。 */
+private val BUBBLE_WIDTH = 196.dp
+private val BUBBLE_HEIGHT = 104.dp
 
 // ---------------------------------------------------------------------------
 // 配色
@@ -325,7 +331,6 @@ fun UIWerewolfTableScreen(
         val anchor = stream?.let { seatAnchors[it.seat] }
         if (stream != null && anchor != null && stream.reasoning.isNotBlank()) {
             ThinkingBubble(reasoning = stream.reasoning, anchor = anchor, night = night)
-            BubbleTail(anchor = anchor, night = night)
         }
 
         // 过场画在最上层，但不吃触摸：1.4 秒里用户可能正要点「发言」，
@@ -869,14 +874,16 @@ private fun StatusStrip(
 
 
 /**
- * 思考气泡：漫画对白框，挂在说话人头顶。
+ * 思考气泡：漫画对白框。
  *
- * 为什么浮在头像上而不是塞进对话流：
- * 深度思考动辄几百上千字，全塞进对话流能把整页拉长到没法看；
- * 而完全不显示又让人干等——不知道是在想还是在卡住。
- * 挂在头顶正好：看得见，又不占对话流的篇幅，说完就消失。
+ * 挂在说话人附近，但**不贴着他**：贴着边缘看着局促，飘在中间又不像是谁在说话。
+ * 所以按屏幕分成两侧——左边的人，气泡落在**中间偏左**；右边的人，落在**中间偏右**，
+ * 尖角斜着指过去。漫画里的对白框就是这么画的。
  *
- * 内容只给**最后几行**：思考是流式追加的，头部是最早的结论，
+ * **高度固定**。之前高度跟着内容变，一行到五行来回跳，看着眼晕；
+ * 现在永远那么高，内容从上往下填，位置纹丝不动。
+ *
+ * 只给**最后几行**：思考是流式追加的，头部是最早的结论，
  * 尾部才是「他此刻在想什么」。
  */
 @Composable
@@ -889,9 +896,11 @@ private fun ThinkingBubble(
     // 坐标还没算出来（座位刚布局完）或者算坏了，就先别画：
     // 一个飘在半空的框比没有框更糟
     if (!anchor.x.isFinite() || !anchor.y.isFinite()) return
+
     val density = LocalDensity.current
     val screenWidth = LocalConfiguration.current.screenWidthDp.dp
     val screenHeight = LocalConfiguration.current.screenHeightDp.dp
+
     // 只留「像人话」的短行：有些厂商会把 system prompt 里的指令原样回显到思考里
     // （"Must give judgment: who I suspect…" 这种），一整行几百个字符，
     // 塞进气泡里既难看又挤地方。超过 60 个字的行基本都不是人话。
@@ -900,104 +909,106 @@ private fun ThinkingBubble(
             .lines()
             .map { it.trim() }
             .filter { it.isNotEmpty() && it.length <= 60 }
-            .takeLast(5)
+            .takeLast(4)
     }
-    var bubbleSize by remember { mutableStateOf(IntSize.Zero) }
 
-    // 半透明：气泡会盖住一小块牌桌，压暗一点才不至于挡住下面的发言
     val fill = if (night) Color(0xF0221D2E) else Color(0xF5FFFFFF)
     val border = if (night) Color(0x59A894FF) else Color(0x336B4BD9)
     val textColor = if (night) Color(0xFFE6EAF3) else Color(0xFF3A4152)
 
-    Box(
-        modifier = Modifier
-            // **不能**用 fillMaxSize：offset 只挪位置、不改尺寸，
-            // 气泡会被撑成全屏大，把整个牌桌盖住。
-            // 尺寸由下面的 width 定死，offset 负责把它搬到头像上方。
-            .offset {
-                // 居中对齐头像：漫画对白框就是这么挂的。
-                // 盖住一点对话流没关系——气泡本来就是浮层，等它说完就消失。
-                // 窄屏上会夹到屏幕边缘，尖角仍旧指着头像。
-                val x = (anchor.x - bubbleSize.width / 2f)
-                    .coerceIn(8f, (screenWidth.value - bubbleSize.width - 8f).coerceAtLeast(8f))
-                // 头顶放不下就放到身下：漫画对白框可以斜着、也可以在身侧，
-                // 但绝不能盖住说话人自己的脸，也不能盖住顶栏。
-                val gap = with(density) { 26.dp.toPx() }
-                val above = anchor.y - bubbleSize.height - gap
-                val minTop = with(density) { MIN_BUBBLE_TOP.toPx() }
-                val y = if (above >= minTop) {
-                    above
-                } else {
-                    (anchor.y + gap).coerceAtMost(
-                        with(density) { screenHeight.value.dp.toPx() } - bubbleSize.height - 8f
+    Box(modifier = Modifier.fillMaxSize()) {
+        // 气泡的位置在下面算，这里先画尖角：它贴着气泡靠头像的那一端
+        val bubbleWidthPx = with(density) { BUBBLE_WIDTH.toPx() }
+        val bubbleHeightPx = with(density) { BUBBLE_HEIGHT.toPx() }
+        val screenWidthPx = with(density) { screenWidth.toPx() }
+        val onLeft = anchor.x < screenWidthPx / 2f
+
+        // 左侧：气泡左边缘在屏宽 9% 处；右侧：右边缘在屏宽 91% 处
+        val bubbleLeft = if (onLeft) {
+            screenWidthPx * 0.09f
+        } else {
+            screenWidthPx * 0.91f - bubbleWidthPx
+        }.coerceIn(8f, (screenWidthPx - bubbleWidthPx - 8f).coerceAtLeast(8f))
+
+        val gap = with(density) { 24.dp.toPx() }
+        val minTop = with(density) { MIN_BUBBLE_TOP.toPx() }
+        val bubbleTop = (anchor.y - bubbleHeightPx - gap).coerceAtLeast(minTop)
+
+        // 尖角：从气泡靠头像的那一端出发，**斜着**指过去。
+        // 气泡飘到中间偏左/偏右之后，尖角要是还竖直向下就指空了——
+        // 漫画里的对白框尖角永远指着说话人，角度是算出来的。
+        val tailHalf = with(density) { 6.dp.toPx() }
+        val tailBaseX = if (onLeft) {
+            bubbleLeft + with(density) { 14.dp.toPx() }
+        } else {
+            bubbleLeft + bubbleWidthPx - with(density) { 26.dp.toPx() }
+        }
+        val tailBaseY = bubbleTop + bubbleHeightPx - with(density) { 2.dp.toPx() }
+        // 三角形默认尖端朝下（+y），转到「指向头像」的角度要再减 90°
+        val tailAngle = Math.toDegrees(
+            kotlin.math.atan2(
+                (anchor.y - tailBaseY).toDouble(),
+                (anchor.x - tailBaseX).toDouble(),
+            )
+        ).toFloat() - 90f
+
+        Canvas(
+            modifier = Modifier
+                .offset {
+                    IntOffset(
+                        (tailBaseX - tailHalf).toInt(),
+                        (tailBaseY - with(density) { 2.dp.toPx() }).toInt()
                     )
                 }
-                IntOffset(x.toInt(), y.toInt())
+                // 旋转中心放在三角形的底边中点，不然它会绕自己的中心转，尖角指不到人
+                .graphicsLayer {
+                    // 旋转中心放在三角形的底边中点，不然它绕自己的中心转，尖角指不到人
+                    rotationZ = tailAngle
+                    transformOrigin = TransformOrigin(tailHalf / size.width, 0f)
+                }
+                .size(12.dp, 8.dp)
+        ) {
+            val path = androidx.compose.ui.graphics.Path().apply {
+                moveTo(0f, 0f)
+                lineTo(size.width, 0f)
+                lineTo(size.width / 2f, size.height)
+                close()
             }
-            .onSizeChanged { bubbleSize = it }
-            .width(196.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(fill)
-            .border(1.dp, border, RoundedCornerShape(12.dp))
-            .padding(horizontal = 9.dp, vertical = 7.dp)
-    ) {
-        Column {
-            Text(
-                text = "思考中",
-                fontSize = 9.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = if (night) Color(0xFFA894FF) else Color(0xFF6B4BD9)
-            )
-            Text(
-                text = lines.joinToString("\n"),
-                modifier = Modifier.padding(top = 2.dp),
-                fontSize = 11.sp,
-                lineHeight = 15.sp,
-                color = textColor.copy(alpha = 0.85f),
-                maxLines = 5,
-                overflow = TextOverflow.Ellipsis
+            drawPath(path, color = fill)
+            drawPath(
+                path,
+                color = border,
+                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.dp.toPx())
             )
         }
-    }
-}
 
-/**
- * 对白框下面那个小尖角：指着说话人的头像。
- *
- * 用 Canvas 画一个等腰三角形，比用旋转的方块稳——方块转 45 度之后
- * 四个角会露出来，看着像个菱形贴片。
- */
-@Composable
-private fun BubbleTail(
-    anchor: Offset,
-    night: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    val density = LocalDensity.current
-    val border = if (night) Color(0x59A894FF) else Color(0x336B4BD9)
-    Canvas(
-        modifier = modifier
-            .offset {
-                val y = (anchor.y - with(density) { 26.dp.toPx() })
-                IntOffset(
-                    (anchor.x - with(density) { 6.dp.toPx() }).toInt(),
-                    y.toInt()
+        Box(
+            modifier = Modifier
+                .offset { IntOffset(bubbleLeft.toInt(), bubbleTop.toInt()) }
+                .size(BUBBLE_WIDTH, BUBBLE_HEIGHT)
+                .clip(RoundedCornerShape(12.dp))
+                .background(fill)
+                .border(1.dp, border, RoundedCornerShape(12.dp))
+                .padding(horizontal = 10.dp, vertical = 7.dp)
+        ) {
+            Column {
+                Text(
+                    text = "思考中",
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (night) Color(0xFFA894FF) else Color(0xFF6B4BD9)
+                )
+                Text(
+                    text = lines.joinToString("\n"),
+                    modifier = Modifier.padding(top = 2.dp),
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp,
+                    color = textColor.copy(alpha = 0.85f),
+                    maxLines = 4,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
-            .size(12.dp, 7.dp)
-    ) {
-        val path = androidx.compose.ui.graphics.Path().apply {
-            moveTo(0f, 0f)
-            lineTo(size.width, 0f)
-            lineTo(size.width / 2f, size.height)
-            close()
         }
-        drawPath(path, color = if (night) Color(0xF0221D2E) else Color(0xF5FFFFFF))
-        drawPath(
-            path,
-            color = border,
-            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.dp.toPx())
-        )
     }
 }
 
