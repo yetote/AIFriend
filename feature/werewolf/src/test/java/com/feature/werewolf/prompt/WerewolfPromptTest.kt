@@ -7,6 +7,7 @@ import com.feature.werewolf.game.SeerCheck
 import com.feature.werewolf.game.WerewolfConfig
 import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.NightRecord
+import com.feature.werewolf.game.PendingDawn
 import com.feature.werewolf.game.WerewolfRole
 import com.feature.werewolf.game.WitchStock
 import org.junit.Assert.assertEquals
@@ -218,6 +219,55 @@ class WerewolfPromptTest {
 
         assertTrue(wolf.contains("诈守卫"))
         assertTrue(wolf.contains("守卫不能连守的是同一个人"))
+    }
+
+    @Test
+    fun `死讯没公布时谁都不许谈昨夜`() {
+        // 真实案例：狼人警长的竞选发言里说「昨夜明明是平安夜」——
+        // 他当然知道昨夜死了人（那把刀是他自己动的），这句话当场自曝。
+        // 死讯公布之前，任何人都不知道昨晚发生了什么。
+        val game = gameWithGuard().copy(
+            phase = Phase.DAY_SHERIFF_SIGNUP,
+            pendingDawn = PendingDawn(day = 1, deaths = listOf(4)),
+        )
+
+        val good = WerewolfPrompt.systemPrompt(game, seat = 3)
+        assertTrue("要写明昨夜还没公布", good.contains("昨夜还没公布"))
+        assertTrue("要禁止谈昨夜", good.contains("不要谈昨夜"))
+
+        val wolf = WerewolfPrompt.systemPrompt(game, seat = 1)
+        assertTrue("狼人更不能提昨夜", wolf.contains("不要谈昨夜"))
+
+        // 死讯公布之后，这条提醒就该消失
+        val announced = game.copy(pendingDawn = null)
+        assertFalse(
+            "公布之后不该再提醒",
+            WerewolfPrompt.systemPrompt(announced, seat = 3).contains("昨夜还没公布"),
+        )
+    }
+
+    @Test
+    fun `好人的人数账要算清楚`() {
+        // 真实案例：场上只剩 3 好 1 狼，三个好人里两个互相咬，
+        // 狼人投了其中一个——好人把好人投出去了，夜里再被刀一个就绑票输掉
+        val prompt = WerewolfPrompt.systemPrompt(gameWithGuard(), seat = 7)
+
+        assertTrue("人不多时票要砸在狼身上", prompt.contains("票必须砸在狼身上"))
+        assertTrue("跟票不是狼的证据", prompt.contains("跟着多数投票本身不是狼的证据"))
+        assertTrue("神职该上警就上警", prompt.contains("神职该上警就上警"))
+    }
+
+    @Test
+    fun `狼人不要编造现场细节`() {
+        // 真实案例：狼人竞选发言写「他低头看自己左手，像在数指节」——
+        // 这种描写只有演的人才会写，好人一眼看穿
+        val wolf = WerewolfPrompt.systemPrompt(
+            gameWithGuard().copy(phase = Phase.NIGHT_WOLF_CHAT),
+            seat = 1,
+        )
+
+        assertTrue(wolf.contains("不要编造现场细节"))
+        assertTrue("狼队内部别用命令式的说法", wolf.contains("死命令"))
     }
 
     @Test
