@@ -72,6 +72,7 @@ class WerewolfStreamTest {
         private val reasonings: List<String> = emptyList(),
         private val chatReply: String = "",
         private val failAt: Int = Int.MAX_VALUE,
+        private val failError: Throwable = IOException("连接被切断了"),
     ) : IAI {
         var chatCalls = 0
         var streamCalls = 0
@@ -101,7 +102,7 @@ class WerewolfStreamTest {
         ): Flow<ChatDelta> = flow {
             streamCalls++
             pieces.forEachIndexed { index, piece ->
-                if (index == failAt) throw IOException("连接被切断了")
+                if (index == failAt) throw failError
                 emit(ChatDelta(content = piece, reasoning = reasonings.getOrElse(index) { "" }))
             }
         }
@@ -184,6 +185,30 @@ class WerewolfStreamTest {
         assertTrue("传输层错误必须原样抛出，不能伪装成「AI 没说话」", thrown is IOException)
         assertNull("出错时同样要收回", lives.last())
         assertTrue("报错前已经推出去的片段是真实发生过的", lives.filterNotNull().isNotEmpty())
+    }
+
+    @Test
+    fun `超时断在半句话时保留这半句`() = runBlocking {
+        // 真机案例：全员开深度思考，一句话说到一半超过静默上限被掐。
+        // 这种情况如果照别处一样往上抛，整局就停在「模型响应超时」上，
+        // 续档还会重放同一阶段撞同一个超时——这局等于打不下去了。
+        // 半句话不好听，但牌桌能往前走；而「连接被重置」那种链路坏了仍然要上报。
+        val ai = StreamingAI(
+            pieces = listOf("我觉得", " 3 号"),
+            failAt = 1,
+            failError = java.net.SocketTimeoutException("模型响应超时"),
+        )
+        val lives = mutableListOf<WerewolfLive?>()
+        val director = WerewolfDirector(
+            agents = mapOf(8 to SeatAgent(ai, "test-model")),
+            onLive = { lives += it },
+            streamIntervalMs = 0,
+        )
+
+        val result = director.lastWords(WerewolfTable(lastWordsOf8()))
+
+        assertEquals("说出口的半句要落下来", "我觉得", result.transcript.single { it.seat == 8 }.text)
+        assertNull("收回照样要做", lives.last())
     }
 
     @Test

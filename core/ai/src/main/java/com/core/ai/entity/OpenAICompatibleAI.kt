@@ -1,5 +1,6 @@
 package com.core.ai.entity
 
+import com.core.ai.isTimeoutLike
 import com.core.ai.model.ChatCompletionRequest
 import com.core.ai.model.ChatCompletionResponse
 import com.core.ai.model.ChatDelta
@@ -91,8 +92,13 @@ abstract class OpenAICompatibleAI(
             // 一个字都还没收到就断了，退化成一次性请求。
             // 十家厂商的兼容层对流式的支持并不整齐（个别会直接 400，或者回一个空流），
             // 与其让用户看到报错，不如「憋一会儿再一次性出结果」——功能是对的，只是没有逐字效果。
+            //
+            // 但如果这次断的是**超时**，就不用原样再来一次：一次性请求在出结果之前
+            // 同样是彻底静默的，仍开着深度思考只会再等满一整个超时，然后照样失败——
+            // 用户等了十几分钟换来一句「网络异常」。关掉思考再补，通常很快就有内容。
             if (!hasContent) {
-                send(ChatDelta(content = chat(messages, model, systemPrompt, enableThinking, jsonMode)))
+                val retryThinking = if (failure.isTimeoutLike()) false else enableThinking
+                send(ChatDelta(content = chat(messages, model, systemPrompt, retryThinking, jsonMode)))
                 return@channelFlow
             }
             // 已经吐了一半：不能补发，否则会把前半句重复一遍。交给上层保留半句并给重试。

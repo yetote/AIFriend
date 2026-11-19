@@ -69,6 +69,9 @@ class StructuredChatTest {
     private class TimeoutAI : IAI {
         var calls = 0
 
+        /** 每次调用开的思考开关，用来断言「超时后有没有降级」。 */
+        val thinkingFlags = mutableListOf<Boolean>()
+
         override suspend fun requestModel() = Unit
         override var modelSet: MutableSet<String> = mutableSetOf()
         override var brandName: String = "测试厂商"
@@ -82,6 +85,7 @@ class StructuredChatTest {
             jsonMode: Boolean,
         ): String {
             calls++
+            thinkingFlags += enableThinking
             throw java.net.SocketTimeoutException("模型响应超时")
         }
 
@@ -106,6 +110,18 @@ class StructuredChatTest {
         assertEquals(1, outcome.value.target)
         assertTrue("要标记成用了兜底", outcome.usedFallback)
         assertTrue("两次机会都用过了", outcome.attempts >= 2)
+    }
+
+    @Test
+    fun `超时重试时关掉深度思考`() = runBlocking {
+        // 3 分钟那档被反复打穿的头号原因是思考本身。用一模一样的参数再撞一次，
+        // 只会把等待时间翻倍，然后照样失败——用户等十几分钟换来一句「网络异常」。
+        // 第二次必须降级：关掉思考，这次通常几十秒就回来。
+        val ai = TimeoutAI()
+
+        ai.decide(userMessage, "m", spec, fallback = { VoteDecision(1) }, enableThinking = true)
+
+        assertEquals(listOf(true, false), ai.thinkingFlags)
     }
 
     @Test

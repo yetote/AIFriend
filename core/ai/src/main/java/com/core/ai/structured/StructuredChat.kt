@@ -1,6 +1,7 @@
 package com.core.ai.structured
 
 import com.core.ai.entity.IAI
+import com.core.ai.isTimeoutLike
 import com.core.ai.model.ChatMessage
 import kotlinx.coroutines.delay
 
@@ -12,17 +13,6 @@ private const val MAX_ECHO_LENGTH = 600
 
 /** 超时后重试前等多久。给服务端一点喘息，别紧接着再打一次。 */
 private const val RETRY_BACKOFF_MS = 3_000L
-
-/**
- * 这个异常是不是「等太久了」。
- *
- * 用类名判断而不是引用具体类型：core:ai 不依赖 core:network（依赖方向是反的），
- * 而且不同厂商的超时异常类不一样（Socket/Connect/HttpRequest…），
- * 但名字里都带着 Timeout。
- */
-private fun Throwable.isTimeoutLike(): Boolean =
-    generateSequence(this) { it.cause }
-        .any { cause -> cause::class.simpleName?.contains("Timeout", ignoreCase = true) == true }
 
 /** 解析失败。带上原因，重试时会把原因告诉模型，比单纯「再试一次」有效得多。 */
 class StructuredParseException(message: String) : Exception(message)
@@ -59,6 +49,8 @@ suspend fun <T> IAI.decide(
     val system = buildOutputRequirement(systemPrompt, spec.instruction)
     var conversation = messages
     var lastError: String? = null
+    // 重试时可以换一种更省时间的打法，见下面的超时分支
+    var thinking = enableThinking
 
     for (attempt in 1..maxAttempts) {
         val raw = try {
@@ -66,13 +58,18 @@ suspend fun <T> IAI.decide(
                 messages = conversation,
                 model = model,
                 systemPrompt = system,
-                enableThinking = enableThinking,
+                enableThinking = thinking,
                 jsonMode = supportsJsonMode,
             )
         } catch (error: Throwable) {
             // 超时值得再试一次：模型排队、网抖、客户端长连接被回收都可能，
             // 而 Key 错误、参数错误重试多少次都一样。
             if (error.isTimeoutLike() && attempt < maxAttempts) {
+                // **重试时关掉深度思考。** 超时的头号原因是思考把等待额度吃光了，
+                // 用一模一样的参数再打一次，只会把等待时间翻倍，然后照样失败——
+                // 用户等十几分钟拿到一句「网络异常」，比直接降级更糟。
+                // 关掉之后这次请求通常几十秒就回来，决策质量差一点，但这一轮能打完。
+                thinking = false
                 delay(RETRY_BACKOFF_MS)
                 continue
             }

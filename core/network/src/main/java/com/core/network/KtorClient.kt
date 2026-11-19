@@ -32,6 +32,43 @@ import io.ktor.utils.io.readUTF8Line
 import kotlinx.serialization.json.Json
 import java.net.SocketTimeoutException
 
+/**
+ * 全应用的时间上限，集中在这里改，别散落在各个调用点。
+ *
+ * 为什么一次性请求要给到 8 分钟：开了深度思考的模型收到长提示词后，会先闷头想
+ * 一两分钟才吐第一个字，而且这期间 **一个字节都不会发**。并发跑满时还要排队。
+ * 3 分钟那档在实测里是经常被打穿的——用户看到的是「网络异常」，网络却好得很，
+ * 真正的死因是「思考时间算进了超时」。
+ *
+ * 流式请求要分开看：
+ * - 整段时长（[STREAM_REQUEST_MS]）可以很长，一场发言本来就没有上限；
+ * - 静默时长（[STREAM_IDLE_MS]）才是「死了没」的判断依据。会边思考边吐
+ *   reasoning 的厂商在思考期间一直有包，只有真的断了才会静默这么久。
+ */
+object NetTimeouts {
+    /** 建连。这一条保持不变：连不上就是连不上，等再久也没意义。 */
+    const val CONNECT_MS = 15_000L
+
+    /**
+     * 一次性请求（`chat`、结构化决策、拉模型列表）：从发出到收完的总时长。
+     *
+     * 一次性请求在服务端出结果之前是彻底静默的，所以这里的「总时长」同时也是
+     * socket 的静默上限——两个值必须一起给，只放宽其中一个等于没放宽。
+     */
+    const val ONESHOT_MS = 480_000L
+
+    /** 流式请求的总时长：一场发言、一次长回复都不该被这个值掐断。 */
+    const val STREAM_REQUEST_MS = 1_800_000L
+
+    /**
+     * 流式请求两次数据之间最多能静默多久。
+     *
+     * 比一次性请求小得多是有道理的：流式本来就有包在走，思考期会持续吐 reasoning，
+     * 真的五分钟一个字节都没有，基本可以认定对面已经断了。
+     */
+    const val STREAM_IDLE_MS = 300_000L
+}
+
 class KtorClient {
     // 必须用 OkHttp 引擎：Android 引擎（HttpURLConnection）不支持 WebSocket，
     // 讯飞在线合成的 wss 流式接口会直接抛 "Engine doesn't support WebSocketCapability"。
@@ -47,12 +84,11 @@ class KtorClient {
             })
         }
         install(HttpTimeout) {
-            connectTimeoutMillis = 15_000
-            // 120 秒是给「一问一答」定的，但开了深度思考的模型光思考就要一两分钟，
-            // 再算上输入长、排队慢，120 秒很容易被打穿——用户看到的是「网络连接超时」，
-            // 而网络其实好得很。放到 180 秒：够深度思考跑完，又不至于无底洞。
-            requestTimeoutMillis = 180_000
-            socketTimeoutMillis = 180_000
+            connectTimeoutMillis = NetTimeouts.CONNECT_MS
+            // 这两个值必须成对放宽：一次性请求在结果出来之前一个字节都不发，
+            // 所以 socket 的静默上限实际就是整段的等待上限。见 [NetTimeouts]。
+            requestTimeoutMillis = NetTimeouts.ONESHOT_MS
+            socketTimeoutMillis = NetTimeouts.ONESHOT_MS
         }
         // 讯飞在线合成用 WebSocket；默认 ping/pong 关掉，避免长时间朗读被服务端超时踢掉。
         install(WebSockets) {
@@ -133,9 +169,9 @@ class KtorClient {
      * 不能用 `post(...).body()`：SSE 的响应要等模型把话说完才算「接收完」，
      * 那样流式就退化成了普通请求。`preparePost` + `execute` 才能边到边读。
      *
-     * 超时要单独放宽。全局 120 秒是给「一问一答」定的，一段长回复加上思考过程
-     * 很容易超过它，用同一个值会把话从中间掐断——而且断开时用户看到的是半句话，
-     * 比直接报错更让人困惑。socket 超时仍保留 120 秒：真的卡住不吐字时照样要断。
+     * 超时单独放宽，见 [NetTimeouts]：总时长按「一场发言」给，
+     * 静默时长才是判断「对面是不是死了」的依据。用一次性请求那套 3 分钟，
+     * 会把还在思考的请求从中间掐断——而断开时用户看到的是半句话，比报错更让人困惑。
      *
      * 回调是 suspend 的，调用方可以在里面往 Flow 里 `send`。
      * 这里不吞异常：HTTP 状态错误由 [client] 的校验器统一翻译，读取中断直接往上抛，
@@ -158,11 +194,11 @@ class KtorClient {
             // 首尾状态由下面自己打。
             attributes.put(SkipCallLogging, Unit)
             timeout {
-                requestTimeoutMillis = 600_000
+                requestTimeoutMillis = NetTimeouts.STREAM_REQUEST_MS
                 // socket 超时是「两个数据包之间最长等多久」。深度思考模型在流式下
                 // 常常先沉默着思考完再吐第一个字，这段沉默也算「没吐字」——
                 // 原来 120 秒会把还在思考的请求直接掐断，用户看到的是半句话。
-                socketTimeoutMillis = 180_000
+                socketTimeoutMillis = NetTimeouts.STREAM_IDLE_MS
             }
         }.execute { response ->
             Log.d(LOG_TAG, "SSE 开始 ${response.status.value} $url")

@@ -1,5 +1,6 @@
 package com.feature.werewolf.engine
 
+import com.core.ai.isTimeoutLike
 import com.core.ai.model.ChatMessage
 import com.core.ai.structured.StructuredOutcome
 import com.core.ai.structured.StructuredSpec
@@ -13,6 +14,7 @@ import com.feature.werewolf.game.Phase
 import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfRole
 import com.feature.werewolf.prompt.WerewolfPrompt
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -938,6 +940,16 @@ class WerewolfDirector(
                     )
                 }
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Throwable) {
+            // **超时**且已经说出半句的，保留这半句继续这一轮。
+            // 抛出去等于整局停在「模型响应超时」上，续档还会重放同一阶段、撞同一个超时，
+            // 用户看到的是「这局再也打不下去了」。半句话不好听，但牌桌能往前走。
+            //
+            // 只对超时这么办：连接被重置、鉴权失败这类是「链路真的坏了」，
+            // 必须让编排层把错误显示出来，别伪装成一局正常但奇怪的发言。
+            if (content.isEmpty() || !error.isTimeoutLike()) throw error
         } finally {
             withContext(NonCancellable) { onLive(null) }
         }
