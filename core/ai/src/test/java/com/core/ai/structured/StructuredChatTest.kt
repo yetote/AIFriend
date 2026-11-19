@@ -203,6 +203,43 @@ class StructuredChatTest {
         assertEquals(1, outcome.value.target)
         assertTrue("要标记成用了兜底", outcome.usedFallback)
         assertTrue("两次机会都用过了", outcome.attempts >= 2)
+        assertTrue("超时降级要往外报，调用方好关掉这个座位的深度思考", outcome.timedOut)
+    }
+
+    @Test
+    fun `第一次超时重试成功也要标记降级过`() = runBlocking {
+        // 关键场景：外层看不到异常——内部关思考重试后拿到了正常答案。
+        // 这个标志是唯一的线索，不传的话狼人杀下一轮又把思考打开，反复超时。
+        val ai = object : IAI {
+            var calls = 0
+            override suspend fun requestModel() = Unit
+            override var modelSet: MutableSet<String> = mutableSetOf()
+            override var brandName: String = "测试厂商"
+            override var company: String = "测试"
+
+            override suspend fun chat(
+                messages: List<ChatMessage>,
+                model: String,
+                systemPrompt: String?,
+                enableThinking: Boolean,
+                jsonMode: Boolean,
+            ): String {
+                calls++
+                if (calls == 1) throw java.net.SocketTimeoutException("第一次超时")
+                return """{"target": 5}"""
+            }
+
+            @Deprecated("测试用不到")
+            override suspend fun chat(message: String, model: String): String =
+                chat(listOf(ChatMessage.user(message)), model)
+        }
+
+        val outcome = ai.decide(userMessage, "m", spec, fallback = { VoteDecision(1) })
+
+        assertEquals("重试拿到正常答案", 5, outcome.value.target)
+        assertFalse("不是兜底", outcome.usedFallback)
+        assertEquals(2, outcome.attempts)
+        assertTrue("但确实超时降级过，必须让外层知道", outcome.timedOut)
     }
 
     @Test
@@ -260,6 +297,7 @@ class StructuredChatTest {
         assertEquals(3, outcome.value.target)
         assertEquals(1, outcome.attempts)
         assertFalse(outcome.usedFallback)
+        assertFalse("没超时就别误报，否则会白白关掉座位思考", outcome.timedOut)
     }
 
     @Test

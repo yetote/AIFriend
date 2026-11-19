@@ -1095,6 +1095,107 @@ class WerewolfDirectorTest {
     }
 
     @Test
+    fun `内部超时重试成功的座位也要关掉深度思考`() = runBlocking {
+        // 真机反馈的 bug：模型第一次请求超时，decide 内部关思考重试成功，
+        // 外层时限没到、outcome 也正常，于是以前当成「没超时」——下一轮又把思考打开，
+        // 同一个座位反复撞超时。现在靠 outcome.timedOut 把这个座位本局关掉。
+        val pacing = WerewolfPacing()
+        pacing.overrideMs = 10_000L // 外层时限给足，超时只发生在 AI 内部
+        var calls = 0
+        val slowButRecovers = object : IAI {
+            override suspend fun requestModel() = Unit
+            override var modelSet: MutableSet<String> = mutableSetOf()
+            override var brandName: String = "慢模型"
+            override var company: String = "测试"
+
+            override suspend fun chat(
+                messages: List<ChatMessage>,
+                model: String,
+                systemPrompt: String?,
+                enableThinking: Boolean,
+                jsonMode: Boolean,
+            ): String {
+                calls++
+                if (calls == 1) throw java.net.SocketTimeoutException("第一次超时")
+                // 关掉思考后第二次很快回来，给一个合法刀口
+                return """{"target": 7, "reason": "7 号可疑。"}"""
+            }
+
+            @Deprecated("测试用不到")
+            override suspend fun chat(message: String, model: String): String =
+                chat(listOf(ChatMessage.user(message)), model)
+        }
+        val director = WerewolfDirector(
+            agents = agentsOf(
+                1 to slowButRecovers,
+                2 to ScriptedAI(listOf("""{"target": 7, "reason": "同意。"}""")),
+                3 to ScriptedAI(listOf("""{"target": 7, "reason": "同意。"}""")),
+            ),
+            pacing = pacing,
+        )
+
+        val result = director.nightWolf(WerewolfTable(standard9().beginWolfVote()))
+
+        assertEquals("重试成功，刀口正常定下", 7, result.game.tonightVictim)
+        assertTrue("内部降级过的座位本局不再开深度思考", 1 in pacing.thinkingOff.value)
+        assertEquals("记了一次超时", 1, pacing.timings.value.getValue(1).timeouts)
+        assertFalse("没超时的座位不受影响", 2 in pacing.thinkingOff.value)
+    }
+
+    @Test
+    fun `发言时底层超时降级也关掉深度思考`() = runBlocking {
+        // chatStream 内部超时后关思考补发成功，是正常返回的一场发言，
+        // 外层看不到异常。靠 delta.timeoutDegraded 把信号带出来。
+        val pacing = WerewolfPacing()
+        pacing.overrideMs = 10_000L
+        class DegradedSpeechAI : IAI {
+            var streamCalls = 0
+            override suspend fun requestModel() = Unit
+            override var modelSet: MutableSet<String> = mutableSetOf()
+            override var brandName: String = "慢模型"
+            override var company: String = "测试"
+
+            override fun chatStream(
+                messages: List<ChatMessage>,
+                model: String,
+                systemPrompt: String?,
+                enableThinking: Boolean,
+                jsonMode: Boolean,
+            ): kotlinx.coroutines.flow.Flow<ChatDelta> = kotlinx.coroutines.flow.flow {
+                streamCalls++
+                // 模拟 OpenAICompatibleAI 的降级补发：超时 → 关思考 → 一次性请求出结果
+                emit(ChatDelta(content = "我觉得 5 号在藏。", timeoutDegraded = true))
+            }
+
+            @Deprecated("测试用不到")
+            override suspend fun chat(message: String, model: String): String = "我觉得 5 号在藏。"
+
+            override suspend fun chat(
+                messages: List<ChatMessage>,
+                model: String,
+                systemPrompt: String?,
+                enableThinking: Boolean,
+                jsonMode: Boolean,
+            ): String = "我觉得 5 号在藏。"
+        }
+        val game = standard9()
+        val degraded = DegradedSpeechAI()
+        val agents = game.players.associate { player ->
+            player.seat to SeatAgent(
+                ai = if (player.seat == 1) degraded else ScriptedAI(listOf("我没什么好说的。")),
+                model = "test",
+            )
+        }
+        val director = WerewolfDirector(agents = agents, pacing = pacing)
+
+        director.discussion(WerewolfTable(game.copy(phase = Phase.DAY_DISCUSSION)))
+
+        assertTrue("发言降级过的座位本局不再开深度思考", 1 in pacing.thinkingOff.value)
+        assertEquals("记了一次超时", 1, pacing.timings.value.getValue(1).timeouts)
+        assertFalse("没超时的座位不受影响", 2 in pacing.thinkingOff.value)
+    }
+
+    @Test
     fun `发言超出时限时保留已经说出的半句`() = runBlocking {
         val pacing = WerewolfPacing()
         pacing.overrideMs = 120L

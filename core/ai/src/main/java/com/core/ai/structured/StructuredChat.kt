@@ -59,6 +59,10 @@ suspend fun <T> IAI.decide(
     var thinking = enableThinking
     // 只有最后一次尝试的思维链有意义：前面那几次的答案已经被判为不可用
     var reasoning = ""
+    // 只要有一次等待超时，就算这次决策「降级过」——即使重试后拿到了正常答案。
+    // 这个标志往外传，让调用方（狼人杀）关掉该座位本局的深度思考：
+    // 超时多半就是思考吃满了额度，下一轮再开只会再撞一次。
+    var timedOut = false
 
     for (attempt in 1..maxAttempts) {
         val reply = try {
@@ -73,16 +77,17 @@ suspend fun <T> IAI.decide(
         } catch (error: Throwable) {
             // 超时值得再试一次：模型排队、网抖、客户端长连接被回收都可能，
             // 而 Key 错误、参数错误重试多少次都一样。
-            if (error.isTimeoutLike() && attempt < maxAttempts) {
-                // **重试时关掉深度思考。** 超时的头号原因是思考把等待额度吃光了，
-                // 用一模一样的参数再打一次，只会把等待时间翻倍，然后照样失败——
-                // 用户等十几分钟拿到一句「网络异常」，比直接降级更糟。
-                // 关掉之后这次请求通常几十秒就回来，决策质量差一点，但这一轮能打完。
-                thinking = false
-                delay(RETRY_BACKOFF_MS)
-                continue
-            }
             if (error.isTimeoutLike()) {
+                timedOut = true
+                if (attempt < maxAttempts) {
+                    // **重试时关掉深度思考。** 超时的头号原因是思考把等待额度吃光了，
+                    // 用一模一样的参数再打一次，只会把等待时间翻倍，然后照样失败——
+                    // 用户等十几分钟拿到一句「网络异常」，比直接降级更糟。
+                    // 关掉之后这次请求通常几十秒就回来，决策质量差一点，但这一轮能打完。
+                    thinking = false
+                    delay(RETRY_BACKOFF_MS)
+                    continue
+                }
                 // 超时是「这个座位这一次没答上来」，不是「整局废了」。
                 // 兜底值在规则上合法（随机投一个候选、随机刀一个好人），
                 // 这一局能继续打完；把异常抛出去会让整个阶段卡死，
@@ -92,6 +97,7 @@ suspend fun <T> IAI.decide(
                     attempts = attempt,
                     usedFallback = true,
                     lastError = "响应超时，已用兜底选择",
+                    timedOut = true,
                 )
             }
             throw error
@@ -102,7 +108,9 @@ suspend fun <T> IAI.decide(
         val parsed = parseReply(raw, spec)
         parsed.fold(
             onSuccess = {
-                return StructuredOutcome(it, attempt, usedFallback = false, reasoning = reasoning)
+                return StructuredOutcome(
+                    it, attempt, usedFallback = false, reasoning = reasoning, timedOut = timedOut,
+                )
             },
             onFailure = { error ->
                 lastError = error.message ?: "输出格式不符合要求"
@@ -117,6 +125,7 @@ suspend fun <T> IAI.decide(
         usedFallback = true,
         lastError = lastError,
         reasoning = reasoning,
+        timedOut = timedOut,
     )
 }
 

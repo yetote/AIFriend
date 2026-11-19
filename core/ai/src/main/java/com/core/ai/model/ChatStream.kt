@@ -16,6 +16,14 @@ import kotlinx.serialization.json.Json
 data class ChatDelta(
     val content: String = "",
     val reasoning: String = "",
+    /**
+     * 底层这次请求是否因超时降级过（关掉深度思考重试/补发）。
+     *
+     * 降级发生在 IAI 内部、外层看不到异常，只能靠这个标志往外传。
+     * 狼人杀据此把该座位本局的深度思考关掉——不传的话下一轮又开，
+     * 模型会一次次撞同一个超时。普通对话不关心它，默认 false。
+     */
+    val timeoutDegraded: Boolean = false,
 )
 
 /**

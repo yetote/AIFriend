@@ -97,8 +97,17 @@ abstract class OpenAICompatibleAI(
             // 同样是彻底静默的，仍开着深度思考只会再等满一整个超时，然后照样失败——
             // 用户等了十几分钟换来一句「网络异常」。关掉思考再补，通常很快就有内容。
             if (!hasContent) {
-                val retryThinking = if (failure.isTimeoutLike()) false else enableThinking
-                send(ChatDelta(content = chat(messages, model, systemPrompt, retryThinking, jsonMode)))
+                // 超时降级要往外报一声：外层（狼人杀）据此把该座位本局的深度思考关掉。
+                // 不报的话外层只看到「正常返回了一整段」，下一轮又把思考打开，
+                // 于是每个座位都卡在同一个超时上反复浪费时间。
+                val degradedByTimeout = failure.isTimeoutLike()
+                val retryThinking = if (degradedByTimeout) false else enableThinking
+                send(
+                    ChatDelta(
+                        content = chat(messages, model, systemPrompt, retryThinking, jsonMode),
+                        timeoutDegraded = degradedByTimeout,
+                    )
+                )
                 return@channelFlow
             }
             // 已经吐了一半：不能补发，否则会把前半句重复一遍。交给上层保留半句并给重试。

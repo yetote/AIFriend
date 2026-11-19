@@ -953,6 +953,9 @@ class WerewolfDirector(
         val reasoning = StringBuilder()
         var lastPush = 0L
         var pushed = false
+        // 底层超时降级（关思考重试）是正常返回的，外层看不到异常。
+        // 靠 delta 带出来的标志记一笔，好在下面对这个座位关思考。
+        var degradedByTimeout = false
 
         suspend fun consume() {
             agent.ai.chatStream(
@@ -961,6 +964,7 @@ class WerewolfDirector(
                 systemPrompt = system,
                 enableThinking = thinking,
             ).collect { delta ->
+                if (delta.timeoutDegraded) degradedByTimeout = true
                 if (delta.content.isEmpty() && delta.reasoning.isEmpty()) return@collect
                 content.append(delta.content)
                 reasoning.append(delta.reasoning)
@@ -1008,12 +1012,15 @@ class WerewolfDirector(
             // 只对超时这么办：连接被重置、鉴权失败这类是「链路真的坏了」，
             // 必须让编排层把错误显示出来，别伪装成一局正常但奇怪的发言。
             if (content.isEmpty() || !error.isTimeoutLike()) throw error
+            // 流式吐了一半才超时：底层抛上来的超时同样要关思考，
+            // 只是这半句还得留着（下面的 raw 分支用 content），不能当整体超时丢掉。
+            degradedByTimeout = true
         } finally {
             withContext(NonCancellable) { onLive(null) }
         }
 
         val elapsed = System.currentTimeMillis() - started
-        if (timedOut) {
+        if (timedOut || degradedByTimeout) {
             pacing.disableThinking(seat)
             pacing.record(seat, elapsed, TurnKind.SPEECH, timedOut = true)
             onTimedOut(TurnTimeout(seat, TurnKind.SPEECH, limitMs, elapsed))
@@ -1130,22 +1137,26 @@ class WerewolfDirector(
         }
 
         val elapsed = System.currentTimeMillis() - started
-        if (outcome == null) {
-            // 超时：**本局关掉这个座位的深度思考**，这一轮先按兜底动作走完。
-            // 超时的头号原因就是思考把额度吃光了，继续让它边想边等只会一步比一步慢；
-            // 关掉之后通常几十秒就能回话，这一局剩下的部分至少能正常推进。
+        // 两种超时都要关思考：
+        // - outcome == null：外层时限掐断了请求；
+        // - outcome.timedOut：decide 内部超时后降级重试/兜底，正常返回了结果。
+        // 后者以前被当成「没事」，下一轮又把思考打开，模型一次次撞同一个超时。
+        // 超时的头号原因就是思考把额度吃光了，关掉之后通常几十秒就能回话。
+        if (outcome == null || outcome.timedOut) {
             pacing.disableThinking(seat)
             pacing.record(seat, elapsed, TurnKind.DECISION, timedOut = true)
             onTimedOut(TurnTimeout(seat, TurnKind.DECISION, limitMs, elapsed))
-            return StructuredOutcome(
-                value = fallback(),
-                attempts = 0,
-                usedFallback = true,
-                lastError = "超出思考时限",
-            )
+        } else {
+            pacing.record(seat, elapsed, TurnKind.DECISION, timedOut = false)
         }
-        pacing.record(seat, elapsed, TurnKind.DECISION, timedOut = false)
-        return outcome
+        // 内部降级成功时 outcome 已经有合法结果（或已经兜底），直接用它；
+        // 只有外层掐断才需要我们在这里补一个兜底。
+        return outcome ?: StructuredOutcome(
+            value = fallback(),
+            attempts = 0,
+            usedFallback = true,
+            lastError = "超出思考时限",
+        )
     }
 
     // ---------------------------------------------------------------------
