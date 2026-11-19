@@ -739,7 +739,7 @@ internal fun WerewolfUiState.toReview(
 }
 
 /** 为什么会结束。胜负本身在横幅上，这里补的是「哪一边先撑不住」。 */
-private fun finishReason(game: WerewolfGame, winner: Faction): String {
+internal fun finishReason(game: WerewolfGame, winner: Faction): String {
     if (winner == Faction.GOOD) return "狼人全部出局，好人守住了。"
 
     // 绑票要单独说，因为它在屠边局里也成立，而且现场看起来最反直觉：
@@ -748,8 +748,11 @@ private fun finishReason(game: WerewolfGame, winner: Faction): String {
     val aliveGood = game.players.count { it.alive && it.faction == Faction.GOOD }
     if (aliveWolves >= aliveGood) {
         // 有没有警长，「为什么投不出去」的说法不一样：警长在也只能多投一轮 PK，
-        // 凑不出票这件事不会因为有个警徽就改变。照抄「没有警长就没有 PK」会自相矛盾
-        val tail = if (game.config.hasSheriff) {
+        // 凑不出票这件事不会因为有个警徽就改变。照抄「没有警长就没有 PK」会自相矛盾。
+        //
+        // 而且要看的是**此刻有没有警长**，不是板子配没配警长：
+        // 警长中途被枪带走、警徽作废之后说「警长在场」，那就成了假话。
+        val tail = if (game.sheriffSeat != null) {
             "警长在场也最多主持一轮 PK，票数差在这里已经追不回来了。"
         } else {
             "没有警长就没有 PK，平票等于无人出局，夜里再少一个只会更糟。"

@@ -57,6 +57,7 @@ class WerewolfPromptTest {
                 WerewolfRole.VILLAGER to 2,
                 WerewolfRole.HUNTER to 1,
             ),
+            hasSheriff = true,
         ),
         roster = roster(8),
         roles = listOf(
@@ -177,6 +178,46 @@ class WerewolfPromptTest {
 
         assertTrue("狼人要知道自己定了谁", wolf.contains("上一夜你们定了刀 5 号"))
         assertFalse("结果不来自私有信息", wolf.contains("5 号出局"))
+    }
+
+    @Test
+    fun `第1天只有一条验人链不该被当成悍跳`() {
+        // 真机案例：真预言家第 1 夜验的正好是当夜被刀的人，一条链被说成「死无对证」，
+        // 好人全票投他，狼人顺势拿到警徽——真预言家第一天就走了。
+        val prompt = WerewolfPrompt.systemPrompt(gameWithGuard(), seat = 3)
+
+        assertTrue(prompt.contains("第 1 天只有一条验人记录是正常的"))
+        assertTrue(prompt.contains("验到死人只是运气不好"))
+    }
+
+    @Test
+    fun `预言家不许编警徽流`() {
+        // 真机案例：真预言家只验了 7 号，却在竞选时说「警徽流先验 8 号再验 10 号」，
+        // 编出来的链子对不上，全场当场认定他是悍跳
+        val prompt = WerewolfPrompt.systemPrompt(gameWithGuard(), seat = 3)
+
+        assertTrue(prompt.contains("警徽流只报你真的验过的人"))
+        assertTrue(prompt.contains("第 1 天你只验了一个人"))
+    }
+
+    @Test
+    fun `规则说明写清上警只是举手`() {
+        // 真机案例：8 号拿「你上警前全程没说过一句话」当质疑点，
+        // 而上警本来只是举手报名——这个质疑是冲着空气的
+        val prompt = WerewolfPrompt.systemPrompt(gameWithGuard(), seat = 7)
+
+        assertTrue(prompt.contains("上警只是**举手报名**"))
+        assertTrue(prompt.contains("不要拿「他上警前没说话」当质疑点"))
+    }
+
+    @Test
+    fun `狼人知道自称守人是诈守卫`() {
+        // 真机案例：猎人诈称「我昨晚守的」并编出「真正被守的是 10 号」，
+        // 狼队全信，第 3 夜据此推理「守卫不能连守 → 5 号是裸位」——推理前提就是错的
+        val wolf = WerewolfPrompt.systemPrompt(gameWithGuard(), seat = 1)
+
+        assertTrue(wolf.contains("诈守卫"))
+        assertTrue(wolf.contains("守卫不能连守的是同一个人"))
     }
 
     @Test

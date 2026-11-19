@@ -1232,7 +1232,28 @@ class WerewolfDirector(
         listOf("$seat 号：", "${seat}号：", "「$name」：", "$name：").forEach { prefix ->
             if (text.startsWith(prefix)) text = text.removePrefix(prefix).trim()
         }
-        return text.take(MAX_SPEECH_LENGTH)
+        return truncateAtSentence(text, MAX_SPEECH_LENGTH)
+    }
+
+    /**
+     * 按**句子边界**截断。
+     *
+     * 原来直接 take(200)，切出来的常常是半句话——「我认我」「这刀必」「为什么偏偏要」，
+     * 牌桌上读着像卡带，朗读也会把这半句念出来。现在退到最后一个句末标点，
+     * 实在切不动才硬切并加省略号。
+     *
+     * 「退到最后一个句末标点」也有下限：只剩三五个字的话，宁可硬切加省略号，
+     * 那样至少还看得出「后面还有话」。
+     */
+    internal fun truncateAtSentence(text: String, limit: Int): String {
+        if (text.length <= limit) return text
+        val cut = text.take(limit)
+        val boundary = cut.indexOfLast { it in "。！？…" }
+        return if (boundary > limit / 3) {
+            cut.take(boundary + 1)
+        } else {
+            cut.trimEnd() + "…"
+        }
     }
 
     private fun describeWitchChoice(heal: Boolean, poison: Int?): String = when {
