@@ -55,12 +55,14 @@ import com.ui.werewolf.data.UIWerewolfCheckReport
 import com.ui.werewolf.data.UIWerewolfDayReport
 import com.ui.werewolf.data.UIWerewolfDialogueDay
 import com.ui.werewolf.data.UIWerewolfGroupKind
+import com.ui.werewolf.data.UIWerewolfBubbleKind
 import com.ui.werewolf.data.UIWerewolfNightReport
 import com.ui.werewolf.data.UIWerewolfNightDetail
 import com.ui.werewolf.data.UIWerewolfReview
 import com.ui.werewolf.data.UIWerewolfRevealedSeat
 import com.ui.werewolf.data.UIWerewolfRoleGroup
 import com.ui.werewolf.data.UIWerewolfSpeechLine
+import com.ui.werewolf.data.bubbleStyle
 
 // ---------------------------------------------------------------------------
 // 配色
@@ -614,18 +616,32 @@ private fun NightDetailCard(detail: UIWerewolfNightDetail) {
             )
             if (expanded) {
                 detail.lines.forEach { line ->
-                    Column(modifier = Modifier.padding(top = 6.dp)) {
-                        Text(
-                            text = buildString {
-                                append(line.speaker)
-                                line.roleLabel?.let { append("（").append(it).append("）") }
-                                append(" · ").append(line.label)
-                            },
-                            fontSize = 10.sp,
-                            color = ReviewDim
-                        )
+                    val style = bubbleStyle(line.kind, night = false)
+                    UIWerewolfBubble(
+                        style = style,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 5.dp),
+                        corner = 8.dp,
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = buildString {
+                                    append(line.speaker)
+                                    line.roleLabel?.let { append("（").append(it).append("）") }
+                                },
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = style.accent,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(Modifier.width(5.dp))
+                            BubbleTag(text = line.label, accent = style.accent)
+                        }
                         Text(
                             text = line.text,
+                            modifier = Modifier.padding(top = 2.dp),
                             fontSize = 11.sp,
                             lineHeight = 16.sp,
                             color = ReviewBody
@@ -874,12 +890,16 @@ private fun DialogueDayCard(day: UIWerewolfDialogueDay, showSecret: Boolean) {
 /**
  * 一句话。
  *
- * 上帝播报没有头像也没有座位，居中排一行，当作「这一天的分隔」用；
- * 密谈（狼人夜聊、查验、用药）铺一层极淡的红底并把性质标红，免得它和公开发言读串。
+ * 每条都套一个气泡，颜色和样式按**性质**分：
+ * 公开=中性、投票=琥珀、密谈=紫、播报=居中分隔线、思考=虚线框。
+ *
+ * 分这么细是有必要的：复盘里最要紧的区分就是「这句是场上说的，还是夜里悄悄说的」，
+ * 而夜里的话解释了白天的一切。混在一列里读，三句就分不清了。
  */
 @Composable
 private fun DialogueLine(line: UIWerewolfSpeechLine) {
-    if (line.seat == null) {
+    val kind = line.kind
+    if (kind == UIWerewolfBubbleKind.BROADCAST || line.seat == null) {
         Text(
             text = line.text,
             modifier = Modifier
@@ -893,20 +913,9 @@ private fun DialogueLine(line: UIWerewolfSpeechLine) {
         return
     }
 
+    val style = bubbleStyle(kind, night = false)
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 3.dp)
-            .then(
-                if (line.secret) {
-                    Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0x0FB7312B))
-                        .padding(horizontal = 6.dp, vertical = 5.dp)
-                } else {
-                    Modifier.padding(horizontal = 2.dp, vertical = 5.dp)
-                }
-            ),
+        modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.Top
     ) {
         UIAvatar(
@@ -916,25 +925,25 @@ private fun DialogueLine(line: UIWerewolfSpeechLine) {
             shape = CircleShape
         )
         Spacer(Modifier.width(8.dp))
-        Column(modifier = Modifier.weight(1f)) {
+        UIWerewolfBubble(
+            style = style,
+            modifier = Modifier.weight(1f),
+            corner = 8.dp,
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = line.speaker,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Medium,
-                    color = if (line.secret) WolfRed else ReviewBody,
+                    color = style.accent,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 line.roleLabel?.let { role ->
                     RoleTag(text = role, kind = line.roleKind)
                 }
-                Text(
-                    text = line.label,
-                    modifier = Modifier.padding(start = 5.dp),
-                    fontSize = 9.sp,
-                    color = if (line.secret) WolfRed.copy(alpha = 0.8f) else ReviewDim
-                )
+                Spacer(Modifier.width(5.dp))
+                BubbleTag(text = line.label, accent = style.accent)
             }
             Text(
                 text = line.text,
@@ -944,7 +953,7 @@ private fun DialogueLine(line: UIWerewolfSpeechLine) {
                 color = ReviewBody
             )
             if (line.reasoning.isNotBlank()) {
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(5.dp))
                 ReviewThought(reasoning = line.reasoning)
             }
         }
@@ -961,13 +970,15 @@ private fun DialogueLine(line: UIWerewolfSpeechLine) {
 @Composable
 private fun ReviewThought(reasoning: String) {
     var expanded by rememberSaveable { mutableStateOf(false) }
+    val style = bubbleStyle(UIWerewolfBubbleKind.THOUGHT, night = false)
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(UIGlassSurfaceStrong)
-            .padding(horizontal = 8.dp, vertical = 5.dp)
+    // 虚线框：这是「他说出口的话之外的东西」，实线框会和发言气泡混在一起
+    UIWerewolfBubble(
+        style = style,
+        modifier = Modifier.fillMaxWidth(),
+        corner = 8.dp,
+        accentBar = false,
+        dashed = true,
     ) {
         Row(
             modifier = Modifier
@@ -975,16 +986,13 @@ private fun ReviewThought(reasoning: String) {
                 .clickable { expanded = !expanded },
             verticalAlignment = Alignment.CenterVertically
         ) {
+            BubbleTag(text = style.tag, accent = style.accent)
+            Spacer(Modifier.width(6.dp))
             Text(
-                text = "思考过程",
+                text = if (expanded) "收起" else "展开",
                 modifier = Modifier.weight(1f),
                 fontSize = 9.sp,
                 color = ReviewDim
-            )
-            Text(
-                text = if (expanded) "收起" else "展开",
-                fontSize = 9.sp,
-                color = GodBlue
             )
         }
         if (expanded) {

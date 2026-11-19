@@ -202,4 +202,19 @@ data class UIWerewolfSpeechLine(
      * 最有看头的部分，尤其是发言和推理对不上号的时候。
      */
     val reasoning: String = "",
-)
+) {
+    /**
+     * 气泡类别：决定颜色与样式。
+     *
+     * **推导**出来而不是存下来：判据就在这条消息自己身上（有没有座位、
+     * 是不是密谈、是不是投票），存一份反而会跟 secret、label 打架——
+     * 老数据没有这个字段时也不至于分类错乱。
+     */
+    val kind: UIWerewolfBubbleKind
+        get() = when {
+            seat == null -> UIWerewolfBubbleKind.BROADCAST
+            secret -> UIWerewolfBubbleKind.SECRET
+            label.contains("投票") -> UIWerewolfBubbleKind.VOTE
+            else -> UIWerewolfBubbleKind.SPEECH
+        }
+}

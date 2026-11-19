@@ -9,7 +9,9 @@ import com.feature.werewolf.game.RosterEntry
 import com.feature.werewolf.game.WerewolfConfig
 import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfRole
+import com.ui.werewolf.data.UIWerewolfBubbleKind
 import com.ui.werewolf.data.UIWerewolfGroupKind
+import com.ui.werewolf.data.UIWerewolfSpeechLine
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -213,6 +215,30 @@ class WerewolfReviewMappingTest {
         // 原话也要留着，理由在摘要之外
         assertEquals(4, detail.lines.size)
         assertTrue(detail.lines.any { it.text.contains("5 号是女巫") })
+    }
+
+    @Test
+    fun `每条对话都分出气泡类别`() {
+        // 界面上每类话有自己的颜色和样式：公开=中性、投票=琥珀、密谈=紫、播报=居中。
+        // 分类必须从消息本身推出来，不能靠调用方记得填——填错一次，夜里的话
+        // 就会长得跟公开发言一样，复盘里读串。
+        val secret = UIWerewolfSpeechLine(
+            seat = 3, speaker = "3 号 张三", label = "狼人夜聊", text = "刀 5 号。", secret = true,
+        )
+        val speech = UIWerewolfSpeechLine(
+            seat = 3, speaker = "3 号 张三", label = "发言", text = "我投 5 号。",
+        )
+        val vote = UIWerewolfSpeechLine(
+            seat = 3, speaker = "3 号 张三", label = "投票", text = "我投 5 号。",
+        )
+        val broadcast = UIWerewolfSpeechLine(
+            seat = null, speaker = "上帝", label = "播报", text = "天亮了",
+        )
+
+        assertEquals(UIWerewolfBubbleKind.SECRET, secret.kind)
+        assertEquals(UIWerewolfBubbleKind.SPEECH, speech.kind)
+        assertEquals(UIWerewolfBubbleKind.VOTE, vote.kind)
+        assertEquals(UIWerewolfBubbleKind.BROADCAST, broadcast.kind)
     }
 
     @Test

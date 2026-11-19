@@ -69,7 +69,9 @@ import com.ui.common.theme.UIFriendBarTitleColor
 import com.ui.common.theme.UIRadiusControl
 import com.ui.common.theme.uiCard
 import com.ui.werewolf.data.UIWerewolfLine
+import com.ui.werewolf.data.UIWerewolfBubbleKind
 import com.ui.werewolf.data.UIWerewolfLineKind
+import com.ui.werewolf.data.bubbleStyle
 import com.ui.werewolf.data.UIWerewolfLive
 import com.ui.werewolf.data.UIWerewolfSeatLive
 import com.ui.werewolf.data.UIWerewolfStreaming
@@ -1059,6 +1061,7 @@ private fun SpeechRow(
     textColor: Color,
     dimColor: Color,
 ) {
+    val style = bubbleStyle(UIWerewolfBubbleKind.SPEECH, night)
     Row(modifier = Modifier.fillMaxWidth()) {
         UIAvatar(
             name = line.speaker ?: "?",
@@ -1067,7 +1070,7 @@ private fun SpeechRow(
             shape = CircleShape
         )
         Spacer(Modifier.width(8.dp))
-        Column(modifier = Modifier.weight(1f)) {
+        UIWerewolfBubble(style = style, modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = line.speaker ?: "未知",
@@ -1085,6 +1088,8 @@ private fun SpeechRow(
                         maxLines = 1
                     )
                 }
+                Spacer(Modifier.width(6.dp))
+                BubbleTag(text = style.tag, accent = style.accent)
             }
             Text(
                 text = line.text,
@@ -1100,8 +1105,8 @@ private fun SpeechRow(
 /**
  * 内心活动：投票的理由、夜里查验与用药的念头。
  *
- * 排版上刻意**不套用**发言的样式——没有头像、字号更小、整体压暗、左边一根细竖线。
- * 因为这些字没有人听见：做成发言的样子，用户会以为「他刚才在桌上说了这句」。
+ * 气泡，但**刻意做得比发言更淡更小、没有头像**：这些字没有人听见，
+ * 做成发言的样子，用户会以为「他刚才在桌上说了这句」。
  * 朗读也一并关掉了（`MessageKind.isInnerThought`），否则一圈投票就要念十几段独白。
  */
 @Composable
@@ -1110,59 +1115,42 @@ private fun InnerRow(
     night: Boolean,
     dimColor: Color,
 ) {
-    Row(
+    val style = bubbleStyle(UIWerewolfBubbleKind.INNER, night)
+    UIWerewolfBubble(
+        style = style,
         modifier = Modifier
             .fillMaxWidth()
-            .height(IntrinsicSize.Min)
-            .padding(start = 44.dp, end = 6.dp)
+            .padding(start = 38.dp, end = 6.dp),
+        corner = 8.dp,
     ) {
-        Box(
-            modifier = Modifier
-                .width(2.dp)
-                .fillMaxHeight()
-                .clip(RoundedCornerShape(1.dp))
-                .background(dimColor.copy(alpha = 0.32f))
-        )
-        Spacer(Modifier.width(8.dp))
-        Column {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            BubbleTag(text = line.innerLabel ?: style.tag, accent = style.accent)
+            val who = listOfNotNull(line.seat?.let { "$it 号" }, line.speaker)
+                .joinToString(" ")
+            if (who.isNotBlank()) {
                 Text(
-                    text = line.innerLabel ?: "内心",
+                    text = " $who",
                     fontSize = FsMeta,
-                    fontWeight = FontWeight.SemiBold,
-                    color = dimColor.copy(alpha = 0.8f),
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(50))
-                        .background(if (night) Color(0x14FFFFFF) else Color(0x0A000000))
-                        .padding(horizontal = 6.dp, vertical = 1.dp)
+                    color = dimColor.copy(alpha = 0.72f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
-                val who = listOfNotNull(line.seat?.let { "$it 号" }, line.speaker)
-                    .joinToString(" ")
-                if (who.isNotBlank()) {
-                    Text(
-                        text = " $who",
-                        fontSize = FsMeta,
-                        color = dimColor.copy(alpha = 0.72f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                if (line.secret) {
-                    Text(
-                        text = " · 仅你可见",
-                        fontSize = FsMeta,
-                        color = dimColor.copy(alpha = 0.55f)
-                    )
-                }
             }
-            Text(
-                text = line.text,
-                modifier = Modifier.padding(top = 2.dp),
-                fontSize = FsName,
-                lineHeight = 18.sp,
-                color = dimColor
-            )
+            if (line.secret) {
+                Text(
+                    text = " · 仅你可见",
+                    fontSize = FsMeta,
+                    color = dimColor.copy(alpha = 0.55f)
+                )
+            }
         }
+        Text(
+            text = line.text,
+            modifier = Modifier.padding(top = 2.dp),
+            fontSize = FsName,
+            lineHeight = 18.sp,
+            color = dimColor
+        )
     }
 }
 
@@ -1175,25 +1163,15 @@ private fun PrivateRow(
     dimColor: Color,
     surface: Color,
 ) {
-    Column(
+    val style = bubbleStyle(UIWerewolfBubbleKind.SECRET, night)
+    UIWerewolfBubble(
+        style = style,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 8.dp)
-            .uiCard(
-                shape = RoundedCornerShape(UIRadiusControl),
-                color = if (night) Color(0xFF221D2E) else Color(0xFFFBF7EC),
-                borderColor = if (night) Color(0x33C8A24A) else Color(0x33B58B2A),
-                elevation = 0.dp
-            )
-            .padding(horizontal = 10.dp, vertical = 8.dp)
+            .padding(start = 8.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = "仅你可见",
-                fontSize = FsMeta,
-                fontWeight = FontWeight.SemiBold,
-                color = if (night) Color(0xFFD9B563) else Color(0xFF9A7420)
-            )
+            BubbleTag(text = style.tag, accent = style.accent)
             val who = listOfNotNull(line.seat?.let { "$it 号" }, line.speaker)
                 .joinToString(" ")
             if (who.isNotBlank()) {
@@ -1205,6 +1183,12 @@ private fun PrivateRow(
                     overflow = TextOverflow.Ellipsis
                 )
             }
+            Spacer(Modifier.weight(1f))
+            Text(
+                text = "仅你可见",
+                fontSize = FsMeta,
+                color = dimColor.copy(alpha = 0.6f)
+            )
         }
         Text(
             text = line.text,

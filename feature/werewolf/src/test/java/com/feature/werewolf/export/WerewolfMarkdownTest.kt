@@ -159,10 +159,10 @@ class WerewolfMarkdownTest {
             "- 第 1 夜 · 验 3 号 → 狼人",
             "## 逐日对话",
             "### 第 1 天",
-            "**3 号 张三**（狼人） · 狼人夜聊 · 密谈",
+            "**3 号 张三**（狼人） · 【密谈】狼人夜聊",
             "> 刀 6 号。",
             "> 别刀预言家。",
-            "**4 号 你**（女巫） · 发言",
+            "**4 号 你**（女巫） · 【发言】",
             "> 我是好人",
             "<details>",
             "<summary>思考过程</summary>",
@@ -183,7 +183,7 @@ class WerewolfMarkdownTest {
     @Test
     fun `上帝播报没有身份标签`() {
         val md = WerewolfMarkdown.of(review())
-        assertTrue(md.contains("**上帝** · 播报"))
+        assertTrue(md.contains("**上帝** · 【播报】"))
         assertFalse(md.contains("**上帝**（"))
     }
 

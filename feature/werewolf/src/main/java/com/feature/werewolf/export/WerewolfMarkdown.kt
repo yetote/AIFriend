@@ -1,5 +1,6 @@
 package com.feature.werewolf.export
 
+import com.ui.werewolf.data.UIWerewolfBubbleKind
 import com.ui.werewolf.data.UIWerewolfReview
 import com.ui.werewolf.data.UIWerewolfRevealedSeat
 import com.ui.werewolf.data.UIWerewolfSpeechLine
@@ -159,8 +160,11 @@ object WerewolfMarkdown {
     private fun speakerLine(line: UIWerewolfSpeechLine): String = buildString {
         append("**").append(line.speaker).append("**")
         line.roleLabel?.let { append("（").append(it).append("）") }
-        append(" · ").append(line.label)
-        if (line.secret) append(" · 密谈")
+        // 类别用【】标出来：Markdown 没有颜色，靠方括号区分
+        // 「这句是场上说的」还是「这句是夜里悄悄说的」
+        append(" · 【").append(line.kind.label).append("】")
+        if (line.label != line.kind.label) append(line.label)
+        if (line.secret && line.kind != UIWerewolfBubbleKind.SECRET) append(" · 密谈")
     }
 
     /** 多行正文逐行加 `> `。Markdown 里引用块必须在每一行都带前缀，空行也要。 */
