@@ -26,7 +26,22 @@ class WerewolfSettings(context: Context) {
         runCatching { store.edit { it[AUTO_SPEAK] = enabled } }
     }
 
+    /**
+     * 要不要在对局里把 AI 的思考过程显示出来。
+     *
+     * 默认关：参与局看到别人的思考等于读心，那会把「猜谁在想什么」变成主要玩法。
+     * 观战和对局结束不受这个开关限制——那两个视角本来就能看复盘。
+     */
+    val showThinking: Flow<Boolean> = store.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[SHOW_THINKING] ?: false }
+
+    suspend fun setShowThinking(enabled: Boolean) {
+        runCatching { store.edit { it[SHOW_THINKING] = enabled } }
+    }
+
     private companion object {
         val AUTO_SPEAK = booleanPreferencesKey("werewolf_auto_speak")
+        val SHOW_THINKING = booleanPreferencesKey("werewolf_show_thinking")
     }
 }

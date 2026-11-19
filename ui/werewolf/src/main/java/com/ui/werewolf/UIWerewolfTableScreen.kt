@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -41,6 +42,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -49,6 +51,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -56,6 +63,8 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ui.common.UIAvatar
@@ -227,6 +236,9 @@ fun UIWerewolfTableScreen(
         label = "dayness"
     )
 
+    // 座位头像在窗口里的位置。思考气泡要挂在头像头顶，得知道它在哪。
+    val seatAnchors = remember { mutableStateMapOf<Int, Offset>() }
+
     Box(modifier = Modifier.fillMaxSize()) {
         // 背景铺满整屏（含状态栏后面），内容再按安全区往里缩
         TableBackdrop(dayness = dayness)
@@ -264,6 +276,7 @@ fun UIWerewolfTableScreen(
                 textColor = textColor,
                 dimColor = dimColor,
                 surface = surface,
+                anchors = seatAnchors,
                 modifier = Modifier.weight(1f)
             )
 
@@ -297,6 +310,15 @@ fun UIWerewolfTableScreen(
                     Box(Modifier.pageInsetsBottom())
                 }
             }
+        }
+
+        // 思考气泡浮在最上层：它要盖在座位和对话流上面，
+        // 画在别处会被对话流压住。
+        val stream = live.streaming
+        val anchor = stream?.let { seatAnchors[it.seat] }
+        if (stream != null && anchor != null && stream.reasoning.isNotBlank()) {
+            ThinkingBubble(reasoning = stream.reasoning, anchor = anchor, night = night)
+            BubbleTail(anchor = anchor, night = night)
         }
 
         // 过场画在最上层，但不吃触摸：1.4 秒里用户可能正要点「发言」，
@@ -503,6 +525,8 @@ private fun SeatColumns(
     textColor: Color,
     dimColor: Color,
     surface: Color,
+    /** 座位头像在窗口里的位置。思考气泡要挂在它头顶，得知道它在哪。 */
+    anchors: MutableMap<Int, Offset>,
     modifier: Modifier = Modifier,
 ) {
     // 座位号升序排一次再分栏。引擎给的是按座位排好的，但这里不依赖那个隐式约定
@@ -519,6 +543,7 @@ private fun SeatColumns(
             night = night,
             textColor = textColor,
             dimColor = dimColor,
+            anchors = anchors,
             modifier = Modifier.width(COLUMN_WIDTH).fillMaxHeight()
         )
 
@@ -541,6 +566,7 @@ private fun SeatColumns(
             night = night,
             textColor = textColor,
             dimColor = dimColor,
+            anchors = anchors,
             modifier = Modifier.width(COLUMN_WIDTH).fillMaxHeight()
         )
     }
@@ -567,6 +593,7 @@ private fun SeatColumn(
     night: Boolean,
     textColor: Color,
     dimColor: Color,
+    anchors: MutableMap<Int, Offset>,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -584,7 +611,8 @@ private fun SeatColumn(
                     seat = seat,
                     night = night,
                     textColor = textColor,
-                    dimColor = dimColor
+                    dimColor = dimColor,
+                    onAnchor = { offset -> anchors[seat.seat] = offset }
                 )
             }
         }
@@ -606,12 +634,27 @@ private fun SeatTile(
     night: Boolean,
     textColor: Color,
     dimColor: Color,
+    /** 头像中心在窗口里的位置。思考气泡挂在它头顶。 */
+    onAnchor: (Offset) -> Unit,
 ) {
     Column(
         modifier = Modifier.width(COLUMN_WIDTH),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Box(modifier = Modifier.size(40.dp), contentAlignment = Alignment.Center) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .onGloballyPositioned { coords ->
+                    // 头像中心：气泡的尖角要指到这儿
+                    onAnchor(
+                        Offset(
+                            coords.positionInRoot().x + coords.size.width / 2f,
+                            coords.positionInRoot().y + coords.size.height / 2f,
+                        )
+                    )
+                },
+            contentAlignment = Alignment.Center,
+        ) {
             if (seat.active) {
                 // 正在发言/正在行动的人要有动静，静止的牌桌看不出轮到谁。
                 // 两层：贴着头像的呼吸光说「是这个人」，往外扩的涟漪说「他正在出声」。
@@ -814,6 +857,112 @@ private fun StatusStrip(
                 maxLines = 1
             )
         }
+    }
+}
+
+
+/**
+ * 思考气泡：漫画对白框，挂在说话人头顶。
+ *
+ * 为什么浮在头像上而不是塞进对话流：
+ * 深度思考动辄几百上千字，全塞进对话流能把整页拉长到没法看；
+ * 而完全不显示又让人干等——不知道是在想还是在卡住。
+ * 挂在头顶正好：看得见，又不占对话流的篇幅，说完就消失。
+ *
+ * 内容只给**最后几行**：思考是流式追加的，头部是最早的结论，
+ * 尾部才是「他此刻在想什么」。
+ */
+@Composable
+private fun ThinkingBubble(
+    reasoning: String,
+    anchor: Offset,
+    night: Boolean,
+) {
+    if (reasoning.isBlank()) return
+    val density = LocalDensity.current
+    val screenWidth = LocalConfiguration.current.screenWidthDp.dp
+    val lines = remember(reasoning) { reasoning.trim().lines().takeLast(4) }
+    var bubbleSize by remember { mutableStateOf(IntSize.Zero) }
+
+    val fill = if (night) Color(0xE6221D2E) else Color(0xF2FFFFFF)
+    val border = if (night) Color(0x59A894FF) else Color(0x336B4BD9)
+    val textColor = if (night) Color(0xFFE6EAF3) else Color(0xFF3A4152)
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .offset {
+                val half = bubbleSize.width / 2f
+                val x = (anchor.x - half)
+                    .coerceIn(8f, (screenWidth.value - bubbleSize.width - 8f).coerceAtLeast(8f))
+                val y = (anchor.y - bubbleSize.height - with(density) { 26.dp.toPx() }).coerceAtLeast(0f)
+                IntOffset(x.toInt(), y.toInt())
+            }
+            .onSizeChanged { bubbleSize = it }
+            .width(146.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(fill)
+            .border(1.dp, border, RoundedCornerShape(12.dp))
+            .padding(horizontal = 9.dp, vertical = 7.dp)
+    ) {
+        Column {
+            Text(
+                text = "思考中",
+                fontSize = 9.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = if (night) Color(0xFFA894FF) else Color(0xFF6B4BD9)
+            )
+            Text(
+                text = lines.joinToString("\n"),
+                modifier = Modifier.padding(top = 2.dp),
+                fontSize = 11.sp,
+                lineHeight = 15.sp,
+                color = textColor.copy(alpha = 0.85f),
+                maxLines = 4,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+/**
+ * 对白框下面那个小尖角：指着说话人的头像。
+ *
+ * 用 Canvas 画一个等腰三角形，比用旋转的方块稳——方块转 45 度之后
+ * 四个角会露出来，看着像个菱形贴片。
+ */
+@Composable
+private fun BubbleTail(
+    anchor: Offset,
+    night: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val density = LocalDensity.current
+    val border = if (night) Color(0x59A894FF) else Color(0x336B4BD9)
+    Canvas(
+        modifier = modifier
+            .fillMaxSize()
+            .offset {
+                val y = (anchor.y - with(density) { 26.dp.toPx() })
+                IntOffset(
+                    (anchor.x - with(density) { 6.dp.toPx() }).toInt(),
+                    y.toInt()
+                )
+            }
+            .size(12.dp, 7.dp)
+    ) {
+        val path = androidx.compose.ui.graphics.Path().apply {
+            moveTo(0f, 0f)
+            lineTo(size.width, 0f)
+            lineTo(size.width / 2f, size.height)
+            close()
+        }
+        drawPath(path, color = if (night) Color(0xE6221D2E) else Color(0xF2FFFFFF))
+        drawPath(
+            path,
+            color = border,
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.dp.toPx())
+        )
     }
 }
 

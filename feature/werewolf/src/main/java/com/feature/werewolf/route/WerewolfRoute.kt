@@ -162,6 +162,7 @@ fun WerewolfRoute(
     val preset = PRESETS.firstOrNull { it.key == presetKey } ?: PRESETS.first()
     val uiApiChecks = remember(apiChecks) { apiChecks.mapValues { it.value.toUiCheck() } }
     val promptState by viewModel.promptState.collectAsState()
+    val showThinking by viewModel.showThinking.collectAsState()
 
     // 从列表点开的那一局。它和「正在打的这一局」是两件事，所以单独一层盖在最上面。
     val recordReview = remember(recordView, avatars) {
@@ -263,6 +264,8 @@ fun WerewolfRoute(
             LaunchedEffect(presetKey) { viewModel.loadPromptSettings(presetKey) }
             UIWerewolfPromptSettingsScreen(
                 state = promptState,
+                showThinking = showThinking,
+                onShowThinkingChange = viewModel::setShowThinking,
                 onSave = { global, board -> viewModel.savePromptSettings(global, board) },
                 onClearGlobal = { viewModel.clearPromptSettings(global = true) },
                 onClearBoard = { viewModel.clearPromptSettings(global = false) },
@@ -295,6 +298,7 @@ fun WerewolfRoute(
                         revealedIndex = revealedIndex,
                         speakingSeat = speakingSeat,
                         speechBusy = speechBusy,
+                        showThinking = showThinking,
                     ),
                     // 牌桌左上角的返回 = 收起牌桌回列表，不是退出狼人杀
                     onExit = {
@@ -854,6 +858,13 @@ internal fun WerewolfUiState.toLive(
     speakingSeat: Int? = null,
     /** 喇叭手里还有没有没念完的行（含正在念的这一句）。 */
     speechBusy: Boolean = false,
+    /**
+     * 要不要把 AI 的思考过程给界面。
+     *
+     * 参与局看到别人的思考等于读心——那会把「猜谁在想什么」变成主要玩法。
+     * 所以默认不给，只有观战（或者对局结束）才给；用户可以自己在设置里打开。
+     */
+    showThinking: Boolean = false,
 ): UIWerewolfLive {
     val table = table
     val game = table?.game
@@ -991,6 +1002,8 @@ internal fun WerewolfUiState.toLive(
                     speaker = speaker.name,
                     avatarPath = avatars[speaker.id],
                     text = item.text,
+                    // 思考内容是别人的心里话：观战/结束、或者用户自己开了开关才给
+                    reasoning = if (reveal || showThinking) item.reasoning else "",
                 )
             }
         }

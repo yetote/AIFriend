@@ -130,6 +130,10 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
     private val _autoSpeak = MutableStateFlow(true)
     val autoSpeak: StateFlow<Boolean> = _autoSpeak.asStateFlow()
 
+    /** 对局里要不要显示 AI 的思考过程。默认关——参与局看别人的思考等于读心。 */
+    private val _showThinking = MutableStateFlow(false)
+    val showThinking: StateFlow<Boolean> = _showThinking.asStateFlow()
+
     /** 朗读开关是否真的能出声。系统没装中文语音包时为 false，界面据此提示。 */
     private val _speechReady = MutableStateFlow(speechEngine.available)
     val speechReady: StateFlow<Boolean> = _speechReady.asStateFlow()
@@ -310,6 +314,7 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
         if (speechEngine.initialized) _speechReady.value = speechEngine.available
 
         viewModelScope.launch { runCatching { werewolfSettings.autoSpeak.collect { _autoSpeak.value = it } } }
+        viewModelScope.launch { runCatching { werewolfSettings.showThinking.collect { _showThinking.value = it } } }
 
         // 消息流一有新发言就喂给朗读队列。采集和播放分开：
         // 采集只管把话放进队列（很快），播放是长挂起的串行循环，
@@ -475,6 +480,12 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
     }
 
     /** 开关：关掉时立刻闭嘴，打开时把当前已有的发言重新入队（从游标继续，不重读历史）。 */
+    /** 对局里要不要显示 AI 的思考过程。 */
+    fun setShowThinking(enabled: Boolean) {
+        _showThinking.value = enabled
+        viewModelScope.launch { runCatching { werewolfSettings.setShowThinking(enabled) } }
+    }
+
     fun setAutoSpeak(enabled: Boolean) {
         _autoSpeak.value = enabled
         viewModelScope.launch { werewolfSettings.setAutoSpeak(enabled) }

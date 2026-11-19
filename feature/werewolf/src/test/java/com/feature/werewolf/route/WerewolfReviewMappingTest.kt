@@ -1,6 +1,7 @@
 package com.feature.werewolf.route
 
 import com.feature.werewolf.engine.MessageKind
+import com.feature.werewolf.engine.WerewolfLive
 import com.feature.werewolf.engine.WerewolfMessage
 import com.feature.werewolf.engine.WerewolfTable
 import com.feature.werewolf.engine.WerewolfUiState
@@ -215,6 +216,49 @@ class WerewolfReviewMappingTest {
         // 原话也要留着，理由在摘要之外
         assertEquals(4, detail.lines.size)
         assertTrue(detail.lines.any { it.text.contains("5 号是女巫") })
+    }
+
+    @Test
+    fun `思考内容按权限给，参与局默认不给`() {
+        // 参与局看到别人的思考等于读心。默认不给，只有观战、结束，
+        // 或者用户自己在设置里开了开关才有。
+        val roles = listOf(
+            WerewolfRole.WEREWOLF,
+            WerewolfRole.SEER,
+            WerewolfRole.VILLAGER,
+        )
+        val table = WerewolfTable(
+            WerewolfGame.withRoles(
+                config = WerewolfConfig(composition = roles.groupingBy { it }.eachCount()),
+                roster = roles.indices.map { RosterEntry(id = "p${it + 1}", name = "玩家${it + 1}") },
+                roles = roles,
+            )
+        )
+        // 引擎在流式时就把思考过程放在 live 里
+        val live = WerewolfLive(
+            seat = 2,
+            phase = Phase.DAY_DISCUSSION,
+            text = "我投 3 号。",
+            reasoning = "3 号昨晚没说话，可疑。",
+        )
+        val state = WerewolfUiState(table = table, live = live, running = true)
+
+        val asObserver = state.toLive(humanSeat = null, turn = null, avatars = emptyMap())
+        val asPlayer = state.toLive(humanSeat = 1, turn = null, avatars = emptyMap())
+        val withSwitch = state.toLive(
+            humanSeat = 1,
+            turn = null,
+            avatars = emptyMap(),
+            showThinking = true,
+        )
+
+        assertEquals("观战能看到思考", live.reasoning, asObserver.streaming?.reasoning)
+        assertTrue("参与局默认不给", asPlayer.streaming?.reasoning.isNullOrEmpty())
+        assertEquals(
+            "用户自己开了开关就给",
+            live.reasoning,
+            withSwitch.streaming?.reasoning,
+        )
     }
 
     @Test

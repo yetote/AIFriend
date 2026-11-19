@@ -113,6 +113,13 @@ data class UIWerewolfStreaming(
     val avatarPath: String? = null,
     /** 已经生成的正文。为空表示还在思考，一个字都没说。 */
     val text: String = "",
+    /**
+     * 已经生成的思考过程。
+     *
+     * **只有有权限的人拿得到**：参与局看到别人的思考等于读心，
+     * 所以界面上默认不给（见 `WerewolfRoute.toLive`）。观战和结束后才有。
+     */
+    val reasoning: String = "",
 )
 
 /** 轮到人类时要做的事。UI 按这个决定弹哪种输入面板。 */

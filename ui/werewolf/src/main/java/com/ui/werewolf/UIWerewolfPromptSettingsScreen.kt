@@ -1,6 +1,8 @@
 package com.ui.werewolf
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,6 +15,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -20,8 +24,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
@@ -53,6 +59,9 @@ import com.ui.werewolf.data.UIWerewolfPromptState
 @Composable
 fun UIWerewolfPromptSettingsScreen(
     state: UIWerewolfPromptState,
+    /** 对局里要不要把 AI 的思考过程显示出来（漫画对白框）。 */
+    showThinking: Boolean,
+    onShowThinkingChange: (Boolean) -> Unit,
     onSave: (global: String, board: String) -> Unit,
     onClearGlobal: () -> Unit,
     onClearBoard: () -> Unit,
@@ -114,6 +123,14 @@ fun UIWerewolfPromptSettingsScreen(
                     canClear = state.hasGlobal,
                 )
 
+                SwitchRow(
+                    title = "牌桌上显示 AI 的思考过程",
+                    subtitle = "开启后，AI 思考时会在他头顶浮出一个对白框，边想边显示。" +
+                        "默认关闭——参与局看到别人的思考等于读心，会把「猜谁在想什么」变成主要玩法。",
+                    checked = showThinking,
+                    onCheckedChange = onShowThinkingChange,
+                )
+
                 Text(
                     text = "这段话会加在每位 AI 的系统提示词最后，优先级高于内置打法。" +
                         "它只影响 AI 怎么打，不会出现在牌桌上——写「让 3 号当预言家」这类内容没有意义。",
@@ -124,6 +141,52 @@ fun UIWerewolfPromptSettingsScreen(
                 )
             }
         }
+    }
+}
+
+/** 一个带开关的行。 */
+@Composable
+private fun SwitchRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(UIRadiusControl))
+            .background(UIGlassSurfaceStrong)
+            .padding(horizontal = 14.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                fontSize = 13.sp,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                color = UIFriendBarTitleColor
+            )
+            Text(
+                text = subtitle,
+                modifier = Modifier.padding(top = 2.dp),
+                fontSize = 11.sp,
+                lineHeight = 16.sp,
+                color = UIFriendBarItemMetaColor
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.White,
+                checkedTrackColor = UIFriendBarTagTextBlue,
+                uncheckedThumbColor = Color.White,
+                uncheckedTrackColor = Color(0xFFD7DCE5),
+                uncheckedBorderColor = Color.Transparent,
+            )
+        )
     }
 }
 
