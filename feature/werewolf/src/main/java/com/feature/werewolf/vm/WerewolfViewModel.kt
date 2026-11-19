@@ -32,6 +32,7 @@ import com.feature.werewolf.engine.SeatAgent
 import com.feature.werewolf.engine.SeatVoices
 import com.feature.werewolf.engine.MessageKind
 import com.feature.werewolf.engine.WerewolfController
+import com.feature.werewolf.engine.WerewolfPacing
 import com.feature.werewolf.engine.WerewolfTable
 import com.feature.werewolf.engine.WerewolfUiState
 import com.feature.werewolf.engine.persistence.WerewolfGameFile
@@ -41,6 +42,8 @@ import com.feature.werewolf.game.WerewolfBoards
 import com.feature.werewolf.game.WerewolfConfig
 import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfPlayer
+import com.feature.werewolf.game.WerewolfPromptStyle
+import com.feature.werewolf.game.WerewolfTurnLimit
 import com.feature.werewolf.replay.ReplayFrame
 import com.feature.werewolf.replay.ReplayTimeline
 import com.feature.werewolf.store.WerewolfGameSummary
@@ -191,6 +194,15 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
     private val _showThinking = MutableStateFlow(false)
     val showThinking: StateFlow<Boolean> = _showThinking.asStateFlow()
 
+    /**
+     * 提示词风格。默认引导式，和设置层默认值对齐；init 里读一次 DataStore 覆盖。
+     *
+     * 和 autoSpeak 一样是全局偏好：开局页选完写进 DataStore，续档读当前值——
+     * 玩家在设置里切了风格就是想立刻生效，不该被存档里那份按回去。
+     */
+    private val _promptStyle = MutableStateFlow(WerewolfPromptStyle.GUIDED)
+    val promptStyle: StateFlow<WerewolfPromptStyle> = _promptStyle.asStateFlow()
+
     /** 朗读开关是否真的能出声。系统没装中文语音包时为 false，界面据此提示。 */
     private val _speechReady = MutableStateFlow(speechEngine.available)
     val speechReady: StateFlow<Boolean> = _speechReady.asStateFlow()
@@ -250,6 +262,16 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
 
     /** 存档生成时绑定的座位表，续档时按同样的规则重建。 */
     private var agents: Map<Int, SeatAgent> = emptyMap()
+
+    /**
+     * 座位 → 这个座位的角色**本来**开不开深度思考。
+     *
+     * 对局设置面板要区分两件事：「角色没开」和「本局被关掉了」。
+     * 前者点开关也打不开（那是好友自己的属性，要去编辑好友），后者可以点回来。
+     * 所以界面需要知道角色原本的设定，不能只看 [WerewolfPacing.thinkingOff]。
+     */
+    private val _seatThinking = MutableStateFlow<Map<Int, Boolean>>(emptyMap())
+    val seatThinking: StateFlow<Map<Int, Boolean>> = _seatThinking.asStateFlow()
 
     /**
      * 座位 → 该座位好友的朗读音色。
@@ -315,6 +337,20 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
     )
 
     val state: StateFlow<WerewolfUiState> = controller.state
+
+    /**
+     * 这一局的节奏：时限档位、每个座位的耗时账本、被关掉深度思考的座位。
+     *
+     * 直接把手上的对象暴露出去（而不是转成一份快照）：对局设置面板要在**中途**改档位，
+     * 转成快照就得再写一条「改回去」的通道，两边容易不一致。
+     */
+    val pacing: WerewolfPacing get() = controller.pacing
+
+    /** 改这一局的思考时限。改完立刻对下一个请求生效。 */
+    fun setTurnLimit(limit: WerewolfTurnLimit) = controller.setTurnLimit(limit)
+
+    /** 手动关/开某个座位的深度思考。开只是恢复角色自己的设定。 */
+    fun setSeatThinking(seat: Int, on: Boolean) = controller.setSeatThinking(seat, on)
 
     /** 轮到人类时非空，界面据此弹出输入区。 */
     val humanTurn: StateFlow<HumanTurn?> = human.turn
@@ -385,6 +421,15 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
 
         viewModelScope.launch { runCatching { werewolfSettings.autoSpeak.collect { _autoSpeak.value = it } } }
         viewModelScope.launch { runCatching { werewolfSettings.showThinking.collect { _showThinking.value = it } } }
+        viewModelScope.launch {
+            runCatching {
+                werewolfSettings.promptStyle.collect { name ->
+                    _promptStyle.value = runCatching {
+                        WerewolfPromptStyle.valueOf(name)
+                    }.getOrDefault(WerewolfPromptStyle.GUIDED)
+                }
+            }
+        }
 
         // 消息流一有新发言就喂给朗读队列。采集和播放分开：
         // 采集只管把话放进队列（很快），播放是长挂起的串行循环，
@@ -556,6 +601,12 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch { runCatching { werewolfSettings.setShowThinking(enabled) } }
     }
 
+    /** 切提示词风格。下一次开局或续档生效；正在跑的局不受影响（导演已按开局的值建好了）。 */
+    fun setPromptStyle(style: WerewolfPromptStyle) {
+        _promptStyle.value = style
+        viewModelScope.launch { runCatching { werewolfSettings.setPromptStyle(style.name) } }
+    }
+
     fun setAutoSpeak(enabled: Boolean) {
         _autoSpeak.value = enabled
         viewModelScope.launch { werewolfSettings.setAutoSpeak(enabled) }
@@ -650,6 +701,8 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
         skipCheck: Boolean = false,
         /** 板子的稳定标识，用来取这一局专属的提示词自定义。 */
         boardKey: String = "",
+        /** 这一局的思考时限。超过就按兜底继续，并关掉那个座位的深度思考。 */
+        turnLimit: WerewolfTurnLimit = WerewolfTurnLimit.STANDARD,
     ) {
         val previous = playJob
         playJob = viewModelScope.launch {
@@ -657,6 +710,9 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
             // 等它真的结束再开新局，免得两边同时写库
             previous?.cancelAndJoin()
             try {
+                // 新局换新账本：上一局的耗时、被关掉的思考都不该带到这一局
+                controller.pacing.reset(turnLimit)
+
                 val friends = _friends.value.ifEmpty { friendRepository.load().map { it.toFriend() } }
                 val chosen = friendIds.mapNotNull { id -> friends.firstOrNull { it.id == id } }
 
@@ -669,6 +725,8 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
                 // 玩家写的额外设定：全局的那段 + 这张板子专属的那段。
                 // 在这里读一次就够了——导演是在 play 里创建的，它拿的是当时的值。
                 controller.applyCustomPrompt(loadCustomPrompt(boardKey))
+                // 提示词风格同样在开局这一刻定死，后面改设置不影响这一局。
+                controller.applyPromptStyle(_promptStyle.value)
 
                 // 开局前先确认每个模型真的能回话。这一步失败比打到第三天某个 AI 突然
                 // 报错要好得多：那时牌桌已经铺开，用户分不清是游戏坏了还是模型坏了
@@ -692,6 +750,7 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
                 stopSpeech(clearQueue = true)
                 _humanSeat.value = humanSeat
                 agents = buildAgents(game.players, friendsById, humanSeat)
+                _seatThinking.value = agents.mapValues { it.value.thinkingEnabled }
                 seatVoiceIds = buildSeatVoiceIds(game.players, friendsById, humanSeat)
                 seatTtsConfigIds = buildSeatTtsConfigIds(game.players, friendsById)
                 _error.value = null
@@ -737,6 +796,8 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
                 // config。所以得先按规则反查这一局是哪张板子，否则续档会把玩家给这张
                 // 板子单独写的那段丢掉：开局时生效、一暂停一继续就没了，看着像设置被吃了。
                 controller.applyCustomPrompt(loadCustomPrompt(WerewolfBoards.keyOf(table.game.config)))
+                // 续档只用当前设置——玩家刚切过风格就是想立刻生效，不按存档里的旧值。
+                controller.applyPromptStyle(_promptStyle.value)
 
                 // 续档也要检：这一局可能是昨天开的，Key 过期、模型下线都在这中间发生过
                 val participants = table.game.players
@@ -748,6 +809,7 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
                 // 一旦 play() 起来会立刻撞上「X 号没有模型」
                 val friendsById = friends.associateBy { it.id }
                 agents = buildAgents(table.game.players, friendsById, humanSeat)
+                _seatThinking.value = agents.mapValues { it.value.thinkingEnabled }
                 seatVoiceIds = buildSeatVoiceIds(table.game.players, friendsById, humanSeat)
                 seatTtsConfigIds = buildSeatTtsConfigIds(table.game.players, friendsById)
                 stopSpeech(clearQueue = true)
@@ -1366,7 +1428,12 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
         human.submit(payload)
     }
 
-    /** 狼刀 / 查验：这两个必须有目标，不能用 [submitTarget] 传 null。 */
+    /**
+     * 必须有目标的那一类：**只有预言家查验**了。
+     *
+     * 狼刀原来也走这里，v12 起改走 [submitTarget]——空刀是合法战术，
+     * 而这条路传不了 null。
+     */
     fun submitSeat(target: Int, reason: String = "") {
         if (humanTurn.value?.jsonMode != true) return
         human.submit(json.encodeToString(SeatChoice(target, reason)))

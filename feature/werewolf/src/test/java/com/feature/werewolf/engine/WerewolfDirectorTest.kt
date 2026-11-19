@@ -1,6 +1,7 @@
 package com.feature.werewolf.engine
 
 import com.core.ai.entity.IAI
+import com.core.ai.model.ChatDelta
 import com.core.ai.model.ChatMessage
 import com.feature.werewolf.game.DeathCause
 import com.feature.werewolf.game.GameEvent
@@ -9,6 +10,9 @@ import com.feature.werewolf.game.RosterEntry
 import com.feature.werewolf.game.WerewolfConfig
 import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfRole
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -168,6 +172,45 @@ class WerewolfDirectorTest {
             chat(listOf(ChatMessage.user(message)), model)
     }
 
+    /**
+     * 卡住不回的模型。
+     *
+     * 时限这条路径只能靠真等来验证：档位最小也是 30 秒，所以测试里把
+     * [WerewolfPacing.overrideMs] 压到百毫秒级，让「等不到」这件事真的发生。
+     */
+    private class HangingAI(private val sayFirst: String? = null) : IAI {
+        override suspend fun requestModel() = Unit
+        override var modelSet: MutableSet<String> = mutableSetOf()
+        override var brandName: String = "卡住"
+        override var company: String = "卡住"
+
+        override suspend fun chat(
+            messages: List<ChatMessage>,
+            model: String,
+            systemPrompt: String?,
+            enableThinking: Boolean,
+            jsonMode: Boolean,
+        ): String {
+            kotlinx.coroutines.delay(10_000)
+            return "{}"
+        }
+
+        override fun chatStream(
+            messages: List<ChatMessage>,
+            model: String,
+            systemPrompt: String?,
+            enableThinking: Boolean,
+            jsonMode: Boolean,
+        ): kotlinx.coroutines.flow.Flow<ChatDelta> = kotlinx.coroutines.flow.flow {
+            if (sayFirst != null) emit(ChatDelta(content = sayFirst))
+            kotlinx.coroutines.delay(10_000)
+        }
+
+        @Deprecated("测试用不到")
+        override suspend fun chat(message: String, model: String): String =
+            chat(listOf(ChatMessage.user(message)), model)
+    }
+
     private fun agentsOf(vararg pairs: Pair<Int, IAI>): Map<Int, SeatAgent> =
         pairs.associate { (seat, ai) -> seat to SeatAgent(ai = ai, model = "test-model") }
 
@@ -187,6 +230,31 @@ class WerewolfDirectorTest {
 
         assertEquals("两票对一票，7 号被刀", 7, result.game.tonightVictim)
         assertEquals(Phase.NIGHT_SEER, result.game.phase)
+    }
+
+    /**
+     * 竞选发言里自爆 = 炸掉警徽。
+     *
+     * 这条以前被卡住了：自爆要求发言里点名一个活着的队友（救队友那条判据），
+     * 而「吞警徽」本来就不需要救谁，于是这个正经花板子永远触发不了。
+     */
+    @Test
+    fun `竞选发言里自爆会炸掉警徽`() = runBlocking {
+        val exploder = ScriptedAI(listOf("【自爆】这个警徽今天谁也别想拿。"))
+        val director = WerewolfDirector(agentsOf(1 to exploder))
+        val game = standard9().copy(
+            day = 1,
+            phase = Phase.DAY_SHERIFF_SPEECH,
+            sheriffCandidates = listOf(1),
+            sheriffRunners = listOf(1),
+        )
+
+        val result = director.sheriffSpeech(WerewolfTable(game))
+
+        assertTrue("选举要收尾，否则下次 dayOpening 会把游戏拽回上警", result.game.sheriffElectionDone)
+        assertNull("本局没有警长", result.game.sheriffSeat)
+        assertNotEquals("不能停在竞选发言", Phase.DAY_SHERIFF_SPEECH, result.game.phase)
+        assertFalse("爆的狼已经出局", result.game.playerAt(1).alive)
     }
 
     @Test
@@ -997,4 +1065,77 @@ class WerewolfDirectorTest {
         val CANDIDATE_LINE = Regex("""只能从 ([^中]*) 中选""")
         val SEAT_NUMBER_IN_CANDIDATES = Regex("""(\d+)\s*号""")
     }
+
+    // ------------------------------------------------------------------
+    // 思考时限
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `决策超出时限时按兜底继续，并关掉这个座位的深度思考`() = runBlocking {
+        val pacing = WerewolfPacing()
+        // 档位最小也是 30 秒，测试里压到 150ms，让「等不到」真的发生
+        pacing.overrideMs = 150L
+        val director = WerewolfDirector(
+            agents = agentsOf(
+                1 to HangingAI(),
+                2 to ScriptedAI(listOf("""{"target": 7, "reason": "7 号话少。"}""")),
+                3 to ScriptedAI(listOf("""{"target": 7, "reason": "我也觉得是他。"}""")),
+            ),
+            pacing = pacing,
+        )
+
+        val result = director.nightWolf(WerewolfTable(standard9().beginWolfVote()))
+
+        // 一个座位卡住不该把整夜空掉：它走兜底，另外两票照样决定刀口
+        assertEquals("两票仍能定刀", 7, result.game.tonightVictim)
+        assertTrue("超时的座位本局不再开深度思考", 1 in pacing.thinkingOff.value)
+        assertEquals("记了一次超时", 1, pacing.timings.value.getValue(1).timeouts)
+        assertEquals("没超时的座位不受影响", 0, pacing.timings.value.getValue(2).timeouts)
+        assertTrue("没人被关掉思考", 2 !in pacing.thinkingOff.value)
+    }
+
+    @Test
+    fun `发言超出时限时保留已经说出的半句`() = runBlocking {
+        val pacing = WerewolfPacing()
+        pacing.overrideMs = 120L
+        val game = standard9()
+        val agents = game.players.associate { player ->
+            player.seat to SeatAgent(ai = HangingAI("我觉得 5 号在藏"), model = "slow")
+        }
+        val director = WerewolfDirector(agents = agents, pacing = pacing)
+
+        val result = director.discussion(
+            WerewolfTable(game.copy(phase = Phase.DAY_DISCUSSION))
+        )
+
+        val speeches = result.transcript.filter { it.kind == MessageKind.SPEECH }
+        assertEquals("每个人都要留下一条，不能空过", game.aliveSeats.size, speeches.size)
+        // 说到一半被打断，已经说出去的话必须留着——清空会让后面的人对着空白接话
+        assertTrue("半句要留下：${speeches.first().text}", speeches.first().text.contains("我觉得 5 号"))
+        assertEquals("超时的座位这一局都不再开思考", game.aliveSeats.toSet(), pacing.thinkingOff.value)
+    }
+
+
+    @Test
+    fun `用户退出导致的取消不算超时，也不关思考`() = runBlocking {
+        // 退出页面、暂停、换局都会把协程取消。这条取消和「时限到了」在异常类型上
+        // 可能长得一样，靠「外层是否还活着」区分：外层已取消就不是我们的超时。
+        val pacing = WerewolfPacing()
+        pacing.overrideMs = 10_000L
+        val game = standard9()
+        val agents = game.players.associate { player ->
+            player.seat to SeatAgent(ai = HangingAI("我刚说到一半"), model = "slow")
+        }
+        val director = WerewolfDirector(agents = agents, pacing = pacing)
+
+        val job = launch {
+            director.discussion(WerewolfTable(game.copy(phase = Phase.DAY_DISCUSSION)))
+        }
+        delay(120)
+        job.cancelAndJoin()
+
+        assertEquals("没人被当成超时", emptySet<Int>(), pacing.thinkingOff.value)
+        assertEquals("账本里不该留下一条半截记录", emptyMap<Int, SeatTiming>(), pacing.timings.value)
+    }
+
 }

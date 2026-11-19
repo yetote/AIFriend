@@ -141,14 +141,19 @@ internal fun buildTurn(
             null
         }
 
+        // 定刀。用 VOTE 面板而不是 SEAT：「不做」在这里是**空刀**，走弃权那条路正好
+        // 就是 VoteChoice(null)，和 AI 座位用的是同一套决策。
+        // 候选是**全部存活座位**（含自己与队友）——自刀骗解药、刀队友做身份都是正经打法，
+        // 候选里不给，人类玩家就只能照着 AI 的旧打法走。
         Phase.NIGHT_WOLF -> if (me.role.isWerewolf) {
             UIWerewolfTurn(
-                kind = UIWerewolfTurnKind.SEAT,
+                kind = UIWerewolfTurnKind.VOTE,
                 seat = humanSeat,
                 title = if (game.wolfVoteRound > 1) "平票，重新定刀" else "今晚刀谁",
-                targets = others.filter { target ->
-                    game.players.firstOrNull { it.seat == target.seat }?.role?.isWerewolf != true
-                },
+                hint = "自己人和你自己也能刀；空刀是战术，不是失误",
+                targets = game.alivePlayers.map { UIWerewolfTarget(seat = it.seat, name = it.name) },
+                canAbstain = true,
+                abstainLabel = "空刀",
             )
         } else {
             null

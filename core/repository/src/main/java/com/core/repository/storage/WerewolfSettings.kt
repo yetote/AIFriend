@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
@@ -40,8 +41,24 @@ class WerewolfSettings(context: Context) {
         runCatching { store.edit { it[SHOW_THINKING] = enabled } }
     }
 
+    /**
+     * 提示词风格：存枚举名字符串（"GUIDED"/"FREE"），不存布尔。
+     *
+     * 这个模块不能依赖 feature:werewolf，所以这里只做字符串搬运，
+     * 解析成枚举在 ViewModel 里做。用名字而不是 true/false，是将来加第三档不用改 key。
+     * 默认 GUIDED——老用户和已有存档的行为完全不变。
+     */
+    val promptStyle: Flow<String> = store.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[PROMPT_STYLE] ?: "GUIDED" }
+
+    suspend fun setPromptStyle(name: String) {
+        runCatching { store.edit { it[PROMPT_STYLE] = name } }
+    }
+
     private companion object {
         val AUTO_SPEAK = booleanPreferencesKey("werewolf_auto_speak")
         val SHOW_THINKING = booleanPreferencesKey("werewolf_show_thinking")
+        val PROMPT_STYLE = stringPreferencesKey("werewolf_prompt_style")
     }
 }

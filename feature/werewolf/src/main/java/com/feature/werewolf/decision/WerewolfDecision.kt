@@ -54,15 +54,28 @@ object WerewolfDecisions {
     private const val INNER_REASON_HINT =
         "reason 是你心里的判断（没人听见，也不会朗读）：一句话说清理由，不要复述别人已经说过的内容。"
 
-    /** 狼人夜刀。候选排除狼人自己人——不给自己人下刀，省得模型想出「自刀」这种局。 */
-    fun wolfKill(game: WerewolfGame, seat: Int): StructuredSpec<SeatChoice> {
-        val candidates = game.aliveSeats.filter { it != seat && !game.isWerewolf(it) }
+    /**
+     * 狼人夜刀。
+     *
+     * 候选是**全部存活座位**，包括自己和队友：自刀骗解药、刀队友做身份都是线下正经打法。
+     * 引擎 v12 起也放开了这两条（以前有两道 require 拦着）。
+     *
+     * `target = null` 是**空刀**：不是失误，是战术——连着空两夜能让好人误判「有守卫守中了」。
+     * 所以这里用 [VoteChoice] 而不是 [SeatChoice]：形状和投票一样，人类座位那边
+     * 「空刀」按钮直接走弃权那条路，不用再加一种提交类型。
+     */
+    fun wolfKill(game: WerewolfGame, seat: Int): StructuredSpec<VoteChoice> {
+        val candidates = game.aliveSeats
         return StructuredSpec(
-            instruction = "输出 {\"target\": 座位号, \"reason\": \"一句话理由\"}。" +
-                "target 必须是今晚要刀的目标，只能从 ${list(candidates)} 中选，不能选自己或队友。" +
-                "reason 用一句中文说明你为什么刀他，这句话队友会看到。",
-            serializer = SeatChoice.serializer(),
-            validate = { it.target in candidates },
+            instruction = buildString {
+                append("输出 {\"target\": 座位号或 null, \"reason\": \"一句话理由\"}。")
+                append("target 是今晚要刀的人，可以从 ${list(candidates)} 里选——")
+                append("**包括你自己（$seat 号）和你的队友**：自刀骗解药、刀队友做身份都是合法战术。")
+                append("不想刀任何人就填 null（空刀），这也是合法战术，不是失误。")
+                append("reason 用一句中文说明你为什么这么选，这句话队友会看到。")
+            },
+            serializer = VoteChoice.serializer(),
+            validate = { it.target == null || it.target in candidates },
         )
     }
 
@@ -255,10 +268,15 @@ object WerewolfDecisions {
     fun <T> pick(candidates: List<T>, random: Random): T? =
         if (candidates.isEmpty()) null else candidates[random.nextInt(candidates.size)]
 
-    /** 狼刀兜底：随机刀一个好人。 */
-    fun fallbackWolfKill(game: WerewolfGame, seat: Int, random: Random): SeatChoice {
+    /**
+     * 狼刀兜底：随机刀一个好人。
+     *
+     * 兜底刻意**不选空刀、不选自刀**：这两个都是要全队配合的战术，
+     * 模型失灵时随手空一刀或刀自己人，比「这局打得平淡」糟糕得多。
+     */
+    fun fallbackWolfKill(game: WerewolfGame, seat: Int, random: Random): VoteChoice {
         val candidates = game.aliveSeats.filter { it != seat && !game.isWerewolf(it) }
-        return SeatChoice(pick(candidates, random) ?: seat, "先听队友的，我没有特别的倾向。")
+        return VoteChoice(pick(candidates, random) ?: seat, "先听队友的，我没有特别的倾向。")
     }
 
     /** 查验兜底：优先验没查过的人，全查完了就随机。 */

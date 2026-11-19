@@ -18,6 +18,7 @@ import com.feature.werewolf.game.WerewolfConfig
 import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfPlayer
 import com.feature.werewolf.game.WerewolfRole
+import com.feature.werewolf.game.WerewolfTurnLimit
 import com.feature.werewolf.game.WitchStock
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -302,6 +303,47 @@ class WerewolfSnapshotTest {
         assertTrue("替换没生效，序列化格式变了：$text", legacy != text)
         assertNull("旧档没有这一段", WerewolfSnapshot.decodePrompt(legacy))
         assertNotNull("但局面必须还能续上", WerewolfSnapshot.decode(legacy))
+    }
+
+    @Test
+    fun `思考时限与本局关掉的思考跟着存档走`() {
+        val table = richTable()
+        val text = WerewolfSnapshot.encode(
+            table = table,
+            turnLimit = WerewolfTurnLimit.RELAXED,
+            thinkingOff = setOf(3, 7),
+        )
+
+        val pacing = WerewolfSnapshot.decodePacing(text)
+        assertNotNull("这一局的档位必须读得回来", pacing)
+        assertEquals(WerewolfTurnLimit.RELAXED, pacing!!.limit)
+        // 续档之后如果把已经关掉的座位又打开，那个慢模型下一阶段会原样再超时一次
+        assertEquals("关掉思考的座位要一起带回来", setOf(3, 7), pacing.thinkingOff)
+        // 档位是请求参数、不是局面：读回来的牌桌不该因为它有任何差别
+        assertEquals(table, WerewolfSnapshot.decode(text))
+    }
+
+    @Test
+    fun `旧档没有思考时限时按标准处理`() {
+        val text = WerewolfSnapshot.encode(richTable())
+            .replace("\"turnLimit\":\"STANDARD\",", "")
+            .replace("\"thinkingOff\":[],", "")
+            .replaceFirst("\"version\":${WerewolfSnapshot.VERSION}", "\"version\":12")
+
+        assertTrue("替换没生效，序列化格式变了：$text", !text.contains("\"turnLimit\""))
+        val pacing = WerewolfSnapshot.decodePacing(text)
+        assertEquals("默认标准", WerewolfTurnLimit.STANDARD, pacing?.limit)
+        assertEquals("默认一个都没关", emptySet<Int>(), pacing?.thinkingOff)
+        assertNotNull("局面照常能续", WerewolfSnapshot.decode(text))
+    }
+
+    @Test
+    fun `认不出的思考时限按标准处理而不是整局读不出来`() {
+        // 存档可能来自更高版本：将来加了新档位，旧版本读到时不能把整局判成坏档
+        val text = WerewolfSnapshot.encode(richTable())
+            .replace("\"turnLimit\":\"STANDARD\"", "\"turnLimit\":\"TURBO\"")
+        assertEquals(WerewolfTurnLimit.STANDARD, WerewolfSnapshot.decodePacing(text)?.limit)
+        assertNotNull(WerewolfSnapshot.decode(text))
     }
 
     @Test

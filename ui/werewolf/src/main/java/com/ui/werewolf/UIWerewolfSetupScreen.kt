@@ -23,6 +23,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -68,8 +70,10 @@ import com.ui.werewolf.data.UIWerewolfApiCheck
 import com.ui.werewolf.data.UIWerewolfApiState
 import com.ui.werewolf.data.UIWerewolfFriend
 import com.ui.werewolf.data.UIWerewolfMode
+import com.ui.werewolf.data.UIWerewolfPromptStyle
 import com.ui.werewolf.data.UIWerewolfPreset
 import com.ui.werewolf.data.UIWerewolfSeat
+import com.ui.werewolf.data.UIWerewolfTurnLimit
 
 /**
  * 连通标记用的绿。
@@ -96,6 +100,22 @@ fun UIWerewolfSetupScreen(
     error: String?,
     apiChecks: Map<String, UIWerewolfApiCheck>,
     checking: Boolean,
+    /** 这一局每步最多等多久。 */
+    turnLimit: UIWerewolfTurnLimit,
+    onTurnLimitChange: (UIWerewolfTurnLimit) -> Unit,
+    /** 提示词风格：引导式给内置打法，自由式让模型自己想。 */
+    promptStyle: UIWerewolfPromptStyle,
+    onPromptStyleChange: (UIWerewolfPromptStyle) -> Unit,
+    /** 要不要把 AI 的发言念出来。 */
+    speechOn: Boolean,
+    /**
+     * 语音引擎此刻能不能出声。
+     *
+     * 不能出声时开关照样可点——点「开」会在 ViewModel 里顺手重建一次引擎，
+     * 那正是国产 ROM 上 init 偶发失败后唯一的自愈入口。
+     */
+    speechReady: Boolean,
+    onSpeechChange: (Boolean) -> Unit,
     onModeChange: (UIWerewolfMode) -> Unit,
     onPresetChange: (String) -> Unit,
     onToggleFriend: (String) -> Unit,
@@ -183,6 +203,73 @@ fun UIWerewolfSetupScreen(
                 )
                 PromptEntryCard(
                     onClick = onOpenPromptSettings
+                )
+
+                // 思考时限放在开局这里而不是藏进设置：它直接决定「这一局要打多久」，
+                // 而用户是带着「我等不等得起」这个问题来开局的
+                SectionTitle(
+                    title = "思考时限",
+                    subtitle = "每一步最多等多久。超时按兜底继续，并关掉那个座位本局的深度思考"
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        UIWerewolfTurnLimit.entries.forEach { limit ->
+                            SetupLimitChip(
+                                limit = limit,
+                                selected = limit == turnLimit,
+                                modifier = Modifier.weight(1f),
+                                onClick = { onTurnLimitChange(limit) },
+                            )
+                        }
+                    }
+                    Text(
+                        text = turnLimit.consequence + "。开局后在牌桌上点右上角齿轮也能改。",
+                        fontSize = 11.sp,
+                        color = UIFriendBarItemSubtitleColor
+                    )
+                }
+
+                // 提示词风格决定 AI「按什么打」：引导式有内置打法兜底，自由式把它放出去。
+                // 放在开局而不是设置页，是因为这是「这一局想看什么」的取舍——
+                // 想看小模型也能像样对局就用引导式，想看强模型自己推理就用自由式。
+                SectionTitle(
+                    title = "AI 打法",
+                    subtitle = "引导式内置读人和战术，自由式只给身份和局势、让模型自己判断"
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        UIWerewolfPromptStyle.entries.forEach { style ->
+                            SetupStyleChip(
+                                style = style,
+                                selected = style == promptStyle,
+                                modifier = Modifier.weight(1f),
+                                onClick = { onPromptStyleChange(style) },
+                            )
+                        }
+                    }
+                    Text(
+                        text = promptStyle.hint,
+                        fontSize = 11.sp,
+                        color = UIFriendBarItemSubtitleColor
+                    )
+                }
+
+                // 朗读放在开局这里，而不是只在牌桌上留一个喇叭图标：一局可能打半小时，
+                // 半夜躺在床上不想听、通勤路上想听，都得在「开局之前」决定。
+                // 牌桌上那个喇叭仍然在，两处改的是同一个值
+                SectionTitle(
+                    title = "朗读",
+                    subtitle = "把 AI 的发言念出来。音色属于每个座位自己，不在这里配"
+                )
+                SetupSwitchRow(
+                    title = "自动朗读",
+                    subtitle = when {
+                        !speechReady -> "语音引擎还没就绪。先打开，进牌桌后点一下喇叭重试"
+                        speechOn -> "只念说出口的话，思考和内心活动不念"
+                        else -> "关着也能随时在牌桌上打开"
+                    },
+                    checked = speechOn,
+                    onCheckedChange = onSpeechChange,
                 )
 
                 // 座位条：这是整页的主视觉，把「还差几位」变成几个空位
@@ -323,6 +410,54 @@ private fun PromptEntryCard(onClick: () -> Unit) {
             text = "›",
             fontSize = 18.sp,
             color = UIFriendBarTagTextBlue
+        )
+    }
+}
+
+/**
+ * 一行带开关的设置项。
+ *
+ * 整行可点，而不是只有右边那个开关：Switch 的肉丸只有几十像素宽，
+ * 手指落在文字上没反应的话，会让人以为这个设置改不了。
+ */
+@Composable
+private fun SetupSwitchRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(UIRadiusControl))
+            .background(UIGlassSurfaceStrong)
+            .clickable { onCheckedChange(!checked) }
+            .padding(start = 14.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = title,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = UIFriendBarTitleColor
+            )
+            Text(
+                text = subtitle,
+                fontSize = 11.sp,
+                lineHeight = 15.sp,
+                color = UIFriendBarItemSubtitleColor
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.White,
+                checkedTrackColor = UIFriendBarTagTextBlue
+            )
         )
     }
 }
@@ -888,5 +1023,86 @@ private fun StartBar(
                 )
             }
         }
+    }
+}
+
+/**
+ * 开局页的提示词风格选择块。视觉和 [SetupLimitChip] 一致——同一页的两个取舍，
+ * 不该长得像两种控件。
+ */
+@Composable
+private fun SetupStyleChip(
+    style: UIWerewolfPromptStyle,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(UIRadiusControl))
+            .background(if (selected) UIFriendBarTagTextBlue.copy(alpha = 0.14f) else UIFieldFill)
+            .border(
+                width = if (selected) 1.2.dp else 1.dp,
+                color = if (selected) UIFriendBarTagTextBlue else UIGlassStroke,
+                shape = RoundedCornerShape(UIRadiusControl)
+            )
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp, horizontal = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            text = style.label,
+            fontSize = 13.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (selected) UIFriendBarTagTextBlue else UIFriendBarTitleColor
+        )
+        Text(
+            text = style.name,
+            fontSize = 9.5.sp,
+            color = UIFriendBarItemSubtitleColor
+        )
+    }
+}
+
+/**
+ * 开局页的时限选择块。
+ *
+ * 和牌桌上那个面板同一套四档，但这里是「开局前」的取舍：
+ * 用户还没开始等，关心的是「这一局大概要多久」，所以副标题写的是毫秒数而不是耗时账本。
+ */
+@Composable
+private fun SetupLimitChip(
+    limit: UIWerewolfTurnLimit,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(UIRadiusControl))
+            .background(if (selected) UIFriendBarTagTextBlue.copy(alpha = 0.14f) else UIFieldFill)
+            .border(
+                width = if (selected) 1.2.dp else 1.dp,
+                color = if (selected) UIFriendBarTagTextBlue else UIGlassStroke,
+                shape = RoundedCornerShape(UIRadiusControl)
+            )
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp, horizontal = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            text = limit.label,
+            fontSize = 13.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (selected) UIFriendBarTagTextBlue else UIFriendBarTitleColor
+        )
+        Text(
+            text = limit.hint,
+            fontSize = 9.5.sp,
+            lineHeight = 12.sp,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            color = UIFriendBarItemSubtitleColor
+        )
     }
 }

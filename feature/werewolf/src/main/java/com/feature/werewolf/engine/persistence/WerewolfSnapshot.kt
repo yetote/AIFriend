@@ -18,6 +18,7 @@ import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfPlayer
 import com.feature.werewolf.game.WerewolfRole
 import com.feature.werewolf.game.WinRule
+import com.feature.werewolf.game.WerewolfTurnLimit
 import com.feature.werewolf.game.WitchStock
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -38,16 +39,29 @@ import kotlinx.serialization.json.Json
  */
 object WerewolfSnapshot {
 
-    /** 当前存档格式版本。改动 DTO 结构时必须加一。 */
-    const val VERSION = 11
+    /**
+     * 当前存档格式版本。改动 DTO 结构时必须加一。
+     *
+     * v12：狼人票型允许 null（空刀），`wolfVotes` 从 `Map<Int, Int>` 变成 `Map<Int, Int?>`。
+     * 形状没变（还是 `{"3": 5}`），多出来的只是 `{"3": null}`；不兼容的是**旧版本读新档**，
+     * 所以照例加版本号，让老版本老老实实当它没有存档。
+     *
+     * v13：多出 `turnLimit` / `thinkingOff`（这一局的思考时限与本局被关思考的座位）。
+     * 都是带默认值的**新增**字段，语义没变，旧档照样能读。
+     */
+    const val VERSION = 13
 
     private val json = Json {
         ignoreUnknownKeys = true   // 旧档多出来的字段不该让新版本读不出来
         encodeDefaults = true      // 保证 round-trip 一致，缺省值也要写出来
     }
 
-    fun encode(table: WerewolfTable, customPrompt: String? = null): String =
-        json.encodeToString(table.toSnapshot(customPrompt))
+    fun encode(
+        table: WerewolfTable,
+        customPrompt: String? = null,
+        turnLimit: WerewolfTurnLimit = WerewolfTurnLimit.STANDARD,
+        thinkingOff: Set<Int> = emptySet(),
+    ): String = json.encodeToString(table.toSnapshot(customPrompt, turnLimit, thinkingOff))
 
     /**
      * 只取「这一局用的玩家设定」，不还原局面。
@@ -61,6 +75,21 @@ object WerewolfSnapshot {
     fun decodePrompt(text: String): String? =
         runCatching { json.decodeFromString<TableSnapshot>(text) }.getOrNull()
             ?.customPrompt?.takeIf { it.isNotBlank() }
+
+    /**
+     * 只取这一局的节奏设置（时限档位 + 本局关掉思考的座位），不还原局面。
+     *
+     * 和 [decodePrompt] 同一个理由：这是**请求参数**，不是局面的一部分，
+     * 不该混进 [WerewolfTable] 让复盘、导出都被迫背上它。
+     * 旧档（v12 及以前）没有这一段，返回 null，调用方按默认值处理。
+     */
+    fun decodePacing(text: String): PacingSnapshot? {
+        val dto = runCatching { json.decodeFromString<TableSnapshot>(text) }.getOrNull() ?: return null
+        return PacingSnapshot(
+            limit = WerewolfTurnLimit.of(dto.turnLimit),
+            thinkingOff = dto.thinkingOff.toSet(),
+        )
+    }
 
     /**
      * 反序列化。失败返回 null，不抛异常——存档损坏只是丢一局游戏，
@@ -98,6 +127,17 @@ private const val SNAPSHOT_VERSION = WerewolfSnapshot.VERSION
 // DTO
 // ---------------------------------------------------------------------------
 
+/**
+ * 从存档里取出来的「这一局怎么跑」——时限档位 + 被关掉思考的座位。
+ *
+ * 单独一个类型而不是直接返回 [WerewolfGameStore] 需要的两个值：
+ * 续档那一步要把它们一起恢复，多一个解构对象比多两个查询清楚。
+ */
+data class PacingSnapshot(
+    val limit: WerewolfTurnLimit,
+    val thinkingOff: Set<Int>,
+)
+
 @Serializable
 internal data class TableSnapshot(
     val version: Int = SNAPSHOT_VERSION,
@@ -113,11 +153,23 @@ internal data class TableSnapshot(
      * 旧档（v10 及以前）没有这一段，读出来是 null。
      */
     val customPrompt: String? = null,
+    /**
+     * 这一局选的思考时限档位（名字，不是序号）。旧档（v12 及以前）没有这一项，按标准处理。
+     */
+    val turnLimit: String = WerewolfTurnLimit.STANDARD.name,
+    /**
+     * 这一局被关掉深度思考的座位。
+     *
+     * 必须落档：超时自动关思考是**本局**的降级，续档之后又打开的话，
+     * 那个慢模型会在下一阶段原样再超时一次，用户看到的是一局永远打不完的牌。
+     */
+    val thinkingOff: List<Int> = emptyList(),
     val players: List<PlayerSnapshot>,
     val day: Int,
     val phase: String,
     val witch: WitchSnapshot = WitchSnapshot(),
-    val wolfVotes: Map<Int, Int> = emptyMap(),
+    /** 本夜各狼投给谁。null 是主张空刀（v12 起）。 */
+    val wolfVotes: Map<Int, Int?> = emptyMap(),
     val wolfVoteRound: Int = 1,
     val tonightVictim: Int? = null,
     /** v3 起：本夜守卫守的人，以及上一夜守的人（用于「不能连守」）。 */
@@ -272,10 +324,16 @@ internal data class MessageSnapshot(
 // 领域 → DTO
 // ---------------------------------------------------------------------------
 
-internal fun WerewolfTable.toSnapshot(customPrompt: String? = null): TableSnapshot {
+internal fun WerewolfTable.toSnapshot(
+    customPrompt: String? = null,
+    turnLimit: WerewolfTurnLimit = WerewolfTurnLimit.STANDARD,
+    thinkingOff: Set<Int> = emptySet(),
+): TableSnapshot {
     val game = this.game
     return TableSnapshot(
         customPrompt = customPrompt?.takeIf { it.isNotBlank() },
+        turnLimit = turnLimit.name,
+        thinkingOff = thinkingOff.sorted(),
         config = ConfigSnapshot(
             composition = game.config.composition.entries.associate { it.key.name to it.value },
             winRule = game.config.winRule.name,

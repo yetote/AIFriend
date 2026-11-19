@@ -12,6 +12,7 @@ import com.feature.werewolf.decision.WitchChoice
 import com.feature.werewolf.game.DeathCause
 import com.feature.werewolf.game.Phase
 import com.feature.werewolf.game.WerewolfGame
+import com.feature.werewolf.game.WerewolfPromptStyle
 import com.feature.werewolf.game.WerewolfRole
 import com.feature.werewolf.prompt.WerewolfPrompt
 import kotlinx.coroutines.CancellationException
@@ -20,9 +21,12 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlin.random.Random
 
 /**
@@ -82,12 +86,33 @@ class WerewolfDirector(
      */
     private val customPrompt: String? = null,
     /**
+     * 提示词风格。默认引导式，保持现有行为；自由式只给事实和底线，不给内置打法。
+     *
+     * 和 customPrompt 一样走构造参数：导演层不该知道设置存在，谁在开局时读到传进来是外面的事。
+     */
+    private val promptStyle: WerewolfPromptStyle = WerewolfPromptStyle.GUIDED,
+    /**
      * 两次 [onLive] 之间的最小间隔。
      *
      * 模型一秒能吐几十个片段，每片都刷一次界面纯属浪费——牌桌一次重排要重建整张记录流。
      * 80ms 是「看得出在打字」和「不要每帧都重组」之间的折中。测试里传 0 才能断言每次增量。
      */
     private val streamIntervalMs: Long = STREAM_PUSH_MS,
+    /**
+     * 这一局的节奏：时限档位、被关掉深度思考的座位、每座位的时间账本。
+     *
+     * 传一个**可变**对象而不是值：牌局中途也能改（用户打开对局设置随时调档），
+     * 而导演协程是开局就起、跑到结束的，只有共享同一个实例才改得动。
+     */
+    private val pacing: WerewolfPacing = WerewolfPacing(),
+    /**
+     * 某一步超时了。
+     *
+     * 单独一个回调而不是只写进 [WerewolfPacing] 的账本：账本是汇总，
+     * 界面还需要「刚刚这一刻谁超时了」才能提示一句——否则用户只会看到
+     * 某个人突然投了个莫名其妙的票。
+     */
+    private val onTimedOut: suspend (TurnTimeout) -> Unit = {},
 ) {
 
     // ---------------------------------------------------------------------
@@ -204,7 +229,7 @@ class WerewolfDirector(
                         phase = Phase.NIGHT_WOLF,
                         seat = firstSeat,
                         kind = MessageKind.WOLF_CHAT,
-                        text = "我们定刀 ${first.value.target} 号。" + first.value.reason,
+                        text = killLine("我们", first.value.target) + first.value.reason,
                         audience = wolves.map { it.seat }.toSet(),
                     )
                 )
@@ -216,7 +241,7 @@ class WerewolfDirector(
                             phase = Phase.NIGHT_WOLF,
                             seat = seat,
                             kind = MessageKind.WOLF_CHAT,
-                            text = "我定 ${outcome.value.target} 号。" + outcome.value.reason,
+                            text = killLine("我", outcome.value.target) + outcome.value.reason,
                             audience = wolves.map { it.seat }.toSet(),
                         )
                     )
@@ -782,14 +807,14 @@ class WerewolfDirector(
     // 单个请求
     // ---------------------------------------------------------------------
 
-    private suspend fun askWolf(table: WerewolfTable, seat: Int): StructuredOutcome<SeatChoice> {
+    private suspend fun askWolf(table: WerewolfTable, seat: Int): StructuredOutcome<VoteChoice> {
         val game = table.game
         return ask(
             table = table,
             seat = seat,
             spec = WerewolfDecisions.wolfKill(game, seat),
             fallback = { WerewolfDecisions.fallbackWolfKill(game, seat, random) },
-            task = "请给出你今晚想刀的目标。",
+            task = "请给出你今晚想刀的目标；也可以刀队友或自己，或者填 null 空刀。",
         )
     }
 
@@ -920,18 +945,21 @@ class WerewolfDirector(
         val agent = agentOf(seat)
         val game = table.game
         val messages = listOf(ChatMessage.user(context(table, seat, task)))
-        val system = WerewolfPrompt.systemPrompt(game, seat, agent.persona, customPrompt)
+        val system = WerewolfPrompt.systemPrompt(
+            game, seat, agent.persona, customPrompt, limit = pacing.currentLimit, style = promptStyle,
+        )
+        val thinking = pacing.thinkingAllowed(seat, agent.thinkingEnabled)
         val content = StringBuilder()
         val reasoning = StringBuilder()
         var lastPush = 0L
         var pushed = false
 
-        try {
+        suspend fun consume() {
             agent.ai.chatStream(
                 messages = messages,
                 model = agent.model,
                 systemPrompt = system,
-                enableThinking = agent.thinkingEnabled,
+                enableThinking = thinking,
             ).collect { delta ->
                 if (delta.content.isEmpty() && delta.reasoning.isEmpty()) return@collect
                 content.append(delta.content)
@@ -950,8 +978,28 @@ class WerewolfDirector(
                     )
                 }
             }
+        }
+
+        // 发言的时限比决策宽，因为时间基本花在「说」上。超时不抛异常——
+        // 说话说到一半被打断，把已经说出去的那半句留下就行，牌桌能继续。
+        val limitMs = pacing.limitMs(TurnKind.SPEECH)
+        val bounded = limitMs > 0 && agent.ai !is HumanSeatAI
+        val started = System.currentTimeMillis()
+        var timedOut = false
+
+        try {
+            if (bounded) {
+                // 和决策同一条规矩：超时要能分辨出来，才能关掉这个座位的深度思考
+                withTimeout(limitMs) { consume() }
+            } else {
+                consume()
+            }
         } catch (cancelled: CancellationException) {
-            throw cancelled
+            // 和 [ask] 同一条规矩：外层还活着说明是这次时限到了；
+            // 外层已经取消（退出、暂停、换局）就照常抛
+            if (!currentCoroutineContext().isActive) throw cancelled
+            if (!bounded) throw cancelled
+            timedOut = true
         } catch (error: Throwable) {
             // **超时**且已经说出半句的，保留这半句继续这一轮。
             // 抛出去等于整局停在「模型响应超时」上，续档还会重放同一阶段、撞同一个超时，
@@ -964,17 +1012,29 @@ class WerewolfDirector(
             withContext(NonCancellable) { onLive(null) }
         }
 
+        val elapsed = System.currentTimeMillis() - started
+        if (timedOut) {
+            pacing.disableThinking(seat)
+            pacing.record(seat, elapsed, TurnKind.SPEECH, timedOut = true)
+            onTimedOut(TurnTimeout(seat, TurnKind.SPEECH, limitMs, elapsed))
+        } else {
+            pacing.record(seat, elapsed, TurnKind.SPEECH, timedOut = false)
+        }
+
         // 流式一个片段都没收到（厂商没实现 SSE，或者返回了空流）时补一次普通请求。
-        // 不补的话这句话会变成空白，后面所有人都会看到「3 号：」后面什么都没有
-        val raw = if (content.isEmpty()) {
-            agent.ai.chat(
+        // 不补的话这句话会变成空白，后面所有人都会看到「3 号：」后面什么都没有。
+        //
+        // 但**超时的不补**：再打一次只会把等待翻倍，而且多半还会超时。
+        // 这时给一句能接得上的话，比留个空白或者让整局报错都好。
+        val raw = when {
+            content.isNotEmpty() -> content.toString()
+            timedOut -> SILENT_SPEECH
+            else -> agent.ai.chat(
                 messages = messages,
                 model = agent.model,
                 systemPrompt = system,
-                enableThinking = agent.thinkingEnabled,
+                enableThinking = thinking,
             )
-        } else {
-            content.toString()
         }
         return SpeechResult(
             text = sanitize(raw, seat, game.playerAt(seat).name),
@@ -1006,11 +1066,14 @@ class WerewolfDirector(
     ): StructuredOutcome<T> {
         val agent = agentOf(seat)
         val phase = table.game.phase
+        // 深度思考是「角色属性 + 本局运行状态」相与：超时被关掉的座位，
+        // 这一局剩下的步骤都按关着走，直到玩家在设置面板里手动打开
+        val thinking = pacing.thinkingAllowed(seat, agent.thinkingEnabled)
         var lastPush = 0L
         // 抢到思考框才推：并发阶段好几个人同时在响，见 [thinkingOwner]
         var holdsBubble = false
         // 节流和发言同源：模型一秒能吐几十段，每段都刷一次界面只会让气泡抖
-        val pushReasoning: (suspend (String) -> Unit)? = if (agent.thinkingEnabled) {
+        val pushReasoning: (suspend (String) -> Unit)? = if (thinking) {
             { reasoning ->
                 if (!holdsBubble) holdsBubble = claimThinking(seat)
                 if (holdsBubble) {
@@ -1025,16 +1088,39 @@ class WerewolfDirector(
             null
         }
 
-        try {
-            return agent.ai.decide(
-                messages = listOf(ChatMessage.user(context(table, seat, task))),
-                model = agent.model,
-                spec = spec,
-                fallback = fallback,
-                systemPrompt = WerewolfPrompt.systemPrompt(table.game, seat, agent.persona, customPrompt),
-                enableThinking = agent.thinkingEnabled,
-                onReasoning = pushReasoning,
-            )
+        // 时限是**这一局**的节奏控制，和传输层那 8 分钟不是一回事：
+        // 它管的是「想太久等于白想」，超时之后按兜底动作往下走，牌局不中断。
+        // 人类座位不受限——他要想多久是他自己的事。
+        val limitMs = pacing.limitMs(TurnKind.DECISION)
+        val bounded = limitMs > 0 && agents[seat]?.ai !is HumanSeatAI
+        val started = System.currentTimeMillis()
+        val outcome = try {
+            val call: suspend () -> StructuredOutcome<T> = {
+                agent.ai.decide(
+                    messages = listOf(ChatMessage.user(context(table, seat, task))),
+                    model = agent.model,
+                    spec = spec,
+                    fallback = fallback,
+                    systemPrompt = WerewolfPrompt.systemPrompt(
+                        table.game, seat, agent.persona, customPrompt,
+                        limit = pacing.currentLimit, style = promptStyle,
+                    ),
+                    enableThinking = thinking,
+                    onReasoning = pushReasoning,
+                )
+            }
+            // 用 withTimeout 而不用 withTimeoutOrNull：`decide` 内部把超时当成
+            // 「这个座位这次没答上来」并返回兜底值，那样我们就分不清
+            // 「它自己想放弃了」和「我们把它掐了」——而后者必须关掉这个座位的深度思考。
+            if (bounded) withTimeout(limitMs) { call() } else call()
+        } catch (cancelled: CancellationException) {
+            // 这里会收到两种取消，必须分清：
+            // - 内层 withTimeout 到点了 → 外层 context 还是活的 → 这是我们自己的超时；
+            // - 用户退出 / 暂停 / 换局 → 外层已经 inactive，照常往上抛，别伪装成超时。
+            // 只捕获 TimeoutCancellationException 不够：`decide` 内部重试时会重新抛，
+            // 抛出来的可能是普通 CancellationException。
+            if (!currentCoroutineContext().isActive || !bounded) throw cancelled
+            null
         } finally {
             if (holdsBubble) {
                 // 先收回再让位：反过来的话，下一位刚推上来的一段会被这里清掉
@@ -1042,6 +1128,24 @@ class WerewolfDirector(
                 releaseThinking(seat)
             }
         }
+
+        val elapsed = System.currentTimeMillis() - started
+        if (outcome == null) {
+            // 超时：**本局关掉这个座位的深度思考**，这一轮先按兜底动作走完。
+            // 超时的头号原因就是思考把额度吃光了，继续让它边想边等只会一步比一步慢；
+            // 关掉之后通常几十秒就能回话，这一局剩下的部分至少能正常推进。
+            pacing.disableThinking(seat)
+            pacing.record(seat, elapsed, TurnKind.DECISION, timedOut = true)
+            onTimedOut(TurnTimeout(seat, TurnKind.DECISION, limitMs, elapsed))
+            return StructuredOutcome(
+                value = fallback(),
+                attempts = 0,
+                usedFallback = true,
+                lastError = "超出思考时限",
+            )
+        }
+        pacing.record(seat, elapsed, TurnKind.DECISION, timedOut = false)
+        return outcome
     }
 
     // ---------------------------------------------------------------------
@@ -1256,11 +1360,14 @@ class WerewolfDirector(
         val trimmed = raw.trimStart()
         val marker = EXPLODE_MARKERS.firstOrNull { trimmed.startsWith(it) }
         var text = if (marker != null) trimmed.removePrefix(marker).trim() else raw
-        // 标记之外还要**点名一个活着的队友**，才算「值得自爆」。
-        // 原来只看标记，实测有狼在只被自己吓到的时候，输出一个光秃秃的「【自爆】」——
-        // 正文为空、没有投票、直接送掉一条命，而规则本来就写着「唯一值得的情况是
-        // 另一个队友今天确定要被投出去」。这一条靠提示词挡不住，只能卡在动作上。
-        val exploding = marker != null && game.canExplode(seat) && game.explodesToSaveMate(seat, text)
+        // 标记之外还要满足下面之一，才算「值得自爆」：
+        //
+        // 1. **点名一个活着的队友**（救队友）。原来只看标记，实测有狼在只被自己吓到的时候，
+        //    输出一个光秃秃的「【自爆】」——正文为空、没有投票、直接送掉一条命。
+        // 2. **竞选发言里自爆**（吞警徽）。这是正经花板子：一爆下去选举当场中止，
+        //    本局没有警长，好人白丢一个能归票的位置。它不需要救谁，所以不能套第 1 条的判据。
+        val exploding = marker != null && game.canExplode(seat) &&
+            (phase == Phase.DAY_SHERIFF_SPEECH || game.explodesToSaveMate(seat, text))
         if (marker != null && !exploding && text.isBlank()) {
             // 标记被拒、正文又是空的：留一句占位，否则牌桌上会出现一条空白发言
             text = EMPTY_SPEECH_FALLBACK
@@ -1281,6 +1388,13 @@ class WerewolfDirector(
         }
         return next
     }
+
+    /**
+     * 定刀结果那句话。空刀与自刀（刀自己人）都要说出来：
+     * 空刀写成「定刀 0 号」会像个 bug，自刀不提就等于让队友以为刀的是好人。
+     */
+    private fun killLine(who: String, target: Int?): String =
+        if (target == null) "$who 今晚空刀。" else "$who 定刀 $target 号。"
 
     /** 正文里点到至少一个**存活队友**的座位号，才算自爆有代价意义。 */
     private fun WerewolfGame.explodesToSaveMate(seat: Int, body: String): Boolean {
@@ -1485,5 +1599,14 @@ class WerewolfDirector(
 
         /** 流式发言的推送间隔，见 [WerewolfDirector.streamIntervalMs]。 */
         const val STREAM_PUSH_MS = 80L
+
+        /**
+         * 发言超出时限、又一句话都没接上时的替身发言。
+         *
+         * 不让它变成空白：牌桌上「3 号：」后面什么都没有，后面的人还会对着空白接话，
+         * 看起来像这局坏了。这句话是**认输**而不是撒谎，不会给狼人送信息，
+         * 也不会让好人误判谁的身份。
+         */
+        const val SILENT_SPEECH = "……我这轮先听大家的。"
     }
 }

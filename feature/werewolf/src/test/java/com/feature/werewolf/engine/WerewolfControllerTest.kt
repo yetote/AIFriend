@@ -6,6 +6,8 @@ import com.feature.werewolf.game.RosterEntry
 import com.feature.werewolf.game.WerewolfConfig
 import com.feature.werewolf.game.SELF_PLAYER_ID
 import com.feature.werewolf.game.WerewolfGame
+import com.feature.werewolf.game.WerewolfTurnLimit
+import com.feature.werewolf.engine.persistence.PacingSnapshot
 import com.feature.werewolf.store.WerewolfGameStore
 import com.feature.werewolf.store.WerewolfGameSummary
 import kotlinx.coroutines.runBlocking
@@ -33,6 +35,8 @@ class WerewolfControllerTest {
         val table: WerewolfTable,
         val createdAt: Long,
         val customPrompt: String? = null,
+        val turnLimit: WerewolfTurnLimit = WerewolfTurnLimit.STANDARD,
+        val thinkingOff: Set<Int> = emptySet(),
     )
 
     /** 内存版存档，行为跟真库一致，但不碰 Room。 */
@@ -44,8 +48,10 @@ class WerewolfControllerTest {
             table: WerewolfTable,
             createdAt: Long,
             customPrompt: String?,
+            turnLimit: WerewolfTurnLimit,
+            thinkingOff: Set<Int>,
         ) {
-            saves += Saved(id, table, createdAt, customPrompt)
+            saves += Saved(id, table, createdAt, customPrompt, turnLimit, thinkingOff)
         }
 
         override suspend fun load(id: String): WerewolfTable? =
@@ -53,6 +59,11 @@ class WerewolfControllerTest {
 
         override suspend fun customPrompt(id: String): String? =
             saves.lastOrNull { it.id == id }?.customPrompt
+
+        override suspend fun pacing(id: String): PacingSnapshot? =
+            saves.lastOrNull { it.id == id }?.let {
+                PacingSnapshot(limit = it.turnLimit, thinkingOff = it.thinkingOff)
+            }
 
         override suspend fun summaries(): List<WerewolfGameSummary> =
             saves.groupBy { it.id }.map { (id, list) ->

@@ -13,8 +13,10 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.feature.werewolf.engine.WerewolfTable
+import com.feature.werewolf.engine.persistence.PacingSnapshot
 import com.feature.werewolf.engine.persistence.WerewolfSnapshot
 import com.feature.werewolf.game.SELF_PLAYER_ID
+import com.feature.werewolf.game.WerewolfTurnLimit
 
 /**
  * 一局游戏的存档记录。
@@ -89,18 +91,26 @@ interface WerewolfGameStore {
      *
      * [customPrompt] 是这一局生效的玩家设定，写进快照只给复盘看——
      * 续档不会用它覆盖设置页，见 [WerewolfSnapshot.decodePrompt]。
+     *
+     * [turnLimit] 与 [thinkingOff] 是这一局的节奏设置：档位要续档保住，
+     * 关掉思考的座位也要保住——否则续档之后那个慢模型又会被重新打开深度思考。
      */
     suspend fun save(
         id: String,
         table: WerewolfTable,
         createdAt: Long,
         customPrompt: String? = null,
+        turnLimit: WerewolfTurnLimit = WerewolfTurnLimit.STANDARD,
+        thinkingOff: Set<Int> = emptySet(),
     )
 
     suspend fun load(id: String): WerewolfTable?
 
     /** 这一局用的玩家设定。旧档（v10 及以前）或没写设定时是 null。 */
     suspend fun customPrompt(id: String): String?
+
+    /** 这一局的节奏设置。旧档（v12 及以前）没有这一段，返回 null 表示按默认。 */
+    suspend fun pacing(id: String): PacingSnapshot?
 
     suspend fun summaries(): List<WerewolfGameSummary>
 
@@ -180,6 +190,8 @@ class WerewolfStore(
         table: WerewolfTable,
         createdAt: Long,
         customPrompt: String?,
+        turnLimit: WerewolfTurnLimit,
+        thinkingOff: Set<Int>,
     ) {
         dao.upsert(
             WerewolfGameEntity(
@@ -192,7 +204,7 @@ class WerewolfStore(
                 winner = table.game.winner?.name,
                 playerCount = table.game.players.size,
                 withHuman = table.game.players.any { it.id == SELF_PLAYER_ID },
-                snapshot = WerewolfSnapshot.encode(table, customPrompt),
+                snapshot = WerewolfSnapshot.encode(table, customPrompt, turnLimit, thinkingOff),
             )
         )
     }
@@ -203,6 +215,9 @@ class WerewolfStore(
 
     override suspend fun customPrompt(id: String): String? =
         dao.byId(id)?.snapshot?.let { WerewolfSnapshot.decodePrompt(it) }
+
+    override suspend fun pacing(id: String): PacingSnapshot? =
+        dao.byId(id)?.snapshot?.let { WerewolfSnapshot.decodePacing(it) }
 
     override suspend fun summaries(): List<WerewolfGameSummary> = dao.summaries()
 

@@ -15,8 +15,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -33,6 +35,7 @@ import com.ui.common.theme.UIRadiusControl
 import com.ui.werewolf.data.UIWerewolfLive
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.animation.core.animateFloatAsState
+import kotlinx.coroutines.delay
 
 // ---------------------------------------------------------------------------
 // 字号
@@ -75,6 +78,8 @@ fun UIWerewolfTableScreen(
      * 传 null 就不画这个开关：观战（本来就能看）和复盘演出（放的是已经结束的对局）不需要。
      */
     onToggleThinking: (() -> Unit)? = null,
+    /** 打开对局设置（思考时限、每人的用时）。传 null 就不给入口。 */
+    onOpenSettings: (() -> Unit)? = null,
     /** 复盘演出：播放 / 暂停。 */
     onReplayToggle: () -> Unit = {},
     onReplayPrev: () -> Unit = {},
@@ -149,6 +154,9 @@ fun UIWerewolfTableScreen(
                 // 演出放的是已经打完的局，开着它只会让人以为还能操作什么
                 onToggleThinking = onToggleThinking
                     ?.takeIf { !live.spectating && replay == null && !live.finished },
+                // 观战也允许调时限：等多久是所有人的事，和看不看思考无关。
+                // 但演出和已结束的局不给：改一个不会再跑的档位只会让人以为能重打
+                onOpenSettings = onOpenSettings?.takeIf { replay == null && !live.finished },
                 onToggleSpeak = onToggleSpeak,
                 onBack = onExit
             )
@@ -168,6 +176,21 @@ fun UIWerewolfTableScreen(
 
             if (live.error != null) {
                 ErrorStrip(message = live.error, night = night)
+            }
+
+            // 超时提示只停留几秒：它不是状态，是「刚才发生了什么」。
+            // 挂成常驻会让牌桌越来越挤，而真正要长期看的是设置面板里那份账本。
+            var timeoutShown by remember { mutableStateOf<String?>(null) }
+            LaunchedEffect(live.timeoutAt) {
+                val notice = live.timeoutNotice
+                if (notice != null) {
+                    timeoutShown = notice
+                    delay(4600)
+                    timeoutShown = null
+                }
+            }
+            timeoutShown?.let { notice ->
+                TimeoutStrip(text = notice, night = night)
             }
 
             // 左右两列玩家夹住中间的对话流。中间拿 weight，屏幕再窄也优先保住说话的地方——
@@ -233,7 +256,19 @@ fun UIWerewolfTableScreen(
         val stream = live.streaming
         val anchor = stream?.let { seatAnchors[it.seat] }
         if (stream != null && anchor != null && stream.reasoning.isNotBlank()) {
-            ThinkingBubble(reasoning = stream.reasoning, anchor = anchor, night = night)
+            ThinkingBubble(
+                reasoning = stream.reasoning,
+                anchor = anchor,
+                night = night,
+                seat = stream.seat,
+                // 有正文说明这是在发言，否则是在憋一个决策（投票/查验/下刀），
+                // 两者上限不同，各自显示各自的那一个
+                limitSeconds = if (stream.text.isBlank()) {
+                    live.thinkingDecisionSeconds
+                } else {
+                    live.thinkingSpeechSeconds
+                },
+            )
         }
 
         // 过场画在最上层，但不吃触摸：1.4 秒里用户可能正要点「发言」，
@@ -266,6 +301,34 @@ internal fun ErrorStrip(message: String, night: Boolean) {
             text = "$message\n这一局的进度已经存档，下次进来可以接着打。",
             fontSize = FsName,
             lineHeight = 19.sp,
+            color = if (night) Color(0xFFFFB4B0) else UIFriendBarRed
+        )
+    }
+}
+
+/**
+ * 「某一步超时了」的短提示。
+ *
+ * 用红色系但比 [ErrorStrip] 淡：这不是错误，牌局在正常往前走，
+ * 只是有一位没在时限内答上来。写成红色报错会让人以为整局出了问题。
+ */
+@Composable
+private fun TimeoutStrip(text: String, night: Boolean) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp)
+            .padding(bottom = 6.dp)
+            .background(
+                UIFriendBarRed.copy(alpha = if (night) 0.20f else 0.07f),
+                RoundedCornerShape(UIRadiusControl)
+            )
+            .padding(horizontal = 10.dp, vertical = 6.dp)
+    ) {
+        Text(
+            text = text,
+            fontSize = 11.sp,
+            lineHeight = 16.sp,
             color = if (night) Color(0xFFFFB4B0) else UIFriendBarRed
         )
     }

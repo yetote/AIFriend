@@ -25,8 +25,8 @@ data class WerewolfGame(
     val day: Int = 1,
     val phase: Phase = Phase.NIGHT_WOLF,
     val witch: WitchStock = WitchStock(),
-    /** 本夜各狼投给谁。空刀或未行动时为空。 */
-    val wolfVotes: Map<Int, Int> = emptyMap(),
+    /** 本夜各狼投给谁。null 是这一票主张空刀；未行动时为空。 */
+    val wolfVotes: Map<Int, Int?> = emptyMap(),
     /** 狼人商议轮次，平票后加商一次。 */
     val wolfVoteRound: Int = 1,
     /** 本夜狼人最终决定刀谁。null 表示空刀。 */
@@ -332,8 +332,15 @@ data class WerewolfGame(
      * 规则：存活狼人**全部**必须表态（键集合必须等于存活狼人座位），多数决。
      * 平票则加商一次；加商仍平票视为意见不合，本夜空刀——这比「随机挑一个」更可解释，
      * 也给了狼人一个真实的博弈失败后果。
+     *
+     * 目标可以**是狼**，甚至可以是投票者自己：自刀骗解药、刀队友做身份都是线下常见的花板子，
+     * 以前引擎拦着（怕狼王自刀骗开枪），代价是整局只剩「刀好人」一条路，狼的打法被压成一套。
+     * 现在放开：狼王自刀拿不到枪——他那把枪只在**被投票放逐**时才有，见 [vote] 里的 `canShoot`。
+     *
+     * `target` 为 null 表示**主动空刀**：全员指 null，或者多数狼同意空刀。
+     * 空刀不是失误，是正经战术——连空两夜能让好人误判「有守卫守中了」。
      */
-    fun wolfVote(votes: Map<Int, Int>): WerewolfGame {
+    fun wolfVote(votes: Map<Int, Int?>): WerewolfGame {
         require(phase == Phase.NIGHT_WOLF) { "当前不是狼人行动阶段：$phase" }
         val wolfSeats = aliveWolves().map { it.seat }.toSet()
         require(votes.keys == wolfSeats) {
@@ -341,18 +348,14 @@ data class WerewolfGame(
         }
         val aliveSet = aliveSeats.toSet()
         votes.forEach { (wolf, target) ->
+            if (target == null) return@forEach
             require(target in aliveSet) { "$wolf 号狼人指向了非存活玩家 $target 号" }
-            // 引擎级护栏：狼不能刀队友，也不能刀自己。
-            // 决策层和界面都挡过一遍，但那些是「调用方」的约定——存档被改、
-            // 将来新增一个决策入口，都可能绕过它们。刀到狼王身上时他会获得开枪权，
-            // 一枪就能把局面翻回去，这条防线不能只建在外面。
-            require(target !in wolfSeats) { "$wolf 号狼人指向了队友 $target 号" }
-            require(target != wolf) { "$wolf 号狼人指向了自己" }
         }
 
         val tally = votes.values.groupingBy { it }.eachCount()
         val max = tally.values.max()
-        val top = tally.filterValues { it == max }.keys.sorted()
+        // 平票的候选里可能有 null（空刀也是选项之一），排到最后一个只为了结果稳定
+        val top = tally.filterValues { it == max }.keys.sortedWith(nullsLast(naturalOrder()))
 
         if (top.size == 1) return advanceAfterWolves(votes, top.first())
 
@@ -796,7 +799,7 @@ data class WerewolfGame(
     // 内部流转
     // ---------------------------------------------------------------------
 
-    private fun advanceAfterWolves(votes: Map<Int, Int>, victim: Int?): WerewolfGame {
+    private fun advanceAfterWolves(votes: Map<Int, Int?>, victim: Int?): WerewolfGame {
         val next = copy(wolfVotes = votes, tonightVictim = victim)
         return if (next.hasAliveRole(WerewolfRole.SEER)) {
             next.copy(phase = Phase.NIGHT_SEER)
@@ -908,12 +911,16 @@ data class WerewolfGame(
             )
         }
 
-        // 只有被狼刀死、且能开枪的身份（目前只有猎人）可以开枪，被毒的不能。
-        // 狼王是狼人阵营，不会被自己人刀，所以这里实际只会命中猎人。
+        // 只有被狼刀死的**猎人**可以开枪，被毒的不能。
+        //
+        // 这里用的是 `role == HUNTER`，不是 `canShootOnDeath`：放开自刀之后，
+        // 狼王也会死于 WOLF_KILL（自己人那一刀），而他那把枪只属于「被投票放逐」那一刻。
+        // 用 canShootOnDeath 写会让自刀变成「狼王死了还能带一个人走」，
+        // 等于给自刀开了个不该有的翻盘口子。
         // 这里必须读合并后的死因，不能读入参：入参里他可能同时有刀和毒两条记录，
         // 那样会和 applyDeaths 写进 player.deathCause 的结论打架。
         val fallenHunter = merged.firstOrNull { (seat, cause) ->
-            cause == DeathCause.WOLF_KILL && next.playerAt(seat).role.canShootOnDeath
+            cause == DeathCause.WOLF_KILL && next.playerAt(seat).role == WerewolfRole.HUNTER
         }?.first
 
         // 首夜死者留遗言（线下惯例：第二夜起，夜里死的人不再发言）。

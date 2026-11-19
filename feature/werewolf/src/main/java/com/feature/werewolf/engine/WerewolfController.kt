@@ -2,6 +2,8 @@ package com.feature.werewolf.engine
 
 import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfPlayer
+import com.feature.werewolf.game.WerewolfPromptStyle
+import com.feature.werewolf.game.WerewolfTurnLimit
 import com.feature.werewolf.store.WerewolfGameStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -42,6 +44,13 @@ data class WerewolfUiState(
      * 半句话一旦进去，存档里就会留一句没说完的话，续档之后所有人都看得见。
      */
     val live: WerewolfLive? = null,
+    /**
+     * 刚刚有一步超时了。界面拿它提示一句，看完就过。
+     *
+     * 和 [progress] 分开：进度是「现在做到第几步」的常态信息，
+     * 这个是偶发事件，混在一起会让进度条闪烁。
+     */
+    val lastTimeout: TurnTimeout? = null,
     val running: Boolean = false,
     val finished: Boolean = false,
     val error: String? = null,
@@ -74,6 +83,18 @@ class WerewolfController(
      * 「这一局按什么设定打的」，而设置页只保留最新的那份。
      */
     private var customPrompt: String? = null,
+    /**
+     * 提示词风格。和 customPrompt 同样在开局前后可改、续档读当前值、不进存档。
+     * 用 var 而不是构造 val：它和时限一样可能在设置面板里被切换。
+     */
+    private var promptStyle: WerewolfPromptStyle = WerewolfPromptStyle.GUIDED,
+    /**
+     * 这一局的节奏：时限档位、被关掉深度思考的座位、每个座位的时间账本。
+     *
+     * 放在控制器外面传进来，是因为它要**活过一整局**：用户在牌局中途打开设置改时限、
+     * 关掉某个座位的思考，改的都是这个对象；而导演是每次 [play] 新建的。
+     */
+    val pacing: WerewolfPacing = WerewolfPacing(),
 ) {
 
     private val _state = MutableStateFlow(WerewolfUiState())
@@ -97,6 +118,11 @@ class WerewolfController(
         _state.update { it.copy(customPrompt = customPrompt) }
     }
 
+    /** 换提示词风格。必须在 [play] 之前调：导演在 play 里创建，拿的是当时的值。 */
+    fun applyPromptStyle(style: WerewolfPromptStyle) {
+        promptStyle = style
+    }
+
     /** 开一局新的，立刻落档——先存再打，中途被杀进程也不会丢。 */
     suspend fun start(id: String, table: WerewolfTable) {
         gameId = id
@@ -107,7 +133,23 @@ class WerewolfController(
             finished = table.game.isFinished,
             customPrompt = customPrompt,
         )
-        store.save(id, table, createdAt, customPrompt)
+        store.save(id, table, createdAt, customPrompt, pacing.currentLimit, pacing.thinkingOff.value)
+    }
+
+    /**
+     * 换这一局的思考时限。
+     *
+     * 只影响之后发出的请求：正在等的那一步仍按发出时的时限算。
+     * 立刻落一次档不是必须的（每阶段都会存），但档位是用户刚做的选择，
+     * 下次进来该看到他设的那个值。
+     */
+    fun setTurnLimit(limit: WerewolfTurnLimit) {
+        pacing.setLimit(limit)
+    }
+
+    /** 手动关/开某个座位的深度思考。见 [WerewolfPacing.setThinking]。 */
+    fun setSeatThinking(seat: Int, on: Boolean) {
+        pacing.setThinking(seat, on)
     }
 
     /**
@@ -122,6 +164,9 @@ class WerewolfController(
         val table = store.load(id) ?: return false
         gameId = id
         createdAt = store.summaries().firstOrNull { it.id == id }?.createdAt ?: clock()
+        // 档位与本局被关掉思考的座位跟着存档回来：玩家为这一局选的是「宽松」，
+        // 续档之后不该悄悄回到标准的 1 分钟，更不该把已经关掉的那个座位又打开
+        store.pacing(id)?.let { pacing.restore(it.limit, it.thinkingOff) }
         // customPrompt 用**调用方刚设的当前值**（续档不用存档里那份，见字段注释）
         _state.value = WerewolfUiState(
             gameId = id,
@@ -158,13 +203,19 @@ class WerewolfController(
             // 流式发言同样只刷界面。它比 onTranscript 更细：一条消息还没成型就先显示半句
             onLive = { live -> _state.update { it.copy(live = live) } },
             customPrompt = customPrompt,
+            promptStyle = promptStyle,
+            pacing = pacing,
+            onTimedOut = { timeout -> _state.update { it.copy(lastTimeout = timeout) } },
         )
 
         _state.update { it.copy(running = true, error = null) }
         try {
             val result = director.play(initial) { snapshot ->
                 _state.update { it.copy(table = snapshot) }
-                store.save(id, snapshot, createdAt, customPrompt)
+                store.save(
+                    id, snapshot, createdAt, customPrompt,
+                    pacing.currentLimit, pacing.thinkingOff.value,
+                )
                 // 落档之后停一下：这一阶段产生的话要先念给人听完，再往下走。
                 // 放在落档之后而不是之前——等的时候进程被杀，存档已经是最新的。
                 awaitStage()
@@ -172,7 +223,10 @@ class WerewolfController(
             _state.update {
                 it.copy(table = result, running = false, finished = true, progress = null, live = null)
             }
-            store.save(id, result, createdAt, customPrompt)
+            store.save(
+                id, result, createdAt, customPrompt,
+                pacing.currentLimit, pacing.thinkingOff.value,
+            )
         } catch (cancelled: CancellationException) {
             // 用户退出页面：局面已经按阶段存过了，这里只需要收起 running。
             // live 必须一起清掉——半句话不属于任何存档，留着会让下次进来先看到一个鬼影
@@ -201,7 +255,10 @@ class WerewolfController(
         val id = gameId ?: return
         val table = _state.value.table ?: return
         if (table.game.isFinished) return
-        store.save(id, table, createdAt, customPrompt)
+        store.save(
+            id, table, createdAt, customPrompt,
+            pacing.currentLimit, pacing.thinkingOff.value,
+        )
     }
 
     /** 清掉当前这局（比如玩家主动放弃）。 */

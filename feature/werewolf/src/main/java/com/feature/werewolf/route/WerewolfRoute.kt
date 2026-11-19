@@ -3,6 +3,8 @@ package com.feature.werewolf.route
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -12,15 +14,21 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.feature.werewolf.contract.WerewolfScreen
 import com.feature.werewolf.export.WerewolfExport
+import com.feature.werewolf.engine.SeatTiming
+import com.feature.werewolf.engine.TurnKind
 import com.feature.werewolf.engine.WerewolfTable
 import com.feature.werewolf.engine.WerewolfUiState
 import com.feature.werewolf.game.WerewolfBoards
+import com.feature.werewolf.game.WerewolfPromptStyle
+import com.feature.werewolf.game.WerewolfTurnLimit
 import com.feature.werewolf.vm.WerewolfViewModel
 import com.ui.werewolf.UIWerewolfHistoryScreen
+import com.ui.werewolf.UIWerewolfPaceSheet
 import com.ui.werewolf.UIWerewolfPromptSettingsScreen
 import com.ui.werewolf.UIWerewolfReplaySetupScreen
 import com.ui.werewolf.UIWerewolfReviewScreen
@@ -29,7 +37,12 @@ import com.ui.werewolf.UIWerewolfTableScreen
 import com.ui.werewolf.data.UIWerewolfFriend
 import com.ui.werewolf.data.UIWerewolfMode
 import com.ui.werewolf.data.UIWerewolfNotice
+import com.ui.werewolf.data.UIWerewolfPromptStyle
+import com.ui.werewolf.data.UIWerewolfPace
 import com.ui.werewolf.data.UIWerewolfPreset
+import com.ui.werewolf.data.UIWerewolfSeatPace
+import com.ui.werewolf.data.UIWerewolfTurnLimit
+import com.ui.werewolf.data.formatSpent
 
 /**
  * 狼人杀的入口。
@@ -56,10 +69,17 @@ fun WerewolfRoute(
     val replaySetup by viewModel.replaySetup.collectAsState()
     val autoSpeak by viewModel.autoSpeak.collectAsState()
     val speechReady by viewModel.speechReady.collectAsState()
+    // 提示词风格是全局偏好，直接读 VM 的那一份——开局页和对局都不做本地副本
+    val promptStyle by viewModel.promptStyle.collectAsState()
     val revealedIndex by viewModel.revealedIndex.collectAsState()
     val speechBusy by viewModel.speechBusy.collectAsState()
     val speakingSeat by viewModel.speakingSeat.collectAsState()
     val notice by viewModel.notice.collectAsState()
+    // 这一局的节奏：档位、关掉思考的座位、每座位耗时账本。都在面板里直接呈现
+    val paceLimit by viewModel.pacing.limit.collectAsState()
+    val paceThinkingOff by viewModel.pacing.thinkingOff.collectAsState()
+    val paceTimings by viewModel.pacing.timings.collectAsState()
+    val seatThinking by viewModel.seatThinking.collectAsState()
     // 导出复盘要用它写缓存文件并拉起系统分享
     val context = LocalContext.current
 
@@ -79,6 +99,11 @@ fun WerewolfRoute(
     var showReview by remember { mutableStateOf(false) }
     var mode by remember { mutableStateOf(UIWerewolfMode.PLAY) }
     var presetKey by remember { mutableStateOf(WerewolfBoards.STANDARD_8) }
+    // 开局前选的思考时限。存成 UI 枚举而不是引擎枚举，是为了让这一层和配置页说同一种话；
+    // 开局时才映射成引擎那一份（见 `toTurnLimit`）
+    var turnLimit by remember { mutableStateOf(UIWerewolfTurnLimit.STANDARD) }
+    /** 牌桌上打开的对局设置面板。 */
+    var showPaceSheet by remember { mutableStateOf(false) }
 
     /**
      * 「用户刚点了接着打或新开一局」。
@@ -116,6 +141,15 @@ fun WerewolfRoute(
     // 新的一局开始了，复盘必须收起来，否则会盖在还没打完的牌桌上
     LaunchedEffect(state.finished) {
         if (!state.finished) showReview = false
+    }
+
+    // 超时那句话。放在这一层拼：引擎只知道座位号，名字和「他当时在干什么」
+    // 只有摆在牌桌前面的这一层知道。
+    val timeoutNotice = state.lastTimeout?.let { timeout ->
+        val player = state.table?.game?.players?.firstOrNull { it.seat == timeout.seat }
+        val who = if (player != null) "${timeout.seat} 号 ${player.name}" else "${timeout.seat} 号"
+        val what = if (timeout.kind == TurnKind.SPEECH) "发言" else "决定"
+        "$who 的$what 超出 ${timeout.limitSeconds} 秒时限，已按兜底继续；本局不再给它开深度思考"
     }
 
     // 返回键逐层退：演出 → 补替身页 → 列表翻开的复盘 → 牌桌上的复盘 → 牌桌 → 配置页 → 列表 → 退出
@@ -248,6 +282,14 @@ fun WerewolfRoute(
             error = error,
             apiChecks = uiApiChecks,
             checking = verifying,
+            turnLimit = turnLimit,
+            onTurnLimitChange = { turnLimit = it },
+            promptStyle = promptStyle.toUi(),
+            onPromptStyleChange = { viewModel.setPromptStyle(it.toPromptStyle()) },
+            // 朗读是全局偏好（DataStore），这里直接读同一份值：开局前关掉，进牌桌不用再找喇叭
+            speechOn = autoSpeak,
+            speechReady = speechReady,
+            onSpeechChange = viewModel::setAutoSpeak,
             onModeChange = { next ->
                 mode = next
                 // 「我参与」比「纯观战」少要一位，切过去时多出来的人要放掉，
@@ -280,6 +322,7 @@ fun WerewolfRoute(
                     friendIds = selectedIds.toList(),
                     config = configOf(presetKey),
                     boardKey = presetKey,
+                    turnLimit = turnLimit.toTurnLimit(),
                 )
             },
             onStartAnyway = {
@@ -291,6 +334,7 @@ fun WerewolfRoute(
                     boardKey = presetKey,
                     // 走到这里说明用户已经看见红灯并选择继续，不必再拦一次
                     skipCheck = true,
+                    turnLimit = turnLimit.toTurnLimit(),
                 )
             },
         )
@@ -328,6 +372,22 @@ fun WerewolfRoute(
                     onPlay = viewModel::requestReplay,
                 )
             } else {
+                val pace = remember(state.table, paceLimit, paceThinkingOff, paceTimings, seatThinking, avatars, state.finished) {
+                    buildPace(
+                        table = state.table,
+                        limit = paceLimit,
+                        timings = paceTimings,
+                        thinkingOff = paceThinkingOff,
+                        roleThinking = seatThinking,
+                        avatars = avatars,
+                        // 暂停时也给改：下一步继续时就用新档位。
+                        // 只有真正结束了才禁用——那一局不会再跑起来了
+                        running = !state.finished,
+                    )
+                }
+                // 面板要压在牌桌上面，必须是同一个 Box 的兄弟节点；
+                // 直接并排放在 when 分支里会变成纵向两块，牌桌被顶掉一半
+                Box(modifier = Modifier.fillMaxSize()) {
                 UIWerewolfTableScreen(
                     live = state.toLive(
                         humanSeat = humanSeat,
@@ -339,6 +399,10 @@ fun WerewolfRoute(
                         speakingSeat = speakingSeat,
                         speechBusy = speechBusy,
                         showThinking = showThinking,
+                        decisionSeconds = paceLimit.decisionSeconds,
+                        speechSeconds = paceLimit.speechSeconds,
+                        timeoutNotice = timeoutNotice,
+                        timeoutAt = state.lastTimeout?.at ?: 0L,
                     ),
                     // 牌桌左上角的返回 = 收起牌桌回列表，不是退出狼人杀
                     onExit = {
@@ -357,7 +421,23 @@ fun WerewolfRoute(
                     },
                     // 参与局里打开思考 = 读心。默认关着，牌桌上挂一条提示条提醒
                     onToggleThinking = { viewModel.setShowThinking(!showThinking) },
+                    onOpenSettings = {
+                        // 面板开着的时候语音还在念，那是正常的——设置不打断牌局
+                        showPaceSheet = true
+                    },
                 )
+                if (showPaceSheet) {
+                    UIWerewolfPaceSheet(
+                        pace = pace,
+                        onLimitChange = { limit -> viewModel.setTurnLimit(limit.toTurnLimit()) },
+                        onToggleThinking = { seat, on -> viewModel.setSeatThinking(seat, on) },
+                        speechOn = autoSpeak,
+                        speechReady = speechReady,
+                        onSpeechChange = viewModel::setAutoSpeak,
+                        onDismiss = { showPaceSheet = false },
+                    )
+                }
+                }
             }
         }
     }
@@ -411,3 +491,57 @@ private val SelectedIdsSaver: Saver<androidx.compose.runtime.MutableState<Set<St
         save = { ArrayList(it.value) },
         restore = { mutableStateOf(it.toSet()) },
     )
+
+/**
+ * 把「这一局的节奏」拼成面板要的形状。
+ *
+ * 放在 route 而不是 ViewModel：它要同时读局面（谁在几号、谁出局了）、头像、
+ * 引擎的耗时账本和角色属性，四样东西分别属于四层。让 VM 去拼，
+ * 它就得把头像和座位名一起搬进状态里，而那些本来就在这一层。
+ */
+private fun buildPace(
+    table: WerewolfTable?,
+    limit: WerewolfTurnLimit,
+    timings: Map<Int, SeatTiming>,
+    thinkingOff: Set<Int>,
+    roleThinking: Map<Int, Boolean>,
+    avatars: Map<String, String?>,
+    running: Boolean,
+): UIWerewolfPace {
+    val seats = table?.game?.players.orEmpty().map { player ->
+        val timing = timings[player.seat]
+        // 角色本身的设定：关掉的座位在面板上不给点，那是好友的属性
+        val roleOn = roleThinking[player.seat] == true
+        UIWerewolfSeatPace(
+            seat = player.seat,
+            name = player.name,
+            avatarPath = avatars[player.id],
+            thinkingOn = roleOn && player.seat !in thinkingOff,
+            thinkingAvailable = roleOn,
+            lastLabel = timing?.takeIf { it.turns > 0 }?.let { formatSpent(it.lastMs) },
+            // 只有一步的时候「平均」和「最近」是同一个数，写出来只是多一列噪声
+            averageLabel = timing?.takeIf { it.turns > 1 }?.let { formatSpent(it.averageMs) },
+            timeoutCount = timing?.timeouts ?: 0,
+            eliminated = !player.alive,
+        )
+    }.sortedWith(compareBy({ it.eliminated }, { it.seat }))
+    return UIWerewolfPace(
+        limit = limit.toUi(),
+        seats = seats,
+        running = running,
+        totalTimeouts = timings.values.sumOf { it.timeouts },
+    )
+}
+
+/** UI 枚举和引擎枚举靠**名字**对齐（顺序和拼写都一致），不用写 when 分支。 */
+private fun UIWerewolfTurnLimit.toTurnLimit(): WerewolfTurnLimit =
+    WerewolfTurnLimit.entries.firstOrNull { it.name == name } ?: WerewolfTurnLimit.STANDARD
+
+private fun WerewolfTurnLimit.toUi(): UIWerewolfTurnLimit =
+    UIWerewolfTurnLimit.entries.firstOrNull { it.name == name } ?: UIWerewolfTurnLimit.STANDARD
+
+private fun UIWerewolfPromptStyle.toPromptStyle(): WerewolfPromptStyle =
+    WerewolfPromptStyle.entries.firstOrNull { it.name == name } ?: WerewolfPromptStyle.GUIDED
+
+private fun WerewolfPromptStyle.toUi(): UIWerewolfPromptStyle =
+    UIWerewolfPromptStyle.entries.firstOrNull { it.name == name } ?: UIWerewolfPromptStyle.GUIDED

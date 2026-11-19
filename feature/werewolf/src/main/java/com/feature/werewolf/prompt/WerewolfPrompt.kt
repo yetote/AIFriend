@@ -5,6 +5,8 @@ import com.feature.werewolf.game.Phase
 import com.feature.werewolf.game.WerewolfConfig
 import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfRole
+import com.feature.werewolf.game.WerewolfPromptStyle
+import com.feature.werewolf.game.WerewolfTurnLimit
 import com.feature.werewolf.game.formatVotes
 import com.feature.werewolf.prompt.boards.Boards
 import com.feature.werewolf.prompt.roles.Roles
@@ -59,6 +61,25 @@ object WerewolfPrompt {
          * 信息隔离不受影响。
          */
         custom: String? = null,
+        /**
+         * 本局每一步的时限（来自 [WerewolfTurnLimit]）。
+         *
+         * 告诉模型自己有多少时间，是为了让它**自己把结论前置**：不说的话，它按
+         * 聊天习惯先铺垫两三百字，真正有用的验人/查杀压在末尾，一到点被掐断就前功尽弃。
+         * 这里只写档位对应的秒数，不写谁已经被关了深度思考——那是运行时状态，
+         * 每轮都会变，写进去等于让模型反复收到自相矛盾的要求。
+         *
+         * 默认 null＝不注入，让调用方（如复盘、测试）在不需要时限的场合保持原样。
+         */
+        limit: WerewolfTurnLimit? = null,
+        /**
+         * 提示词风格。默认 [WerewolfPromptStyle.GUIDED]＝现状，所有老测试与存档行为不变。
+         *
+         * [WerewolfPromptStyle.FREE] 只砍**打法**：读人框架、身份作业、狼队战术、屠边账、
+         * 残局挡刀都不给；身份、规则、板子、局势、私有信息（含保密底线）、本轮任务照旧。
+         * 保密底线在其中尤其重要——自由不等于允许在白天报验人或说出队友。
+         */
+        style: WerewolfPromptStyle = WerewolfPromptStyle.GUIDED,
     ): String {
         val player = game.playerAt(seat)
         return buildString {
@@ -78,10 +99,27 @@ object WerewolfPrompt {
             }
             append(rulesBrief(game.config)).append("\n\n")
             append(boardBrief(game.config).trimEnd()).append("\n\n")
-            append(strategyBrief(game.config, player.role.isWerewolf).trimEnd()).append("\n\n")
+            // 引导式才给内置打法。自由式的核心就是「不给方法，只给事实和底线」——
+            // 读人框架、板型结论、狼队菜单都在 strategyBrief 里，整段不出现。
+            if (style == WerewolfPromptStyle.GUIDED) {
+                append(strategyBrief(game.config, player.role.isWerewolf).trimEnd()).append("\n\n")
+            }
             append(publicSituation(game).trimEnd()).append("\n\n")
-            append(privateBriefing(game, seat)).append("\n\n")
+            append(privateBriefing(game, seat, style)).append("\n\n")
+            // 残局挡刀是打法，自由式不给——能不能靠穿神衣服晃狼，让它自己判断。
+            if (style == WerewolfPromptStyle.GUIDED) {
+                val bluff = GoodBluff.of(game, seat)
+                if (bluff.isNotEmpty()) {
+                    append(bluff.joinToString("\n")).append("\n\n")
+                }
+            }
             append(task(game, seat))
+            // 时限是环境约束不是打法，两种风格都给：不给模型会铺垫太长被掐断，
+            // 那就变成「测超时兜底」而不是「测它自己的判断」了。
+            if (limit != null && limit != WerewolfTurnLimit.UNLIMITED) {
+                append("\n\n")
+                append(timeBudgetBrief(limit))
+            }
             // 用户自定义放最后：它是「玩家对这一局玩法的要求」，
             // 位置太靠前会被后面固定的几段稀释掉，模型照着内置打法走就白改了。
             if (!custom.isNullOrBlank()) {
@@ -378,6 +416,10 @@ object WerewolfPrompt {
         append("验到死人只是运气不好（他自己也不知道对方会死），不是悍跳的证据。")
         append("只有**验了活人还乱报、或者报不出自己验过的人**，那才是悍跳。\n")
         append("· 狼给谁发金水都不亏，「被发金水」证明不了干净；反过来，给金水的人也没必要急着投。\n")
+        // 从发言读人的框架：上面几条是「验人/金水该不该信」的单点判断，
+        // 这里补成一套能贯穿整局的方法（心路、警徽流、保人、划水与冲锋的反面）。
+        // 放在单点判断之后、板型打法之前，先教「怎么读」，再给「这张板子读什么」。
+        ReadingTells.lines(config).forEach { append("· ").append(it).append("\n") }
         append("· 神职不要主动报身份。")
         // 只有守卫有这一句：别人守不守人跟好人无关，守卫自己却最容易一开口就交代守人路线。
         Roles.of(WerewolfRole.GUARD).publicStrategy(WerewolfRole.GUARD)
@@ -418,15 +460,24 @@ object WerewolfPrompt {
      * 内容全在 `roles/` 的各份 `XxxKit` 里：`notes` 是局面相关的私有信息，`playbook` 是身份作业。
      * 这个函数只负责「按什么顺序拼」和「哪些是任何身份都可能碰上的事」。
      */
-    fun privateBriefing(game: WerewolfGame, seat: Int): String {
+    fun privateBriefing(
+        game: WerewolfGame,
+        seat: Int,
+        style: WerewolfPromptStyle = WerewolfPromptStyle.GUIDED,
+    ): String {
         val player = game.playerAt(seat)
         val kit = Roles.of(player.role)
 
         val lines = mutableListOf<String>()
-        lines += kit.notes(game, seat)
+        // notes 是私有**事实**（队友是谁、验过谁、药还剩什么），不是打法——
+        // 自由式照样给：拿掉它模型就不知道自己是狼、不知道验人结果，游戏没法打。
+        lines += kit.notes(game, seat, style)
         // 身份专属打法。只给本人看，所以可以写得很具体——
         // 公共打法（strategyBrief）解决「怎么判断」，这里解决「我这个身份该说什么」。
-        lines += kit.playbook(player.role, game.config)
+        // 自由式不给：这是「内置答案」最集中的一层。
+        if (style == WerewolfPromptStyle.GUIDED) {
+            lines += kit.playbook(player.role, game.config)
+        }
 
         // 警长、竞选、遗言这三件事和身份无关，任何座位都可能碰上，所以放在身份之外。
         // 尤其是「你是警长」——警长本身是公开身份，但**只有本人**需要知道自己的票权是 1.5。
@@ -455,4 +506,21 @@ object WerewolfPrompt {
 
     /** 当前阶段要做什么。内容在 `tasks/TaskBriefs.kt`，这里只留入口。 */
     fun task(game: WerewolfGame, seat: Int): String = taskBrief(game, seat)
+
+    /**
+     * 时间预算的一段话。UNLIMITED 由调用方跳过，这里只处理有限的档位。
+     *
+     * 关键是**结论前置**：把验人、查杀、站边、目标座位号写在最前，理由随后。
+     * 这样就算真被掐断，丢的也只是后半段补充，核心判断已经落地。
+     * 不说这一句时，模型习惯先铺垫一大段再给结论，超时就什么都没剩。
+     */
+    internal fun timeBudgetBrief(limit: WerewolfTurnLimit): String = buildString {
+        append("【时间预算】这一局你每一步都有限时：决定大约 ")
+            .append(limit.decisionSeconds).append(" 秒，发言大约 ")
+            .append(limit.speechSeconds).append(" 秒。")
+        append("超时不会让游戏停下，但这一步会按兜底处理，并关掉你这一局的深度思考。")
+        append("所以**先把结论说出来**：验人结果、查杀、你站边谁、要投谁、目标座位号放最前面，")
+        append("理由和铺垫放在后面——哪怕说到一半被打断，关键判断也已经说出口了。")
+        append("别把所有可能性在心里过一遍再开口：想太久，说出来的往往不是更好的答案。")
+    }
 }

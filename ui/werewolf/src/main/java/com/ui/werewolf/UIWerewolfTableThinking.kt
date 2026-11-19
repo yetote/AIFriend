@@ -6,7 +6,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -15,7 +18,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
@@ -24,7 +32,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -33,6 +40,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.Canvas
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Path
+import kotlinx.coroutines.delay
 
 // ---------------------------------------------------------------------------
 // 字号
@@ -171,6 +179,10 @@ internal fun ThinkingBubble(
     reasoning: String,
     anchor: Offset,
     night: Boolean,
+    /** 是谁在想。换人时计时重新开始——不然下一位一开口就顶着上一位的秒数。 */
+    seat: Int = 0,
+    /** 这一档给的上限，0 表示不设限。有值时才显示「/ 60s」。 */
+    limitSeconds: Int = 0,
 ) {
     if (reasoning.isBlank()) return
     // 坐标还没算出来（座位刚布局完）或者算坏了，就先别画：
@@ -189,6 +201,26 @@ internal fun ThinkingBubble(
     val fill = if (night) Color(0xF0221D2E) else Color(0xF5FFFFFF)
     val border = if (night) Color(0x59A894FF) else Color(0x336B4BD9)
     val textColor = if (night) Color(0xFFE6EAF3) else Color(0xFF3A4152)
+
+    // 秒表在界面这侧跑，不跟引擎走：引擎只在有数据到达时推一次，
+    // 而「模型一声不吭地干等」恰恰是最需要看到秒数的时刻——那一整段时间引擎是静默的。
+    // 它回答的是用户最常问的那句话：这个模型到底慢在哪一步、慢了多久。
+    var elapsedSeconds by remember(seat) { mutableIntStateOf(0) }
+    LaunchedEffect(seat) {
+        val started = System.currentTimeMillis()
+        while (true) {
+            elapsedSeconds = ((System.currentTimeMillis() - started) / 1000L).toInt()
+            delay(500L)
+        }
+    }
+    // 快到上限时变色：这时候还看不出来，下一秒就是兜底了
+    val stressed = limitSeconds > 0 && elapsedSeconds * 100 >= limitSeconds * 80
+    val spentColor = when {
+        stressed && night -> Color(0xFFFFB4B0)
+        stressed -> Color(0xFFC0392B)
+        night -> Color(0xFFA894FF)
+        else -> Color(0xFF6B4BD9)
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         // 气泡的位置在下面算，这里先画尖角：它贴着气泡靠头像的那一端
@@ -266,12 +298,27 @@ internal fun ThinkingBubble(
                 .padding(horizontal = 10.dp, vertical = 7.dp)
         ) {
             Column {
-                Text(
-                    text = "思考中",
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (night) Color(0xFFA894FF) else Color(0xFF6B4BD9)
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "思考中",
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (night) Color(0xFFA894FF) else Color(0xFF6B4BD9)
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        text = if (limitSeconds > 0) {
+                            "${elapsedSeconds}s / ${limitSeconds}s"
+                        } else {
+                            "${elapsedSeconds}s"
+                        },
+                        fontSize = 9.sp,
+                        color = spentColor,
+                    )
+                }
                 Text(
                     text = lines.joinToString("\n"),
                     modifier = Modifier.padding(top = 2.dp),

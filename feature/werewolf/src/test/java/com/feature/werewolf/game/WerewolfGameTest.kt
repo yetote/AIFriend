@@ -72,14 +72,17 @@ class WerewolfGameTest {
     }
 
     @Test
-    fun `狼人不能刀队友也不能刀自己`() {
+    fun `狼刀可以落在自己人身上，但票必须投全`() {
+        // 0.0.61 放开：自刀骗解药、刀队友做身份都是正经花板子，以前这两条会抛异常。
+        // 换来的是整局只剩「刀好人」，狼的打法被压成一套悍跳。
         val g = game(listOf(WEREWOLF, WEREWOLF, SEER, WITCH, VILLAGER, VILLAGER)).atWolfVote()
 
+        assertEquals("刀队友合法", 2, g.wolfVote(mapOf(1 to 2, 2 to 2)).tonightVictim)
+        assertEquals("自刀也合法", 1, g.wolfVote(mapOf(1 to 1, 2 to 1)).tonightVictim)
+
+        // 仍然拦着的：存活狼人必须全部表态，否则狼队会靠「不说话」绕过多数决
         assertThrows(IllegalArgumentException::class.java) {
-            g.wolfVote(mapOf(1 to 2, 2 to 3))
-        }
-        assertThrows(IllegalArgumentException::class.java) {
-            g.wolfVote(mapOf(1 to 1, 2 to 3))
+            g.wolfVote(mapOf(1 to 3))
         }
     }
 

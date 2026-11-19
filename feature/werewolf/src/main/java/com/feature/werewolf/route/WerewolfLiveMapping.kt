@@ -41,6 +41,12 @@ internal fun WerewolfUiState.toLive(
      * 界面会明写着「这是作弊」。开关的值记在设置里，开了就一直是开的。
      */
     showThinking: Boolean = false,
+    /** 这一局的思考时限（秒），0 表示不设限。气泡上要显示「12s / 60s」。 */
+    decisionSeconds: Int = 0,
+    speechSeconds: Int = 0,
+    /** 刚刚超时的那一步，显示几秒就过。 */
+    timeoutNotice: String? = null,
+    timeoutAt: Long = 0L,
 ): UIWerewolfLive {
     val table = table
     val game = table?.game
@@ -226,6 +232,10 @@ internal fun WerewolfUiState.toLive(
         // 闸门没生效时一律当作「不忙」：关朗读/已结束/没语音包的时候，
         // 界面必须照常显示正在生成的内容，否则看起来就是卡住了。
         speechBusy = speechBusy && gated,
+        thinkingDecisionSeconds = decisionSeconds,
+        thinkingSpeechSeconds = speechSeconds,
+        timeoutNotice = timeoutNotice,
+        timeoutAt = timeoutAt,
     )
 }
 

@@ -7,9 +7,12 @@ import com.feature.werewolf.game.SeerCheck
 import com.feature.werewolf.game.WerewolfBoards
 import com.feature.werewolf.game.WerewolfConfig
 import com.feature.werewolf.game.WerewolfGame
+import com.feature.werewolf.game.WerewolfPromptStyle
 import com.feature.werewolf.game.NightRecord
 import com.feature.werewolf.game.PendingDawn
 import com.feature.werewolf.game.WerewolfRole
+import com.feature.werewolf.game.WerewolfTurnLimit
+import com.feature.werewolf.game.WinRule
 import com.feature.werewolf.game.WitchStock
 import com.feature.werewolf.prompt.boards.Boards
 import com.feature.werewolf.prompt.boards.BoardText
@@ -346,14 +349,17 @@ class WerewolfPromptTest {
     }
 
     @Test
-    fun `狼人盘身份只盘好人，票不许落到队友身上`() {
+    fun `狼人盘身份只盘好人，只有倒钩才投队友`() {
         // 实测：狼白天按「盘身份」的要求认真分析全场，把队友也归进了「很可疑」，
         // 最后一票砸在队友身上。盘身份是演给好人看的，队友不在候选里。
+        //
+        // 唯一的例外是倒钩：投队友是为了让好人信你，那时这一票是道具不是失误。
         val wolf = WerewolfPrompt.systemPrompt(standardGame(), seat = 1)
 
         assertTrue(wolf.contains("只盘好人"))
         assertTrue(wolf.contains("绝不能出现在你的怀疑名单上"))
-        assertTrue(wolf.contains("票永远不能落在他身上"))
+        assertTrue("倒钩是唯一例外", wolf.contains("演倒钩"))
+        assertTrue(wolf.contains("除此之外决不投队友"))
     }
 
     @Test
@@ -411,7 +417,11 @@ class WerewolfPromptTest {
         listOf(1, 2, 3, 5, 6).forEach { seat ->
             val other = WerewolfPrompt.systemPrompt(game, seat)
             assertFalse("$seat 号不该知道今晚谁被刀", other.contains("今晚被狼人袭击的是"))
-            assertFalse("$seat 号不该知道药品余量", other.contains("解药："))
+            // 只认药品状态的原文：「自刀骗解药：」这种战术文案里也有「解药」两个字
+            assertFalse(
+                "$seat 号不该知道药品余量",
+                other.contains("解药：还在") || other.contains("解药：已经用完")
+            )
         }
     }
 
@@ -553,15 +563,17 @@ class WerewolfPromptTest {
         assertTrue(chatTask.contains("商量"))
         // 商议阶段只要一句话，不能要 JSON——那会把「说」和「定」又揉回一步
         assertTrue(chatTask.contains("不要输出 JSON"))
-        assertFalse(chatTask.contains("1 号、"))
-        assertFalse(chatTask.contains("2 号、"))
+        // 自刀和空刀都是正经战术，候选里必须把自己和队友都列出来
+        assertTrue("自己也在候选里", chatTask.contains("1 号"))
+        assertTrue("队友也在候选里", chatTask.contains("2 号"))
+        assertTrue("要说清能自刀", chatTask.contains("自刀"))
         assertTrue(chatTask.contains("3 号"))
 
         val wolfTask = WerewolfPrompt.task(game.copy(phase = Phase.NIGHT_WOLF), seat = 1)
         assertTrue(wolfTask.contains("定刀"))
-        // 可选目标里不能出现自己或队友
-        assertFalse(wolfTask.contains("1 号、"))
-        assertFalse(wolfTask.contains("2 号、"))
+        assertTrue(wolfTask.contains("1 号"))
+        assertTrue(wolfTask.contains("2 号"))
+        assertTrue("填 null 就是空刀", wolfTask.contains("空刀"))
         assertTrue(wolfTask.contains("3 号"))
 
         val seerTask = WerewolfPrompt.task(game.copy(phase = Phase.NIGHT_SEER), seat = 3)
@@ -876,5 +888,297 @@ class WerewolfPromptTest {
         assertTrue(guard10.contains("守卫每夜先于狼人守一个人"))
         assertTrue("同一份守卫规则不该只在 10 人局出现", guard12.contains("守卫每夜先于狼人守一个人"))
         assertFalse("没守卫的板子不该出现守卫规则", WerewolfPrompt.boardBrief(WerewolfConfig()).contains("守卫每夜"))
+    }
+
+    // ------------------------------------------------------------------
+    // 读人框架 / 屠边账 / 时间预算（对照专栏那局补上的三块）
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `好人能从发言读身份，且读法辨证不鼓励乱杀`() {
+        // 专栏那局五个人跳预言家，真假的差别在验人心路、警徽流和保人，不在嗓门。
+        // 这套框架是公共的：好人和狼都看得到，所以文案里不能出现「你们狼」这种漏视角的话。
+        val good = WerewolfPrompt.systemPrompt(standardGame(), seat = 3)
+        val wolf = WerewolfPrompt.systemPrompt(standardGame(), seat = 1)
+
+        assertTrue("好人要有从发言读人的框架", good.contains("怎么从发言读人"))
+        assertTrue("要教看验人心路", good.contains("验人的心路"))
+        assertTrue("要教看谁在保人", good.contains("谁在保人"))
+        assertTrue("要提醒划水冲锋都反着看", good.contains("划水和冲锋都要反着看"))
+        assertTrue("狼也要看到这套框架（才知道自己哪里会被抓）", wolf.contains("怎么从发言读人"))
+        assertFalse("公共框架不能漏出阵营视角", good.contains("你们狼"))
+    }
+
+    @Test
+    fun `猎人开枪有可执行的读人顺序，不是凭最怀疑`() {
+        // 专栏的答案：该打一言未发的深水狼或冲锋狼，不是嗓门大的、也不是救过人的神职。
+        val hunter = WerewolfPrompt.systemPrompt(standardGame(), seat = 5)
+
+        assertTrue("猎人要有开枪的读人顺序", hunter.contains("开枪前按这个顺序挑"))
+        assertTrue("要点出深水狼", hunter.contains("深水狼"))
+        assertTrue("要点出冲锋狼", hunter.contains("冲锋狼"))
+        assertTrue("要提醒别打跳得凶的", hunter.contains("挡枪"))
+    }
+
+    @Test
+    fun `屠边账只对狼，按存活神民动态算且不泄露具体身份`() {
+        // 屠边局狼每晚下刀前要算打哪边更快；好人读到只会稀释自己的判断。
+        val game = standardGame()
+        val wolf = WerewolfPrompt.systemPrompt(game, seat = 1)
+        val good = WerewolfPrompt.systemPrompt(game, seat = 3)
+
+        assertTrue("狼要看到屠边账", wolf.contains("屠边账"))
+        assertTrue("账本要按存活神民算", wolf.contains("张神牌") && wolf.contains("个平民"))
+        assertFalse("屠边账不能漏给好人", good.contains("屠边账"))
+        // 账本只能说「还有几张神牌」，不能替狼点名谁是哪个身份。
+        assertFalse("不能泄露具体身份", wolf.contains("3 号是预言家"))
+    }
+
+    @Test
+    fun `好人能识破反水做身份，但不会被教成见反水就打`() {
+        val good = WerewolfPrompt.systemPrompt(standardGame(), seat = 3)
+
+        assertTrue("要教金水反咬的读法", good.contains("接了金水却当场反咬"))
+        assertTrue("要给落地判据", good.contains("看他把票砸在哪"))
+        assertTrue("必须辩证，不能把真金水冤死", good.contains("真金水也可能嫌验人理由不硬"))
+        assertFalse("狼侧战术细节不能漏给好人", good.contains("拿一张狼牌换"))
+    }
+
+    @Test
+    fun `读人框架含身份力度与心态破绽，且都带反向口子`() {
+        // 专栏那局：真预连续报对神职身份是力度，「希望验到好人」是心态破绽；
+        // 但同一局也有人替后者翻案（不专业反而真实），所以两条都必须自带反例。
+        val good = WerewolfPrompt.systemPrompt(standardGame(), seat = 3)
+
+        assertTrue("要有「看链条不看单次」", good.contains("报对的力度看链条，不看单次"))
+        assertTrue("要提醒撞对一次不能当铁预", good.contains("报对一次不等于从此免检"))
+        assertTrue("要有心态破绽这条", good.contains("听他找的是狼还是票"))
+        assertTrue("心态也必须留反向口子", good.contains("但这不等于狼"))
+
+        // 公共框架，狼也看得到，但拿不到指认真好人的新武器
+        assertTrue("狼也该看到这套框架", WerewolfPrompt.systemPrompt(standardGame(), seat = 1).contains("报对的力度看链条"))
+    }
+
+    @Test
+    fun `读人框架能识破工整话术，但不把话糙当真预`() {
+        // 专栏里有人用「验人逻辑闭环／票型分析」三段式包装出错误结论，
+        // 也有人靠「真相只有一个」的口头禅压人。格式本身不是证据。
+        val good = WerewolfPrompt.systemPrompt(standardGame(), seat = 3)
+
+        assertTrue("要有工整话术辨识", good.contains("话术工整不等于身份真"))
+        assertTrue("要说格式不是证据", good.contains("格式不是证据"))
+        assertTrue("落点要可验证", good.contains("报的查杀后来对不对"))
+        assertTrue("别把话糙当悍跳", good.contains("别因为「不够专业」就把人打成悍跳"))
+    }
+
+    @Test
+    fun `屠城局不算屠边账`() {
+        val slayAll = standardGame().copy(config = WerewolfConfig(winRule = WinRule.SLAY_ALL))
+        assertFalse(WerewolfPrompt.systemPrompt(slayAll, seat = 1).contains("屠边账"))
+    }
+
+    @Test
+    fun `时间预算告诉模型时限与结论前置，不限档不写`() {
+        val fast = WerewolfPrompt.systemPrompt(standardGame(), seat = 3, limit = WerewolfTurnLimit.FAST)
+
+        assertTrue("要说决定时限", fast.contains("决定大约 30 秒"))
+        assertTrue("要说发言时限", fast.contains("发言大约 75 秒"))
+        assertTrue("要教结论前置", fast.contains("先把结论说出来"))
+        assertTrue("要说超时的后果", fast.contains("关掉你这一局的深度思考"))
+
+        // 不传（测试、复盘等场合）和不限档都不写，保持原来的行为
+        assertFalse(WerewolfPrompt.systemPrompt(standardGame(), seat = 3).contains("时间预算"))
+        assertFalse(
+            WerewolfPrompt.systemPrompt(standardGame(), seat = 3, limit = WerewolfTurnLimit.UNLIMITED)
+                .contains("时间预算")
+        )
+    }
+
+    @Test
+    fun `时间预算排在自定义设定之前，用户仍能覆盖`() {
+        val prompt = WerewolfPrompt.systemPrompt(
+            standardGame(), seat = 3, limit = WerewolfTurnLimit.STANDARD,
+            custom = "狼人白天要更凶一点",
+        )
+        assertTrue(prompt.contains("【本局额外设定"))
+        assertTrue(prompt.contains("时间预算"))
+        assertTrue(
+            "自定义设定必须在时间预算之后（后写优先）",
+            prompt.indexOf("【本局额外设定") > prompt.indexOf("【时间预算】"),
+        )
+    }
+
+    // ------------------------------------------------------------------
+    // 残局挡刀：好人穿神衣服
+    // ------------------------------------------------------------------
+
+    /** 8 人局去掉女巫和两个平民，剩 1/2 狼、3 预言家、5 猎人、8 平民。 */
+    private fun endgame() = standardGame().let { g ->
+        val dead = setOf(4, 6, 7)
+        g.copy(
+            day = 3,
+            players = g.players.map { if (it.seat in dead) it.copy(alive = false) else it },
+            history = listOf(GameEvent.Dawn(1, dead.toList())),
+        )
+    }
+
+    @Test
+    fun `残局好人才会收到穿神衣服挡刀，狼看不到`() {
+        val g = endgame()
+        val villager = WerewolfPrompt.systemPrompt(g, seat = 8)
+        val seer = WerewolfPrompt.systemPrompt(g, seat = 3)
+        val wolf = WerewolfPrompt.systemPrompt(g, seat = 1)
+
+        assertTrue("平民要能穿神衣服", villager.contains("穿神的衣服"))
+        assertTrue("要说清这是允许的伪装", villager.contains("策略性伪装"))
+        assertTrue("平民要知道优先跳已出局的神", villager.contains("已经出局的神"))
+        assertTrue("要有跳了别缩的翻车点", villager.contains("跳了就别缩"))
+        assertTrue("神职残局可以跳明挡刀", seer.contains("藏着已经不如站出来值钱"))
+        assertFalse("狼绝不能知道平民也会穿神衣服", wolf.contains("穿神的衣服"))
+    }
+
+    @Test
+    fun `人多的时候不给挡刀策略，免得把好人架上焦点位`() {
+        assertFalse(WerewolfPrompt.systemPrompt(standardGame(), seat = 8).contains("穿神的衣服"))
+    }
+
+    @Test
+    fun `狼侧屠边账不再默认平民不会跳身份`() {
+        // 只剩 1 个平民时狼才会去算「平民这边更近」那条分支。
+        val g = standardGame().let { game ->
+            game.copy(players = game.players.map {
+                if (it.seat in setOf(7, 8)) it.copy(alive = false) else it
+            })
+        }
+        val wolf = WerewolfPrompt.systemPrompt(g, seat = 1)
+        assertFalse("不能再写死平民不会跳身份", wolf.contains("平民不会跳身份"))
+        assertTrue("狼要提防穿神衣服挡刀的平民", wolf.contains("穿神衣服挡刀"))
+    }
+
+    // ------------------------------------------------------------------
+    // 提示词风格：引导式（默认）保持原样，自由式只给事实和底线
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `不传风格时和显式引导式完全一致`() {
+        val game = standardGame()
+        (1..8).forEach { seat ->
+            assertEquals(
+                "$seat 号默认提示词必须和引导式逐字相同",
+                WerewolfPrompt.systemPrompt(game, seat),
+                WerewolfPrompt.systemPrompt(game, seat, style = WerewolfPromptStyle.GUIDED),
+            )
+        }
+    }
+
+    @Test
+    fun `自由式拿掉全部内置打法`() {
+        val game = standardGame()
+        val good = WerewolfPrompt.systemPrompt(game, seat = 3, style = WerewolfPromptStyle.FREE)
+        val wolf = WerewolfPrompt.systemPrompt(game, seat = 1, style = WerewolfPromptStyle.FREE)
+
+        // 公共打法层：读人框架、板型结论、狼队菜单、屠边账
+        assertFalse("自由式不给读人框架", good.contains("怎么从发言读人"))
+        assertFalse("自由式不给验人心路", good.contains("验人的心路"))
+        assertFalse("自由式不给基本打法整段", good.contains("【基本打法】"))
+        assertFalse("自由式不给狼队战术菜单", wolf.contains("【狼队打法】"))
+        assertFalse("自由式不给屠边账", wolf.contains("屠边账"))
+        assertFalse("自由式不给刀法分析", wolf.contains("撞守"))
+        // 身份作业：预言家的三段式发言、女巫的用药教学
+        assertFalse("自由式不给身份作业", good.contains("你的白天发言只有三件任务"))
+        assertFalse("自由式不给残局穿神衣服", good.contains("穿神衣服挡刀"))
+    }
+
+    @Test
+    fun `自由式保留身份规则局势任务和私有信息`() {
+        val game = standardGame()
+        val good = WerewolfPrompt.systemPrompt(game, seat = 3, style = WerewolfPromptStyle.FREE)
+        val wolf = WerewolfPrompt.systemPrompt(game, seat = 1, style = WerewolfPromptStyle.FREE)
+
+        // 事实层：这几样拿掉游戏就没法打
+        assertTrue("身份还在", good.contains("你的身份是预言家"))
+        assertTrue("规则还在", good.contains("【胜负规则】"))
+        assertTrue("局势还在", good.contains("【当前局势】"))
+        assertTrue("板子还在", good.contains("【本局板子】"))
+        assertTrue("本轮任务还在", good.contains("【本轮任务】"))
+        assertTrue("私有信息还在", wolf.contains("【只有你知道的事】"))
+        assertTrue("狼队友还在", wolf.contains("你的狼队友"))
+        // 保密底线：自由不等于可以在白天报身份
+        assertTrue("保密底线还在", wolf.contains("不许出现「队友」"))
+        assertTrue("狼的保密收尾还在", wolf.contains("不能在白天直接说出来"))
+    }
+
+    @Test
+    fun `自由式不破坏信息隔离`() {
+        val game = standardGame()
+        // 好人的自由式提示词里不该出现任何狼的私有信息
+        (3..8).forEach { seat ->
+            val good = WerewolfPrompt.systemPrompt(game, seat, style = WerewolfPromptStyle.FREE)
+            assertFalse("$seat 号好人不能看到狼队友", good.contains("你的狼队友"))
+            assertFalse("$seat 号好人不能看到狼的战术安排", good.contains("昨晚头狼定的战术"))
+        }
+        // 狼的私有简报也不该把别人的身份说出来（只给队友名单，不给全场身份表）
+        val wolf = WerewolfPrompt.systemPrompt(game, seat = 1, style = WerewolfPromptStyle.FREE)
+        assertFalse("不能泄露预言家身份", wolf.contains("3 号是预言家"))
+        assertFalse("不能泄露女巫身份", wolf.contains("4 号是女巫"))
+    }
+
+    @Test
+    fun `两种风格都给时间预算`() {
+        val game = standardGame()
+        val guided = WerewolfPrompt.systemPrompt(
+            game, seat = 3, limit = WerewolfTurnLimit.FAST, style = WerewolfPromptStyle.GUIDED,
+        )
+        val free = WerewolfPrompt.systemPrompt(
+            game, seat = 3, limit = WerewolfTurnLimit.FAST, style = WerewolfPromptStyle.FREE,
+        )
+        assertTrue("引导式给时间预算", guided.contains("【时间预算】"))
+        // 时限是环境约束不是打法：不给会让模型铺垫太长被掐断，测的就成了超时兜底
+        assertTrue("自由式也给时间预算", free.contains("【时间预算】"))
+        assertTrue("自由式也要结论前置", free.contains("先把结论说出来"))
+    }
+
+    @Test
+    fun `狼可以对跳混淆视听，两种风格都不再被锁成平民`() {
+        val game = standardGame()
+        val guided = WerewolfPrompt.systemPrompt(game, seat = 1, style = WerewolfPromptStyle.GUIDED)
+        val free = WerewolfPrompt.systemPrompt(game, seat = 1, style = WerewolfPromptStyle.FREE)
+
+        for ((name, prompt) in listOf("引导式" to guided, "自由式" to free)) {
+            assertFalse("${name}不能再写「只有一份档案：普通好人」", prompt.contains("只有一份档案：普通好人"))
+            assertTrue("${name}要说清可以跳假身份", prompt.contains("宣称的身份可以自己挑"))
+            assertTrue("${name}要说混淆视听是正当武器", prompt.contains("混淆视听"))
+            // 真事 vs 假话的边界必须给：否则狼怕自曝就什么都不敢跳
+            assertTrue("${name}要区分自曝与混淆", prompt.contains("叫自曝"))
+            assertTrue("${name}要给假验人假银水的具体例子", prompt.contains("报假验人"))
+        }
+        // 引导式 playbook 里那句旧文案也要改掉
+        assertFalse(guided.contains("只有一个身份：普通好人"))
+        assertTrue("引导式 playbook 也要说这是正当武器", guided.contains("正当武器"))
+    }
+
+    @Test
+    fun `狼的对跳许可不泄漏给好人`() {
+        val game = standardGame()
+        (3..8).forEach { seat ->
+            val good = WerewolfPrompt.systemPrompt(game, seat)
+            assertFalse("$seat 号好人不能看到狼的对跳许可", good.contains("宣称的身份可以自己挑"))
+            assertFalse("$seat 号好人不能看到真事假话的区分", good.contains("叫自曝"))
+        }
+    }
+
+    @Test
+    fun `对跳许可不拆掉狼队真事的保密底线`() {
+        // 开放对跳 ≠ 允许泄底：队友、刀口、夜聊仍然只能在夜里说
+        // 「不许提刀过谁」只在白天分支给（夜里还在定刀，说这句自相矛盾）
+        val night = WerewolfPrompt.systemPrompt(standardGame(), seat = 1)
+        val day = WerewolfPrompt.systemPrompt(
+            standardGame().copy(phase = Phase.DAY_DISCUSSION), seat = 1,
+        )
+        assertTrue("保密底线还在", night.contains("狼队内部的一切只能在夜里说"))
+        assertTrue("不许说我们狼", night.contains("不许出现「队友」「我们狼」"))
+        assertTrue("不许提刀过谁", day.contains("一个字都不许提你们刀过谁"))
+        // 公共「神职不要报身份」要被点破为不约束狼，否则模型自相矛盾
+        assertTrue("要澄清神职保密不约束狼", night.contains("不约束你"))
     }
 }

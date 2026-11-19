@@ -4,6 +4,7 @@ import com.feature.werewolf.engine.isNight
 import com.feature.werewolf.game.Phase
 import com.feature.werewolf.game.WerewolfConfig
 import com.feature.werewolf.game.WerewolfGame
+import com.feature.werewolf.game.WerewolfPromptStyle
 import com.feature.werewolf.game.WerewolfRole
 
 /**
@@ -29,7 +30,8 @@ internal object WolfKit : RoleKit {
 
     override fun playbook(role: WerewolfRole, config: WerewolfConfig): List<String> {
         val lines = listOf(
-            "你白天只有一个身份：普通好人。",
+            "你白天的立场是好人阵营，但对外宣称的身份可以自己挑：跳个假预言家、假女巫去混淆视听" +
+                "是狼人的正当武器，不是暴露——别把自己演成全程自称平民的透明人。",
             "发言量要像真人：不要第一个跳预言家（夜里另有安排除外），也不要全程一句话不说——" +
                 "沉默会被当成查不出身份的人，但也更容易被逻辑盘。",
             "不要只喊「我是好人」。要给出**能自证的具体判断**：你注意到了谁的哪句话不对劲。",
@@ -45,8 +47,8 @@ internal object WolfKit : RoleKit {
             // 「X 号很可疑」，好人听到的是一堆没有指向的废话，也分不出谁在带节奏。
             "你白天真正要做的事是**盘身份**，但**只盘好人**：队友是谁你天生就知道，" +
                 "他们不在候选里、不需要盘，也**绝不能出现在你的怀疑名单上**——" +
-                "把队友写成「很可疑」、甚至把票投给自己队友，是狼队最蠢的输法，" +
-                "而且这样做换不来任何信任。" +
+                "把队友写成「很可疑」，是狼队最蠢的输法，而且这样做换不来任何信任" +
+                "（唯一的例外是你在演倒钩，见下面的打法）。" +
                 "要盘的是把**好人**归到「预言家 / 猎人 / 女巫 / 守卫 / 平民」里，" +
                 "再按这个结论投票。今天至少要给出**一个明确的身份判断**——" +
                 "「我觉得 4 号是预言家，因为他的金水给得反着来」这种；" +
@@ -70,18 +72,54 @@ internal object WolfKit : RoleKit {
                 "还有：守卫的限制只有**不能连续两夜守同一个人**——他昨晚守了 10 号，今晚照样能守你想刀的 5 号。" +
                 "所以「昨晚他没守 5 号」推不出「今晚 5 号裸着」，真正裸的只有**昨晚被他守过的那个**。",
             "盘出来的结论要**落到票上**：你认定谁是预言家，今天就投他，别嘴上说怀疑却跟着别人投票。" +
-                "唯一的例外是队友——票永远不能落在他身上。",
+                "票落在队友身上只有一种情况：你在演倒钩，投他是为了让好人信你——除此之外决不投队友。",
             "昨晚**平安夜**（刀口没死）是全场最值钱的一条线索：有人护住了我们的刀口。" +
                 "别停在「到底是守卫还是女巫」这一步上——两种情况的结论是同一个**今晚连刀同一个人**：" +
                 "守卫守的，他不能连守；女巫救的，那瓶药已经空了。换成别人等于把这一夜的优势白送回去。",
         )
-        if (config.has(WerewolfRole.GUARD)) return lines
-        return lines.filterNot { line ->
+        if (config.has(WerewolfRole.GUARD)) return lines + tacticMenu(config)
+        val kept = lines.filterNot { line ->
             line.startsWith("盘守卫") || line.startsWith("**有人自称「我昨晚守的」")
         }
+        return kept + tacticMenu(config)
     }
 
-    override fun notes(game: WerewolfGame, seat: Int): List<String> {
+    /**
+     * 打法菜单。
+     *
+     * 放在 playbook 末尾而不是塞进上面那串：上面是**任何时候都成立**的底线
+     * （别编细节、别喊队友、票要落到人身上），这里是**每局挑一套**的进攻方向，
+     * 两者混在一起，模型会把「可以倒钩」当成「每条都得做一点」。
+     */
+    private fun tacticMenu(config: WerewolfConfig): List<String> = buildList {
+        add(
+            "白天怎么打，从下面这些里挑**一套**——头狼夜里定的是哪套，你就演哪套。" +
+                "别在同一个白天里既悍跳又倒钩：两套人设写在一张牌上，是最容易被盘穿的样子。"
+        )
+        addAll(WolfTactics.menu(config))
+        add(
+            "这些都不是必须做的。好人打得紧、狼队已经落后的时候，" +
+                "**活着**本身就是任务——不合适的打法硬上，只是把一张狼牌送出去。"
+        )
+    }
+
+    override fun notes(game: WerewolfGame, seat: Int): List<String> = buildNotes(game, seat, guided = true)
+
+    override fun notes(game: WerewolfGame, seat: Int, style: WerewolfPromptStyle): List<String> =
+        buildNotes(game, seat, guided = style == WerewolfPromptStyle.GUIDED)
+
+    /**
+     * 狼的私有简报，按风格分两段拼。
+     *
+     * **任何风格都要给的**，是事实和底线：
+     * 队友是谁、昨晚定了刀谁、上一轮没谈拢、现在是夜里的哪个环节——这些是它自己的记忆，
+     * 拿掉就没法接着玩；「白天不许说队友/不许提刀口」是保密底线，自由不等于可以泄底。
+     *
+     * **只有引导式才给的**，是打法：
+     * 头狼该派谁跳、刀口怎么撞守、屠边打哪边——这些是「内置答案」，
+     * 自由式正是要看看模型没有这些答案时自己能打到什么程度。
+     */
+    private fun buildNotes(game: WerewolfGame, seat: Int, guided: Boolean): List<String> {
         val lines = mutableListOf<String>()
         val king = game.playerAt(seat).role == WerewolfRole.WEREWOLF_KING
         if (king) {
@@ -103,14 +141,29 @@ internal object WolfKit : RoleKit {
             "白天你的发言里不许出现「队友」「我们狼」「昨夜我们」这类字眼，" +
             "也不许复述夜里说过的话——这些话说出口就是自曝，" +
             "而且会让队友被一个个揪出来。"
-        lines += "白天你只有一份档案：一个普通好人。说理只能靠公开发言和票型，" +
-            "哪怕理由是你自己编的，也要是好人能推出来的那种。"
+        // 「装好人」和「只报平民」是两回事：对跳是狼人最有力的武器。
+        // 早期版本写「你白天只有一份档案：一个普通好人」，模型照着收敛成
+        // 全程自称平民、一句话不敢跳——那不是伪装，是把对跳这条路自己堵死。
+        // 红线只在「狼队的真事」：真事说出来叫自曝，编出来的假身份叫混淆视听。
+        // 公共打法里那句「神职不要主动报身份」也要在这里点破，否则狼会把它
+        // 当成对自己的约束——那是给真神职的规矩，狼本来就该跳假的。
+        lines += "上面那些（队友、刀口、夜里商量过什么）是狼队的**真事**，说出来叫自曝；" +
+            "你跳身份、报假验人、报假银水是**编的假话**，那叫混淆视听，是狼人的正当武器，" +
+            "两者完全不同——别因为怕自曝就什么都不敢跳。"
+        lines += "公共打法里说「神职不要主动报身份」，那是给**真神职**的规矩，" +
+            "不约束你：你本来就是狼，跳一个假身份去搅局正是你的活。"
+        lines += "白天你的立场站在好人一边，但对外宣称的身份可以自己挑：" +
+            "跳预言家报假验人、跳女巫报假银水、跳猎人或守卫都行——" +
+            "真神职只有一个，你多跳一个，好人就多一分分不清。" +
+            "说理仍要像好人：哪怕理由是你现编的，也得是好人能推出来的那种。"
         if (game.wolfPlan != null && !game.phase.isNight) {
             // 白天看不到夜聊原文（不然狼人会在白天当众说漏「昨夜我们」），
             // 战术安排只在这里给到狼本人。少这一条，昨晚商量出来的分工就白定了。
             lines += "昨晚头狼定的战术：" + game.wolfPlan
-            lines += "白天按这个演：安排谁跳预言家、谁冲锋，就照着来；" +
-                "但**一个字都不许提**「安排」「昨晚商量」「我们狼」这种说法。"
+            if (guided) {
+                lines += "白天按这个演：安排谁跳预言家、谁冲锋，就照着来；" +
+                    "但**一个字都不许提**「安排」「昨晚商量」「我们狼」这种说法。"
+            }
         }
         if (game.phase == Phase.NIGHT_WOLF_CHAT) {
             lines += "现在是夜里，只有你们狼人醒着：可以直说要刀谁、为什么，也可以反驳队友。"
@@ -124,18 +177,31 @@ internal object WolfKit : RoleKit {
             val head = game.nightHead
             if (head != null) {
                 lines += if (head == seat) {
-                    "**今晚你是头狼（狼队指挥）**：你先发言、其他人后发言。" +
-                        "你要给出的是一套能执行的方案——今晚刀谁、为什么，" +
-                        "白天谁跳预言家、谁冲锋、谁划水。" +
-                        "队友会照着你的安排执行或提出异议，所以方案要具体到人和理由。"
+                    if (guided) {
+                        "**今晚你是头狼（狼队指挥）**：你先发言、其他人后发言。" +
+                            "你要给出的是一套能执行的方案——今晚刀谁、为什么，" +
+                            "白天谁跳预言家、谁冲锋、谁划水。" +
+                            "白天那套打法要从【狼队打法】里**挑一套**，点名谁执行；挑定之后别再换，" +
+                            "同一个白天换两套等于把两个人设写在一张牌上。" +
+                            "队友会照着你的安排执行或提出异议，所以方案要具体到人和理由。"
+                    } else {
+                        "**今晚你是头狼**：你先发言、其他人后发言。" +
+                            "你要带着队友统一今晚的目标；怎么安排、谁做什么，由你自己决定。"
+                    }
                 } else {
-                    "今晚的头狼是 $head 号，他先发言安排战术。" +
-                        "你听完要明确表态：照着执行（并补上你自己的理由），或者反对并给出你的刀口。"
+                    "今晚的头狼是 $head 号，他先发言。" +
+                        if (guided) {
+                            "他安排战术，你听完要明确表态：照着执行（并补上你自己的理由），" +
+                                "或者反对并给出你的刀口。"
+                        } else {
+                            "听完他的意见，你自己决定支持还是反对，并说清为什么。"
+                        }
                 }
             }
         }
         if (game.phase == Phase.NIGHT_WOLF) {
-            lines += "商议已经结束，现在各自动手：只要有一只狼指了别人，今晚就可能空刀。"
+            lines += "商议已经结束，现在各自动手：目标可以是好人、你的队友、甚至你自己" +
+                "（自刀骗解药），填 null 就是空刀。多数决，只要票不集中今晚就可能空刀。"
         }
         // 「上一夜定了谁」狼队任何时候都要知道（那是他们自己定的），
         // 但**结果**不归他们管——刀口最后死没死，是天亮上帝播报的事。
@@ -151,16 +217,18 @@ internal object WolfKit : RoleKit {
             if (game.wolfVoteRound > 1 && game.wolfVotes.isNotEmpty()) {
                 lines += "上一轮你们没能统一意见：" +
                     game.wolfVotes.entries.sortedBy { it.key }
-                        .joinToString("、") { "${it.key} 号想刀 ${it.value} 号" } +
+                        .joinToString("、") { "${it.key} 号" + wishText(it.value) } +
                     "。这一轮必须定下来，再平票今晚就空刀。"
             }
-            // 只在夜里给：白天不需要决定刀谁，多这几行只会挤掉发言需要的篇幅。
-            lines += WolfKillBrief.of(game)
+            // 刀法分析（撞守、连刀、稳住人头刀外置位）是纯打法，自由式不给。
+            if (guided) lines += WolfKillBrief.of(game)
         } else {
             // 白天：这件事一个字都不许提，也别刻意回避他——
             // 刚刀完就绕着一个人走，那种回避本身就像狼。
             lines += "白天**一个字都不许提你们刀过谁**，也别刻意回避他。"
         }
+        // 屠边账是纯打法，自由式不给；它只喂公开可推的神/民存活数，不泄露具体身份。
+        if (guided) lines += WolfSideMath.of(game)
         return lines
     }
 
@@ -170,4 +238,8 @@ internal object WolfKit : RoleKit {
         } else {
             "以上信息不能在白天直接说出来。"
         }
+
+    /** 票型的说法。空刀是一票主张，不能写成「想刀 null 号」。 */
+    private fun wishText(target: Int?): String =
+        if (target == null) "主张空刀" else "想刀 $target 号"
 }

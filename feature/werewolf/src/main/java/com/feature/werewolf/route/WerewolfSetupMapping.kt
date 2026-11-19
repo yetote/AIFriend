@@ -87,18 +87,24 @@ internal fun buildSeats(
     }
 }
 
-internal fun WerewolfGameSummary.toRecord(): UIWerewolfRecord = UIWerewolfRecord(
-    id = id,
-    day = day,
-    phaseLabel = Phase.entries.firstOrNull { it.name == phase }?.displayName ?: phase,
-    finished = finished,
-    winnerLabel = winner?.let { name ->
-        Faction.entries.firstOrNull { it.name == name }?.let { "${it.displayName}胜" }
-    },
-    timeLabel = relativeTime(updatedAt),
-    playerCount = playerCount,
-    withHuman = withHuman,
-)
+internal fun WerewolfGameSummary.toRecord(): UIWerewolfRecord {
+    // 单位（夜 / 天）要照牌桌的口径给：停在「狼人商议」的局是第 N **夜**，
+    // 一律写「天」会把夜里说成白天
+    val resolved = Phase.entries.firstOrNull { it.name == phase }
+    return UIWerewolfRecord(
+        id = id,
+        day = day,
+        phaseLabel = resolved?.displayName ?: phase,
+        night = resolved?.isNightPhase() == true,
+        finished = finished,
+        winnerLabel = winner?.let { name ->
+            Faction.entries.firstOrNull { it.name == name }?.let { "${it.displayName}胜" }
+        },
+        timeLabel = relativeTime(updatedAt),
+        playerCount = playerCount,
+        withHuman = withHuman,
+    )
+}
 
 /** 相对时间。绝对时间在战绩列表里没有意义，玩家关心的是「上一局是不是刚才那一局」。 */
 internal fun relativeTime(at: Long): String {

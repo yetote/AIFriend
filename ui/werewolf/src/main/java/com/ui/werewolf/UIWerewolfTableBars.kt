@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -70,6 +71,8 @@ internal fun TableTopBar(
     showThinking: Boolean,
     /** 传 null 就不画「思考」开关（观战、复盘演出里没有意义）。 */
     onToggleThinking: (() -> Unit)?,
+    /** 传 null 就不画设置入口（复盘演出、已结束的局改了也没用）。 */
+    onOpenSettings: (() -> Unit)? = null,
     onToggleSpeak: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -125,6 +128,18 @@ internal fun TableTopBar(
                 color = if (showThinking) (if (night) Color(0xFFB9C8FF) else SelfBlue) else dimColor,
             )
             Spacer(Modifier.width(4.dp))
+        }
+        // 对局设置：思考时限、每个人的用时都在这里。
+        // 用齿轮而不是塞进「思考」那个胶囊——那个是「看不看别人的心里话」，
+        // 这个是「让它们想多久」，两件事放一个入口会互相误导。
+        if (onOpenSettings != null) {
+            IconButton(onClick = onOpenSettings) {
+                Icon(
+                    imageVector = Icons.Filled.Tune,
+                    contentDescription = "对局设置",
+                    tint = textColor,
+                )
+            }
         }
         IconButton(
             onClick = onToggleSpeak,

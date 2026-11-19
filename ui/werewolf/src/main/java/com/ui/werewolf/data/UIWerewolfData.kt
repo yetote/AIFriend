@@ -36,6 +36,14 @@ data class UIWerewolfRecord(
     val day: Int,
     /** 已经是给用户看的文案，例如「白天讨论」。 */
     val phaseLabel: String,
+    /**
+     * 存档停在夜里还是白天。
+     *
+     * 牌桌顶栏一直是「第 1 夜 / 第 1 天」分开报的，列表原来不分、一律写「第 1 天」，
+     * 于是停在「狼人商议」的局会读成「第一天 · 夜里」——同一个时刻在牌桌和列表里
+     * 有两个人叫法。单位记在这里，列表跟着牌桌走。
+     */
+    val night: Boolean = false,
     val finished: Boolean,
     /** 已结束时的胜负，未结束为 null。 */
     val winnerLabel: String?,
@@ -57,6 +65,16 @@ data class UIWerewolfRecord(
             if (playerCount > 0) add("$playerCount 人")
             add(if (withHuman) "你参与了" else "纯观战")
         }.joinToString(" · ")
+
+    /**
+     * 「第 3 天」「第 2 夜」。
+     *
+     * 夜和天**共用序号**：第 1 夜属于第 1 天，天亮之后还是第 1 天，第 2 夜才 +1
+     * （引擎在 `startNextNight` 里加）。所以单位要跟着 [night] 走，不能一律写「天」——
+     * 夜里写「第 1 天」会让人以为是白天，写「第 1 夜」又和天数对不上。
+     */
+    val dayLabel: String
+        get() = "第 $day ${if (night) "夜" else "天"}"
 }
 
 /** 玩法：自己坐一个座位，或纯观战。 */

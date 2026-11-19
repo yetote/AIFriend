@@ -2,6 +2,7 @@ package com.feature.werewolf.prompt.roles
 
 import com.feature.werewolf.game.WerewolfConfig
 import com.feature.werewolf.game.WerewolfGame
+import com.feature.werewolf.game.WerewolfPromptStyle
 import com.feature.werewolf.game.WerewolfRole
 
 /**
@@ -41,6 +42,16 @@ internal interface RoleKit {
     fun playbook(role: WerewolfRole, config: WerewolfConfig): List<String> = emptyList()
 
     fun notes(game: WerewolfGame, seat: Int): List<String> = emptyList()
+
+    /**
+     * 私有简报，按提示词风格取舍。
+     *
+     * 默认 STYLE 不参与——绝大多数身份的 `notes` 全是**事实**（验过谁、药剩几瓶），
+     * 自由式也照给。只有狼的 `notes` 里混了刀法分析和屠边账，需要覆盖这个重载
+     * 把打法剔掉、把队友名单这类事实留下。
+     */
+    fun notes(game: WerewolfGame, seat: Int, style: WerewolfPromptStyle): List<String> =
+        notes(game, seat)
 
     /** 「这些不能说出来」那句收尾；null 表示这个身份没有要藏的（平民）。 */
     fun conceal(role: WerewolfRole): String? = "以上信息不能在白天直接说出来。"

@@ -209,7 +209,7 @@ fun UIWerewolfHistoryScreen(
             title = { Text("放弃这一局？", fontSize = 16.sp, fontWeight = FontWeight.SemiBold) },
             text = {
                 Text(
-                    text = "第 ${record.day} 天 · ${record.phaseLabel}。" +
+                    text = "${record.dayLabel} · ${record.phaseLabel}。" +
                         "删掉之后只能重新开一局，这一局的记录看不回来了。",
                     fontSize = 13.sp,
                     lineHeight = 19.sp,
@@ -382,7 +382,7 @@ private fun ResumeCard(
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Text(
-                    text = "第 ${record.day} 天 · ${record.phaseLabel}",
+                    text = "${record.dayLabel} · ${record.phaseLabel}",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Color.White,
@@ -447,7 +447,7 @@ private fun FinishedRow(record: UIWerewolfRecord, onClick: () -> Unit) {
     ) {
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(
-                text = "第 ${record.day} 天 · ${record.winnerLabel ?: "已结束"}",
+                text = "${record.dayLabel} · ${record.winnerLabel ?: "已结束"}",
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Medium,
                 color = UIFriendBarTitleColor

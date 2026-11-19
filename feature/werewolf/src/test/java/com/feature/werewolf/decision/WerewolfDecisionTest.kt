@@ -45,11 +45,13 @@ class WerewolfDecisionTest {
     // ------------------------------------------------------------------
 
     @Test
-    fun `狼刀的候选排除自己和队友`() {
+    fun `狼刀可以指向自己、队友，也可以空刀`() {
         val spec = WerewolfDecisions.wolfKill(game(), seat = 1)
-        assertFalse("不能刀自己", spec.validate(SeatChoice(1)))
-        assertFalse("不能刀队友", spec.validate(SeatChoice(2)))
-        assertTrue(spec.validate(SeatChoice(6)))
+        // 自刀骗解药、刀队友做身份都是正经花板子，v12 起引擎也放开了
+        assertTrue("可以自刀", spec.validate(VoteChoice(1)))
+        assertTrue("可以刀队友", spec.validate(VoteChoice(2)))
+        assertTrue("可以刀好人", spec.validate(VoteChoice(6)))
+        assertTrue("可以空刀", spec.validate(VoteChoice(null)))
     }
 
     @Test
@@ -57,8 +59,8 @@ class WerewolfDecisionTest {
         val g = game()
         val withDead = g.copy(players = g.players.map { if (it.seat == 6) it.copy(alive = false) else it })
         val spec = WerewolfDecisions.wolfKill(withDead, seat = 1)
-        assertFalse("6 号已出局", spec.validate(SeatChoice(6)))
-        assertTrue(spec.validate(SeatChoice(7)))
+        assertFalse("6 号已出局", spec.validate(VoteChoice(6)))
+        assertTrue(spec.validate(VoteChoice(7)))
     }
 
     @Test
@@ -66,7 +68,8 @@ class WerewolfDecisionTest {
         val instruction = WerewolfDecisions.wolfKill(game(), seat = 1).instruction
         assertTrue(instruction.contains("3 号"))
         assertTrue(instruction.contains("8 号"))
-        assertFalse("队友不能出现在候选里", instruction.contains("只能从 1 号"))
+        assertTrue("自己也要在候选里", instruction.contains("1 号"))
+        assertTrue("要说清能空刀", instruction.contains("空刀"))
     }
 
     // ------------------------------------------------------------------
@@ -197,9 +200,11 @@ class WerewolfDecisionTest {
         repeat(50) { seed ->
             val g = game()
             val choice = WerewolfDecisions.fallbackWolfKill(g, seat = 1, random = Random(seed))
-            assertTrue("兜底刀了 ${choice.target} 号", choice.target in g.aliveSeats)
-            assertNotEquals("不能兜底刀自己", 1, choice.target)
-            assertFalse("不能兜底刀队友", g.isWerewolf(choice.target))
+            val target = choice.target
+            assertTrue("兜底刀了 ${target} 号", target != null && target in g.aliveSeats)
+            assertNotEquals("不能兜底刀自己", 1, target)
+            // 兜底刻意不选自刀、不选空刀：那是要全队配合的战术，模型失灵时用不得
+            assertFalse("不能兜底刀队友", target?.let { g.isWerewolf(it) } == true)
         }
     }
 
