@@ -141,6 +141,13 @@ private val FsBadge = 9.5.sp
  */
 private const val STREAM_SCROLL_CHARS = 60
 
+/**
+ * 思考气泡最高能顶到哪儿（距屏幕顶）。
+ *
+ * 再高就压到顶栏了——顶栏上有阶段进度和朗读开关，被盖住就点不到了。
+ */
+private val MIN_BUBBLE_TOP = 104.dp
+
 // ---------------------------------------------------------------------------
 // 配色
 //
@@ -879,27 +886,61 @@ private fun ThinkingBubble(
     night: Boolean,
 ) {
     if (reasoning.isBlank()) return
+    // 坐标还没算出来（座位刚布局完）或者算坏了，就先别画：
+    // 一个飘在半空的框比没有框更糟
+    if (!anchor.x.isFinite() || !anchor.y.isFinite()) return
     val density = LocalDensity.current
     val screenWidth = LocalConfiguration.current.screenWidthDp.dp
-    val lines = remember(reasoning) { reasoning.trim().lines().takeLast(4) }
+    val screenHeight = LocalConfiguration.current.screenHeightDp.dp
+    // 只留「像人话」的短行：有些厂商会把 system prompt 里的指令原样回显到思考里
+    // （"Must give judgment: who I suspect…" 这种），一整行几百个字符，
+    // 塞进气泡里既难看又挤地方。超过 60 个字的行基本都不是人话。
+    val lines = remember(reasoning) {
+        reasoning.trim()
+            .lines()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && it.length <= 60 }
+            .takeLast(3)
+    }
     var bubbleSize by remember { mutableStateOf(IntSize.Zero) }
 
-    val fill = if (night) Color(0xE6221D2E) else Color(0xF2FFFFFF)
+    // 半透明：气泡会盖住一小块牌桌，压暗一点才不至于挡住下面的发言
+    val fill = if (night) Color(0xD9221D2E) else Color(0xE6FFFFFF)
     val border = if (night) Color(0x59A894FF) else Color(0x336B4BD9)
     val textColor = if (night) Color(0xFFE6EAF3) else Color(0xFF3A4152)
 
     Box(
         modifier = Modifier
-            .fillMaxSize()
+            // **不能**用 fillMaxSize：offset 只挪位置、不改尺寸，
+            // 气泡会被撑成全屏大，把整个牌桌盖住。
+            // 尺寸由下面的 width 定死，offset 负责把它搬到头像上方。
             .offset {
-                val half = bubbleSize.width / 2f
-                val x = (anchor.x - half)
-                    .coerceIn(8f, (screenWidth.value - bubbleSize.width - 8f).coerceAtLeast(8f))
-                val y = (anchor.y - bubbleSize.height - with(density) { 26.dp.toPx() }).coerceAtLeast(0f)
+                // 往**屏幕内侧**展开：座位列在两边，气泡朝中间长，
+                // 盖住的是对话流的一小条，而不是同列的其他人的头像。
+                // 尖角始终在气泡靠头像的那一端（尖角自己按 anchor 定位）。
+                val onLeft = anchor.x < screenWidth.value / 2f
+                val edge = if (onLeft) {
+                    anchor.x - with(density) { 4.dp.toPx() }
+                } else {
+                    anchor.x + with(density) { 4.dp.toPx() } - bubbleSize.width
+                }
+                val x = edge.coerceIn(8f, (screenWidth.value - bubbleSize.width - 8f).coerceAtLeast(8f))
+                // 头顶放不下就放到身下：漫画对白框可以斜着、也可以在身侧，
+                // 但绝不能盖住说话人自己的脸，也不能盖住顶栏。
+                val gap = with(density) { 26.dp.toPx() }
+                val above = anchor.y - bubbleSize.height - gap
+                val minTop = with(density) { MIN_BUBBLE_TOP.toPx() }
+                val y = if (above >= minTop) {
+                    above
+                } else {
+                    (anchor.y + gap).coerceAtMost(
+                        with(density) { screenHeight.value.dp.toPx() } - bubbleSize.height - 8f
+                    )
+                }
                 IntOffset(x.toInt(), y.toInt())
             }
             .onSizeChanged { bubbleSize = it }
-            .width(146.dp)
+            .width(132.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(fill)
             .border(1.dp, border, RoundedCornerShape(12.dp))
@@ -918,7 +959,7 @@ private fun ThinkingBubble(
                 fontSize = 11.sp,
                 lineHeight = 15.sp,
                 color = textColor.copy(alpha = 0.85f),
-                maxLines = 4,
+                maxLines = 3,
                 overflow = TextOverflow.Ellipsis
             )
         }
@@ -941,7 +982,6 @@ private fun BubbleTail(
     val border = if (night) Color(0x59A894FF) else Color(0x336B4BD9)
     Canvas(
         modifier = modifier
-            .fillMaxSize()
             .offset {
                 val y = (anchor.y - with(density) { 26.dp.toPx() })
                 IntOffset(
@@ -957,7 +997,7 @@ private fun BubbleTail(
             lineTo(size.width / 2f, size.height)
             close()
         }
-        drawPath(path, color = if (night) Color(0xE6221D2E) else Color(0xF2FFFFFF))
+        drawPath(path, color = if (night) Color(0xD9221D2E) else Color(0xE6FFFFFF))
         drawPath(
             path,
             color = border,
