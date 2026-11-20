@@ -4,6 +4,7 @@ import com.feature.werewolf.engine.isNight
 import com.feature.werewolf.game.Phase
 import com.feature.werewolf.game.WerewolfConfig
 import com.feature.werewolf.game.WerewolfGame
+import com.feature.werewolf.game.WerewolfPromptStyle
 import com.feature.werewolf.game.WerewolfRole
 
 /**
@@ -26,7 +27,11 @@ internal object GuardKit : RoleKit {
     override fun publicStrategy(role: WerewolfRole): String =
         "守卫尤其不能说自己守过谁——那等于把守人路线和剩下的选择交给狼队，平安夜也不能当证据。"
 
-    override fun notes(game: WerewolfGame, seat: Int): List<String> {
+    override fun notes(game: WerewolfGame, seat: Int): List<String> =
+        notes(game, seat, WerewolfPromptStyle.GUIDED)
+
+    override fun notes(game: WerewolfGame, seat: Int, style: WerewolfPromptStyle): List<String> {
+        val guided = style == WerewolfPromptStyle.GUIDED
         // 白天不能读 lastGuardedSeat：`startNextNight()` 是**白天结束**时才把它换成
         // 上一夜的守人，所以白天这一刻它指向的是「前夜的前夜」。
         // 实测后果很严重——守卫在白天照着这个字段发言，报的守人对象整整差一夜
@@ -44,8 +49,13 @@ internal object GuardKit : RoleKit {
             lines += "现在轮到你守护。你不知道今晚狼人会刀谁，只能凭白天的发言去猜。"
         }
         lines += "你守的人当夜不会被刀死，但你自己也可能被刀——守自己同样是合法选择。"
-        lines += "你救下人的时候不会被告知，平安夜也可能只是狼人空刀，不要在白天当成证据说出来。" +
-            "也不要在白天报出你守过谁：那等于把守人路线和剩下的选择一起交给狼队。"
+        lines += "你救下人的时候不会被告知，平安夜也可能只是狼人空刀。"
+        // 「平安夜别当证据、守过谁别报出来」是藏身打法：报不报守人是守卫自己的
+        // 战术自由，自由模式里由他决定；引导式才提醒泄露风险。
+        if (guided) {
+            lines += "平安夜不要在白天当成证据说出来，也不要报出你守过谁：" +
+                "那等于把守人路线和剩下的选择一起交给狼队。"
+        }
         return lines
     }
 

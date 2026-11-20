@@ -124,7 +124,9 @@ internal object WolfKit : RoleKit {
         val king = game.playerAt(seat).role == WerewolfRole.WEREWOLF_KING
         if (king) {
             lines += "你是狼王：夜里和普通狼一样行动，白天被投票放逐时可以开枪带走一个人。" +
-                "那一枪即使在队友已经全灭之后也有效，别轻易放弃。"
+                "那一枪即使在队友已经全灭之后也有效。"
+            // 「别轻易放弃」是怂恿语气，自由式不给；开不开枪狼王自己定。
+            if (guided) lines += "真到了那一枪的局面，别轻易放弃。"
         }
         val mates = game.wolves().filter { it.seat != seat }
         lines += if (mates.isEmpty()) {

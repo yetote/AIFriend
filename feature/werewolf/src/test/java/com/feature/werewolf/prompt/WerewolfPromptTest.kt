@@ -439,6 +439,60 @@ class WerewolfPromptTest {
     }
 
     @Test
+    fun `自由模式的守卫熊狼王简报不带藏身和怂恿诱导`() {
+        val day = gameWithGuard().copy(phase = Phase.DAY_DISCUSSION)
+
+        // 守卫：报不报守人是战术自由，自由模式不劝
+        val freeGuard = WerewolfPrompt.systemPrompt(day, seat = 5, style = WerewolfPromptStyle.FREE)
+        assertFalse("自由式守卫不劝藏守人", freeGuard.contains("报出你守过谁"))
+        assertTrue("守卫机制还在", freeGuard.contains("守自己同样是合法选择"))
+        assertTrue("引导式守卫提醒还在", WerewolfPrompt.systemPrompt(day, seat = 5).contains("报出你守过谁"))
+
+        // 熊：跳不跳身份是自由度
+        val bearGame = WerewolfGame.withRoles(
+            config = WerewolfConfig(
+                composition = mapOf(
+                    WerewolfRole.WEREWOLF to 2,
+                    WerewolfRole.BEAR to 1,
+                    WerewolfRole.VILLAGER to 2,
+                ),
+            ),
+            roster = roster(5),
+            roles = listOf(
+                WerewolfRole.WEREWOLF,
+                WerewolfRole.WEREWOLF,
+                WerewolfRole.BEAR,
+                WerewolfRole.VILLAGER,
+                WerewolfRole.VILLAGER,
+            ),
+        ).copy(phase = Phase.DAY_DISCUSSION)
+        val freeBear = WerewolfPrompt.systemPrompt(bearGame, seat = 3, style = WerewolfPromptStyle.FREE)
+        assertFalse("自由式熊不劝藏身份", freeBear.contains("不用急着自报身份"))
+        assertTrue("引导式熊提醒还在", WerewolfPrompt.systemPrompt(bearGame, seat = 3).contains("不用急着自报身份"))
+
+        // 狼王：「别轻易放弃」是怂恿语气
+        val kingGame = WerewolfGame.withRoles(
+            config = WerewolfConfig(
+                composition = mapOf(
+                    WerewolfRole.WEREWOLF_KING to 1,
+                    WerewolfRole.VILLAGER to 3,
+                ),
+            ),
+            roster = roster(4),
+            roles = listOf(
+                WerewolfRole.WEREWOLF_KING,
+                WerewolfRole.VILLAGER,
+                WerewolfRole.VILLAGER,
+                WerewolfRole.VILLAGER,
+            ),
+        ).copy(phase = Phase.DAY_DISCUSSION)
+        val freeKing = WerewolfPrompt.systemPrompt(kingGame, seat = 1, style = WerewolfPromptStyle.FREE)
+        assertFalse("自由式狼王不怂恿", freeKing.contains("别轻易放弃"))
+        assertTrue("狼王枪的机制还在", freeKing.contains("队友已经全灭之后也有效"))
+        assertTrue("引导式狼王怂恿还在", WerewolfPrompt.systemPrompt(kingGame, seat = 1).contains("别轻易放弃"))
+    }
+
+    @Test
     fun `查验记录只给预言家`() {
         val game = standardGame().copy(
             seerChecks = listOf(
