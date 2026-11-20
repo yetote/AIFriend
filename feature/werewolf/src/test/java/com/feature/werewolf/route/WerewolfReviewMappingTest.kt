@@ -238,6 +238,45 @@ class WerewolfReviewMappingTest {
     }
 
     @Test
+    fun `狼队平票重谈后夜间摘要取的是最终定刀`() {
+        // 第 2 轮定刀和第 1 轮落在同一个 NIGHT_WOLF 阶段里。摘要要是取了
+        // 第一条，就会像真实复盘那样写着「定刀 12 号」、天亮死的却是 7 号。
+        val table = WerewolfTable(
+            game = playOut(WerewolfGame.deal(WerewolfConfig(), roster(8), Random(9)), Random(23)),
+            transcript = listOf(
+                WerewolfMessage(
+                    day = 1, phase = Phase.NIGHT_WOLF_CHAT, seat = 3, kind = MessageKind.WOLF_CHAT,
+                    text = "今晚刀 12 号吧，12 号最像神。",
+                    audience = setOf(3, 4),
+                ),
+                // 第一轮定刀：2 比 2 平票，废案也照实落了一条记录
+                WerewolfMessage(
+                    day = 1, phase = Phase.NIGHT_WOLF, seat = 3, kind = MessageKind.WOLF_CHAT,
+                    text = "我 定刀 12 号。先听队友的，我没有特别的倾向。",
+                    audience = setOf(3, 4),
+                ),
+                // 平票回商议，重谈后一致
+                WerewolfMessage(
+                    day = 1, phase = Phase.NIGHT_WOLF_CHAT, seat = 3, kind = MessageKind.WOLF_CHAT,
+                    text = "12 号留着咬警长比刀掉值钱，换 7 号。",
+                    audience = setOf(3, 4),
+                ),
+                WerewolfMessage(
+                    day = 1, phase = Phase.NIGHT_WOLF, seat = 3, kind = MessageKind.WOLF_CHAT,
+                    text = "我们 定刀 7 号。7 号是对跳的那张，验人线必须断。",
+                    audience = setOf(3, 4),
+                ),
+            ),
+        )
+        val review = WerewolfUiState(table = table, finished = true)
+            .toReview(humanSeat = null, avatars = emptyMap())
+
+        val detail = review!!.nightDetails.single()
+        assertTrue("狼队定刀：${detail.wolfPlan}", detail.wolfPlan!!.contains("定刀 7 号"))
+        assertFalse("废案不能当最终决定：${detail.wolfPlan}", detail.wolfPlan!!.contains("12 号"))
+    }
+
+    @Test
     fun `思考内容按权限给，参与局默认不给`() {
         // 参与局看到别人的思考等于读心。默认不给，只有观战、结束，
         // 或者用户自己在设置里开了开关才有。

@@ -236,10 +236,22 @@ internal fun WerewolfUiState.toReview(
                 ?.text
                 ?.let(::headSentence)
 
+            // 狼队定刀可能平票重谈：同一夜里 NIGHT_WOLF 会落两轮记录，
+            // 第一轮那句是没定下来的废案（界面上推过一次「谁指了谁」），
+            // 摘要必须取**最后一轮**——真正落刀的那次。取第一条就会像这局第 2 夜
+            // 那样，摘要写「定刀 12 号」、天亮死的却是 7 号。
+            val wolfPlan = messages
+                .lastOrNull {
+                    it.phase == Phase.NIGHT_WOLF &&
+                        (it.text.contains("定刀") || it.text.contains("空刀"))
+                }
+                ?.text
+                ?.let(::headSentence)
+
             val seerCheck = game.seerChecks.firstOrNull { it.day == day }
             UIWerewolfNightDetail(
                 day = day,
-                wolfPlan = firstOf(Phase.NIGHT_WOLF),
+                wolfPlan = wolfPlan,
                 guardPlan = firstOf(Phase.NIGHT_GUARD),
                 seerPlan = firstOf(Phase.NIGHT_SEER)?.let { head ->
                     if (seerCheck == null) {
