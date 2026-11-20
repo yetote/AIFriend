@@ -1230,18 +1230,23 @@ class WerewolfPromptTest {
         assertFalse("自由式不强制预言家报验人", WerewolfPrompt.task(checks, seat = 3, style = WerewolfPromptStyle.FREE).contains("先报验人"))
         assertTrue("引导式照旧教先报验人", WerewolfPrompt.task(checks, seat = 3).contains("先报验人"))
 
-        // 白天讨论：论证结构与自爆教学不给，格式与反复读保留
+        // 白天讨论：论证结构不给；自爆只留纯机制（怎么写才受理、代价），不给时机教学
         val freeWolf = WerewolfPrompt.task(day, seat = 1, style = WerewolfPromptStyle.FREE)
         assertFalse("自由式不讲论证结构", freeWolf.contains("具体依据"))
-        assertFalse("自由式不自爆教学", freeWolf.contains("自爆"))
+        assertFalse("自由式不自爆时机教学", freeWolf.contains("值得的情况只有一种"))
+        assertFalse("自由式不拿「不许爆」代打", freeWolf.contains("都不许爆"))
+        assertTrue("自由式保留自爆机制说明", freeWolf.contains("【自爆】救 X 号"))
+        assertTrue("引导式自爆教学还在", WerewolfPrompt.task(day, seat = 1).contains("值得的情况只有一种"))
         assertTrue("格式要求保留", freeWolf.contains("不要写「某某说：」"))
         assertTrue("反复读提醒保留", freeWolf.contains("复读旧话"))
 
-        // 竞选发言：演说教学与竞选自爆教学不给
+        // 竞选发言：演说教学不给；自爆只留纯机制
         val speech = standardGame().copy(phase = Phase.DAY_SHERIFF_SPEECH)
         val freeSpeech = WerewolfPrompt.task(speech, seat = 6, style = WerewolfPromptStyle.FREE)
         assertFalse("自由式不教竞选演说", freeSpeech.contains("越像真预言家"))
-        assertFalse("自由式不给竞选自爆教学", WerewolfPrompt.task(speech, seat = 1, style = WerewolfPromptStyle.FREE).contains("自爆"))
+        val freeWolfSpeech = WerewolfPrompt.task(speech, seat = 1, style = WerewolfPromptStyle.FREE)
+        assertFalse("自由式不自爆时机教学", freeWolfSpeech.contains("另一种打法"))
+        assertTrue("自由式保留竞选自爆机制", freeWolfSpeech.contains("【自爆】"))
         assertTrue("竞选格式保留", freeSpeech.contains("不要念座位号清单"))
         assertTrue("引导式竞选教学照旧", WerewolfPrompt.task(speech, seat = 6).contains("越像真预言家"))
 
