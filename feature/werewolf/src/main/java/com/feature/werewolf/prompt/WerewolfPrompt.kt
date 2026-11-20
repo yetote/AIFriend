@@ -540,7 +540,15 @@ object WerewolfPrompt {
         return buildString {
             append("【只有你知道的事】\n")
             lines.forEach { append("· ").append(it).append("\n") }
-            kit.conceal(player.role)?.let { append(it) }
+            // 「藏身份」收尾只在引导式给。它是**打法倾向**不是游戏规则：
+            // 猎人「身份不要主动说出来」、白痴「不要主动认领翻牌」这类话，
+            // 会把模型从头到尾按死在隐藏路线上——跳不跳、什么时候跳，
+            // 本来就是这张牌最核心的自由度。自由式把这个决定还给模型。
+            // 狼的保密红线不靠这句：notes 里那条「狼队内部的事一律不能出现在白天」
+            // 才是硬规则（说出来就自曝），自由式照给。
+            if (style == WerewolfPromptStyle.GUIDED) {
+                kit.conceal(player.role)?.let { append(it) }
+            }
         }
     }
 

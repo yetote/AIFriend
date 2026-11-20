@@ -1180,9 +1180,8 @@ class WerewolfPromptTest {
         assertTrue("本轮任务还在", good.contains("【本轮任务】"))
         assertTrue("私有信息还在", wolf.contains("【只有你知道的事】"))
         assertTrue("狼队友还在", wolf.contains("你的狼队友"))
-        // 保密底线：自由不等于可以在白天报身份
+        // 保密底线（狼队内部的事不出白天）是硬规则，自由式照给
         assertTrue("保密底线还在", wolf.contains("不许出现「队友」"))
-        assertTrue("狼的保密收尾还在", wolf.contains("不能在白天直接说出来"))
 
         // 自由式的板子只剩一行：人数 + 配比 + 有无警长
         assertTrue("配比还在", good.contains("8 人局：2 狼人、预言家、女巫、猎人、3 平民；没有警长。"))
@@ -1190,6 +1189,31 @@ class WerewolfPromptTest {
         assertFalse("自由式不给规则说明", good.contains("【胜负规则】"))
         assertFalse("自由式不给警长竞选流程", good.contains("竞选"))
         assertFalse("自由式不给遗言规则", good.contains("【遗言】"))
+    }
+
+    @Test
+    fun `藏身份收尾只在引导式给`() {
+        // 「不要暴露身份」是打法倾向不是游戏规则：它会把模型从头到尾
+        // 按死在隐藏路线上，跳身份这个最核心的自由度就没了。
+        // 自由式把这个决定还给模型；引导式照旧教它藏。
+        val game = standardGame()
+        val freeHunter = WerewolfPrompt.systemPrompt(game, seat = 5, style = WerewolfPromptStyle.FREE)
+        val guidedHunter = WerewolfPrompt.systemPrompt(game, seat = 5, style = WerewolfPromptStyle.GUIDED)
+        val freeWolf = WerewolfPrompt.systemPrompt(game, seat = 1, style = WerewolfPromptStyle.FREE)
+        val guidedWolf = WerewolfPrompt.systemPrompt(game, seat = 1, style = WerewolfPromptStyle.GUIDED)
+        val freeVillager = WerewolfPrompt.systemPrompt(game, seat = 6, style = WerewolfPromptStyle.FREE)
+
+        assertFalse("自由式猎人不受藏身份约束", freeHunter.contains("不要主动说出来"))
+        assertTrue("引导式猎人照旧藏", guidedHunter.contains("不要主动说出来"))
+        assertFalse("自由式狼也不受收尾约束", freeWolf.contains("不能在白天直接说出来"))
+        assertTrue("引导式狼照旧有收尾", guidedWolf.contains("不能在白天直接说出来"))
+        // 硬规则在 notes 里，自由式照样给：狼队内部的事不能出现在白天
+        assertTrue("自由式狼保密底线还在", freeWolf.contains("不许出现「队友」"))
+        // 平民本来就没有要藏的（conceal 为 null），两种风格都不出现
+        assertFalse("平民没有收尾", freeVillager.contains("不能在白天直接说出来"))
+        // 自由式里没有「公共打法」这一层，狼的提示词不能再引用它
+        assertFalse("自由式不引用公共打法", freeWolf.contains("公共打法里说"))
+        assertTrue("引导式狼保留引用澄清", guidedWolf.contains("公共打法里说"))
     }
 
     @Test
