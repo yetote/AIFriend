@@ -3,6 +3,7 @@ package com.feature.werewolf.engine
 import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfPlayer
 import com.feature.werewolf.game.WerewolfPromptStyle
+import com.feature.werewolf.game.WerewolfSpeechLength
 import com.feature.werewolf.game.WerewolfTurnLimit
 import com.feature.werewolf.store.WerewolfGameStore
 import kotlinx.coroutines.CancellationException
@@ -89,6 +90,10 @@ class WerewolfController(
      */
     private var promptStyle: WerewolfPromptStyle = WerewolfPromptStyle.GUIDED,
     /**
+     * 这一局发言的目标长度。和 promptStyle 同样在开局前后可改、续档读存档里的值。
+     */
+    private var speechLength: WerewolfSpeechLength = WerewolfSpeechLength.STANDARD,
+    /**
      * 这一局的节奏：时限档位、被关掉深度思考的座位、每个座位的时间账本。
      *
      * 放在控制器外面传进来，是因为它要**活过一整局**：用户在牌局中途打开设置改时限、
@@ -123,6 +128,11 @@ class WerewolfController(
         promptStyle = style
     }
 
+    /** 换发言长度档。必须在 [play] 之前调：导演在 play 里创建，拿的是当时的值。 */
+    fun applySpeechLength(length: WerewolfSpeechLength) {
+        speechLength = length
+    }
+
     /** 开一局新的，立刻落档——先存再打，中途被杀进程也不会丢。 */
     suspend fun start(id: String, table: WerewolfTable) {
         gameId = id
@@ -133,7 +143,10 @@ class WerewolfController(
             finished = table.game.isFinished,
             customPrompt = customPrompt,
         )
-        store.save(id, table, createdAt, customPrompt, pacing.currentLimit, pacing.thinkingOff.value)
+        store.save(
+            id, table, createdAt, customPrompt,
+            pacing.currentLimit, pacing.thinkingOff.value, speechLength,
+        )
     }
 
     /**
@@ -166,7 +179,11 @@ class WerewolfController(
         createdAt = store.summaries().firstOrNull { it.id == id }?.createdAt ?: clock()
         // 档位与本局被关掉思考的座位跟着存档回来：玩家为这一局选的是「宽松」，
         // 续档之后不该悄悄回到标准的 1 分钟，更不该把已经关掉的那个座位又打开
-        store.pacing(id)?.let { pacing.restore(it.limit, it.thinkingOff) }
+        store.pacing(id)?.let {
+            pacing.restore(it.limit, it.thinkingOff)
+            // 发言长度跟着存档回来：为这一局选的「简短」，续档不该悄悄回到标准
+            speechLength = it.speechLength
+        }
         // customPrompt 用**调用方刚设的当前值**（续档不用存档里那份，见字段注释）
         _state.value = WerewolfUiState(
             gameId = id,
@@ -204,6 +221,7 @@ class WerewolfController(
             onLive = { live -> _state.update { it.copy(live = live) } },
             customPrompt = customPrompt,
             promptStyle = promptStyle,
+            speechLength = speechLength,
             pacing = pacing,
             onTimedOut = { timeout -> _state.update { it.copy(lastTimeout = timeout) } },
         )
@@ -214,7 +232,7 @@ class WerewolfController(
                 _state.update { it.copy(table = snapshot) }
                 store.save(
                     id, snapshot, createdAt, customPrompt,
-                    pacing.currentLimit, pacing.thinkingOff.value,
+                    pacing.currentLimit, pacing.thinkingOff.value, speechLength,
                 )
                 // 落档之后停一下：这一阶段产生的话要先念给人听完，再往下走。
                 // 放在落档之后而不是之前——等的时候进程被杀，存档已经是最新的。
@@ -225,7 +243,7 @@ class WerewolfController(
             }
             store.save(
                 id, result, createdAt, customPrompt,
-                pacing.currentLimit, pacing.thinkingOff.value,
+                pacing.currentLimit, pacing.thinkingOff.value, speechLength,
             )
         } catch (cancelled: CancellationException) {
             // 用户退出页面：局面已经按阶段存过了，这里只需要收起 running。
@@ -257,7 +275,7 @@ class WerewolfController(
         if (table.game.isFinished) return
         store.save(
             id, table, createdAt, customPrompt,
-            pacing.currentLimit, pacing.thinkingOff.value,
+            pacing.currentLimit, pacing.thinkingOff.value, speechLength,
         )
     }
 

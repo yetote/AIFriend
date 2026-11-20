@@ -24,6 +24,19 @@ enum class UIWerewolfTurnLimit(val label: String, val hint: String) {
 }
 
 /**
+ * 发言长度的三个档位。
+ *
+ * 和 [UIWerewolfTurnLimit] 一样单独定义一份（ui:werewolf 不依赖 feature:werewolf），
+ * 名称与引擎的 `WerewolfSpeechLength` 一一对应，route 按 name 映射。
+ */
+enum class UIWerewolfSpeechLength(val label: String, val hint: String) {
+    SHORT("简短", "约 80 字。一两句话讲清判断，牌局节奏最快"),
+    STANDARD("标准", "约 200 字。能展开一点推理，又不拖节奏"),
+    LONG("详细", "约 400 字。留给爱长篇论证的强模型，整局会更久"),
+    ;
+}
+
+/**
  * 提示词风格。值和引擎里的 `WerewolfPromptStyle` **同名同序**，route 按 name 映射。
  *
  * 这里单独定义一份的理由和 [UIWerewolfTurnLimit] 一样：ui:werewolf 不依赖 feature:werewolf。

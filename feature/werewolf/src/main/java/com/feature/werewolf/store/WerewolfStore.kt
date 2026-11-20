@@ -16,6 +16,7 @@ import com.feature.werewolf.engine.WerewolfTable
 import com.feature.werewolf.engine.persistence.PacingSnapshot
 import com.feature.werewolf.engine.persistence.WerewolfSnapshot
 import com.feature.werewolf.game.SELF_PLAYER_ID
+import com.feature.werewolf.game.WerewolfSpeechLength
 import com.feature.werewolf.game.WerewolfTurnLimit
 
 /**
@@ -102,6 +103,7 @@ interface WerewolfGameStore {
         customPrompt: String? = null,
         turnLimit: WerewolfTurnLimit = WerewolfTurnLimit.STANDARD,
         thinkingOff: Set<Int> = emptySet(),
+        speechLength: WerewolfSpeechLength = WerewolfSpeechLength.STANDARD,
     )
 
     suspend fun load(id: String): WerewolfTable?
@@ -192,6 +194,7 @@ class WerewolfStore(
         customPrompt: String?,
         turnLimit: WerewolfTurnLimit,
         thinkingOff: Set<Int>,
+        speechLength: WerewolfSpeechLength,
     ) {
         dao.upsert(
             WerewolfGameEntity(
@@ -204,7 +207,7 @@ class WerewolfStore(
                 winner = table.game.winner?.name,
                 playerCount = table.game.players.size,
                 withHuman = table.game.players.any { it.id == SELF_PLAYER_ID },
-                snapshot = WerewolfSnapshot.encode(table, customPrompt, turnLimit, thinkingOff),
+                snapshot = WerewolfSnapshot.encode(table, customPrompt, turnLimit, thinkingOff, speechLength),
             )
         )
     }

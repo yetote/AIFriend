@@ -17,6 +17,7 @@ import com.feature.werewolf.game.WerewolfConfig
 import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfPlayer
 import com.feature.werewolf.game.WerewolfRole
+import com.feature.werewolf.game.WerewolfSpeechLength
 import com.feature.werewolf.game.WinRule
 import com.feature.werewolf.game.WerewolfTurnLimit
 import com.feature.werewolf.game.WitchStock
@@ -55,8 +56,11 @@ object WerewolfSnapshot {
      * v15：多出 `spokenPhaseKey` / `spokenSeats`（逐座位发言阶段的续档进度）。
      * 带默认值的新增字段，旧档读出来是空进度——那种存档本来就是整阶段落档的，
      * 续档最多重说当前阶段一遍，不会有语义错乱。
+     *
+     * v16：多出 `speechLength`（这一局发言的目标长度档位）。
+     * 带默认值的新增字段，旧档读出来按标准档处理，语义不变。
      */
-    const val VERSION = 15
+    const val VERSION = 16
 
     private val json = Json {
         ignoreUnknownKeys = true   // 旧档多出来的字段不该让新版本读不出来
@@ -68,7 +72,10 @@ object WerewolfSnapshot {
         customPrompt: String? = null,
         turnLimit: WerewolfTurnLimit = WerewolfTurnLimit.STANDARD,
         thinkingOff: Set<Int> = emptySet(),
-    ): String = json.encodeToString(table.toSnapshot(customPrompt, turnLimit, thinkingOff))
+        speechLength: WerewolfSpeechLength = WerewolfSpeechLength.STANDARD,
+    ): String = json.encodeToString(
+        table.toSnapshot(customPrompt, turnLimit, thinkingOff, speechLength),
+    )
 
     /**
      * 只取「这一局用的玩家设定」，不还原局面。
@@ -95,6 +102,7 @@ object WerewolfSnapshot {
         return PacingSnapshot(
             limit = WerewolfTurnLimit.of(dto.turnLimit),
             thinkingOff = dto.thinkingOff.toSet(),
+            speechLength = WerewolfSpeechLength.of(dto.speechLength),
         )
     }
 
@@ -143,6 +151,8 @@ private const val SNAPSHOT_VERSION = WerewolfSnapshot.VERSION
 data class PacingSnapshot(
     val limit: WerewolfTurnLimit,
     val thinkingOff: Set<Int>,
+    /** v16 起：发言长度档位。旧档按标准处理。 */
+    val speechLength: WerewolfSpeechLength = WerewolfSpeechLength.STANDARD,
 )
 
 @Serializable
@@ -171,6 +181,8 @@ internal data class TableSnapshot(
      * 那个慢模型会在下一阶段原样再超时一次，用户看到的是一局永远打不完的牌。
      */
     val thinkingOff: List<Int> = emptyList(),
+    /** v16 起：这一局发言的目标长度档位（名字）。旧档没有这一项，按标准处理。 */
+    val speechLength: String = WerewolfSpeechLength.STANDARD.name,
     val players: List<PlayerSnapshot>,
     val day: Int,
     val phase: String,
@@ -340,12 +352,14 @@ internal fun WerewolfTable.toSnapshot(
     customPrompt: String? = null,
     turnLimit: WerewolfTurnLimit = WerewolfTurnLimit.STANDARD,
     thinkingOff: Set<Int> = emptySet(),
+    speechLength: WerewolfSpeechLength = WerewolfSpeechLength.STANDARD,
 ): TableSnapshot {
     val game = this.game
     return TableSnapshot(
         customPrompt = customPrompt?.takeIf { it.isNotBlank() },
         turnLimit = turnLimit.name,
         thinkingOff = thinkingOff.sorted(),
+        speechLength = speechLength.name,
         config = ConfigSnapshot(
             composition = game.config.composition.entries.associate { it.key.name to it.value },
             winRule = game.config.winRule.name,

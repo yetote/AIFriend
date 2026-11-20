@@ -18,6 +18,7 @@ import com.feature.werewolf.game.WerewolfConfig
 import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfPlayer
 import com.feature.werewolf.game.WerewolfRole
+import com.feature.werewolf.game.WerewolfSpeechLength
 import com.feature.werewolf.game.WerewolfTurnLimit
 import com.feature.werewolf.game.WitchStock
 import org.junit.Assert.assertEquals
@@ -344,6 +345,29 @@ class WerewolfSnapshotTest {
             .replace("\"turnLimit\":\"STANDARD\"", "\"turnLimit\":\"TURBO\"")
         assertEquals(WerewolfTurnLimit.STANDARD, WerewolfSnapshot.decodePacing(text)?.limit)
         assertNotNull(WerewolfSnapshot.decode(text))
+    }
+
+    @Test
+    fun `发言长度跟着存档走`() {
+        val text = WerewolfSnapshot.encode(
+            table = richTable(),
+            speechLength = WerewolfSpeechLength.SHORT,
+        )
+
+        assertEquals(WerewolfSpeechLength.SHORT, WerewolfSnapshot.decodePacing(text)?.speechLength)
+        // 档位同样是请求参数、不是局面：读回来的牌桌不该因为它有任何差别
+        assertEquals(richTable(), WerewolfSnapshot.decode(text))
+    }
+
+    @Test
+    fun `旧档没有发言长度时按标准处理`() {
+        val text = WerewolfSnapshot.encode(richTable())
+            .replace("\"speechLength\":\"STANDARD\",", "")
+            .replaceFirst("\"version\":${WerewolfSnapshot.VERSION}", "\"version\":15")
+
+        assertTrue("替换没生效，序列化格式变了：$text", !text.contains("\"speechLength\""))
+        assertEquals(WerewolfSpeechLength.STANDARD, WerewolfSnapshot.decodePacing(text)?.speechLength)
+        assertNotNull("局面照常能续", WerewolfSnapshot.decode(text))
     }
 
     @Test

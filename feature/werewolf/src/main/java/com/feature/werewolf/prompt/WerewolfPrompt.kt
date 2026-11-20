@@ -6,6 +6,7 @@ import com.feature.werewolf.game.WerewolfConfig
 import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfRole
 import com.feature.werewolf.game.WerewolfPromptStyle
+import com.feature.werewolf.game.WerewolfSpeechLength
 import com.feature.werewolf.game.WerewolfTurnLimit
 import com.feature.werewolf.game.formatVotes
 import com.feature.werewolf.prompt.boards.Boards
@@ -80,6 +81,14 @@ object WerewolfPrompt {
          * 保密底线在其中尤其重要——自由不等于允许在白天报验人或说出队友。
          */
         style: WerewolfPromptStyle = WerewolfPromptStyle.GUIDED,
+        /**
+         * 这一局发言的目标长度（见 [WerewolfSpeechLength]）。默认 null＝不注入，
+         * 让不需要的场合（测试、复盘）保持原样。
+         *
+         * 和时限一样是环境约束：不说的话模型按聊天习惯写小作文，
+         * 被引擎裁掉的后半段里可能藏着关键判断。
+         */
+        speechLength: WerewolfSpeechLength? = null,
     ): String {
         val player = game.playerAt(seat)
         return buildString {
@@ -119,6 +128,11 @@ object WerewolfPrompt {
             if (limit != null && limit != WerewolfTurnLimit.UNLIMITED) {
                 append("\n\n")
                 append(timeBudgetBrief(limit))
+            }
+            // 发言长度同样两种风格都给：它不是打法，是这一局「说多少」的约束。
+            if (speechLength != null) {
+                append("\n\n")
+                append(speechLengthBrief(speechLength))
             }
             // 用户自定义放最后：它是「玩家对这一局玩法的要求」，
             // 位置太靠前会被后面固定的几段稀释掉，模型照着内置打法走就白改了。
@@ -528,5 +542,18 @@ object WerewolfPrompt {
         append("所以**先把结论说出来**：验人结果、查杀、你站边谁、要投谁、目标座位号放最前面，")
         append("理由和铺垫放在后面——哪怕说到一半被打断，关键判断也已经说出口了。")
         append("别把所有可能性在心里过一遍再开口：想太久，说出来的往往不是更好的答案。")
+    }
+
+    /**
+     * 发言长度的一段话。null 由调用方跳过，这里只处理确定的档位。
+     *
+     * 不只说上限：还告诉模型「为什么」——说清判断就收。只给一个数字，
+     * 模型会把它当成硬指标，为凑字数注水或者被掐时丢结论。
+     */
+    internal fun speechLengthBrief(length: WerewolfSpeechLength): String = buildString {
+        append("【发言长度】这一局你每次公开发言控制在约 ").append(length.chars)
+            .append(" 字以内（当前档：").append(length.label).append("）。")
+        append("说清你的判断和理由就收，不用凑字数，也别写成小作文——")
+        append("超出的部分会被直接截断，压在后面的结论会一起丢掉。")
     }
 }

@@ -14,6 +14,7 @@ import com.feature.werewolf.game.Phase
 import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfPromptStyle
 import com.feature.werewolf.game.WerewolfRole
+import com.feature.werewolf.game.WerewolfSpeechLength
 import com.feature.werewolf.prompt.WerewolfPrompt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
@@ -92,6 +93,13 @@ class WerewolfDirector(
      * 和 customPrompt 一样走构造参数：导演层不该知道设置存在，谁在开局时读到传进来是外面的事。
      */
     private val promptStyle: WerewolfPromptStyle = WerewolfPromptStyle.GUIDED,
+    /**
+     * 这一局发言的目标长度（见 [WerewolfSpeechLength]）。
+     *
+     * 管两处：模型说收不住时按这个数在句末裁；提示词里也告诉模型约多少字，
+     * 让它自己收着写。和 promptStyle 同样走构造参数：导演层不该知道设置存在。
+     */
+    private val speechLength: WerewolfSpeechLength = WerewolfSpeechLength.STANDARD,
     /**
      * 两次 [onLive] 之间的最小间隔。
      *
@@ -960,7 +968,8 @@ class WerewolfDirector(
         val game = table.game
         val messages = listOf(ChatMessage.user(context(table, seat, task)))
         val system = WerewolfPrompt.systemPrompt(
-            game, seat, agent.persona, customPrompt, limit = pacing.currentLimit, style = promptStyle,
+            game, seat, agent.persona, customPrompt,
+            limit = pacing.currentLimit, style = promptStyle, speechLength = speechLength,
         )
         val thinking = pacing.thinkingAllowed(seat, agent.thinkingEnabled)
         val content = StringBuilder()
@@ -1162,7 +1171,7 @@ class WerewolfDirector(
                     fallback = fallback,
                     systemPrompt = WerewolfPrompt.systemPrompt(
                         table.game, seat, agent.persona, customPrompt,
-                        limit = pacing.currentLimit, style = promptStyle,
+                        limit = pacing.currentLimit, style = promptStyle, speechLength = speechLength,
                     ),
                     enableThinking = thinking,
                     onReasoning = pushReasoning,
@@ -1386,7 +1395,7 @@ class WerewolfDirector(
      *
      * 按字数裁而不是按条数：一句 200 字的发言和一行票型在上下文里差了十倍，
      * 按条数算对谁都不公平。压完票之后一天的正文通常在一千字上下，
-     * [MAX_CONTEXT_CHARS] 这条线是留给「模型今天话特别多」那种情况的。
+     * [WerewolfSpeechLength.contextBudget] 这条线随发言档位缩放，留给「模型今天话特别多」的情况。
      *
      * 最后 [MIN_CONTEXT_MESSAGES] 行无条件保留：宁可这一次略超预算，
      * 也不能把「刚说完的话」裁掉——模型会立刻开始自相矛盾。
@@ -1394,9 +1403,10 @@ class WerewolfDirector(
     private fun recentlySaid(lines: List<String>): List<String> {
         val kept = ArrayDeque<String>()
         var chars = 0
+        val budget = speechLength.contextBudget
         for (line in lines.asReversed()) {
             val size = line.length + 1
-            if (kept.size >= MIN_CONTEXT_MESSAGES && chars + size > MAX_CONTEXT_CHARS) break
+            if (kept.size >= MIN_CONTEXT_MESSAGES && chars + size > budget) break
             kept.addFirst(line)
             chars += size
         }
@@ -1510,7 +1520,7 @@ class WerewolfDirector(
         listOf("$seat 号：", "${seat}号：", "「$name」：", "$name：").forEach { prefix ->
             if (text.startsWith(prefix)) text = text.removePrefix(prefix).trim()
         }
-        return truncateAtSentence(text, MAX_SPEECH_LENGTH)
+        return truncateAtSentence(text, speechLength.chars)
     }
 
     /**
@@ -1628,13 +1638,6 @@ class WerewolfDirector(
 
         /** 发言被清洗/拒绝后仍然为空时的占位。宁可平庸，也不要一条空气泡。 */
         const val EMPTY_SPEECH_FALLBACK = "我先听完这一轮，暂时不改判断。"
-        /**
-         * 当天进程的字数预算。
-         *
-         * 12 人局一句发言上限 [MAX_SPEECH_LENGTH] 字，一天最多 12 条发言加 12 张票再加几条播报。
-         * 投票压成票型之后，典型一天只剩一千字上下，这条线留给「模型今天话特别多」的情况。
-         */
-        const val MAX_CONTEXT_CHARS = 3200
 
         /** 无论超没超预算都要留下的最近几行，保证「刚说完的话」一定在。 */
         const val MIN_CONTEXT_MESSAGES = 12
@@ -1654,8 +1657,7 @@ class WerewolfDirector(
          */
         val BALLOT = Regex("""^我(?:投 (\d+) 号|选 (\d+) 号当警长|弃票)。(.*)$""", RegexOption.DOT_MATCHES_ALL)
 
-        /** 一句发言的长度上限。模型偶尔会写一整段小作文。 */
-        const val MAX_SPEECH_LENGTH = 200
+        /** 一句发言的长度上限（标准档）。各档位见 [WerewolfSpeechLength]，这里只留注释不占常量。 */
 
         /**
          * 自爆标记。模型写成全角、半角方括号都认，中文括号也认——

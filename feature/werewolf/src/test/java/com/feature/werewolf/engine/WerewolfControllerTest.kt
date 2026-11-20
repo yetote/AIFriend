@@ -7,6 +7,7 @@ import com.feature.werewolf.game.WerewolfConfig
 import com.feature.werewolf.game.Phase
 import com.feature.werewolf.game.SELF_PLAYER_ID
 import com.feature.werewolf.game.WerewolfGame
+import com.feature.werewolf.game.WerewolfSpeechLength
 import com.feature.werewolf.game.WerewolfTurnLimit
 import com.feature.werewolf.engine.persistence.PacingSnapshot
 import com.feature.werewolf.store.WerewolfGameStore
@@ -38,6 +39,7 @@ class WerewolfControllerTest {
         val customPrompt: String? = null,
         val turnLimit: WerewolfTurnLimit = WerewolfTurnLimit.STANDARD,
         val thinkingOff: Set<Int> = emptySet(),
+        val speechLength: WerewolfSpeechLength = WerewolfSpeechLength.STANDARD,
     )
 
     /** 内存版存档，行为跟真库一致，但不碰 Room。 */
@@ -51,8 +53,9 @@ class WerewolfControllerTest {
             customPrompt: String?,
             turnLimit: WerewolfTurnLimit,
             thinkingOff: Set<Int>,
+            speechLength: WerewolfSpeechLength,
         ) {
-            saves += Saved(id, table, createdAt, customPrompt, turnLimit, thinkingOff)
+            saves += Saved(id, table, createdAt, customPrompt, turnLimit, thinkingOff, speechLength)
         }
 
         override suspend fun load(id: String): WerewolfTable? =

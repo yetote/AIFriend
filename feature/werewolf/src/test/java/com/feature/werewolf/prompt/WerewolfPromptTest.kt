@@ -8,6 +8,7 @@ import com.feature.werewolf.game.WerewolfBoards
 import com.feature.werewolf.game.WerewolfConfig
 import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfPromptStyle
+import com.feature.werewolf.game.WerewolfSpeechLength
 import com.feature.werewolf.game.NightRecord
 import com.feature.werewolf.game.PendingDawn
 import com.feature.werewolf.game.WerewolfRole
@@ -992,6 +993,21 @@ class WerewolfPromptTest {
         assertFalse(
             WerewolfPrompt.systemPrompt(standardGame(), seat = 3, limit = WerewolfTurnLimit.UNLIMITED)
                 .contains("时间预算")
+        )
+    }
+
+    @Test
+    fun `发言长度写进提示词，不传时不注入`() {
+        val short = WerewolfPrompt.systemPrompt(
+            standardGame(), seat = 3, speechLength = WerewolfSpeechLength.SHORT,
+        )
+
+        assertTrue("要说上限", short.contains("80 字以内"))
+        assertTrue("要说档位名", short.contains("简短"))
+        assertTrue("要说明超长会被截", short.contains("截断"))
+        // 不传（测试、复盘等场合）不注入，保持原行为
+        assertFalse(
+            WerewolfPrompt.systemPrompt(standardGame(), seat = 3).contains("【发言长度】"),
         )
     }
 
