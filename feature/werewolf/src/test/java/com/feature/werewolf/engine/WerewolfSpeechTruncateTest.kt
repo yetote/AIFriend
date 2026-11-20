@@ -46,6 +46,15 @@ class WerewolfSpeechTruncateTest {
     }
 
     @Test
+    fun `上限为 0 表示不限，一字不裁`() {
+        // 「不限」档传 chars = 0。0 在这里要是「放行」而不是「全裁光」：
+        // 写反了，整局所有发言都只剩一个省略号
+        val text = "这是一段完全不裁的长发言。第一句。第二句。"
+        assertEquals(text, director.truncateAtSentence(text, 0))
+        assertEquals(text, director.truncateAtSentence(text, -1))
+    }
+
+    @Test
     fun `警长中途没了，结束语不能说他在场`() {
         // 真机案例：警长第 2 天被猎人开枪带走、警徽作废，
         // 结束语却还写着「警长在场也最多主持一轮 PK」

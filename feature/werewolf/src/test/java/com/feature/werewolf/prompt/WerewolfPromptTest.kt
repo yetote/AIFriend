@@ -1012,6 +1012,18 @@ class WerewolfPromptTest {
     }
 
     @Test
+    fun `不限档不报字数也不说截断，改成结论前置`() {
+        val prompt = WerewolfPrompt.systemPrompt(
+            standardGame(), seat = 3, speechLength = WerewolfSpeechLength.UNLIMITED,
+        )
+
+        assertTrue("要说档位名", prompt.contains("不限"))
+        assertFalse("没有上限就不该报字数", prompt.contains("字以内"))
+        assertFalse("没有截断兜底就不能说截", prompt.contains("截断"))
+        assertTrue("不限档要靠结论前置保住重点", prompt.contains("先把结论说出来"))
+    }
+
+    @Test
     fun `时间预算排在自定义设定之前，用户仍能覆盖`() {
         val prompt = WerewolfPrompt.systemPrompt(
             standardGame(), seat = 3, limit = WerewolfTurnLimit.STANDARD,

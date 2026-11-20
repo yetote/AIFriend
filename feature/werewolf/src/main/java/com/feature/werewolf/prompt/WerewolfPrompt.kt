@@ -551,9 +551,17 @@ object WerewolfPrompt {
      * 模型会把它当成硬指标，为凑字数注水或者被掐时丢结论。
      */
     internal fun speechLengthBrief(length: WerewolfSpeechLength): String = buildString {
-        append("【发言长度】这一局你每次公开发言控制在约 ").append(length.chars)
-            .append(" 字以内（当前档：").append(length.label).append("）。")
-        append("说清你的判断和理由就收，不用凑字数，也别写成小作文——")
-        append("超出的部分会被直接截断，压在后面的结论会一起丢掉。")
+        if (length.chars > 0) {
+            append("【发言长度】这一局你每次公开发言控制在约 ").append(length.chars)
+                .append(" 字以内（当前档：").append(length.label).append("）。")
+            append("说清你的判断和理由就收，不用凑字数，也别写成小作文——")
+            append("超出的部分会被直接截断，压在后面的结论会一起丢掉。")
+        } else {
+            // 不限档：没有截断兜底，只能靠模型自觉——把「结论前置」抬高到第一位，
+            // 长发言里最重要的东西丢了比短发言更伤。
+            append("【发言长度】这一局你的发言不限字数（当前档：").append(length.label).append("）。")
+            append("但也别灌水：先把结论说出来，再展开论证；")
+            append("别人还要跟着你的话做判断，读不完的长篇等于没有发言。")
+        }
     }
 }

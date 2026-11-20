@@ -1534,7 +1534,8 @@ class WerewolfDirector(
      * 那样至少还看得出「后面还有话」。
      */
     internal fun truncateAtSentence(text: String, limit: Int): String {
-        if (text.length <= limit) return text
+        // limit <= 0 是「不限」档：一字不裁。0 在这里不是「全裁光」。
+        if (limit <= 0 || text.length <= limit) return text
         val cut = text.take(limit)
         val boundary = cut.indexOfLast { it in "。！？…" }
         return if (boundary > limit / 3) {

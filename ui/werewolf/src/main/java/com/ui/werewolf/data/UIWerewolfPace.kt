@@ -33,6 +33,7 @@ enum class UIWerewolfSpeechLength(val label: String, val hint: String) {
     SHORT("简短", "约 80 字。一两句话讲清判断，牌局节奏最快"),
     STANDARD("标准", "约 200 字。能展开一点推理，又不拖节奏"),
     LONG("详细", "约 400 字。留给爱长篇论证的强模型，整局会更久"),
+    UNLIMITED("不限", "完全不裁。适合看它们辩论，上下文会明显变大"),
     ;
 }
 

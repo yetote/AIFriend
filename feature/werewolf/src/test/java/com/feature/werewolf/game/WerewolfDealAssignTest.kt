@@ -95,5 +95,8 @@ class WerewolfDealAssignTest {
         // 旧实现写死 3200；预算改成随发言档位缩放后，标准档不能悄悄变大——
         // 那会让老玩家的上下文突然多塞一截，请求变贵还可能撞模型上限
         assertEquals(3200, WerewolfSpeechLength.STANDARD.contextBudget)
+        // 不限档按公式会塌到 800 字，但发言不裁了，原文反而更占地方——
+        // 预算必须放大而不是缩小，不然不限档当天的发言会被大量丢掉
+        assertEquals(8000, WerewolfSpeechLength.UNLIMITED.contextBudget)
     }
 }
