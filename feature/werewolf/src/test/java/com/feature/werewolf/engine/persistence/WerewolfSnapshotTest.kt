@@ -360,6 +360,16 @@ class WerewolfSnapshotTest {
     }
 
     @Test
+    fun `导演钉死的头狼跟着存档走`() {
+        val table = richTable().copy(game = richTable().game.copy(alphaWolfSeat = 2))
+        val text = WerewolfSnapshot.encode(table)
+
+        val decoded = WerewolfSnapshot.decode(text)
+        assertEquals(table, decoded)
+        assertEquals(2, decoded?.game?.alphaWolfSeat)
+    }
+
+    @Test
     fun `旧档没有发言长度时按标准处理`() {
         val text = WerewolfSnapshot.encode(richTable())
             .replace("\"speechLength\":\"STANDARD\",", "")

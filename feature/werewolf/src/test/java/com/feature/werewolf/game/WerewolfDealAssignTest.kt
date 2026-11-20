@@ -91,6 +91,49 @@ class WerewolfDealAssignTest {
     }
 
     @Test
+    fun `指定头狼：自动派成狼并钉在 alphaWolfSeat 上`() {
+        val config = WerewolfConfig()
+        // p6 没被指身份：指定他当头狼等于把一个狼名额派给他，其余照旧随机
+        val game = WerewolfGame.deal(config, roster(8), Random(42), alphaId = "p6")
+
+        val alpha = game.players.first { it.id == "p6" }
+        assertEquals("头狼必须是狼", WerewolfRole.WEREWOLF, alpha.role)
+        assertEquals("头狼要钉在局面上，每晚都用他", alpha.seat, game.alphaWolfSeat)
+        assertEquals("占了狼名额之后整局构成不能变", config.composition, game.players.groupingBy { it.role }.eachCount())
+    }
+
+    @Test
+    fun `头狼和身份派单可以同时用，指的就是那只狼`() {
+        val config = WerewolfConfig()
+        val assignment = mapOf("p2" to WerewolfRole.WEREWOLF, "p5" to WerewolfRole.SEER)
+        val game = WerewolfGame.deal(config, roster(8), Random(3), assignment, alphaId = "p2")
+
+        assertEquals(WerewolfRole.WEREWOLF, game.players.first { it.id == "p2" }.role)
+        assertEquals(game.players.first { it.id == "p2" }.seat, game.alphaWolfSeat)
+    }
+
+    @Test
+    fun `头狼被指成了别的身份时报错`() {
+        val assignment = mapOf("p3" to WerewolfRole.SEER)
+        try {
+            WerewolfGame.deal(WerewolfConfig(), roster(8), Random(1), assignment, alphaId = "p3")
+            fail("头狼指成预言家不该发牌成功")
+        } catch (e: IllegalArgumentException) {
+            assertTrue(e.message!!.contains("头狼"))
+        }
+    }
+
+    @Test
+    fun `头狼不在名单里时报错`() {
+        try {
+            WerewolfGame.deal(WerewolfConfig(), roster(8), Random(1), alphaId = "ghost")
+            fail("名单外的头狼不该发牌成功")
+        } catch (e: IllegalArgumentException) {
+            assertTrue(e.message!!.contains("名单"))
+        }
+    }
+
+    @Test
     fun `标准档的上下文预算与旧常量一致`() {
         // 旧实现写死 3200；预算改成随发言档位缩放后，标准档不能悄悄变大——
         // 那会让老玩家的上下文突然多塞一截，请求变贵还可能撞模型上限

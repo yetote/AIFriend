@@ -186,15 +186,39 @@ fun WerewolfRoute(
     val preset = PRESETS.firstOrNull { it.key == presetKey } ?: PRESETS.first()
     // 导演模式的身份名额：按板子构成列出，再扣掉已经指定出去的数量。
     // 板子/派单一变就要重算，所以放进 remember 的 key
+    // 头狼在 UI 侧是一个独立选项（和「狼人」共用狼的名额）：key 存伪角色名，
+    // 开局时 roleAssignmentOf 不认识它、自动从身份派单里剔除，alphaIdOf 单独取走
     val roleOptions = remember(presetKey, roleByFriend) {
-        configOf(presetKey).composition.map { (role, count) ->
+        val composition = configOf(presetKey).composition
+        val wolfCount = composition[WerewolfRole.WEREWOLF] ?: 0
+        fun usedWolf() = roleByFriend.values.count { it == WerewolfRole.WEREWOLF.name || it == ALPHA_WOLF_KEY }
+        val list = composition.map { (role, count) ->
+            val used = if (role == WerewolfRole.WEREWOLF) {
+                // 头狼也算狼名额：指定了头狼，普通狼的名额就少一个
+                usedWolf()
+            } else {
+                roleByFriend.values.count { it == role.name }
+            }
             UIWerewolfRoleOption(
                 key = role.name,
                 label = role.displayName,
                 total = count,
-                remaining = (count - roleByFriend.values.count { it == role.name }).coerceAtLeast(0),
+                remaining = (count - used).coerceAtLeast(0),
             )
-        }.sortedByDescending { it.total }
+        }.sortedByDescending { it.total }.toMutableList()
+        if (wolfCount > 0) {
+            // 头狼选项紧跟在狼人后面（总数相同，稳定排序不会把它们拆开）
+            val wolfIndex = list.indexOfFirst { it.key == WerewolfRole.WEREWOLF.name }
+            list.subList(wolfIndex + 1, wolfIndex + 1).add(
+                UIWerewolfRoleOption(
+                    key = ALPHA_WOLF_KEY,
+                    label = "头狼（定战术）",
+                    total = wolfCount,
+                    remaining = (wolfCount - usedWolf()).coerceAtLeast(0),
+                ),
+            )
+        }
+        list
     }
     val uiApiChecks = remember(apiChecks) { apiChecks.mapValues { it.value.toUiCheck() } }
     val promptState by viewModel.promptState.collectAsState()
@@ -314,10 +338,12 @@ fun WerewolfRoute(
             roleOptions = roleOptions,
             roleByFriend = roleByFriend,
             onAssignRole = { friendId, key ->
-                roleByFriend = if (key == null) {
-                    roleByFriend - friendId
-                } else {
-                    roleByFriend + (friendId to key)
+                roleByFriend = when {
+                    key == null -> roleByFriend - friendId
+                    // 头狼只有一个：派新的要把旧的撤回随机，否则引擎只能认一个
+                    key == ALPHA_WOLF_KEY ->
+                        roleByFriend.filterValues { it != ALPHA_WOLF_KEY } + (friendId to key)
+                    else -> roleByFriend + (friendId to key)
                 }
             },
             promptStyle = promptStyle.toUi(),
@@ -368,6 +394,7 @@ fun WerewolfRoute(
                     turnLimit = turnLimit.toTurnLimit(),
                     speechLength = speechLength.toSpeechLength(),
                     roleAssignment = roleAssignmentOf(mode, assignRoles, roleByFriend),
+                    alphaId = alphaIdOf(mode, assignRoles, roleByFriend),
                 )
             },
             onStartAnyway = {
@@ -382,6 +409,7 @@ fun WerewolfRoute(
                     turnLimit = turnLimit.toTurnLimit(),
                     speechLength = speechLength.toSpeechLength(),
                     roleAssignment = roleAssignmentOf(mode, assignRoles, roleByFriend),
+                    alphaId = alphaIdOf(mode, assignRoles, roleByFriend),
                 )
             },
         )
@@ -594,15 +622,30 @@ private fun UIWerewolfSpeechLength.toSpeechLength(): WerewolfSpeechLength =
  * 只在「纯观战 + 开了导演模式」时生效；身份名认不出（换过板子、旧数据）就丢弃，
  * 那个座位回落到随机——宁可随机也不要让一个坏 key 卡死开局。
  */
+/** 头狼在 UI 侧的伪角色 key。不对应任何 WerewolfRole，开局时单独取走。 */
+private const val ALPHA_WOLF_KEY = "ALPHA_WOLF"
+
 private fun roleAssignmentOf(
     mode: UIWerewolfMode,
     assignRoles: Boolean,
     roleByFriend: Map<String, String>,
 ): Map<String, WerewolfRole> {
     if (mode != UIWerewolfMode.SPECTATE || !assignRoles) return emptyMap()
+    // 头狼的伪 key 在这里被自然剔除（它不对应任何真实身份）：头狼必须
+    // 是狼这件事由 deal 用 alphaId 保证，不靠这份派单
     return roleByFriend.mapNotNull { (id, key) ->
         id to (WerewolfRole.entries.firstOrNull { it.name == key } ?: return@mapNotNull null)
     }.toMap()
+}
+
+/** 头狼只能有一个，也只在纯观战局的导演模式下生效。 */
+private fun alphaIdOf(
+    mode: UIWerewolfMode,
+    assignRoles: Boolean,
+    roleByFriend: Map<String, String>,
+): String? {
+    if (mode != UIWerewolfMode.SPECTATE || !assignRoles) return null
+    return roleByFriend.entries.firstOrNull { it.value == ALPHA_WOLF_KEY }?.key
 }
 
 private fun WerewolfTurnLimit.toUi(): UIWerewolfTurnLimit =

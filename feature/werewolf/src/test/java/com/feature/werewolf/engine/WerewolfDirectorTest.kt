@@ -411,6 +411,24 @@ class WerewolfDirectorTest {
     }
 
     @Test
+    fun `导演钉死的头狼每晚都当头狼`() = runBlocking {
+        // 座位 1、2、3 是狼：钉死 3 号当头狼——就算 1 号座位更靠前，也轮不到他先说
+        val game = standard9().copy(phase = Phase.NIGHT_WOLF_CHAT, alphaWolfSeat = 3)
+        val director = WerewolfDirector(
+            agentsOf(
+                1 to ScriptedAI(listOf("我听 3 号的。")),
+                2 to ScriptedAI(listOf("听 3 号安排。")),
+                3 to ScriptedAI(listOf("今晚刀 7 号。")),
+            )
+        )
+
+        val result = director.nightWolfChat(WerewolfTable(game))
+
+        assertEquals("钉死的头狼优先于每晚随机", 3, result.game.nightHead)
+        assertEquals("存的是头狼那一句", "今晚刀 7 号。", result.game.wolfPlan)
+    }
+
+    @Test
     fun `商议阶段不改局面，刀口只在定刀之后才有`() = runBlocking {
         val director = WerewolfDirector(
             agentsOf(1 to AutoAI(), 2 to AutoAI(), 3 to AutoAI())

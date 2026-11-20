@@ -50,6 +50,15 @@ data class WerewolfGame(
      */
     val nightHead: Int? = null,
     /**
+     * 导演钉死的头狼（纯观战局「指定身份」时可以指定）。
+     *
+     * 指定了就不再每晚重选：只要他还活着，每晚都由他先发言、定战术——
+     * 这正是导演指定它的目的：想看「某个模型带一队狼」会打出什么局。
+     * 他出局后回落到每晚随机（[nightHead] 的既有规则），战术环节不能空转。
+     * null 表示没有指定，维持每晚随机。
+     */
+    val alphaWolfSeat: Int? = null,
+    /**
      * 上一夜守卫守的人。
      *
      * 守卫不能连续两晚守同一个人，这个限制只能靠「记住昨夜」实现。放在状态里而不是
@@ -1303,24 +1312,49 @@ data class WerewolfGame(
             roster: List<RosterEntry>,
             random: Random = Random.Default,
             assignment: Map<String, WerewolfRole> = emptyMap(),
+            /**
+             * 指定头狼（狼队指挥）的玩家 id。他必须是狼：没被指定身份时自动派成狼人
+             * （占一个狼名额），已经被指成别的身份直接报错。指定后每晚战术都由他定，
+             * 直到出局；null 表示不指定，维持每晚随机。
+             */
+            alphaId: String? = null,
         ): WerewolfGame {
-            if (assignment.isEmpty()) {
+            if (assignment.isEmpty() && alphaId == null) {
                 return build(config, roster.shuffled(random)) { roles -> roles.shuffled(random) }
             }
-            val unknown = assignment.keys - roster.mapTo(mutableSetOf()) { it.id }
+            if (alphaId != null) {
+                require(roster.any { it.id == alphaId }) { "指定的头狼不在本局名单里" }
+                val assignedRole = assignment[alphaId]
+                require(assignedRole == null || assignedRole == WerewolfRole.WEREWOLF) {
+                    "头狼必须是狼人，${alphaId} 被指定成了「${assignedRole?.displayName}」"
+                }
+            }
+            // 头狼没被指身份时自动补成狼人：头狼的本质就是「队里定战术的那只狼」，
+            // 指定他等于把一个狼名额派给了他，剩下的狼名额照旧随机
+            val effective = if (alphaId != null && assignment[alphaId] == null) {
+                assignment + (alphaId to WerewolfRole.WEREWOLF)
+            } else {
+                assignment
+            }
+            val unknown = effective.keys - roster.mapTo(mutableSetOf()) { it.id }
             require(unknown.isEmpty()) { "指定身份的玩家不在本局名单里" }
             val leftovers = config.composition
                 .flatMap { (role, count) -> List(count) { role } }
                 .toMutableList()
-            assignment.values.forEach { role ->
+            effective.values.forEach { role ->
                 require(leftovers.remove(role)) {
                     "指定的「${role.displayName}」比板子构成里的多，改一下再开局"
                 }
             }
             val shuffledRoster = roster.shuffled(random)
             val randomLeftovers = ArrayDeque(leftovers.shuffled(random))
-            val arranged = shuffledRoster.map { entry -> assignment[entry.id] ?: randomLeftovers.removeFirst() }
-            return build(config, shuffledRoster) { _ -> arranged }
+            val arranged = shuffledRoster.map { entry -> effective[entry.id] ?: randomLeftovers.removeFirst() }
+            val game = build(config, shuffledRoster) { _ -> arranged }
+            return if (alphaId == null) {
+                game
+            } else {
+                game.copy(alphaWolfSeat = game.players.first { it.id == alphaId }.seat)
+            }
         }
 
         /**

@@ -430,7 +430,6 @@ fun UIWerewolfSetupScreen(
                                     friendName = friend.name,
                                     assignedKey = roleByFriend[friend.id],
                                     options = roleOptions,
-                                    otherAssignments = roleByFriend - friend.id,
                                     onPick = { key -> onAssignRole(friend.id, key) },
                                 )
                             }
@@ -1226,15 +1225,15 @@ private fun SetupSpeechChip(
 /**
  * 导演模式里的一行：名字 + 身份选择器。
  *
- * 点右侧的胶囊弹选单。名额按「别的指定」扣减——自己占着狼的名额时，
- * 狼在自己这行里仍然可选（等于改派），只是别人那行选不了。
+ * 点右侧的胶囊弹选单。名额用 route 算好的 [UIWerewolfRoleOption.remaining]
+ * （头狼和狼人共用狼名额这件事在 route 那边已经算进去了），这里只把
+ * 「自己这行占掉的那一个」加回来——自己改派回原身份是合法的。
  */
 @Composable
 private fun RoleAssignRow(
     friendName: String,
     assignedKey: String?,
     options: List<UIWerewolfRoleOption>,
-    otherAssignments: Map<String, String>,
     onPick: (String?) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -1279,8 +1278,9 @@ private fun RoleAssignRow(
                     }
                 )
                 options.forEach { option ->
-                    // 别人占掉的名额不算在自己头上：自己改派回原身份是合法的
-                    val left = option.total - otherAssignments.values.count { it == option.key }
+                    // 名额 route 已经按「头狼+狼人共享」算好；自己占着的那个名额要加回来，
+                    // 否则自己那行点开选单会看到自己的身份灰着、改不回去
+                    val left = if (option.key == assignedKey) option.remaining + 1 else option.remaining
                     DropdownMenuItem(
                         text = {
                             Text(

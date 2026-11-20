@@ -180,7 +180,13 @@ class WerewolfDirector(
         // 躺着旧头狼的发言，场上会凭空多出一个「假头狼」。存档里的头狼已经出局
         // （理论上不会，但存档可能被改过）才重选。
         val aliveWolves = game.aliveWolves()
-        val head = game.nightHead?.takeIf { seat -> aliveWolves.any { it.seat == seat } }
+        // 导演钉死的头狼优先：只要活着，每晚都是他——导演指定头狼就是要看
+        // 「这个模型带一队狼」能打成什么样。他出局后走原有规则。
+        // 其次沿用存档里的头狼：同一条夜里换人当头狼，而 transcript 里已经
+        // 躺着旧头狼的发言，场上会凭空多出一个「假头狼」。存档里的头狼已经出局
+        // （理论上不会，但存档可能被改过）才重选。
+        val head = game.alphaWolfSeat?.takeIf { seat -> aliveWolves.any { it.seat == seat } }
+            ?: game.nightHead?.takeIf { seat -> aliveWolves.any { it.seat == seat } }
             ?: aliveWolves.randomOrNull(random)?.seat
         val prepared = if (head == null) table else table.copy(game = game.copy(nightHead = head))
         val spoken = talkRound(prepared, note = null)

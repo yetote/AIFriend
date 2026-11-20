@@ -59,8 +59,11 @@ object WerewolfSnapshot {
      *
      * v16：多出 `speechLength`（这一局发言的目标长度档位）。
      * 带默认值的新增字段，旧档读出来按标准档处理，语义不变。
+     *
+     * v17：多出 `alphaWolfSeat`（导演钉死的头狼）。
+     * 带默认值的新增字段，旧档读出来是 null——每晚随机，就是旧行为。
      */
-    const val VERSION = 16
+    const val VERSION = 17
 
     private val json = Json {
         ignoreUnknownKeys = true   // 旧档多出来的字段不该让新版本读不出来
@@ -198,6 +201,8 @@ internal data class TableSnapshot(
     val nightHead: Int? = null,
     /** v8 起：头狼定的战术原文。旧档没有这一项。 */
     val wolfPlan: String? = null,
+    /** v17 起：导演钉死的头狼（座位号）。旧档没有这一项。 */
+    val alphaWolfSeat: Int? = null,
     /** v3 起：白痴是否已翻牌。 */
     val idiotRevealed: Boolean = false,
     /** v10 起：还没公布的天亮播报（第一天先竞选、后公布死讯）。旧档没有这一项。 */
@@ -389,6 +394,7 @@ internal fun WerewolfTable.toSnapshot(
         lastGuardedSeat = game.lastGuardedSeat,
         nightHead = game.nightHead,
         wolfPlan = game.wolfPlan,
+        alphaWolfSeat = game.alphaWolfSeat,
         idiotRevealed = game.idiotRevealed,
         pendingDawn = game.pendingDawn?.let {
             PendingDawnSnapshot(
@@ -510,6 +516,7 @@ internal fun TableSnapshot.toTable(): WerewolfTable = WerewolfTable(
         lastGuardedSeat = lastGuardedSeat,
         nightHead = nightHead,
         wolfPlan = wolfPlan,
+        alphaWolfSeat = alphaWolfSeat,
         idiotRevealed = idiotRevealed,
         pendingDawn = pendingDawn?.let {
             PendingDawn(
