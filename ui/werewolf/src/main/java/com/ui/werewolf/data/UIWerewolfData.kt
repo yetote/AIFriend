@@ -92,6 +92,22 @@ data class UIWerewolfPreset(
 )
 
 /**
+ * 「指定身份」选单里的一个选项。
+ *
+ * [key] 是引擎 [WerewolfRole][com.feature.werewolf.game.WerewolfRole] 的名字，开局时原样
+ * `valueOf` 回去；[remaining] 是**扣掉已指定之后**还剩几个——选单里要让人一眼看出
+ * 「狼只剩一个名额了」，不然会选出一张构成对不上的牌、点开局才报错。
+ */
+data class UIWerewolfRoleOption(
+    val key: String,
+    val label: String,
+    /** 板子构成里这个身份的总数。 */
+    val total: Int,
+    /** 总数减去已经指定出去的数量，可以为 0（选单里灰掉）。 */
+    val remaining: Int,
+)
+
+/**
  * 提示词微调页的状态。
  *
  * 分两段：**全局**（所有板子都生效）和**当前板子**（只对这一张板子生效）。

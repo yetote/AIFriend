@@ -25,6 +25,8 @@ import com.feature.werewolf.engine.WerewolfTable
 import com.feature.werewolf.engine.WerewolfUiState
 import com.feature.werewolf.game.WerewolfBoards
 import com.feature.werewolf.game.WerewolfPromptStyle
+import com.feature.werewolf.game.WerewolfRole
+import com.feature.werewolf.game.WerewolfSpeechLength
 import com.feature.werewolf.game.WerewolfTurnLimit
 import com.feature.werewolf.vm.WerewolfViewModel
 import com.ui.werewolf.UIWerewolfHistoryScreen
@@ -40,7 +42,9 @@ import com.ui.werewolf.data.UIWerewolfNotice
 import com.ui.werewolf.data.UIWerewolfPromptStyle
 import com.ui.werewolf.data.UIWerewolfPace
 import com.ui.werewolf.data.UIWerewolfPreset
+import com.ui.werewolf.data.UIWerewolfRoleOption
 import com.ui.werewolf.data.UIWerewolfSeatPace
+import com.ui.werewolf.data.UIWerewolfSpeechLength
 import com.ui.werewolf.data.UIWerewolfTurnLimit
 import com.ui.werewolf.data.formatSpent
 
@@ -102,6 +106,12 @@ fun WerewolfRoute(
     // 开局前选的思考时限。存成 UI 枚举而不是引擎枚举，是为了让这一层和配置页说同一种话；
     // 开局时才映射成引擎那一份（见 `toTurnLimit`）
     var turnLimit by remember { mutableStateOf(UIWerewolfTurnLimit.STANDARD) }
+    // 开局前选的发言长度。同样存 UI 枚举，开局时才映射成引擎那一份
+    var speechLength by remember { mutableStateOf(UIWerewolfSpeechLength.STANDARD) }
+    // 导演模式：纯观战局指定身份。指定结果按「好友 id → 身份名」存，
+    // 开局时才 valueOf 成引擎身份——存名字是为了 UI 层不依赖引擎类型
+    var assignRoles by remember { mutableStateOf(false) }
+    var roleByFriend by remember { mutableStateOf(emptyMap<String, String>()) }
     /** 牌桌上打开的对局设置面板。 */
     var showPaceSheet by remember { mutableStateOf(false) }
 
@@ -174,6 +184,18 @@ fun WerewolfRoute(
     val avatars = remember(friends) { friends.associate { it.id to it.avatarPath } }
     val records = remember(summaries) { summaries.map { it.toRecord() } }
     val preset = PRESETS.firstOrNull { it.key == presetKey } ?: PRESETS.first()
+    // 导演模式的身份名额：按板子构成列出，再扣掉已经指定出去的数量。
+    // 板子/派单一变就要重算，所以放进 remember 的 key
+    val roleOptions = remember(presetKey, roleByFriend) {
+        configOf(presetKey).composition.map { (role, count) ->
+            UIWerewolfRoleOption(
+                key = role.name,
+                label = role.displayName,
+                total = count,
+                remaining = (count - roleByFriend.values.count { it == role.name }).coerceAtLeast(0),
+            )
+        }.sortedByDescending { it.total }
+    }
     val uiApiChecks = remember(apiChecks) { apiChecks.mapValues { it.value.toUiCheck() } }
     val promptState by viewModel.promptState.collectAsState()
     val showThinking by viewModel.showThinking.collectAsState()
@@ -285,6 +307,19 @@ fun WerewolfRoute(
             checking = verifying,
             turnLimit = turnLimit,
             onTurnLimitChange = { turnLimit = it },
+            speechLength = speechLength,
+            onSpeechLengthChange = { speechLength = it },
+            assignRoles = assignRoles,
+            onAssignRolesChange = { assignRoles = it },
+            roleOptions = roleOptions,
+            roleByFriend = roleByFriend,
+            onAssignRole = { friendId, key ->
+                roleByFriend = if (key == null) {
+                    roleByFriend - friendId
+                } else {
+                    roleByFriend + (friendId to key)
+                }
+            },
             promptStyle = promptStyle.toUi(),
             onPromptStyleChange = { viewModel.setPromptStyle(it.toPromptStyle()) },
             // 朗读是全局偏好（DataStore），这里直接读同一份值：开局前关掉，进牌桌不用再找喇叭
@@ -296,10 +331,17 @@ fun WerewolfRoute(
                 // 「我参与」比「纯观战」少要一位，切过去时多出来的人要放掉，
                 // 否则会带着 8 个人去开 7 人的局
                 selectedIds = trimSelection(selectedIds, uiFriends, next, presetKey)
+                // 参与局没有导演模式；指定的身份也一起清掉，切回观战不要残留旧派单
+                if (next == UIWerewolfMode.PLAY) {
+                    assignRoles = false
+                    roleByFriend = emptyMap()
+                }
             },
             onPresetChange = { key ->
                 presetKey = key
                 selectedIds = trimSelection(selectedIds, uiFriends, mode, key)
+                // 板子换了构成就变了，旧派单对不上新板子，整份作废
+                roleByFriend = emptyMap()
             },
             onToggleFriend = { id ->
                 selectedIds = if (id in selectedIds) {
@@ -324,6 +366,8 @@ fun WerewolfRoute(
                     config = configOf(presetKey),
                     boardKey = presetKey,
                     turnLimit = turnLimit.toTurnLimit(),
+                    speechLength = speechLength.toSpeechLength(),
+                    roleAssignment = roleAssignmentOf(mode, assignRoles, roleByFriend),
                 )
             },
             onStartAnyway = {
@@ -336,6 +380,8 @@ fun WerewolfRoute(
                     // 走到这里说明用户已经看见红灯并选择继续，不必再拦一次
                     skipCheck = true,
                     turnLimit = turnLimit.toTurnLimit(),
+                    speechLength = speechLength.toSpeechLength(),
+                    roleAssignment = roleAssignmentOf(mode, assignRoles, roleByFriend),
                 )
             },
         )
@@ -537,6 +583,27 @@ private fun buildPace(
 /** UI 枚举和引擎枚举靠**名字**对齐（顺序和拼写都一致），不用写 when 分支。 */
 private fun UIWerewolfTurnLimit.toTurnLimit(): WerewolfTurnLimit =
     WerewolfTurnLimit.entries.firstOrNull { it.name == name } ?: WerewolfTurnLimit.STANDARD
+
+/** 同上，发言长度档位按名字映射。 */
+private fun UIWerewolfSpeechLength.toSpeechLength(): WerewolfSpeechLength =
+    WerewolfSpeechLength.entries.firstOrNull { it.name == name } ?: WerewolfSpeechLength.STANDARD
+
+/**
+ * 把导演模式的派单转成引擎要的「玩家 id → 身份」。
+ *
+ * 只在「纯观战 + 开了导演模式」时生效；身份名认不出（换过板子、旧数据）就丢弃，
+ * 那个座位回落到随机——宁可随机也不要让一个坏 key 卡死开局。
+ */
+private fun roleAssignmentOf(
+    mode: UIWerewolfMode,
+    assignRoles: Boolean,
+    roleByFriend: Map<String, String>,
+): Map<String, WerewolfRole> {
+    if (mode != UIWerewolfMode.SPECTATE || !assignRoles) return emptyMap()
+    return roleByFriend.mapNotNull { (id, key) ->
+        id to (WerewolfRole.entries.firstOrNull { it.name == key } ?: return@mapNotNull null)
+    }.toMap()
+}
 
 private fun WerewolfTurnLimit.toUi(): UIWerewolfTurnLimit =
     UIWerewolfTurnLimit.entries.firstOrNull { it.name == name } ?: UIWerewolfTurnLimit.STANDARD

@@ -22,6 +22,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -29,6 +31,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -72,7 +75,9 @@ import com.ui.werewolf.data.UIWerewolfFriend
 import com.ui.werewolf.data.UIWerewolfMode
 import com.ui.werewolf.data.UIWerewolfPromptStyle
 import com.ui.werewolf.data.UIWerewolfPreset
+import com.ui.werewolf.data.UIWerewolfRoleOption
 import com.ui.werewolf.data.UIWerewolfSeat
+import com.ui.werewolf.data.UIWerewolfSpeechLength
 import com.ui.werewolf.data.UIWerewolfTurnLimit
 
 /**
@@ -106,6 +111,18 @@ fun UIWerewolfSetupScreen(
     /** 提示词风格：引导式给内置打法，自由式让模型自己想。 */
     promptStyle: UIWerewolfPromptStyle,
     onPromptStyleChange: (UIWerewolfPromptStyle) -> Unit,
+    /** 这一局发言的目标长度。 */
+    speechLength: UIWerewolfSpeechLength,
+    onSpeechLengthChange: (UIWerewolfSpeechLength) -> Unit,
+    /** 纯观战局的导演模式：指定每个 AI 拿什么身份，没指定的随机。 */
+    assignRoles: Boolean,
+    onAssignRolesChange: (Boolean) -> Unit,
+    /** 当前板子的身份名额。 */
+    roleOptions: List<UIWerewolfRoleOption>,
+    /** 好友 id → 已指定的身份 key；没指定的随机补。 */
+    roleByFriend: Map<String, String>,
+    /** 给某个好友指定身份；roleKey 传 null 表示改回随机。 */
+    onAssignRole: (friendId: String, roleKey: String?) -> Unit,
     /** 要不要把 AI 的发言念出来。 */
     speechOn: Boolean,
     /**
@@ -254,7 +271,31 @@ fun UIWerewolfSetupScreen(
                     )
                 }
 
-                // 朗读放在开局这里，而不是只在牌桌上留一个喇叭图标：一局可能打半小时，
+                // 发言长度决定「AI 说多少」：只影响观感不影响公平，放开局这里
+                // 和朗读、时限同一个理由——一局的体验要在开局前定下来
+                SectionTitle(
+                    title = "发言长度",
+                    subtitle = "AI 每句公开发言的目标字数。说太长的会被引擎在句末裁掉"
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        UIWerewolfSpeechLength.entries.forEach { length ->
+                            SetupSpeechChip(
+                                length = length,
+                                selected = length == speechLength,
+                                modifier = Modifier.weight(1f),
+                                onClick = { onSpeechLengthChange(length) },
+                            )
+                        }
+                    }
+                    Text(
+                        text = speechLength.hint,
+                        fontSize = 11.sp,
+                        color = UIFriendBarItemSubtitleColor
+                    )
+                }
+
+                // 朗读放在开局这里，而不是只在牌桌上留一个喇叭图标：一局可能打半小时,
                 // 半夜躺在床上不想听、通勤路上想听，都得在「开局之前」决定。
                 // 牌桌上那个喇叭仍然在，两处改的是同一个值
                 SectionTitle(
@@ -356,6 +397,43 @@ fun UIWerewolfSetupScreen(
                                 check = if (checked) apiChecks[friend.id] else null,
                                 onClick = { onToggleFriend(friend.id) }
                             )
+                        }
+                    }
+                }
+
+                // 指定身份只在纯观战局开放：参与的局自己挑身份等于作弊。
+                // 放在选人列表后面：先确定谁上桌，再给上桌的人派身份
+                if (mode == UIWerewolfMode.SPECTATE && selectedIds.isNotEmpty()) {
+                    SectionTitle(
+                        title = "指定身份",
+                        subtitle = "给每个座位指定身份，看一场按你剧本演的局；没指定的随机发"
+                    )
+                    SetupSwitchRow(
+                        title = "导演模式",
+                        subtitle = if (assignRoles) {
+                            "点每个名字旁的身份改派，改回随机也行；座位号开局仍然随机"
+                        } else {
+                            "打开后可以指定谁当狼、谁当预言家，其余随机"
+                        },
+                        checked = assignRoles,
+                        onCheckedChange = onAssignRolesChange,
+                    )
+                    if (assignRoles) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .uiCard(shape = RoundedCornerShape(UIRadiusCard))
+                                .padding(vertical = 4.dp)
+                        ) {
+                            friends.filter { it.id in selectedIds }.forEach { friend ->
+                                RoleAssignRow(
+                                    friendName = friend.name,
+                                    assignedKey = roleByFriend[friend.id],
+                                    options = roleOptions,
+                                    otherAssignments = roleByFriend - friend.id,
+                                    onPick = { key -> onAssignRole(friend.id, key) },
+                                )
+                            }
                         }
                     }
                 }
@@ -1104,5 +1182,128 @@ private fun SetupLimitChip(
             overflow = TextOverflow.Ellipsis,
             color = UIFriendBarItemSubtitleColor
         )
+    }
+}
+
+/** 发言长度的三档选择，样式和思考时限的 chips 一致。 */
+@Composable
+private fun SetupSpeechChip(
+    length: UIWerewolfSpeechLength,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(UIRadiusControl))
+            .background(if (selected) UIFriendBarTagTextBlue.copy(alpha = 0.14f) else UIFieldFill)
+            .border(
+                width = if (selected) 1.2.dp else 1.dp,
+                color = if (selected) UIFriendBarTagTextBlue else UIGlassStroke,
+                shape = RoundedCornerShape(UIRadiusControl)
+            )
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp, horizontal = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            text = length.label,
+            fontSize = 13.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (selected) UIFriendBarTagTextBlue else UIFriendBarTitleColor
+        )
+        Text(
+            text = length.hint,
+            fontSize = 9.5.sp,
+            lineHeight = 12.sp,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            color = UIFriendBarItemSubtitleColor
+        )
+    }
+}
+
+/**
+ * 导演模式里的一行：名字 + 身份选择器。
+ *
+ * 点右侧的胶囊弹选单。名额按「别的指定」扣减——自己占着狼的名额时，
+ * 狼在自己这行里仍然可选（等于改派），只是别人那行选不了。
+ */
+@Composable
+private fun RoleAssignRow(
+    friendName: String,
+    assignedKey: String?,
+    options: List<UIWerewolfRoleOption>,
+    otherAssignments: Map<String, String>,
+    onPick: (String?) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = friendName,
+            fontSize = 13.sp,
+            color = UIFriendBarTitleColor,
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Box {
+            val assigned = options.firstOrNull { it.key == assignedKey }
+            Text(
+                text = assigned?.label ?: "随机",
+                fontSize = 12.sp,
+                fontWeight = if (assigned != null) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (assigned != null) UIFriendBarTagTextBlue else UIFriendBarItemSubtitleColor,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(UIRadiusControl))
+                    .background(if (assigned != null) UIFriendBarTagTextBlue.copy(alpha = 0.14f) else UIFieldFill)
+                    .border(
+                        width = if (assigned != null) 1.2.dp else 1.dp,
+                        color = if (assigned != null) UIFriendBarTagTextBlue else UIGlassStroke,
+                        shape = RoundedCornerShape(UIRadiusControl)
+                    )
+                    .clickable { expanded = true }
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            )
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                DropdownMenuItem(
+                    text = { Text("随机（不指定）") },
+                    onClick = {
+                        expanded = false
+                        onPick(null)
+                    }
+                )
+                options.forEach { option ->
+                    // 别人占掉的名额不算在自己头上：自己改派回原身份是合法的
+                    val left = option.total - otherAssignments.values.count { it == option.key }
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = if (left == option.total) {
+                                    "${option.label}（${option.total} 个名额）"
+                                } else {
+                                    "${option.label}（剩 $left 个名额）"
+                                },
+                                color = if (left > 0 || option.key == assignedKey) {
+                                    UIFriendBarTitleColor
+                                } else {
+                                    UIFriendBarItemSubtitleColor.copy(alpha = 0.5f)
+                                }
+                            )
+                        },
+                        enabled = left > 0 || option.key == assignedKey,
+                        onClick = {
+                            expanded = false
+                            onPick(option.key)
+                        }
+                    )
+                }
+            }
+        }
     }
 }

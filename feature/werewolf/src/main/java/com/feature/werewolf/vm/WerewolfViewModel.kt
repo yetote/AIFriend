@@ -43,6 +43,8 @@ import com.feature.werewolf.game.WerewolfConfig
 import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfPlayer
 import com.feature.werewolf.game.WerewolfPromptStyle
+import com.feature.werewolf.game.WerewolfRole
+import com.feature.werewolf.game.WerewolfSpeechLength
 import com.feature.werewolf.game.WerewolfTurnLimit
 import com.feature.werewolf.replay.ReplayFrame
 import com.feature.werewolf.replay.ReplayTimeline
@@ -703,6 +705,13 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
         boardKey: String = "",
         /** 这一局的思考时限。超过就按兜底继续，并关掉那个座位的深度思考。 */
         turnLimit: WerewolfTurnLimit = WerewolfTurnLimit.STANDARD,
+        /** 这一局发言的目标长度。引擎裁剪与提示词共用。 */
+        speechLength: WerewolfSpeechLength = WerewolfSpeechLength.STANDARD,
+        /**
+         * 指定身份（玩家 id → 身份），纯观战局的导演模式。没指定的人随机补；
+         * 人数超过板子构成会报错并显示到开局页。
+         */
+        roleAssignment: Map<String, WerewolfRole> = emptyMap(),
     ) {
         val previous = playJob
         playJob = viewModelScope.launch {
@@ -727,6 +736,8 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
                 controller.applyCustomPrompt(loadCustomPrompt(boardKey))
                 // 提示词风格同样在开局这一刻定死，后面改设置不影响这一局。
                 controller.applyPromptStyle(_promptStyle.value)
+                // 发言长度同样开局定死；续档时由控制器从存档接回。
+                controller.applySpeechLength(speechLength)
 
                 // 开局前先确认每个模型真的能回话。这一步失败比打到第三天某个 AI 突然
                 // 报错要好得多：那时牌桌已经铺开，用户分不清是游戏坏了还是模型坏了
@@ -739,7 +750,11 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
                         emptyList()
                     }
 
-                val game = WerewolfGame.deal(config, roster, Random.Default)
+                val game = WerewolfGame.deal(
+                    config, roster, Random.Default,
+                    // 指定身份只在纯观战局开放：参与的局自己选身份等于作弊
+                    assignment = if (mode == WerewolfMode.SPECTATE) roleAssignment else emptyMap(),
+                )
                 val humanSeat = if (mode == WerewolfMode.PLAY) {
                     game.players.first { it.id == SELF_PLAYER_ID }.seat
                 } else {

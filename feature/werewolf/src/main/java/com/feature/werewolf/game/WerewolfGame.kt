@@ -1292,12 +1292,36 @@ data class WerewolfGame(
          * 而名单是配置页按选人顺序排出来的：不洗的话第一个被勾选的人永远是 1 号、
          * 永远先手发言，坐哪个位子完全可预测。座位和身份用同一个 [random] 连洗两次，
          * 传 `Random(seed)` 依然能复现整局。
+         *
+         * [assignment] 是「玩家 id → 身份」，给纯观战局当导演用：指定谁当狼谁当预言家，
+         * 看一场按剧本演的局。没指定的人从剩余身份里随机补——只指定狼和预言家、
+         * 其余全随机也是合法用法。指定身份的**人数**超过板子构成会直接报错
+         * （错误文案会显示到开局页，所以要说人话）；座位号照样洗牌，「谁坐几号」仍然随机。
          */
         fun deal(
             config: WerewolfConfig = WerewolfConfig(),
             roster: List<RosterEntry>,
             random: Random = Random.Default,
-        ): WerewolfGame = build(config, roster.shuffled(random)) { roles -> roles.shuffled(random) }
+            assignment: Map<String, WerewolfRole> = emptyMap(),
+        ): WerewolfGame {
+            if (assignment.isEmpty()) {
+                return build(config, roster.shuffled(random)) { roles -> roles.shuffled(random) }
+            }
+            val unknown = assignment.keys - roster.mapTo(mutableSetOf()) { it.id }
+            require(unknown.isEmpty()) { "指定身份的玩家不在本局名单里" }
+            val leftovers = config.composition
+                .flatMap { (role, count) -> List(count) { role } }
+                .toMutableList()
+            assignment.values.forEach { role ->
+                require(leftovers.remove(role)) {
+                    "指定的「${role.displayName}」比板子构成里的多，改一下再开局"
+                }
+            }
+            val shuffledRoster = roster.shuffled(random)
+            val randomLeftovers = ArrayDeque(leftovers.shuffled(random))
+            val arranged = shuffledRoster.map { entry -> assignment[entry.id] ?: randomLeftovers.removeFirst() }
+            return build(config, shuffledRoster) { _ -> arranged }
+        }
 
         /**
          * 按给定顺序分配身份，不洗牌。
