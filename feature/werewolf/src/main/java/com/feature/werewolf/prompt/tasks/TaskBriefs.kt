@@ -2,6 +2,7 @@ package com.feature.werewolf.prompt.tasks
 
 import com.feature.werewolf.game.Phase
 import com.feature.werewolf.game.WerewolfGame
+import com.feature.werewolf.game.WerewolfPromptStyle
 import com.feature.werewolf.game.WerewolfRole
 import com.feature.werewolf.prompt.seatsText
 
@@ -15,8 +16,13 @@ import com.feature.werewolf.prompt.seatsText
  * 写具体动作而不是「请行动」：`请从 1、2、5 号中选一个` 比 `请选择目标` 的跑偏率低一个量级，
  * 尤其是小模型。
  */
-internal fun taskBrief(game: WerewolfGame, seat: Int): String {
+internal fun taskBrief(
+    game: WerewolfGame,
+    seat: Int,
+    style: WerewolfPromptStyle = WerewolfPromptStyle.GUIDED,
+): String {
     val player = game.playerAt(seat)
+    val guided = style == WerewolfPromptStyle.GUIDED
     return buildString {
         append("【本轮任务】")
         when (game.phase) {
@@ -28,21 +34,36 @@ internal fun taskBrief(game: WerewolfGame, seat: Int): String {
                 if (game.lastGuardedSeat != null) {
                     append("你昨夜守的是 ${game.lastGuardedSeat} 号，今晚不能再守他。")
                 }
-                append("空守等于这一夜白过，除非你确信狼人会空刀。")
+                if (guided) {
+                    // 「空守白过」是策略判断：自由模式里守谁、守不守，让守卫自己盘。
+                    append("空守等于这一夜白过，除非你确信狼人会空刀。")
+                }
                 append("先用一句话说明你为什么守他，再给出座位号。")
             }
 
             Phase.NIGHT_WOLF_CHAT -> {
                 append("第 ${game.day} 夜，狼人睁眼。先和队友商量今晚刀谁。")
                 append("可选目标：").append(seatsText(game.aliveSeats)).append("（含你自己和队友）。")
-                append("自刀（刀自己人，骗女巫的解药）和空刀都是正经战术，想用就直说，别怕队友觉得奇怪。" +
-                    "如果打的是空刀或自刀，这一轮就要把话说透：为什么这一刀值得这么用。")
+                if (guided) {
+                    // 引导式把「自刀骗解药/空刀」当战术推荐；自由式只说这是可选动作，
+                    // 不怂惐也不要求「把话说透」——用不用、怎么用，狼队自己商量。
+                    append("自刀（刀自己人，骗女巫的解药）和空刀都是正经战术，想用就直说，别怕队友觉得奇怪。" +
+                        "如果打的是空刀或自刀，这一轮就要把话说透：为什么这一刀值得这么用。")
+                } else {
+                    append("自刀和空刀也可以。")
+                }
                 append("用 1-2 句中文说出你想刀谁、为什么；队友已经先说了，就先回应他。")
                 // 「只盯着预言家刀」是最常见的偷懒打法：撞上一次守就白过一夜，
                 // 而狼队往往意识不到那一刀根本没落地。把守卫摆进商量内容里。
+                // 「撞守无效」是游戏事实，两种风格都说；但「必须盘守卫会守谁」
+                // 是打法指令，自由式不给。
                 if (game.config.has(WerewolfRole.GUARD)) {
-                    append("商量的时候必须把守卫算进去：他今晚会守谁、这一刀会不会撞守；" +
-                        "撞守的一刀是彻底无效，不是打残。")
+                    if (guided) {
+                        append("商量的时候必须把守卫算进去：他今晚会守谁、这一刀会不会撞守；" +
+                            "撞守的一刀是彻底无效，不是打残。")
+                    } else {
+                        append("这一刀撞上守卫就无效（他守的人死不了）。")
+                    }
                 }
                 append("这一步只是商量，不要输出 JSON，也别说「好的」这种没有信息的话。")
             }
@@ -56,7 +77,7 @@ internal fun taskBrief(game: WerewolfGame, seat: Int): String {
                 }
                 append("可选目标：").append(seatsText(game.aliveSeats))
                     .append("（含你自己和队友）；不想刀人就填 null，主动空刀。")
-                if (game.config.has(WerewolfRole.GUARD)) {
+                if (guided && game.config.has(WerewolfRole.GUARD)) {
                     append("理由里要交代守卫这一层：他今晚最可能守谁，你为什么觉得这一刀落不到守护上。")
                 }
                 append("先一句话说明理由，再给出目标座位号。")
@@ -66,7 +87,9 @@ internal fun taskBrief(game: WerewolfGame, seat: Int): String {
                 val targets = game.aliveSeats.filter { it != seat }
                 append("第 ${game.day} 夜，你要查验一个人。")
                 append("可选目标：").append(seatsText(targets)).append("。")
-                append("优先验还没查过的人——你已经掌握的信息比其他人多，别浪费这一验。")
+                if (guided) {
+                    append("优先验还没查过的人——你已经掌握的信息比其他人多，别浪费这一验。")
+                }
                 append("理由写你**怀疑他什么**（一句话：他哪句话、哪个动作不对劲），")
                 append("别写「随机选择」这种没有信息的话，也别写你打算怎么用这条验人——")
             }
@@ -79,33 +102,45 @@ internal fun taskBrief(game: WerewolfGame, seat: Int): String {
                     append("今晚 ${victim} 号被狼人袭击。")
                 }
                 append("决定是否用解药，或者用毒药毒死一个人（同一夜只能用一种药）。")
-                append("也可以什么都不做，把药留到更关键的时候。")
+                if (guided) {
+                    // 「留到更关键的时候」是用药时机判断；自由模式里什么时候用，女巫自己定。
+                    append("也可以什么都不做，把药留到更关键的时候。")
+                } else {
+                    append("也可以什么都不做。")
+                }
             }
 
             Phase.DAY_SHERIFF_SIGNUP ->
                 append(
                     "第 ${game.day} 天，警长竞选开始，先问你要不要上警。" +
                         "想当警长就把 target 填成你自己的 $seat 号，不想就填 null。" +
-                        "当上警长票权 1.5 票、还能决定当天的发言起点，代价是被狼人优先盯上；" +
+                        "当上警长票权 1.5 票、还能决定当天的发言起点；" +
                         "而且上过警的人不能投警长票。" +
-                        "这一步只是举手报名，不发言——别写竞选宣言，那些话留到竞选发言环节。"
+                        "这一步只是举手报名，不发言——别写竞选宣言，那些话留到竞选发言环节。" +
+                        // 「被狼人优先盯上」是风险评估代打；上不上警，自己权衡。
+                        if (guided) "代价是被狼人优先盯上，报不报名自己权衡。" else ""
                 )
 
             Phase.DAY_SHERIFF_SPEECH -> {
-                append(
-                    "现在轮到你竞选发言。用 4-6 句说服警下把票投给你。" +
+                append("现在轮到你竞选发言。用 4-6 句说服警下把票投给你。")
+                if (guided) {
+                    // 怎么说服（先报验人、讲心路、越具体越像真）是演说教学；
+                    // 自由模式里怎么说，竞选者自己决定。
+                    append(
                         "第一句就把结论摆出来：你验的是谁、结果是什么（预言家），" +
-                        "或者你认准谁是该出的人。别把最硬的信息憋到最后。" +
-                        "后面几句交代你**为什么这么判断**：验人的心路历程、警徽流准备怎么留、" +
-                        "你觉得前一后置位谁像悍跳、谁在挡枪；再说你当选后先推谁。" +
-                        "后面的人会拿你这段和别人的对跳：报得越具体、验人和警徽流越接得上，越像真预言家。" +
-                        "不要念座位号清单，不要写「某某说：」这样的格式。" +
-                        "如果你已经上台说过一次（PK 重新发言），必须回应对方这一轮说的话，" +
-                        "不要把刚才那段再念一遍——复读是最容易被抓的破绽。"
-                )
+                            "或者你认准谁是该出的人。别把最硬的信息憋到最后。" +
+                            "后面几句交代你**为什么这么判断**：验人的心路历程、警徽流准备怎么留，" +
+                            "你觉得前一后置位谁像悍跳、谁在挡枪；再说你当选后先推谁。" +
+                            "后面的人会拿你这段和别人的对跳：报得越具体、验人和警徽流越接得上，越像真预言家。"
+                    )
+                }
+                // 格式要求，两种风格都给
+                append("不要念座位号清单，不要写「某某说：」这样的格式。" +
+                    "如果你已经上台说过一次（PK 重新发言），必须回应对方这一轮说的话，" +
+                    "不要把刚才那段再念一遍——复读是最容易被抓的破绽。")
                 // 竞选发言是唯一能「炸掉警徽」的位置：一爆下去选举中止，本局没有警长。
                 // 只写给狼，而且要说清这是拿命换的——不写清楚，模型会把自爆当成一种表态。
-                if (player.role.isWerewolf) {
+                if (player.role.isWerewolf && guided) {
                     append(
                         "另一种打法：如果这个警徽注定要给真预言家，你可以在这一步自爆——" +
                             "选举当场中止，本局**没有警长**，好人白丢一个归票的位置。" +
@@ -139,18 +174,29 @@ internal fun taskBrief(game: WerewolfGame, seat: Int): String {
             Phase.DAY_DISCUSSION -> {
                 append(
                     "第 ${game.day} 天白天讨论，轮到你发言。" +
-                        "用 4-6 句中文说清你的判断，别只丢一句结论就过。" +
+                        "用 4-6 句中文说清你的判断，别只丢一句结论就过。"
+                )
+                if (guided) {
+                    // 「先说你怀疑谁、再给具体依据、正面回应质疑」是怎么发言的教学；
+                    // 自由模式里说什么、怎么论证，发言人自己决定。
+                    append(
                         "先说你怀疑谁、为什么，再给出支撑这个判断的**具体依据**：" +
-                        "谁哪句话前后对不上、谁的站边或警徽流反常、票型能说明什么。" +
-                        "如果有人质疑你或你上一票投得反常，正面回应，别绕开。" +
-                        "只说你自己的话，不要替别人发言，不要写「某某说：」这样的格式。" +
+                            "谁哪句话前后对不上、谁的站边或警徽流反常、票型能说明什么。" +
+                            "如果有人质疑你或你上一票投得反常，正面回应，别绕开。"
+                    )
+                }
+                // 格式与反复读：两种风格都给
+                append(
+                    "只说你自己的话，不要替别人发言，不要写「某某说：」这样的格式。" +
                         "这一段必须和今天你已经说过的内容不同：结论没变就补新的理由或回应别人的质疑，" +
                         "复读旧话在别人眼里就是背词。"
                 )
                 // 验人是全场最硬的信息，也是好人认预言家的唯一凭据。
                 // 不点出来，模型会按人设聊感受，把一整晚的查验结果烂在手里，
                 // 然后被全场当成「跳了预言家却不报验人」投出去。
-                if (player.role == WerewolfRole.SEER && game.seerChecks.isNotEmpty()) {
+                // 但「先报验人」同时是「必须跳预言家」——跳不跳是这张牌的核心自由度，
+                // 自由模式里由预言家自己决定。
+                if (guided && player.role == WerewolfRole.SEER && game.seerChecks.isNotEmpty()) {
                     val last = game.seerChecks.last()
                     append(
                         "开口第一件事先报验人：第 ${last.day} 夜你验的是 ${last.targetSeat} 号，" +
@@ -159,8 +205,9 @@ internal fun taskBrief(game: WerewolfGame, seat: Int): String {
                     )
                 }
                 // 自爆只对狼有意义。写给所有人等于向好人泄露「这局的狼会自爆」，
-                // 虽然规则公开可查，但提示词里不该出现一句只对狼有用的话
-                if (player.role.isWerewolf) {
+                // 虽然规则公开可查，但提示词里不该出现一句只对狼有用的话。
+                // 自爆的教学（什么时候值得爆）是打法，自由式不给。
+                if (player.role.isWerewolf && guided) {
                     append(
                         "自爆能立刻结束这一天、直接进入黑夜，但它只换来一天，用掉的是一条命。" +
                             "**在讨论环节**值得的情况只有一种：另一个队友今天已经确定要被投出去，" +

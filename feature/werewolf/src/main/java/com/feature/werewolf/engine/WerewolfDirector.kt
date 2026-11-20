@@ -985,7 +985,7 @@ class WerewolfDirector(
         return ask(
             table = table,
             seat = seat,
-            spec = WerewolfDecisions.badgeTransfer(game, seat),
+            spec = WerewolfDecisions.badgeTransfer(game, seat, free = promptStyle == WerewolfPromptStyle.FREE),
             // 兜底撕掉警徽，而不是随便找个人接手：交错的代价比没有警长大得多
             fallback = { VoteChoice(target = null, reason = "我来不及交代了。") },
             task = "请在遗言里交代警徽交给谁。",
@@ -1001,7 +1001,7 @@ class WerewolfDirector(
         return ask(
             table = table,
             seat = seat,
-            spec = WerewolfDecisions.speechDirection(game, seat),
+            spec = WerewolfDecisions.speechDirection(game, seat, free = promptStyle == WerewolfPromptStyle.FREE),
             fallback = { DirectionChoice(clockwise = true, reason = "就按常规顺序来。") },
             task = "请决定今天白天的发言方向。",
         )

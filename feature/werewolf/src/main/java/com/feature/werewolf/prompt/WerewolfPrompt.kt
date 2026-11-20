@@ -130,7 +130,7 @@ object WerewolfPrompt {
                     append(bluff.joinToString("\n")).append("\n\n")
                 }
             }
-            append(task(game, seat))
+            append(task(game, seat, style))
             // 时限是环境约束不是打法，两种风格都给：不给模型会铺垫太长被掐断，
             // 那就变成「测超时兜底」而不是「测它自己的判断」了。
             if (limit != null && limit != WerewolfTurnLimit.UNLIMITED) {
@@ -527,11 +527,18 @@ object WerewolfPrompt {
         if (game.sheriffSeat == seat && game.phase != Phase.FINISHED) {
             lines += "你是警长：你的一票算 1.5 票，每天讨论开始前由你选一次发言方向（顺时针或逆时针），" +
                 "选完你最后说（归票位）。"
-            lines += "你出局时要决定把警徽交给谁——交给错的人比撕掉更糟。" +
+            lines +=
+                // 「交给错的人比撕掉更糟」是判断代打；徽给谁、撕不撕，警长自己定。
+                // 移交和遗言是两件事则是硬规则：被枪带走时说不了话但徽照样要处理。
+                (if (style == WerewolfPromptStyle.GUIDED) "你出局时要决定把警徽交给谁——交给错的人比撕掉更糟。"
+                else "你出局时要决定把警徽交给谁。") +
                 "警徽移交和遗言是两件事：被猎人一枪带走时你说不了话，但警徽照样要处理。"
         }
         if (seat in game.sheriffRunners && game.phase.isSheriffPhase) {
-            lines += "你在竞选警长。上过警的人不能投警长票，所以既然报了名就要争到底。"
+            lines +=
+                // 「争到底」是打法指令；上过警不能投警长票才是规则。
+                if (style == WerewolfPromptStyle.GUIDED) "你在竞选警长。上过警的人不能投警长票，所以既然报了名就要争到底。"
+                else "你在竞选警长。上过警的人不能投警长票。"
         }
         if (game.phase == Phase.DAY_LAST_WORDS && seat in game.pendingLastWords) {
             lines += "你已经出局了，现在轮到你说遗言。遗言改不了结局，但会直接影响活着的人怎么投。"
@@ -557,7 +564,8 @@ object WerewolfPrompt {
     // ---------------------------------------------------------------------
 
     /** 当前阶段要做什么。内容在 `tasks/TaskBriefs.kt`，这里只留入口。 */
-    fun task(game: WerewolfGame, seat: Int): String = taskBrief(game, seat)
+    fun task(game: WerewolfGame, seat: Int, style: WerewolfPromptStyle = WerewolfPromptStyle.GUIDED): String =
+        taskBrief(game, seat, style)
 
     /**
      * 时间预算的一段话。UNLIMITED 由调用方跳过，这里只处理有限的档位。

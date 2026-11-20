@@ -235,8 +235,10 @@ object WerewolfDecisions {
      * 两种情况要分开写：[seat] 是被猎人一枪带走的时候，他**没有遗言**，
      * 这一句是唯一能留下的信息——不能让他以为自己在发表遗言，
      * 否则模型会写出一大段悼词，牌桌上一具尸体突然开始长篇大论。
+     *
+     * [free] 为 true 时不给「交给错的人比撕掉更糟」——那是判断代打。
      */
-    fun badgeTransfer(game: WerewolfGame, seat: Int): StructuredSpec<VoteChoice> {
+    fun badgeTransfer(game: WerewolfGame, seat: Int, free: Boolean = false): StructuredSpec<VoteChoice> {
         val valid = game.aliveSeats.filter { it != seat }
         val shot = game.playerAt(seat).deathCause == DeathCause.HUNTER_SHOOT
         val lead = if (shot) {
@@ -253,7 +255,7 @@ object WerewolfDecisions {
             instruction = lead + "输出 {\"target\": 座位号或 null, \"reason\": \"一句话理由\"}。" +
                 "target 是你把警徽交给的人，只能从 ${list(valid)} 中选；" +
                 "想撕掉警徽（谁也不给）就填 null。" + tail +
-                "注意：把警徽交给一个可能是狼的人，比撕掉更糟。",
+                if (free) "" else "注意：把警徽交给一个可能是狼的人，比撕掉更糟。",
             serializer = VoteChoice.serializer(),
             validate = { it.target == null || it.target in valid },
         )
@@ -278,8 +280,10 @@ object WerewolfDecisions {
      * 「谁先开口、谁挨着警长说话」，只给顺/逆两个字它只能瞎猜。
      * 警长自己最后归票，两个方向都不变，instruction 里说明白，
      * 免得模型以为选逆序就能让自己早说。
+     *
+     * [free] 为 true 时不给「想帮可疑的人先说/可信的人定调」的策略举例。
      */
-    fun speechDirection(game: WerewolfGame, seat: Int): StructuredSpec<DirectionChoice> {
+    fun speechDirection(game: WerewolfGame, seat: Int, free: Boolean = false): StructuredSpec<DirectionChoice> {
         val alive = game.aliveSeats.sorted()
         val clockwiseFirst = alive.firstOrNull { it > seat }
         val counterFirst = alive.lastOrNull { it < seat } ?: alive.lastOrNull()
@@ -291,8 +295,10 @@ object WerewolfDecisions {
                 append("clockwise=false 是逆时针，从 $counterFirst 号开始按座位号递减倒着绕一圈。")
                 append("两种方向你自己都是最后一个发言（归票位），")
                 append("选方向等于选「谁第一个开口、谁紧挨着你说话」。")
-                append("想想哪个方向对你今天的判断更有利：")
-                append("比如想让可疑的人先说、或者让可信的人先定调。")
+                if (!free) {
+                    append("想想哪个方向对你今天的判断更有利：")
+                    append("比如想让可疑的人先说、或者让可信的人先定调。")
+                }
                 append(INNER_REASON_HINT)
             },
             serializer = DirectionChoice.serializer(),

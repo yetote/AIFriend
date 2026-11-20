@@ -14,6 +14,7 @@ import com.feature.werewolf.game.PendingDawn
 import com.feature.werewolf.game.WerewolfRole
 import com.feature.werewolf.game.WerewolfTurnLimit
 import com.feature.werewolf.game.WinRule
+import com.feature.werewolf.decision.WerewolfDecisions
 import com.feature.werewolf.game.WitchStock
 import com.feature.werewolf.prompt.boards.Boards
 import com.feature.werewolf.prompt.boards.BoardText
@@ -1214,6 +1215,115 @@ class WerewolfPromptTest {
         // 自由式里没有「公共打法」这一层，狼的提示词不能再引用它
         assertFalse("自由式不引用公共打法", freeWolf.contains("公共打法里说"))
         assertTrue("引导式狼保留引用澄清", guidedWolf.contains("公共打法里说"))
+    }
+
+    @Test
+    fun `自由式任务文案去掉打法教学`() {
+        // 跳不跳、什么时候自爆、药怎么用、警徽给谁——自由模式里全还给模型。
+        val day = standardGame().copy(phase = Phase.DAY_DISCUSSION)
+        val checks = standardGame().copy(
+            phase = Phase.DAY_DISCUSSION,
+            seerChecks = listOf(SeerCheck(day = 1, targetSeat = 2, isWerewolf = true)),
+        )
+
+        // 预言家白天：「先报验人」等于强制跳身份
+        assertFalse("自由式不强制预言家报验人", WerewolfPrompt.task(checks, seat = 3, style = WerewolfPromptStyle.FREE).contains("先报验人"))
+        assertTrue("引导式照旧教先报验人", WerewolfPrompt.task(checks, seat = 3).contains("先报验人"))
+
+        // 白天讨论：论证结构与自爆教学不给，格式与反复读保留
+        val freeWolf = WerewolfPrompt.task(day, seat = 1, style = WerewolfPromptStyle.FREE)
+        assertFalse("自由式不讲论证结构", freeWolf.contains("具体依据"))
+        assertFalse("自由式不自爆教学", freeWolf.contains("自爆"))
+        assertTrue("格式要求保留", freeWolf.contains("不要写「某某说：」"))
+        assertTrue("反复读提醒保留", freeWolf.contains("复读旧话"))
+
+        // 竞选发言：演说教学与竞选自爆教学不给
+        val speech = standardGame().copy(phase = Phase.DAY_SHERIFF_SPEECH)
+        val freeSpeech = WerewolfPrompt.task(speech, seat = 6, style = WerewolfPromptStyle.FREE)
+        assertFalse("自由式不教竞选演说", freeSpeech.contains("越像真预言家"))
+        assertFalse("自由式不给竞选自爆教学", WerewolfPrompt.task(speech, seat = 1, style = WerewolfPromptStyle.FREE).contains("自爆"))
+        assertTrue("竞选格式保留", freeSpeech.contains("不要念座位号清单"))
+        assertTrue("引导式竞选教学照旧", WerewolfPrompt.task(speech, seat = 6).contains("越像真预言家"))
+
+        // 夜里各步的策略措辞
+        val seerNight = standardGame().copy(phase = Phase.NIGHT_SEER)
+        assertFalse("自由式不教验人策略", WerewolfPrompt.task(seerNight, seat = 3, style = WerewolfPromptStyle.FREE).contains("别浪费这一验"))
+        val witchNight = standardGame().copy(phase = Phase.NIGHT_WITCH, tonightVictim = 7)
+        val freeWitch = WerewolfPrompt.task(witchNight, seat = 4, style = WerewolfPromptStyle.FREE)
+        assertFalse("自由式不教用药时机", freeWitch.contains("更关键的时候"))
+        assertTrue("可以不用药的机制保留", freeWitch.contains("也可以什么都不做"))
+
+        // 守卫（带守卫的局才有守夜阶段）
+        val guardNight = gameWithGuard().copy(phase = Phase.NIGHT_GUARD)
+        assertFalse("自由式不教守人策略", WerewolfPrompt.task(guardNight, seat = 5, style = WerewolfPromptStyle.FREE).contains("空守等于"))
+        assertTrue("引导式照旧", WerewolfPrompt.task(guardNight, seat = 5).contains("空守等于"))
+
+        // 狼聊：怂恿语气与盘守卫的打法指令不给，「自刀空刀可选」与「撞守无效」机制保留
+        val guardChat = gameWithGuard().copy(phase = Phase.NIGHT_WOLF_CHAT)
+        val freeChat = WerewolfPrompt.task(guardChat, seat = 1, style = WerewolfPromptStyle.FREE)
+        assertFalse("自由式不怂恿自刀空刀", freeChat.contains("别怕队友觉得奇怪"))
+        assertTrue("自刀空刀可选保留", freeChat.contains("自刀和空刀也可以"))
+        assertFalse("自由式不教盘守卫", freeChat.contains("必须把守卫算进去"))
+        assertTrue("撞守规则保留", freeChat.contains("撞上守卫就无效"))
+
+        // 上警：风险评估代打不给
+        val signup = standardGame().copy(phase = Phase.DAY_SHERIFF_SIGNUP)
+        val freeSignup = WerewolfPrompt.task(signup, seat = 6, style = WerewolfPromptStyle.FREE)
+        assertFalse("自由式不代打风险评估", freeSignup.contains("被狼人优先盯上"))
+        assertTrue("报名机制保留", freeSignup.contains("上过警的人不能投警长票"))
+    }
+
+    @Test
+    fun `自由式私有段与决策指令不代打判断`() {
+        // 白痴：翻牌机制保留，翻牌后的发言教学不给
+        val idiotGame = WerewolfGame.withRoles(
+            config = WerewolfConfig(
+                composition = mapOf(
+                    WerewolfRole.WEREWOLF to 2,
+                    WerewolfRole.SEER to 1,
+                    WerewolfRole.IDIOT to 1,
+                    WerewolfRole.VILLAGER to 4,
+                ),
+            ),
+            roster = roster(8),
+            roles = listOf(
+                WerewolfRole.WEREWOLF, WerewolfRole.WEREWOLF, WerewolfRole.SEER,
+                WerewolfRole.IDIOT, WerewolfRole.VILLAGER, WerewolfRole.VILLAGER,
+                WerewolfRole.VILLAGER, WerewolfRole.VILLAGER,
+            ),
+        )
+        val freeIdiot = WerewolfPrompt.systemPrompt(idiotGame, seat = 4, style = WerewolfPromptStyle.FREE)
+        val guidedIdiot = WerewolfPrompt.systemPrompt(idiotGame, seat = 4)
+        assertTrue("翻牌机制保留", freeIdiot.contains("翻开身份但不死"))
+        assertFalse("自由式不教翻牌后怎么说话", freeIdiot.contains("只剩一张嘴"))
+        assertTrue("引导式照旧", guidedIdiot.contains("只剩一张嘴"))
+
+        // 警长私有段：移交机制保留，判断代打不给
+        val sheriffGame = gameWithGuard().copy(sheriffSeat = 6)
+        val freeSheriff = WerewolfPrompt.privateBriefing(sheriffGame, seat = 6, style = WerewolfPromptStyle.FREE)
+        val guidedSheriff = WerewolfPrompt.privateBriefing(sheriffGame, seat = 6)
+        assertTrue("移交机制保留", freeSheriff.contains("把警徽交给谁"))
+        assertFalse("自由式不代打警徽判断", freeSheriff.contains("比撕掉更糟"))
+        assertTrue("引导式照旧", guidedSheriff.contains("比撕掉更糟"))
+
+        // 决策指令：警徽与方向两处
+        val game = gameWithGuard()
+        assertFalse(
+            "自由式警徽指令不代打",
+            WerewolfDecisions.badgeTransfer(game, 6, free = true).instruction.contains("比撕掉更糟"),
+        )
+        assertTrue(
+            "引导式警徽指令照旧",
+            WerewolfDecisions.badgeTransfer(game, 6).instruction.contains("比撕掉更糟"),
+        )
+        assertFalse(
+            "自由式方向指令不举策略例子",
+            WerewolfDecisions.speechDirection(game, 6, free = true).instruction.contains("可疑的人先说"),
+        )
+        assertTrue(
+            "引导式方向指令照旧",
+            WerewolfDecisions.speechDirection(game, 6).instruction.contains("可疑的人先说"),
+        )
     }
 
     @Test
