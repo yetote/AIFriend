@@ -1169,22 +1169,27 @@ class WerewolfPromptTest {
     }
 
     @Test
-    fun `自由式保留身份规则局势任务和私有信息`() {
+    fun `自由式只给板子配比，规则说明整段不给`() {
         val game = standardGame()
         val good = WerewolfPrompt.systemPrompt(game, seat = 3, style = WerewolfPromptStyle.FREE)
         val wolf = WerewolfPrompt.systemPrompt(game, seat = 1, style = WerewolfPromptStyle.FREE)
 
         // 事实层：这几样拿掉游戏就没法打
         assertTrue("身份还在", good.contains("你的身份是预言家"))
-        assertTrue("规则还在", good.contains("【胜负规则】"))
         assertTrue("局势还在", good.contains("【当前局势】"))
-        assertTrue("板子还在", good.contains("【本局板子】"))
         assertTrue("本轮任务还在", good.contains("【本轮任务】"))
         assertTrue("私有信息还在", wolf.contains("【只有你知道的事】"))
         assertTrue("狼队友还在", wolf.contains("你的狼队友"))
         // 保密底线：自由不等于可以在白天报身份
         assertTrue("保密底线还在", wolf.contains("不许出现「队友」"))
         assertTrue("狼的保密收尾还在", wolf.contains("不能在白天直接说出来"))
+
+        // 自由式的板子只剩一行：人数 + 配比 + 有无警长
+        assertTrue("配比还在", good.contains("8 人局：2 狼人、预言家、女巫、猎人、3 平民；没有警长。"))
+        // 规则细则整段不给：胜负、遗言、自爆、暗牌……全靠模型自己按标准局理解
+        assertFalse("自由式不给规则说明", good.contains("【胜负规则】"))
+        assertFalse("自由式不给警长竞选流程", good.contains("竞选"))
+        assertFalse("自由式不给遗言规则", good.contains("【遗言】"))
     }
 
     @Test

@@ -76,9 +76,11 @@ object WerewolfPrompt {
         /**
          * 提示词风格。默认 [WerewolfPromptStyle.GUIDED]＝现状，所有老测试与存档行为不变。
          *
-         * [WerewolfPromptStyle.FREE] 只砍**打法**：读人框架、身份作业、狼队战术、屠边账、
-         * 残局挡刀都不给；身份、规则、板子、局势、私有信息（含保密底线）、本轮任务照旧。
-         * 保密底线在其中尤其重要——自由不等于允许在白天报验人或说出队友。
+         * [WerewolfPromptStyle.FREE] 砍到只剩事实：内置打法不给，【规则】整段不给，
+         * 板子只留一行「人数 + 配比 + 有无警长」——怎么判胜负、遗言怎么留、
+         * 能不能自爆，全靠模型自己对标准局的理解。私有信息（队友、验人、保密底线）
+         * 和本轮任务照旧：这是「谁在玩、现在轮到谁干什么」，不是教学，
+         * 拿掉游戏就没法打。自由不等于允许在白天报验人或说出队友。
          */
         style: WerewolfPromptStyle = WerewolfPromptStyle.GUIDED,
         /**
@@ -106,8 +108,14 @@ object WerewolfPrompt {
                     .append("（").append(player.faction.displayName).append("阵营），")
                     .append("这个身份只有你自己知道。\n\n")
             }
-            append(rulesBrief(game.config)).append("\n\n")
-            append(boardBrief(game.config).trimEnd()).append("\n\n")
+            if (style == WerewolfPromptStyle.FREE) {
+                // 自由式只留三样开局事实：人数、配比、有无警长。规则说明整段不给——
+                // 模型按自己训练里的标准局去打，这才是「自由」的本意。
+                append(freeBoardBrief(game.config)).append("\n\n")
+            } else {
+                append(rulesBrief(game.config)).append("\n\n")
+                append(boardBrief(game.config).trimEnd()).append("\n\n")
+            }
             // 引导式才给内置打法。自由式的核心就是「不给方法，只给事实和底线」——
             // 读人框架、板型结论、狼队菜单都在 strategyBrief 里，整段不出现。
             if (style == WerewolfPromptStyle.GUIDED) {
@@ -383,19 +391,34 @@ object WerewolfPrompt {
      * 不归任何身份的东西）。这里只负责按顺序拼起来。
      */
     fun boardBrief(config: WerewolfConfig): String = buildString {
-        append("【本局板子】").append(config.playerCount).append(" 人局：")
-        append(
-            WerewolfRole.entries
-                .mapNotNull { role ->
-                    config.composition[role]?.takeIf { it > 0 }?.let { "$it ${role.displayName}" }
-                }
-                .joinToString("、")
-        ).append("\n")
+        append("【本局板子】").append(compositionText(config)).append("\n")
         RULE_ORDER.filter { config.has(it) }.forEach { role ->
             Roles.of(role).rules(role).forEach { append(it).append("\n") }
         }
         Boards.sheriffRules(config).forEach { append(it).append("\n") }
     }
+
+    /** 配比一行串：「12 人局：4 狼人、预言家、……」。单个身份不报数，两种风格共用。 */
+    private fun compositionText(config: WerewolfConfig): String =
+        config.playerCount.toString() + " 人局：" + WerewolfRole.entries
+            .mapNotNull { role ->
+                config.composition[role]?.takeIf { it > 0 }?.let { count ->
+                    if (count == 1) role.displayName else "$count ${role.displayName}"
+                }
+            }
+            .joinToString("、")
+
+    /**
+     * 自由模式的板子说明：只说人数、配比、有无警长，一句话结束。
+     *
+     * 规则细则（守卫怎么守、警长怎么竞选、白痴翻牌）全部不给。有意为之：
+     * 这些规则的标准玩法都在模型的训练数据里，自由模式的卖点就是
+     * 「不教它打，看它自己怎么打」——文案越少，模型自己的打法空间越大。
+     * 竞选流程也不写：局势段里「警长：暂无」本身就会把这件事暴露出来。
+     */
+    private fun freeBoardBrief(config: WerewolfConfig): String =
+        "【本局板子】" + compositionText(config) +
+            if (config.hasSheriff) "；有警长。" else "；没有警长。"
 
     // ---------------------------------------------------------------------
     // 基本打法
