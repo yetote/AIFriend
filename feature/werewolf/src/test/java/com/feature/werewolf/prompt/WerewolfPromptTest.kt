@@ -106,6 +106,46 @@ class WerewolfPromptTest {
     }
 
     @Test
+    fun `规则说明里写明出局不翻牌`() {
+        // 真局教训：模型对「标准局放逐翻牌」先验太强，规则没明说，
+        // 猎人就编出「3号放逐翻出好人」，全场跟着一句不存在的翻牌走。
+        val prompt = WerewolfPrompt.systemPrompt(gameWithGuard(), seat = 3)
+        assertTrue("要点名本局是暗牌局", prompt.contains("暗牌局"))
+        assertTrue("要断掉翻牌谣言", prompt.contains("不是事实"))
+        assertTrue("没有白痴时要明说没有翻牌环节", prompt.contains("不存在任何翻牌环节"))
+    }
+
+    @Test
+    fun `有白痴的板子写明白痴翻牌例外`() {
+        val game = WerewolfGame.withRoles(
+            config = WerewolfConfig(
+                composition = mapOf(
+                    WerewolfRole.WEREWOLF to 2,
+                    WerewolfRole.SEER to 1,
+                    WerewolfRole.IDIOT to 1,
+                    WerewolfRole.VILLAGER to 4,
+                ),
+                hasSheriff = false,
+            ),
+            roster = roster(8),
+            roles = listOf(
+                WerewolfRole.WEREWOLF,
+                WerewolfRole.WEREWOLF,
+                WerewolfRole.SEER,
+                WerewolfRole.IDIOT,
+                WerewolfRole.VILLAGER,
+                WerewolfRole.VILLAGER,
+                WerewolfRole.VILLAGER,
+                WerewolfRole.VILLAGER,
+            ),
+        )
+
+        val prompt = WerewolfPrompt.systemPrompt(game, seat = 3)
+        assertTrue("白痴是唯一的翻牌例外", prompt.contains("唯一的例外是白痴"))
+        assertFalse("暗牌局正文不该再说没有翻牌环节", prompt.contains("不存在任何翻牌环节"))
+    }
+
+    @Test
     fun `第一天死讯压在警长竞选之后`() {
         // 线上标准流程：第 1 天先上警竞选，竞选和投票结束才公布昨夜死讯。
         // 顺序反了等于让所有人先看到谁死了，再对着尸体竞选。
