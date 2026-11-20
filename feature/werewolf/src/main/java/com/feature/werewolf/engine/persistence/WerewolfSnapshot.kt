@@ -11,6 +11,7 @@ import com.feature.werewolf.game.NightRecord
 import com.feature.werewolf.game.PendingDawn
 import com.feature.werewolf.game.Phase
 import com.feature.werewolf.game.SeerCheck
+import com.feature.werewolf.game.SpeechDirection
 import com.feature.werewolf.game.VoteOutcome
 import com.feature.werewolf.game.VoteRound
 import com.feature.werewolf.game.WerewolfConfig
@@ -62,8 +63,12 @@ object WerewolfSnapshot {
      *
      * v17：多出 `alphaWolfSeat`（导演钉死的头狼）。
      * 带默认值的新增字段，旧档读出来是 null——每晚随机，就是旧行为。
+     *
+     * v18：事件多出 `SPEECH_DIRECTION`（警长每天选的发言方向）。
+     * 新事件走 EventSnapshot 的 type 分派，旧档没有这个类型自然读不到，
+     * speechDirection 落到默认的顺时针——就是旧行为。
      */
-    const val VERSION = 17
+    const val VERSION = 18
 
     private val json = Json {
         ignoreUnknownKeys = true   // 旧档多出来的字段不该让新版本读不出来
@@ -334,6 +339,8 @@ internal data class EventSnapshot(
     val fromSeat: Int? = null,
     /** v5 起：开枪者的称呼（猎人 / 狼王）。老档没有这一项，按猎人读。 */
     val shooterLabel: String? = null,
+    /** v18 起：警长选的发言方向（SpeechDirection 的名字，只有 SPEECH_DIRECTION 用到）。 */
+    val direction: String? = null,
 )
 
 @Serializable
@@ -478,6 +485,8 @@ private fun GameEvent.toSnapshot(): EventSnapshot = when (this) {
     is GameEvent.SheriffPk -> EventSnapshot(type = "SHERIFF_PK", day = day, seats = seats)
     is GameEvent.SheriffBadgePassed ->
         EventSnapshot(type = "SHERIFF_BADGE_PASSED", day = day, fromSeat = fromSeat, targetSeat = toSeat)
+    is GameEvent.SpeechDirectionChosen ->
+        EventSnapshot(type = "SPEECH_DIRECTION", day = day, seat = seat, direction = direction.name)
     is GameEvent.GameOver -> EventSnapshot(type = "GAME_OVER", day = day, winner = winner.name)
 }
 
@@ -619,6 +628,11 @@ private fun EventSnapshot.toEvent(): GameEvent = when (type) {
         day = day,
         fromSeat = requireNotNull(fromSeat) { "SHERIFF_BADGE_PASSED 缺少 fromSeat" },
         toSeat = targetSeat,
+    )
+    "SPEECH_DIRECTION" -> GameEvent.SpeechDirectionChosen(
+        day = day,
+        seat = requireNotNull(seat) { "SPEECH_DIRECTION 缺少 seat" },
+        direction = enumOf<SpeechDirection>(requireNotNull(direction) { "SPEECH_DIRECTION 缺少 direction" }),
     )
     "GAME_OVER" -> GameEvent.GameOver(
         day = day,

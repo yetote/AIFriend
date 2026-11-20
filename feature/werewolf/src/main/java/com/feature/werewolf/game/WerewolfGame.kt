@@ -272,24 +272,67 @@ data class WerewolfGame(
      * 白天发言顺序。
      *
      * 两条线下惯例，按优先级：
-     * 1. **有警长从警长下位起**——警长最后一个发言。他是归票位，先说完就等于
-     *    把自己的判断摊在桌上，后面的人全在顺着他说。
-     * 2. 没警长从**昨夜死者的下位**起。让紧挨着死者的人先开口，是线下最自然的起手，
+     * 1. **有警长从警长该方向的下一位起**——警长最后一个发言。他是归票位，先说完就等于
+     *    把自己的判断摊在桌上，后面的人全在顺着他说。方向由警长每天讨论前选
+     *    （[speechDirection]）：顺时针从座位号增大的下一位起，逆时针反过来倒着绕。
+     * 2. 没警长从**昨夜死者的下位**起，按座位号递增（方向固定顺时针）。
+     *    让紧挨着死者的人先开口，是线下最自然的起手，
      *    因为他们最先看到尸体、也最容易被怀疑。
      * 3. 都没有就从 1 号起。
      *
      * 返回的是**从起点绕一圈**的完整顺序（越过最大座位号后回到最小的），
      * 不是「排好序的活人」——差一个绕圈，7 号之后的 1 号就会被漏掉。
+     * 逆时针同样要绕一整圈：从警长上一位倒着数，最后一个发言的
+     * 依然是警长的顺时针下一位，警长自己永远垫底。
      */
     val discussionOrder: List<Int>
         get() {
             val alive = aliveSeats.sorted()
             if (alive.isEmpty()) return emptyList()
-            val anchor = aliveSheriffSeat ?: lastDawnDeadSeats.firstOrNull()
+            val sheriff = aliveSheriffSeat
+            if (sheriff != null && speechDirection == SpeechDirection.COUNTER_CLOCKWISE) {
+                // 先按顺时针排（警长垫底），再把除警长外的整段倒过来：
+                // [3,4,5,6,1,2]（警长 2）→ [1,6,5,4,3,2]。警长仍是最后一个，
+                // 但发言本身倒着走，这正是「警长选逆序」要的效果。
+                val forward = alive.filter { it > sheriff } + alive.filter { it < sheriff }
+                return forward.reversed() + sheriff
+            }
+            val anchor = sheriff ?: lastDawnDeadSeats.firstOrNull()
             if (anchor == null) return alive
             val start = alive.firstOrNull { it > anchor } ?: alive.first()
             return alive.filter { it >= start } + alive.filter { it < start }
         }
+
+    /**
+     * 今天白天还需不需要警长选方向。
+     *
+     * 只看**当天有没有选过**（history 里的 [GameEvent.SpeechDirectionChosen]）：
+     * 存档续档、重复进入 discussion 都天然幂等。没有警长的日子不需要选，
+     * 顺时针从死者下位起的老规则照旧。
+     */
+    val speechDirectionPending: Boolean
+        get() = phase == Phase.DAY_DISCUSSION &&
+            aliveSheriffSeat != null &&
+            history.none { it is GameEvent.SpeechDirectionChosen && it.day == day }
+
+    /** 今天白天警长选的发言方向；没选过就是顺时针（老档、无警长局都落到这里）。 */
+    val speechDirection: SpeechDirection
+        get() = history.lastOrNull { it is GameEvent.SpeechDirectionChosen && it.day == day }
+            ?.let { (it as GameEvent.SpeechDirectionChosen).direction }
+            ?: SpeechDirection.CLOCKWISE
+
+    /**
+     * 警长选定今天的发言方向。
+     *
+     * 选方向是**公开事件**：发言顺序所有人都要遵守，藏着掖着没有意义，
+     * 而且顺序本身就是信息——警长突然换方向，往往是他想避开某些人的发言顺序。
+     */
+    fun setSpeechDirection(direction: SpeechDirection): WerewolfGame {
+        val sheriff = requireNotNull(aliveSheriffSeat) { "没有活着的警长，不能选发言方向" }
+        require(phase == Phase.DAY_DISCUSSION) { "只能在白天讨论开始前选方向：$phase" }
+        require(speechDirectionPending) { "今天已经选过发言方向" }
+        return copy(history = history + GameEvent.SpeechDirectionChosen(day, sheriff, direction))
+    }
 
     /** 今天天亮时死的人。只用来定发言起点和遗言，不参与判定。 */
     private val lastDawnDeadSeats: List<Int>

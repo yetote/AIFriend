@@ -154,6 +154,9 @@ enum class UIWerewolfTurnKind {
 
     /** 女巫用药。 */
     WITCH,
+
+    /** 警长选发言方向（顺时针 / 逆时针），两个按钮，没有目标可选。 */
+    DIRECTION,
 }
 
 data class UIWerewolfTarget(

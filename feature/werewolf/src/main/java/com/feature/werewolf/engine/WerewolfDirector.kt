@@ -6,11 +6,13 @@ import com.core.ai.structured.StructuredOutcome
 import com.core.ai.structured.StructuredSpec
 import com.core.ai.structured.decide
 import com.feature.werewolf.decision.SeatChoice
+import com.feature.werewolf.decision.DirectionChoice
 import com.feature.werewolf.decision.VoteChoice
 import com.feature.werewolf.decision.WerewolfDecisions
 import com.feature.werewolf.decision.WitchChoice
 import com.feature.werewolf.game.DeathCause
 import com.feature.werewolf.game.Phase
+import com.feature.werewolf.game.SpeechDirection
 import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfPromptStyle
 import com.feature.werewolf.game.WerewolfRole
@@ -430,6 +432,13 @@ class WerewolfDirector(
         var current = table
         if (current.game.phase != Phase.DAY_DISCUSSION) return current
 
+        // 警长定序：每天讨论开始前选一次发言方向（顺/逆）。没警长的日子
+        // speechDirectionPending 恒为 false，直接走老顺序。
+        if (current.game.speechDirectionPending) {
+            current = chooseSpeechDirection(current)
+            if (current.game.phase != Phase.DAY_DISCUSSION) return current
+        }
+
         val speakers = current.game.discussionOrder
         // 续档：本阶段已经说过的不再问一遍。见 WerewolfGame.spokenPhaseKey。
         val pending = speakers.filterNot { current.game.hasSpoken(it) }
@@ -460,7 +469,37 @@ class WerewolfDirector(
 
     // ---------------------------------------------------------------------
     // 警长竞选
-    // ---------------------------------------------------------------------
+    /**
+     * 警长选今天的发言方向（顺 / 逆）。每天讨论开始前走一次，选完写公开事件。
+     *
+     * 人类警长和 AI 警长走同一条 [ask] 通道——[HumanSeatAI] 会把请求推给界面，
+     * 牌桌上弹「顺 / 逆」两个按钮，选完提交，与 AI 的决策路径毫无区别。
+     */
+    private suspend fun chooseSpeechDirection(table: WerewolfTable): WerewolfTable {
+        val game = table.game
+        val sheriff = game.aliveSheriffSeat ?: return table
+        onProgress(
+            WerewolfProgress(
+                day = game.day,
+                phase = Phase.DAY_DISCUSSION,
+                step = 0,
+                total = game.aliveSeats.size,
+                seats = listOf(sheriff),
+                note = "警长定发言方向",
+            )
+        )
+        val outcome = askSpeechDirection(table, sheriff)
+        val direction = if (outcome.value.clockwise) {
+            SpeechDirection.CLOCKWISE
+        } else {
+            SpeechDirection.COUNTER_CLOCKWISE
+        }
+        // 选方向是公开事件，syncBroadcasts 会照 history 里的新事件生成播报，
+        // 牌桌上所有人（和观战）都能看到「X 号选了顺时针」。
+        val next = table.copy(game = table.game.setSpeechDirection(direction)).syncBroadcasts(game)
+        onTranscript(next)
+        return next
+    }
 
     /**
      * 上警报名。全员**并发**表态，互相看不到谁报了名。
@@ -950,6 +989,21 @@ class WerewolfDirector(
             // 兜底撕掉警徽，而不是随便找个人接手：交错的代价比没有警长大得多
             fallback = { VoteChoice(target = null, reason = "我来不及交代了。") },
             task = "请在遗言里交代警徽交给谁。",
+        )
+    }
+
+    /** 警长选发言方向。兜底顺时针（老规则），宁可平淡也不赌。 */
+    private suspend fun askSpeechDirection(
+        table: WerewolfTable,
+        seat: Int,
+    ): StructuredOutcome<DirectionChoice> {
+        val game = table.game
+        return ask(
+            table = table,
+            seat = seat,
+            spec = WerewolfDecisions.speechDirection(game, seat),
+            fallback = { DirectionChoice(clockwise = true, reason = "就按常规顺序来。") },
+            task = "请决定今天白天的发言方向。",
         )
     }
 

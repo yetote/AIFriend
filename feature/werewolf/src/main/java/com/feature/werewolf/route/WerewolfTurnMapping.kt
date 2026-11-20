@@ -90,12 +90,23 @@ internal fun buildTurn(
             )
         }
 
-        Phase.DAY_DISCUSSION -> UIWerewolfTurn(
-            kind = UIWerewolfTurnKind.SPEECH,
-            seat = humanSeat,
-            title = "轮到你发言",
-            hint = "第 ${game.day} 天",
-        )
+        Phase.DAY_DISCUSSION -> if (waiting.jsonMode) {
+            // 警长定方向：这一步是 jsonMode 的决策请求（DirectionChoice），不是发言。
+            // 同一个阶段里先问方向、再依次发言，靠 waiting 的 jsonMode 区分两件事。
+            UIWerewolfTurn(
+                kind = UIWerewolfTurnKind.DIRECTION,
+                seat = humanSeat,
+                title = "选今天的发言方向",
+                hint = "顺时针从你下一位开始，逆时针倒着绕；你都是最后发言",
+            )
+        } else {
+            UIWerewolfTurn(
+                kind = UIWerewolfTurnKind.SPEECH,
+                seat = humanSeat,
+                title = "轮到你发言",
+                hint = "第 ${game.day} 天",
+            )
+        }
 
         Phase.DAY_VOTE -> UIWerewolfTurn(
             kind = UIWerewolfTurnKind.VOTE,

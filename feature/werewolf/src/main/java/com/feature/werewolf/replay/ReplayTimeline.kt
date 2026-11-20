@@ -132,6 +132,8 @@ object ReplayTimeline {
         is GameEvent.Dawn, is GameEvent.BearRoar -> 9
         is GameEvent.SheriffSignup -> 10
         is GameEvent.SheriffPk, is GameEvent.SheriffElected, is GameEvent.SheriffVacant -> 12
+        // 警长定方向发生在讨论发言之前，和讨论同段（13），排在当轮发言记录前面
+        is GameEvent.SpeechDirectionChosen -> 13
         is GameEvent.WolfExploded, is GameEvent.Exiled,
         is GameEvent.NoExile, is GameEvent.IdiotRevealed -> 14
         is GameEvent.SheriffBadgePassed -> 15

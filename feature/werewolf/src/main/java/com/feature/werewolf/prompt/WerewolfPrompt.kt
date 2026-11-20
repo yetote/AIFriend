@@ -292,6 +292,9 @@ object WerewolfPrompt {
         is GameEvent.SheriffBadgePassed ->
             if (event.toSeat == null) "警徽作废" else "警徽交给 ${event.toSeat} 号"
 
+        is GameEvent.SpeechDirectionChosen ->
+            "警长 ${event.seat} 号定了${event.direction.displayName}发言"
+
         is GameEvent.GameOver -> "${event.winner.displayName}阵营获胜"
     }
 
@@ -359,6 +362,9 @@ object WerewolfPrompt {
         } else {
             "第${event.day}天：警长 ${event.fromSeat} 号把警徽交给 ${event.toSeat} 号"
         }
+
+        is GameEvent.SpeechDirectionChosen ->
+            "第${event.day}天：警长 ${event.seat} 号决定今天${event.direction.displayName}发言"
 
         is GameEvent.GameOver ->
             "游戏结束：${event.winner.displayName}阵营获胜"
@@ -519,7 +525,8 @@ object WerewolfPrompt {
         // 警长、竞选、遗言这三件事和身份无关，任何座位都可能碰上，所以放在身份之外。
         // 尤其是「你是警长」——警长本身是公开身份，但**只有本人**需要知道自己的票权是 1.5。
         if (game.sheriffSeat == seat && game.phase != Phase.FINISHED) {
-            lines += "你是警长：你的一票算 1.5 票，白天从你的下一位开始发言、你最后说（归票位）。"
+            lines += "你是警长：你的一票算 1.5 票，每天讨论开始前由你选一次发言方向（顺时针或逆时针），" +
+                "选完你最后说（归票位）。"
             lines += "你出局时要决定把警徽交给谁——交给错的人比撕掉更糟。" +
                 "警徽移交和遗言是两件事：被猎人一枪带走时你说不了话，但警徽照样要处理。"
         }

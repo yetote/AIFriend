@@ -128,6 +128,19 @@ sealed interface GameEvent {
     ) : GameEvent
 
     /**
+     * 警长选定了今天的发言方向。
+     *
+     * 每个白天讨论开始前由警长选一次（顺时针 / 逆时针），从自己该方向的下一位开始。
+     * 这是公开信息：顺序本身就影响每个人的处境，而且警长换方向常常带着意图，
+     * 其他玩家看到这条播报可以拿去盘。
+     */
+    data class SpeechDirectionChosen(
+        override val day: Int,
+        val seat: Int,
+        val direction: SpeechDirection,
+    ) : GameEvent
+
+    /**
      * 警徽移交。[toSeat] 为 null 表示警长把警徽撕了（或没来得及指定就出局）。
      *
      * 和 [SheriffVacant] 分开：那个是「从来没选出警长」，这个是「有过，现在没了」。

@@ -30,6 +30,17 @@ data class VoteChoice(
 )
 
 /**
+ * 警长选发言方向。`clockwise` = 顺时针（从警长下一位起），false = 逆时针（从上一位倒着绕）。
+ *
+ * 只有两个选项且都合法，`validate` 恒真；兜底选顺时针（老规则），宁可平淡也不赌。
+ */
+@Serializable
+data class DirectionChoice(
+    val clockwise: Boolean,
+    val reason: String = "",
+)
+
+/**
  * 各个阶段的结构化决策规格。
  *
  * 每个规格都把「合法目标」**明写进 instruction**，并在 `validate` 里再查一遍。
@@ -257,6 +268,35 @@ object WerewolfDecisions {
                 "reason 用一句中文说明你的理由。",
             serializer = VoteChoice.serializer(),
             validate = { it.target == null || it.target in valid },
+        )
+    }
+
+    /**
+     * 警长选今天的发言方向。
+     *
+     * 把两头的「第一个发言的人」算给模型看——方向选择的战术意义全在
+     * 「谁先开口、谁挨着警长说话」，只给顺/逆两个字它只能瞎猜。
+     * 警长自己最后归票，两个方向都不变，instruction 里说明白，
+     * 免得模型以为选逆序就能让自己早说。
+     */
+    fun speechDirection(game: WerewolfGame, seat: Int): StructuredSpec<DirectionChoice> {
+        val alive = game.aliveSeats.sorted()
+        val clockwiseFirst = alive.firstOrNull { it > seat }
+        val counterFirst = alive.lastOrNull { it < seat } ?: alive.lastOrNull()
+        return StructuredSpec(
+            instruction = buildString {
+                append("输出 {\"clockwise\": true 或 false, \"reason\": \"一句话理由\"}。")
+                append("你是警长，现在决定今天白天的发言方向：")
+                append("clockwise=true 是顺时针，从 $clockwiseFirst 号开始按座位号递增绕一圈；")
+                append("clockwise=false 是逆时针，从 $counterFirst 号开始按座位号递减倒着绕一圈。")
+                append("两种方向你自己都是最后一个发言（归票位），")
+                append("选方向等于选「谁第一个开口、谁紧挨着你说话」。")
+                append("想想哪个方向对你今天的判断更有利：")
+                append("比如想让可疑的人先说、或者让可信的人先定调。")
+                append(INNER_REASON_HINT)
+            },
+            serializer = DirectionChoice.serializer(),
+            validate = { true },
         )
     }
 

@@ -23,6 +23,7 @@ import com.core.tts.SpeechEngine
 import com.core.tts.SpeechFilter
 import com.core.tts.SpeechQueue
 import com.core.tts.SpeechTiming
+import com.feature.werewolf.decision.DirectionChoice
 import com.feature.werewolf.decision.SeatChoice
 import com.feature.werewolf.decision.VoteChoice
 import com.feature.werewolf.decision.WitchChoice
@@ -1495,6 +1496,12 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
     fun submitSpeech(text: String) {
         if (humanTurn.value?.jsonMode == true) return
         human.submit(text)
+    }
+
+    /** 警长选发言方向。顺时针 = 从警长下一位起；逆时针倒着绕。 */
+    fun submitDirection(clockwise: Boolean) {
+        if (humanTurn.value?.jsonMode != true) return
+        human.submit(json.encodeToString(DirectionChoice(clockwise)))
     }
 
     // ---------------------------------------------------------------------

@@ -488,6 +488,7 @@ fun WerewolfRoute(
                     onVote = { viewModel.submitTarget(it) },
                     onSeat = { viewModel.submitSeat(it) },
                     onWitch = { heal, poison -> viewModel.submitWitch(heal, poison) },
+                    onDirection = { clockwise -> viewModel.submitDirection(clockwise) },
                     onReview = if (review != null) ({ showReview = true }) else null,
                     // 喇叭可用时切换开关；灰着（引擎没绑上）时点它重试一次绑定。
                     onToggleSpeak = {

@@ -71,6 +71,7 @@ internal fun TurnPanel(
     onVote: (Int?) -> Unit,
     onSeat: (Int) -> Unit,
     onWitch: (Boolean, Int?) -> Unit,
+    onDirection: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -128,6 +129,12 @@ internal fun TurnPanel(
                 textColor = textColor,
                 dimColor = dimColor,
                 onWitch = onWitch
+            )
+
+            UIWerewolfTurnKind.DIRECTION -> DirectionRow(
+                textColor = textColor,
+                dimColor = dimColor,
+                onPick = onDirection
             )
         }
     }
@@ -234,6 +241,43 @@ internal fun TargetRow(
                 color = dimColor
             )
         }
+    }
+}
+
+/**
+ * 警长选发言方向。两个按钮，没有目标可选——顺/逆就是全部答案。
+ */
+@Composable
+internal fun DirectionRow(
+    textColor: Color,
+    dimColor: Color,
+    onPick: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = "顺时针",
+            modifier = Modifier
+                .clip(RoundedCornerShape(50))
+                .background(UIActionBrush)
+                .clickable { onPick(true) }
+                .padding(horizontal = 16.dp, vertical = 9.dp),
+            fontSize = FsAction,
+            fontWeight = FontWeight.SemiBold,
+            color = Color.White
+        )
+        Text(
+            text = "逆时针",
+            modifier = Modifier
+                .clip(RoundedCornerShape(50))
+                .background(UIFieldFill)
+                .clickable { onPick(false) }
+                .padding(horizontal = 16.dp, vertical = 9.dp),
+            fontSize = FsAction,
+            color = textColor
+        )
     }
 }
 

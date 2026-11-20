@@ -70,6 +70,7 @@ fun UIWerewolfTableScreen(
     onVote: (Int?) -> Unit = {},
     onSeat: (Int) -> Unit = {},
     onWitch: (heal: Boolean, poison: Int?) -> Unit = { _, _ -> },
+    onDirection: (clockwise: Boolean) -> Unit = {},
     onReview: (() -> Unit)? = null,
     onToggleSpeak: () -> Unit = {},
     /**
@@ -244,6 +245,7 @@ fun UIWerewolfTableScreen(
                     onVote = onVote,
                     onSeat = onSeat,
                     onWitch = onWitch,
+                    onDirection = onDirection,
                     modifier = Modifier.pageInsetsBottom()
                 )
 
