@@ -426,12 +426,13 @@ class WerewolfPromptTest {
     }
 
     @Test
-    fun `自爆提示要求能指出救下的是哪个座位 否则不许写标记`() {
+    fun `自爆提示只写给狼 受理条件是标记本身`() {
         val day = standardGame().copy(phase = Phase.DAY_DISCUSSION)
 
         val wolf = WerewolfPrompt.task(day, seat = 1)
-        assertTrue(wolf.contains("另一个队友"))
-        assertTrue(wolf.contains("写不出这个号码就别写标记"))
+        assertTrue(wolf.contains("【自爆】"))
+        assertFalse("不再要求点名队友", wolf.contains("还活着的队友"))
+        assertFalse("不再有「写不出这个号码就别写标记」的劝退", wolf.contains("写不出这个号码"))
 
         // 好人看不到这条：写给好人等于提前告诉全场「这局的狼会自爆」
         assertFalse(WerewolfPrompt.task(day, seat = 6).contains("【自爆】"))
@@ -1237,8 +1238,9 @@ class WerewolfPromptTest {
         assertFalse("自由式不拿「不许爆」代打", freeWolf.contains("都不许爆"))
         assertFalse("自由式不举「救 X 号」示例", freeWolf.contains("救 X 号"))
         assertTrue("自由式保留自爆机制说明", freeWolf.contains("【自爆】"))
-        assertTrue("受理条件要说明", freeWolf.contains("还活着的队友"))
-        assertTrue("引导式自爆教学还在", WerewolfPrompt.task(day, seat = 1).contains("值得的情况只有一种"))
+        assertTrue("受理条件要说明", freeWolf.contains("系统就受理"))
+        assertFalse("受理不再要求点名队友", freeWolf.contains("还活着的队友"))
+        assertTrue("引导式自爆教学还在", WerewolfPrompt.task(day, seat = 1).contains("值得爆的情况"))
         assertTrue("格式要求保留", freeWolf.contains("不要写「某某说：」"))
         assertTrue("反复读提醒保留", freeWolf.contains("复读旧话"))
 

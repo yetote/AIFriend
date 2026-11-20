@@ -855,8 +855,8 @@ class WerewolfDirectorTest {
     }
 
     @Test
-    fun `狼人发言带自爆标记并点名队友就当场自爆，白天提前结束`() = runBlocking {
-        // 1、2、3 号是狼。自爆必须写出要救的队友座位号，光写标记不生效
+    fun `狼人发言带自爆标记就当场自爆，白天提前结束`() = runBlocking {
+        // 1、2、3 号是狼。受理只看标记，正文救谁还是保自己都不管
         val exploding = ScriptedAI(listOf("【自爆】救 3 号，别再投他了。"))
         val quiet = ScriptedAI(listOf("我觉得 2 号有点急。"))
         // 只有 1 号会开口：没有警长、没有死讯，发言从 1 号起，他自爆之后这一天就结束了
@@ -880,8 +880,9 @@ class WerewolfDirectorTest {
     }
 
     @Test
-    fun `只写自爆标记却没点名队友，不算自爆`() = runBlocking {        // 实测有狼输出一个光秃秃的「【自爆】」：正文为空、当天没有投票，白送一条命。
-        // 规则本来就写着「唯一值得的情况是另一个队友要被投出去」，所以这样不该受理
+    fun `只写自爆标记没有正文，也算自爆`() = runBlocking {
+        // 有狼被逼到墙角，就输出一个光秃秃的「【自爆】」：正文为空。这是他自己的决定，
+        // 受理条件只看标记，系统不该替他判断「值不值得」——照常受理，当场出局。
         val blank = ScriptedAI(listOf("【自爆】"))
         val quiet = ScriptedAI(listOf("我觉得 2 号有点急。"))
         val director = WerewolfDirector(
@@ -892,11 +893,9 @@ class WerewolfDirectorTest {
             WerewolfTable(standard9().copy(day = 1, phase = Phase.DAY_DISCUSSION))
         )
 
-        assertTrue("没点名队友的自爆必须被拒", result.game.playerAt(1).alive)
-        assertTrue("也不能进黑夜", result.game.phase != Phase.NIGHT_WOLF_CHAT)
-        assertTrue(result.game.history.none { it is GameEvent.WolfExploded })
-        // 正文被清洗后是空的，要留一句占位，否则牌桌上会出现一条空白发言
-        assertTrue(result.transcript.any { it.seat == 1 && it.text.isNotBlank() })
+        assertTrue("裸标记也要受理", !result.game.playerAt(1).alive)
+        assertEquals("自爆直接翻夜", Phase.NIGHT_WOLF_CHAT, result.game.phase)
+        assertTrue(result.game.history.any { it is GameEvent.WolfExploded })
     }
 
     // ------------------------------------------------------------------

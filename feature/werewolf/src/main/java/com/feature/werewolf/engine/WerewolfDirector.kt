@@ -1494,14 +1494,10 @@ class WerewolfDirector(
         val trimmed = raw.trimStart()
         val marker = EXPLODE_MARKERS.firstOrNull { trimmed.startsWith(it) }
         var text = if (marker != null) trimmed.removePrefix(marker).trim() else raw
-        // 标记之外还要满足下面之一，才算「值得自爆」：
-        //
-        // 1. **点名一个活着的队友**（救队友）。原来只看标记，实测有狼在只被自己吓到的时候，
-        //    输出一个光秃秃的「【自爆】」——正文为空、没有投票、直接送掉一条命。
-        // 2. **竞选发言里自爆**（吞警徽）。这是正经花板子：一爆下去选举当场中止，
-        //    本局没有警长，好人白丢一个能归票的位置。它不需要救谁，所以不能套第 1 条的判据。
-        val exploding = marker != null && game.canExplode(seat) &&
-            (phase == Phase.DAY_SHERIFF_SPEECH || game.explodesToSaveMate(seat, text))
+        // 受理条件只有一条：是能自爆的狼、在白天（含竞选发言）写了标记。
+        // 什么时候值得爆不由系统替狼判断——救队友、自己被点破后断掉讨论的信息流、
+        // 搅乱讨论节奏，都是合法动机，判据卡死「点名队友」反而封掉了自保型自爆。
+        val exploding = marker != null && game.canExplode(seat)
         if (marker != null && !exploding && text.isBlank()) {
             // 标记被拒、正文又是空的：留一句占位，否则牌桌上会出现一条空白发言
             text = EMPTY_SPEECH_FALLBACK
@@ -1529,18 +1525,6 @@ class WerewolfDirector(
      */
     private fun killLine(who: String, target: Int?): String =
         if (target == null) "$who 今晚空刀。" else "$who 定刀 $target 号。"
-
-    /** 正文里点到至少一个**存活队友**的座位号，才算自爆有代价意义。 */
-    private fun WerewolfGame.explodesToSaveMate(seat: Int, body: String): Boolean {
-        val mates = wolves().filter { it.alive && it.seat != seat }.map { it.seat }.toSet()
-        if (mates.isEmpty()) return false
-        return SEAT_NUMBER.findAll(body)
-            .mapNotNull { it.groupValues[1].toIntOrNull() }
-            .any { it in mates }
-    }
-
-    /** 座位号写法。只认「4 号」这种明确说法：裸数字会误吃「第 2 天」「两个」。 */
-    private val SEAT_NUMBER = Regex("""(\d{1,2})\s*号""")
 
     /**
      * 把阶段推进产生的新播报补成消息。
