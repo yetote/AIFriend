@@ -297,6 +297,8 @@ internal fun ReplayBar(
     onPrev: () -> Unit,
     onNext: () -> Unit,
     onSpeed: () -> Unit,
+    /** 切上帝视角。切了时间线重摊、从头再放——两条视角的消息条数不一样，续着放对不上。 */
+    onGodView: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -312,6 +314,25 @@ internal fun ReplayBar(
                 color = dimColor,
                 modifier = Modifier.weight(1f)
             )
+            // 上帝视角开关：和复盘页「逐日对话」标题旁那个是同一样式。
+            // 放播放条上而不是顶栏——退出去才能改视角的入口没人找得到。
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(UIRadiusControl))
+                    .background(
+                        if (replay.godView) textColor.copy(alpha = 0.14f)
+                        else dimColor.copy(alpha = 0.12f)
+                    )
+                    .clickable { onGodView(!replay.godView) }
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    text = if (replay.godView) "上帝视角·开" else "上帝视角·关",
+                    fontSize = FsMeta,
+                    color = if (replay.godView) textColor else dimColor
+                )
+            }
+            Spacer(Modifier.width(8.dp))
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(UIRadiusControl))

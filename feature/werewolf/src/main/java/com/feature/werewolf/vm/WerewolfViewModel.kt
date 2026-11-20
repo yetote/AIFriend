@@ -1222,6 +1222,30 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
     }
 
     /**
+     * 演出页里直接切上帝视角。
+     *
+     * 两条视角的消息条数不一样（普通视角滤掉了夜间行动、夜聊、私有投票），续着放
+     * 游标对不上，所以切了就**从头再放**。音色、替身、静音这些安排跟人不跟视角，原样保留。
+     */
+    fun setReplayGodView(godView: Boolean) {
+        val current = _replay.value ?: return
+        if (current.godView == godView) return
+        val frames = ReplayTimeline.build(current.table, current.humanSeat, godView)
+        if (frames.isEmpty()) return
+        replayJob?.cancel()
+        replayJob = null
+        speechEngine.stop()
+        _replay.value = current.copy(
+            godView = godView,
+            frames = frames,
+            cursor = -1,
+            playing = true,
+            speakingSeat = null,
+        )
+        startReplayLoop()
+    }
+
+    /**
      * 演出循环：每次演一帧。
      *
      * 循环本身**读游标**往前走，所以暂停、跳条只要改游标 + 取消当前这一帧就够了。

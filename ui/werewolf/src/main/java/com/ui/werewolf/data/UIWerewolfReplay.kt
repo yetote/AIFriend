@@ -11,6 +11,8 @@ package com.ui.werewolf.data
  */
 data class UIWerewolfReplay(
     val playing: Boolean,
+    /** 当前是不是上帝视角。演出页里可以直接切，切了时间线重摊、从头再放。 */
+    val godView: Boolean,
     /** 「1x」「1.5x」「2x」：只影响句与句之间的停顿，朗读本身不加速。 */
     val speedLabel: String,
     /** 「第 12 / 86 条」。 */

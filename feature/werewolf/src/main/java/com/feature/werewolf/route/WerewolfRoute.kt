@@ -219,6 +219,7 @@ fun WerewolfRoute(
             onReplayPrev = viewModel::replayPrev,
             onReplayNext = viewModel::replayNext,
             onReplaySpeed = viewModel::cycleReplaySpeed,
+            onReplayGodView = viewModel::setReplayGodView,
         )
         return
     }

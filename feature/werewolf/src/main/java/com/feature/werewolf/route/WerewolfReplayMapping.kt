@@ -106,6 +106,7 @@ internal fun WerewolfReplay.toLive(
         speechBusy = speakingSeat != null,
         replay = UIWerewolfReplay(
             playing = playing,
+            godView = godView,
             speedLabel = when (speed) {
                 1.5f -> "1.5x"
                 2f -> "2x"
