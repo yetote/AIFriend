@@ -26,6 +26,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
@@ -210,7 +211,7 @@ class WerewolfDirector(
             val wolves = game.aliveWolves()
             if (wolves.isEmpty()) break
 
-            val outcomes = chunkedAsync(
+            val outcomes = windowedAsync(
                 wolves.map { it.seat },
                 onTick = { done, total, pending ->
                     onProgress(
@@ -477,7 +478,7 @@ class WerewolfDirector(
         val game = table.game
         if (game.phase != Phase.DAY_SHERIFF_SIGNUP) return table
 
-        val outcomes = chunkedAsync(
+        val outcomes = windowedAsync(
             game.aliveSeats,
             onTick = { done, total, pending ->
                 onProgress(
@@ -584,7 +585,7 @@ class WerewolfDirector(
                     note = if (game.sheriffRound > 1) "PK 后重投" else null,
                 )
             )
-            val outcomes = chunkedAsync(
+            val outcomes = windowedAsync(
                 voters,
                 onTick = { done, total, pending ->
                     onProgress(
@@ -717,7 +718,7 @@ class WerewolfDirector(
             // 分批并发，每回一票就报一次进度，并带上「这一批还没回话的人」。
             // 十二个人同时问模型，服务端要排队、本机带宽也要分，
             // 深度思考时更会互相拖到超时——分批之后总时长反而更短。
-            val outcomes = chunkedAsync(
+            val outcomes = windowedAsync(
                 voters,
                 onTick = { done, total, pending ->
                     onProgress(
@@ -1589,17 +1590,21 @@ class WerewolfDirector(
     }
 
     /**
-     * 分批并发。
+     * 滑动窗口并发。
      *
      * 全量并发在**深度思考**模型上会互相拖死：十二个人同时思考，服务端要排队，
      * 本机带宽也要分，每个请求都慢到超时——而且十二个全超时比一个一个来还慢。
-     * 分批之后总时长反而更短，单个请求也能拿到更多带宽。
      *
-     * 批次大小取 4：够并行又不至于把服务打爆。
+     * 早期是按批上报（每批 4 个、**整批收齐**才发下一批），但批处理有队头阻塞：
+     * 同一批里最慢的那个请求会拖住另外三个，快的干等慢的。改成固定窗口后，
+     * 谁的请求先回来谁出队，等待中的下一个立刻补位——总时长不再取决于
+     * 「最慢的一批」，而只取决于最慢的那一个。
+     *
+     * 窗口取 3：够并行又不至于把服务打爆。
      */
-    private suspend fun <T, R> chunkedAsync(
+    private suspend fun <T, R> windowedAsync(
         items: List<T>,
-        chunkSize: Int = 4,
+        window: Int = 3,
         /**
          * 进度回调：(已完成数, 总数, 这一批还没回话的人)。
          *
@@ -1609,15 +1614,19 @@ class WerewolfDirector(
         onTick: suspend (done: Int, total: Int, pending: List<T>) -> Unit = { _, _, _ -> },
         block: suspend (T) -> R,
     ): List<R> {
-        val out = ArrayList<R>(items.size)
+        // 「还没回话的人」= 还在排队的 + 正在飞的座位，都算在等他。
+        // 并发阶段同时有好几个请求在飞，只报一个座位会指错，只报总数又看不出在等谁。
+        val pending = items.toMutableList()
+        val lock = Any()
         var done = 0
-        items.chunked(chunkSize).forEach { chunk ->
-            val pending = chunk.toMutableList()
-            val lock = Any()
-            onTick(done, items.size, pending.toList())
-            out += coroutineScope {
-                chunk.map { item ->
-                    async {
+        val gate = Semaphore(window)
+        onTick(0, items.size, pending.toList())
+        return coroutineScope {
+            items.map { item ->
+                async {
+                    // acquire 放在 try 外：它自己被取消时不该多 release 一个没拿到的许可
+                    gate.acquire()
+                    try {
                         val result = block(item)
                         synchronized(lock) {
                             done++
@@ -1625,11 +1634,13 @@ class WerewolfDirector(
                         }
                         onTick(done, items.size, pending.toList())
                         result
+                    } finally {
+                        // 出队即刻 release，等待队列里的下一个立刻补位
+                        gate.release()
                     }
-                }.awaitAll()
-            }
+                }
+            }.awaitAll()
         }
-        return out
     }
 
     private companion object {
