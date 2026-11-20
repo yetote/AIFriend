@@ -271,13 +271,14 @@ data class UIWerewolfLive(
      */
     val timeoutAt: Long = 0L,
     /**
-     * 这一局给每一步的上限（秒），0 表示不设限。
+     * 这一局给每一段的上限（秒），0 表示不设限。
      *
      * 气泡上要显示「12s / 60s」——只看「已经想了 12 秒」是不够的，
      * 用户不知道这算长还是短，也就不知道要不要去调一档。
      *
-     * 分两个字段是因为决策和发言的上限本来就不同（决策只出一个 JSON，
-     * 发言要边说边想），拿一个数去套另一个，秒数会长期贴着上限，看着像要超时。
+     * 口径跟界面走：**气泡里是思考、发言列表里是发言**。
+     * 还没吐字（决策步全程、发言步的开头）按 [thinkingDecisionSeconds] 掐；
+     * 正文开始往外流，按 [thinkingSpeechSeconds] 从吐字那一刻重新起算。
      */
     val thinkingDecisionSeconds: Int = 0,
     val thinkingSpeechSeconds: Int = 0,

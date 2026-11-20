@@ -86,6 +86,8 @@ fun UIWerewolfTableScreen(
     onReplayNext: () -> Unit = {},
     /** 循环切换 1x / 1.5x / 2x。 */
     onReplaySpeed: () -> Unit = {},
+    /** 演出页里切上帝视角：时间线重摊、从头再放。 */
+    onReplayGodView: (Boolean) -> Unit = {},
 ) {
     val replay = live.replay
     val night = live.night && !live.finished
@@ -218,6 +220,7 @@ fun UIWerewolfTableScreen(
                     onPrev = onReplayPrev,
                     onNext = onReplayNext,
                     onSpeed = onReplaySpeed,
+                    onGodView = onReplayGodView,
                     modifier = Modifier.pageInsetsBottom()
                 )
 
@@ -261,10 +264,11 @@ fun UIWerewolfTableScreen(
                 anchor = anchor,
                 night = night,
                 seat = stream.seat,
-                // 用引擎标注的「决策还是发言」选时限，不靠 text 是不是空来猜：
-                // 发言一开始也在思考、还没吐字，text 同样是空的，猜成决策就会拿
-                // 短时限去掐一段实际按长时限走的话（气泡时间到了人还在说）。
-                limitSeconds = if (stream.isDecision) {
+                // 时限口径：气泡里是还没说出口的部分，按思考时限掐；
+                // 正文开始进发言列表后这段算发言，时钟换成发言时限（秒表重新起算）。
+                // 决策步全程没有正文，永远停在思考时限上。
+                speechStarted = stream.text.isNotEmpty(),
+                limitSeconds = if (stream.text.isEmpty()) {
                     live.thinkingDecisionSeconds
                 } else {
                     live.thinkingSpeechSeconds

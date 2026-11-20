@@ -1233,6 +1233,60 @@ class WerewolfDirectorTest {
 
 
     @Test
+    fun `发言的思考段超时按空话兜底，不吃发言时限`() = runBlocking {
+        // 时限口径：气泡里是思考、发言列表里是发言。一个字都没吐出来的时间
+        // 受思考时限管，掐得比发言时限早——慢模型不能把整局拖死在「想」上。
+        val pacing = WerewolfPacing()
+        pacing.overrideThinkingMs = 150L
+        pacing.overrideSpeechMs = 10_000L
+        val game = standard9()
+        val agents = game.players.associate { player ->
+            player.seat to SeatAgent(ai = HangingAI(), model = "slow")
+        }
+        val director = WerewolfDirector(agents = agents, pacing = pacing)
+
+        val result = director.discussion(
+            WerewolfTable(game.copy(phase = Phase.DAY_DISCUSSION))
+        )
+
+        val speeches = result.transcript.filter { it.kind == MessageKind.SPEECH }
+        assertEquals("每个人都要留下一条，不能空过", game.aliveSeats.size, speeches.size)
+        assertTrue(
+            "一个字没吐就按空话兜底：${speeches.first().text}",
+            // SILENT_SPEECH 的值（companion 是 private，抄一份字面量）
+            speeches.all { it.text == "……我这轮先听大家的。" },
+        )
+        assertEquals("超时的座位本局不再开思考", game.aliveSeats.toSet(), pacing.thinkingOff.value)
+        assertEquals("按思考时限记账", 1, pacing.timings.value.getValue(1).timeouts)
+    }
+
+    @Test
+    fun `吐字之后按发言时限计，不吃思考时限`() = runBlocking {
+        // 反方向的验证：只要开始往外吐字，就换成发言时钟。思考时限再短，
+        // 也不能掐一段已经开了口的话——那会把说了一半的人当成哑巴。
+        val pacing = WerewolfPacing()
+        pacing.overrideThinkingMs = 50L
+        pacing.overrideSpeechMs = 400L
+        val game = standard9()
+        val agents = game.players.associate { player ->
+            player.seat to SeatAgent(ai = HangingAI("我先说一句"), model = "slow")
+        }
+        val director = WerewolfDirector(agents = agents, pacing = pacing)
+
+        val result = director.discussion(
+            WerewolfTable(game.copy(phase = Phase.DAY_DISCUSSION))
+        )
+
+        val speeches = result.transcript.filter { it.kind == MessageKind.SPEECH }
+        assertTrue("半句要留下：${speeches.first().text}", speeches.first().text.contains("我先说一句"))
+        val elapsed = pacing.timings.value.getValue(1).lastMs
+        assertTrue(
+            "发言段按发言时限走（远超思考时限的 50ms）：${elapsed}ms",
+            elapsed >= 300,
+        )
+    }
+
+    @Test
     fun `用户退出导致的取消不算超时，也不关思考`() = runBlocking {
         // 退出页面、暂停、换局都会把协程取消。这条取消和「时限到了」在异常类型上
         // 可能长得一样，靠「外层是否还活着」区分：外层已取消就不是我们的超时。

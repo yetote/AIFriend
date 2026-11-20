@@ -90,12 +90,17 @@ class WerewolfPacing(
      */
     internal var overrideMs: Long? = null
 
+    /** 只压思考段（决策档）。测「思考段和发言段分开计时」用。 */
+    internal var overrideThinkingMs: Long? = null
+
+    /** 只压发言段（发言档）。同上。 */
+    internal var overrideSpeechMs: Long? = null
+
     /** 这一步的时限。0 表示不设限。 */
-    fun limitMs(kind: TurnKind): Long =
-        overrideMs ?: when (kind) {
-            TurnKind.DECISION -> currentLimit.decisionMs
-            TurnKind.SPEECH -> currentLimit.speechMs
-        }
+    fun limitMs(kind: TurnKind): Long = when (kind) {
+        TurnKind.DECISION -> overrideThinkingMs ?: overrideMs ?: currentLimit.decisionMs
+        TurnKind.SPEECH -> overrideSpeechMs ?: overrideMs ?: currentLimit.speechMs
+    }
 
     /** 改档位。只影响**之后**的请求，正在跑的那一步仍按发出时的时限。 */
     fun setLimit(next: WerewolfTurnLimit) {

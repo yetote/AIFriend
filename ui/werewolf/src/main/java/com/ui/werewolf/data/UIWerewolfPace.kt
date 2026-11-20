@@ -8,9 +8,9 @@ package com.ui.werewolf.data
  * 两边的**名称和顺序必须一致**，映射就不必写 when 分支，靠 `entries` 对齐。
  */
 enum class UIWerewolfTurnLimit(val label: String, val hint: String) {
-    FAST("快速", "决策 30 秒 / 发言 75 秒"),
-    STANDARD("标准", "决策 1 分钟 / 发言 2 分半"),
-    RELAXED("宽松", "决策 2 分钟 / 发言 5 分钟"),
+    FAST("快速", "思考 30 秒 / 发言不限"),
+    STANDARD("标准", "思考 1 分钟 / 发言不限"),
+    RELAXED("宽松", "思考 2 分钟 / 发言不限"),
     UNLIMITED("不限", "只受网络超时约束"),
     ;
 

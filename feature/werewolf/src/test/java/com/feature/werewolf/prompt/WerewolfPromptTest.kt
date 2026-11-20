@@ -981,8 +981,9 @@ class WerewolfPromptTest {
     fun `时间预算告诉模型时限与结论前置，不限档不写`() {
         val fast = WerewolfPrompt.systemPrompt(standardGame(), seat = 3, limit = WerewolfTurnLimit.FAST)
 
-        assertTrue("要说决定时限", fast.contains("决定大约 30 秒"))
-        assertTrue("要说发言时限", fast.contains("发言大约 75 秒"))
+        assertTrue("要说思考时限", fast.contains("想的时间大约 30 秒"))
+        assertTrue("发言段不限时不写秒数", fast.contains("说出口之后不限时间"))
+        assertFalse("不该再报发言秒数", fast.contains("说的时间大约"))
         assertTrue("要教结论前置", fast.contains("先把结论说出来"))
         assertTrue("要说超时的后果", fast.contains("关掉你这一局的深度思考"))
 

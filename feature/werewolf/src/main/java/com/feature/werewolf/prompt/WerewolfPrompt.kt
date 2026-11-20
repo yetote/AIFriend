@@ -515,9 +515,15 @@ object WerewolfPrompt {
      * 不说这一句时，模型习惯先铺垫一大段再给结论，超时就什么都没剩。
      */
     internal fun timeBudgetBrief(limit: WerewolfTurnLimit): String = buildString {
-        append("【时间预算】这一局你每一步都有限时：决定大约 ")
-            .append(limit.decisionSeconds).append(" 秒，发言大约 ")
-            .append(limit.speechSeconds).append(" 秒。")
+        append("【时间预算】这一局你开口前想的时间大约 ")
+            .append(limit.decisionSeconds).append(" 秒")
+        if (limit.speechSeconds > 0) {
+            append("，说的时间大约 ").append(limit.speechSeconds)
+                .append(" 秒（从你说出第一个字起算）")
+        } else {
+            append("，说出口之后不限时间")
+        }
+        append("。")
         append("超时不会让游戏停下，但这一步会按兜底处理，并关掉你这一局的深度思考。")
         append("所以**先把结论说出来**：验人结果、查杀、你站边谁、要投谁、目标座位号放最前面，")
         append("理由和铺垫放在后面——哪怕说到一半被打断，关键判断也已经说出口了。")

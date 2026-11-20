@@ -27,6 +27,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.random.Random
 
 /**
@@ -998,19 +999,55 @@ class WerewolfDirector(
             }
         }
 
-        // 发言的时限比决策宽，因为时间基本花在「说」上。超时不抛异常——
-        // 说话说到一半被打断，把已经说出去的那半句留下就行，牌桌能继续。
-        val limitMs = pacing.limitMs(TurnKind.SPEECH)
-        val bounded = limitMs > 0 && agent.ai !is HumanSeatAI
+        // 时限分两段，口径和界面一致：**气泡里是思考、发言列表里是发言**。
+        // - 思考段：正文一个字都还没吐出来，受思考时限（决策档）管——
+        //   想太久就掐，多等一分钟换来的往往不是更好的话，是更犹豫的话。
+        // - 发言段：正文开始往外流。AI「说」就是吐 token，和思考同一条链路，
+        //   掐它只会把话说一半，所以档位默认不限（0）；流挂住有传输层兜底。
+        //   字段保留是为了万一要给喋喋不休的模型自定义上限。
+        // 超时不抛异常——说话说到一半被打断，把已经说出去的那半句留下就行，牌桌能继续。
+        val thinkingMs = pacing.limitMs(TurnKind.DECISION)
+        val speechMs = pacing.limitMs(TurnKind.SPEECH)
+        val bounded = (thinkingMs > 0 || speechMs > 0) && agent.ai !is HumanSeatAI
         val started = System.currentTimeMillis()
         var timedOut = false
+        // 真正掐下去的那一段的上限：思考段超时和发言段超时，提示里报的秒数不一样
+        var timedOutLimitMs = 0L
+        // 正文第一次吐字的时刻。> 0 表示已经进入发言段。
+        var speechStartedAt = 0L
 
         try {
-            if (bounded) {
-                // 和决策同一条规矩：超时要能分辨出来，才能关掉这个座位的深度思考
-                withTimeout(limitMs) { consume() }
-            } else {
-                consume()
+            when {
+                !bounded -> consume()
+                // withTimeout 表达不了「跑着跑着换一个 deadline」（吐字的时刻因模型而异），
+                // 用看门狗手动掐：正文吐出的那一刻切换时钟；某一段为 0 就不限那一段。
+                else -> coroutineScope {
+                    val worker = launch { consume() }
+                    while (worker.isActive) {
+                        if (speechStartedAt == 0L && content.isNotEmpty()) {
+                            speechStartedAt = System.currentTimeMillis()
+                        }
+                        val segmentMs = if (speechStartedAt > 0L) speechMs else thinkingMs
+                        if (segmentMs <= 0L) {
+                            // 本段不限。两段都不限不会进到这里（外层已拦），
+                            // 所以另一段必然有限：轮询等收工或等段切换，切换后换 deadline。
+                            if (withTimeoutOrNull(SEGMENT_POLL_MS) { worker.join() } != null) break
+                            continue
+                        }
+                        val wait = (if (speechStartedAt > 0L) speechStartedAt else started) +
+                            segmentMs - System.currentTimeMillis()
+                        if (wait <= 0) {
+                            timedOut = true
+                            timedOutLimitMs = segmentMs
+                            // 我们掐的：取消 worker 是正常收尾，不会把异常抛给外层
+                            worker.cancel()
+                            break
+                        }
+                        // 等 worker 收工，最多等到本段的 deadline：谁先到算谁的。
+                        // 到点没等到（返回 null）就回循环再看一眼——可能刚好吐字，时钟要换段。
+                        if (withTimeoutOrNull(wait) { worker.join() } != null) break
+                    }
+                }
             }
         } catch (cancelled: CancellationException) {
             // 和 [ask] 同一条规矩：外层还活着说明是这次时限到了；
@@ -1018,6 +1055,7 @@ class WerewolfDirector(
             if (!currentCoroutineContext().isActive) throw cancelled
             if (!bounded) throw cancelled
             timedOut = true
+            timedOutLimitMs = if (speechStartedAt > 0L) speechMs else thinkingMs
         } catch (error: Throwable) {
             // **超时**且已经说出半句的，保留这半句继续这一轮。
             // 抛出去等于整局停在「模型响应超时」上，续档还会重放同一阶段、撞同一个超时，
@@ -1037,7 +1075,7 @@ class WerewolfDirector(
         if (timedOut || degradedByTimeout) {
             pacing.disableThinking(seat)
             pacing.record(seat, elapsed, TurnKind.SPEECH, timedOut = true)
-            onTimedOut(TurnTimeout(seat, TurnKind.SPEECH, limitMs, elapsed))
+            onTimedOut(TurnTimeout(seat, TurnKind.SPEECH, timedOutLimitMs, elapsed))
         } else {
             pacing.record(seat, elapsed, TurnKind.SPEECH, timedOut = false)
         }
@@ -1578,6 +1616,12 @@ class WerewolfDirector(
     }
 
     private companion object {
+
+        /**
+         * 看门狗里「本段不限时」时的轮询间隔。只在「一段不限、另一段有限」时走到，
+         * 档位默认（思考有限、发言不限）下每圈睡这么久等收工或吐字，开销可忽略。
+         */
+        const val SEGMENT_POLL_MS = 500L
 
         /** 复述自己旧发言时，每条摘要留多少字。够认出「这是同一段」，又不占预算。 */
         const val SAID_ECHO_CHARS = 80

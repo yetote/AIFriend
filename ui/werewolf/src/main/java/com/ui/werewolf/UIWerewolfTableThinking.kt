@@ -181,7 +181,9 @@ internal fun ThinkingBubble(
     night: Boolean,
     /** 是谁在想。换人时计时重新开始——不然下一位一开口就顶着上一位的秒数。 */
     seat: Int = 0,
-    /** 这一档给的上限，0 表示不设限。有值时才显示「/ 60s」。 */
+    /** 正文已经开始进发言列表。发言段秒表重新起算：说的和想的是两个时钟。 */
+    speechStarted: Boolean = false,
+    /** 当前段的上限，0 表示不设限。有值时才显示「/ 60s」。 */
     limitSeconds: Int = 0,
 ) {
     if (reasoning.isBlank()) return
@@ -205,8 +207,9 @@ internal fun ThinkingBubble(
     // 秒表在界面这侧跑，不跟引擎走：引擎只在有数据到达时推一次，
     // 而「模型一声不吭地干等」恰恰是最需要看到秒数的时刻——那一整段时间引擎是静默的。
     // 它回答的是用户最常问的那句话：这个模型到底慢在哪一步、慢了多久。
-    var elapsedSeconds by remember(seat) { mutableIntStateOf(0) }
-    LaunchedEffect(seat) {
+    // 思考段和发言段各算各的：正文开始吐的那一刻，时钟归零重新数说话的时间。
+    var elapsedSeconds by remember(seat, speechStarted) { mutableIntStateOf(0) }
+    LaunchedEffect(seat, speechStarted) {
         val started = System.currentTimeMillis()
         while (true) {
             elapsedSeconds = ((System.currentTimeMillis() - started) / 1000L).toInt()
