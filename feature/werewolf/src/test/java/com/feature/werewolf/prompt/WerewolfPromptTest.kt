@@ -146,6 +146,16 @@ class WerewolfPromptTest {
     }
 
     @Test
+    fun `女巫藏身份但有被查杀跳银水的例外`() {
+        // 真局教训：女巫被查杀票出，到死不跳身份——提示词只教藏，
+        // 没教「藏不下去了怎么用银水自证」，结果硬辩到被抗推。
+        val prompt = WerewolfPrompt.systemPrompt(gameWithGuard(), seat = 4)
+        assertTrue("要教藏身份", prompt.contains("把自己藏起来"))
+        assertTrue("要有逃生门：报银水自证", prompt.contains("报银水"))
+        assertTrue("要点明自证逻辑", prompt.contains("狼知道自己刀了谁"))
+    }
+
+    @Test
     fun `第一天死讯压在警长竞选之后`() {
         // 线上标准流程：第 1 天先上警竞选，竞选和投票结束才公布昨夜死讯。
         // 顺序反了等于让所有人先看到谁死了，再对着尸体竞选。
