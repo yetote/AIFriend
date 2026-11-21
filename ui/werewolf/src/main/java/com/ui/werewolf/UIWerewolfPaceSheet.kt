@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Switch
@@ -36,6 +37,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ui.common.UIAvatar
+import com.ui.common.data.getRandomColor
 import com.ui.common.theme.UIFieldFill
 import com.ui.common.theme.UIFriendBarItemSubtitleColor
 import com.ui.common.theme.UIFriendBarOnlineGreen
@@ -273,7 +275,8 @@ fun UIWerewolfPaceSheet(
                     // 拿不到确定的剩余高度，列表会塌成 0。给一个明确的滚动上限更稳
                     .heightIn(max = 320.dp)
                     .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
+                // 每行是独立卡片，留一点缝把它们分开
+                verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 pace.seats.forEach { seat ->
                     SeatPaceRow(
@@ -334,24 +337,57 @@ private fun SeatPaceRow(
     /** 单独开/关这个座位的思考气泡。覆盖全局开关；想跟全局就拨到和全局一样。 */
     onSeatBubble: (Boolean) -> Unit,
 ) {
+    // 用和牌桌头像兜底色同一个函数取色：设置页这一抹颜色，正是牌桌上
+    // 这个 AI 的头像色，用户能对上号——不是凭空造一套和牌桌无关的配色。
+    val seatColor = getRandomColor(seat.name.ifBlank { "?" })
+    val dim = if (seat.eliminated) 0.5f else 1f
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 7.dp),
+            // 每个座位一张独立卡片：淡色底 + 左侧色条，把「这是哪个 AI」隔开。
+            .clip(RoundedCornerShape(10.dp))
+            .background(seatColor.copy(alpha = 0.10f * dim))
+            .border(1.dp, seatColor.copy(alpha = 0.35f * dim), RoundedCornerShape(10.dp))
+            .padding(start = 8.dp, end = 10.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        UIAvatar(
-            name = seat.name,
-            avatarPath = seat.avatarPath,
-            size = 30.dp,
-            modifier = Modifier.then(if (seat.eliminated) Modifier.alpha(0.45f) else Modifier),
+        // 左侧竖色条：即使头像有图片、兜底色不可见，这条色也在，锚定这一行属于谁。
+        Box(
+            modifier = Modifier
+                .size(width = 3.dp, height = 34.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(seatColor.copy(alpha = dim))
+                .alpha(dim),
         )
-        Spacer(Modifier.width(10.dp))
+        Spacer(Modifier.width(9.dp))
+
+        // 身份锚点：圆形色环 + 头像。色环用的是牌桌同款 getRandomColor(name)，
+        // 扫一眼就能和牌桌上的那个 AI 对上号；座位号写在名字下方那行。
+        Box(
+            modifier = Modifier
+                .size(38.dp)
+                .clip(CircleShape)
+                .background(seatColor.copy(alpha = dim))
+                .alpha(dim),
+            contentAlignment = Alignment.Center,
+        ) {
+            UIAvatar(
+                name = seat.name,
+                avatarPath = seat.avatarPath,
+                size = 30.dp,
+                shape = CircleShape,
+                // 兜底色也强制成座位色，没头像时圆内就是这一色
+                fallbackColor = seatColor,
+            )
+        }
+        Spacer(Modifier.width(8.dp))
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = "${seat.seat} 号 ${seat.name}",
+                    text = seat.name,
                     fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
                     color = if (seat.eliminated) UIFriendBarItemSubtitleColor else UIFriendBarTitleColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -365,7 +401,8 @@ private fun SeatPaceRow(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = buildString {
-                        append("最近 ")
+                        append(seat.seat)
+                        append(" 号 · 最近 ")
                         append(seat.lastLabel ?: "—")
                         if (seat.averageLabel != null) {
                             append(" · 平均 ")
