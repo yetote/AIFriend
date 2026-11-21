@@ -164,6 +164,17 @@ fun WerewolfRoute(
         "$who 的$what 超出 ${timeout.limitSeconds} 秒时限，已按兜底继续；本局不再给它开深度思考"
     }
 
+    /**
+     * 真正离开狼人杀：先停掉后台还在跑的局，再退出页面。
+     *
+     * 退到列表那一步只是 `pause`（脱离界面、引擎继续），所以退出时必须显式停局——
+     * 否则 ViewModel 还活在 Activity 上，AI 会一直替用户把整局打完。
+     */
+    fun exitWerewolf() {
+        viewModel.stop()
+        onExit()
+    }
+
     // 返回键逐层退：演出 → 补替身页 → 列表翻开的复盘 → 牌桌上的复盘 → 牌桌 → 配置页 → 列表 → 退出
     BackHandler {
         when {
@@ -172,12 +183,12 @@ fun WerewolfRoute(
             recordView != null -> viewModel.closeRecord()
             screen == WerewolfScreen.Table && showReview -> showReview = false
             screen == WerewolfScreen.Table -> {
-                // 回列表要真的停下：留在后台继续跑，用户在看列表，AI 却在替他打牌
+                // 退到列表：局留在后台继续跑，回来能接上同一段思考（pause = 脱离，不是停局）
                 viewModel.pause()
                 screen = WerewolfScreen.History
             }
             screen == WerewolfScreen.Setup -> screen = WerewolfScreen.History
-            else -> onExit()
+            else -> exitWerewolf()
         }
     }
 
@@ -314,7 +325,7 @@ fun WerewolfRoute(
             onDiscard = { id -> viewModel.discard(id) },
             onClearFinished = viewModel::clearFinished,
             onNewGame = { screen = WerewolfScreen.Setup },
-            onBack = onExit,
+            onBack = ::exitWerewolf,
             // 文件选择器按 MIME 过滤，自定义后缀没有对应的类型，只能放开到全部
             onImport = { importLauncher.launch(arrayOf("*/*")) },
             notice = notice?.let { UIWerewolfNotice(text = it.text, error = it.error) },

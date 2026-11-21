@@ -254,6 +254,19 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
     /** 串行朗读循环：一次只在读一句，上一句读完才 poll 下一句。 */
     private var speakJob: Job? = null
 
+    /**
+     * 人在列表页、但这一局还在后台继续跑。
+     *
+     * 返回牌桌不再掐断引擎——AI 停下来等用户回来，回来看到的是同一段思考从头再来，
+     * 那才是真丢进度。这里让引擎照跑、朗读静音快进；再进入同一局时只要把标志翻回来
+     * 就能接上，不重读档、不重新发请求。
+     *
+     * true 时 [awaitSpeechCaughtUp] 不等朗读（朗读停了 revealedIndex 不会推进，
+     * 等它等于让引擎空等满 5 分钟），speak 循环也只在推进显示进度、不出声。
+     */
+    private val _detached = MutableStateFlow(false)
+    val detached: StateFlow<Boolean> = _detached.asStateFlow()
+
     /** 厂商 → 实例。同一厂商的多个座位共用一个实例，和聊天室的做法一致。 */
     private val ais = mutableMapOf<String, IAI>()
 
@@ -566,6 +579,9 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
      * 关朗读、没配语音包、或等待超时都直接放行：声音可以缺，局面不能挂。
      */
     private suspend fun awaitSpeechCaughtUp() {
+        // 人在列表页时朗读已停（revealedIndex 不会推进），等它等于空等到超时。
+        // 后台是静音快进，引擎只管往下跑，回来再接朗读。
+        if (_detached.value) return
         if (!_autoSpeak.value || !_speechReady.value) return
         val target = (state.value.table?.transcript?.size ?: return) - 1
         val start = _revealedIndex.value
@@ -795,6 +811,7 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
                 }
 
                 val friendsById = chosen.associateBy { it.id }
+                _detached.value = false
                 stopSpeech(clearQueue = true)
                 _humanSeat.value = humanSeat
                 agents = buildAgents(game.players, friendsById, humanSeat)
@@ -825,6 +842,12 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
      * 以前只认「最近一局没打完的」，现在列表能摆出好几局，点哪一局就该续哪一局。
      */
     fun resume(id: String) {
+        // 先认「这局是不是一直在我后台跑着」。是的话直接接回牌桌，不重读档、不重播——
+        // 否则 AI 正在想的那一步会被打断重来，用户看到的正是「思考进度被重置」。
+        if (attachIfRunning(id)) return
+
+        // 走常规续档：无论之前 detached 是什么状态，进牌桌就意味着朗读闸门恢复生效
+        _detached.value = false
         val previous = playJob
         playJob = viewModelScope.launch {
             // 上一局可能刚「暂停」、协程还没真的停下（取消是异步的），等它收尾
@@ -883,20 +906,70 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
     }
 
     /**
-     * 停下手上的这一局，回到列表。
+     * 从牌桌退回列表：局继续在后台跑，不掐断。
      *
-     * 取消协程而不是丢弃局面：每个阶段都已落档，用户下次点「接着打」就从
-     * 当前阶段重新开始。留在后台继续跑才是错的——他在看列表，AI 却在替他打牌。
+     * 以前这里是取消协程、下次「接着打」从存档的阶段边界重来——可 AI 往往正想到一半，
+     * 回来看到的是同一段思考从头开始，进度真丢了。现在改成脱离界面而已：
+     * 引擎照跑（每个阶段仍在落档），朗读静音快进，[detached] 置位让引擎别等朗读。
+     *
+     * 只停朗读、不动 playJob。真要停局走 [stop]（退出狼人杀、开新局、删当前档时才调）。
      */
     fun pause() {
+        if (playJob?.isActive != true || state.value.finished) {
+            // 没有在跑的局（比如局已结束）： nothing to detach，但仍要收掉朗读
+            stopSpeech(clearQueue = true)
+            return
+        }
+        _detached.value = true
+        // 朗读停掉并清空队列；revealedIndex 指到当前末尾，回来时直接从新消息接着念，
+        // 不会把后台这段时间的旧话又补念一遍
+        stopSpeech(clearQueue = true)
+        val size = state.value.table?.transcript?.size ?: 0
+        _revealedIndex.value = size - 1
+        refresh()
+    }
+
+    /**
+     * 回到那张还在后台跑的牌桌。
+     *
+     * 只是把 [detached] 翻回去：引擎一直在跑、局面一直是最新的，不需要重读档、
+     * 不需要重建座位、更不需要重新发请求——那些都会让思考进度从头再来。
+     * 返回 true 表示「接上了正在跑的局」，调用方据此跳过常规续档流程。
+     */
+    fun attachIfRunning(id: String): Boolean {
+        val job = playJob
+        if (shouldAttachDetachedGame(
+                detached = _detached.value,
+                running = job?.isActive == true,
+                currentGameId = state.value.gameId,
+                requestedGameId = id,
+                finished = state.value.finished,
+            )
+        ) {
+            _detached.value = false
+            // 朗读进度对齐到当前末尾：后台这段静音快进的消息不补念，从新消息接着听。
+            // 引擎可能又跑了几条，取实时 size 而不是 pause 时记下的
+            val size = state.value.table?.transcript?.size ?: 0
+            resetSpeech(fromIndex = size.coerceAtLeast(1))
+            _error.value = null
+            refresh()
+            return true
+        }
+        return false
+    }
+
+    /**
+     * 真正停下手上的局。退出狼人杀、开新局、删当前档时调。
+     *
+     * 和 [pause] 的区别：pause 只离开界面、引擎继续；stop 取消协程，AI 不再往下打。
+     */
+    fun stop() {
+        _detached.value = false
         stopSpeech(clearQueue = true)
         val job = playJob
         playJob = null
         viewModelScope.launch {
-            // 等它真的停下：取消是异步的，立刻 flush 可能写进一个马上要被覆盖的局面
             job?.cancelAndJoin()
-            // 牌桌上可能已经说了几句、但还没到阶段边界，补存一次，
-            // 否则「接着打」回来会少掉这几句，看着像退回去了
             runCatching { controller.flush() }
             refresh()
         }
