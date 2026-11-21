@@ -108,26 +108,33 @@ object WerewolfDecisions {
         // 会去猜能不能毒到自己，猜错就白白重试一轮。
         val poisonCandidates = game.aliveSeats.filter { it != seat }
         val victim = game.tonightVictim
-        val doomed = victim == seat &&
-            !(game.witch.antidoteAvailable && game.day == 1 && game.config.witchCanSelfHealOnFirstNight)
+        val antidoteGone = !game.witch.antidoteAvailable
+        val doomed = !antidoteGone && victim == seat &&
+            !(game.day == 1 && game.config.witchCanSelfHealOnFirstNight)
         return StructuredSpec(
             instruction = buildString {
                 append("输出 {\"heal\": true 或 false, \"poison\": 座位号或 null, \"reason\": \"一句话理由\"}。")
-                append(
-                    when (victim) {
-                        null -> "今晚没有人被狼人袭击。"
-                        seat -> "今晚被狼人袭击的是你自己（$seat 号）。"
-                        else -> "今晚被狼人袭击的是 $victim 号。"
-                    }
-                )
+                if (antidoteGone) {
+                    // 解药一空，夜里零信息：刀口、平安夜、甚至自己被刀都不再披露。
+                    // 白天的死讯播报是全场公开的，那才是她该有的信息渠道。
+                    append("你的解药已经用完，今晚谁被袭击、还是没有人被袭击，你都不会被告知。")
+                } else {
+                    append(
+                        when (victim) {
+                            null -> "今晚没有人被狼人袭击。"
+                            seat -> "今晚被狼人袭击的是你自己（$seat 号）。"
+                            else -> "今晚被狼人袭击的是 $victim 号。"
+                        }
+                    )
+                }
                 append("heal 表示是否用解药救今晚被刀的人")
                 append(
                     when {
                         // 「不能用」有好几种原因，必须分清：说成同一句，女巫会以为自己漏了信息。
                         // 自己中刀时优先说「救不了你自己」——库存状态上一句已经交待过，
                         // 这一刻对她有用的信息是「后果」，不是「药还剩几瓶」。
+                        antidoteGone -> "（解药已经用完了，只能填 false）"
                         doomed -> "（救不了你自己）"
-                        !game.witch.antidoteAvailable -> "（解药已经用完了）"
                         victim == null -> "（今晚没人被刀，用不上）"
                         else -> "（现在可以用）"
                     }

@@ -19,6 +19,16 @@ internal object WitchKit : RoleKit {
             val canSelfHeal = game.witch.antidoteAvailable &&
                 game.day == 1 && game.config.witchCanSelfHealOnFirstNight
             when {
+                // 解药一空：夜里零信息。刀口、平安夜、甚至自己被刀都不说——
+                // 这是用掉解药的代价。白天的死讯播报是全场公开的渠道。
+                !game.witch.antidoteAvailable ->
+                    if (game.witch.poisonAvailable) {
+                        lines += "解药已经用完：今晚谁被袭击、还是没有人被袭击，你都不会被告知。" +
+                            "你只剩毒药的抉择。"
+                    } else {
+                        lines += "两瓶药都已用完，今晚没有可以做的事。"
+                    }
+
                 victim == null ->
                     lines += "今晚没有人被狼人袭击，解药这次没有用处，你可以只用毒药或什么都不做。"
 
@@ -27,9 +37,9 @@ internal object WitchKit : RoleKit {
                         "第一夜你还能自救：用解药就活下来，不用就当场出局。"
 
                 victim == seat -> {
-                    // 必死的局面。以前这里只写「被袭击的是 2 号」，模型按普通夜晚的
-                    // 思路答「这晚先不用药，毒药留到更关键的时候」——可它天一亮就死了，
-                    // 「更关键的时候」永远不会到来，毒药跟着进棺材。
+                    // 必死的局面（解药还在但救不了自己）。以前这里只写「被袭击的是 2 号」，
+                    // 模型按普通夜晚的思路答「这晚先不用药，毒药留到更关键的时候」——
+                    // 可它天一亮就死了，「更关键的时候」永远不会到来，毒药跟着进棺材。
                     // 所以要明写「你今晚会死」和「这是最后机会」，不能只给客观信息。
                     lines += "**今晚被狼人袭击的就是你自己（$seat 号），而你已经救不了自己" +
                         "——天一亮你就出局了。**"

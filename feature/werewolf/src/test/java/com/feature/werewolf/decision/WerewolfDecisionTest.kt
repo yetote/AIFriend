@@ -147,8 +147,9 @@ class WerewolfDecisionTest {
     }
 
     @Test
-    fun `女巫自己中刀且救不了时，提示词说明这是最后一次用毒`() {
-        // 第 2 夜、解药已尽、自己被刀：天一亮就出局，毒药不用就作废。
+    fun `解药已尽时，决策指令不再披露刀口（含自己被刀）`() {
+        // 解药一空，夜里零信息：不报今晚谁被刀，也不报「你今晚必死」——
+        // 毒药作废是用完解药的代价。只说明她剩下什么可做。
         val g = game().copy(
             phase = Phase.NIGHT_WITCH,
             day = 2,
@@ -156,9 +157,10 @@ class WerewolfDecisionTest {
             witch = com.feature.werewolf.game.WitchStock(antidoteAvailable = false),
         )
         val text = WerewolfDecisions.witch(g, seat = 4).instruction
-        assertTrue("要说明中刀的是自己", text.contains("今晚被狼人袭击的是你自己（4 号）"))
-        assertTrue("解药的禁用原因要说清", text.contains("（救不了你自己）"))
-        assertTrue("必须点明这是唯一机会", text.contains("你今晚必死"))
+        assertFalse("不许报自己被刀", text.contains("被狼人袭击"))
+        assertFalse("必死通知一并撤掉", text.contains("你今晚必死"))
+        assertTrue("要说明解药只能填 false", text.contains("只能填 false"))
+        assertTrue("毒药的抉择还在", text.contains("poison"))
     }
 
     @Test

@@ -533,9 +533,10 @@ class WerewolfPromptTest {
     }
 
     @Test
-    fun `女巫自己被刀且解药已尽时，提示词告诉她今晚会死`() {
-        // 第 2 夜、解药用尽、狼刀落在女巫自己身上。这一夜的毒药是最后一次行动，
-        // 提示词必须说出来，否则模型会答「毒药留到更关键的时候」——而它天一亮就出局了。
+    fun `解药已尽时女巫夜里零信息，连自己被刀都不说`() {
+        // 第 2 夜、解药用尽、狼刀落在女巫自己身上。按用户的口径，刀口信息只在
+        // 解药还可用时披露——解药一空，今晚谁被刀、是不是平安夜、甚至自己被刀，
+        // 一概不告诉她；毒药作废是用完解药的代价。
         val game = standardGame().copy(
             phase = Phase.NIGHT_WITCH,
             day = 2,
@@ -543,10 +544,9 @@ class WerewolfPromptTest {
             witch = WitchStock(antidoteAvailable = false),
         )
         val prompt = WerewolfPrompt.systemPrompt(game, seat = 4)
-        assertTrue(prompt.contains("今晚被狼人袭击的就是你自己（4 号）"))
-        assertTrue(prompt.contains("天一亮你就出局了"))
-        assertTrue(prompt.contains("这是你最后一次行动"))
-        assertFalse("不能再说「可以救他」", prompt.contains("你可以救他"))
+        assertFalse("自己被刀也不许说", prompt.contains("被狼人袭击"))
+        assertFalse("必死通知是刀口信息的衍生，一并撤掉", prompt.contains("你今晚必死"))
+        assertTrue("只说明她剩下的抉择", prompt.contains("毒药的抉择"))
     }
 
     @Test

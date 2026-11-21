@@ -95,18 +95,29 @@ internal fun taskBrief(
             }
 
             Phase.NIGHT_WITCH -> {
-                val victim = game.tonightVictim
-                if (victim == null) {
-                    append("今晚没有人被狼人袭击，你不需要用解药。")
+                if (game.witch.antidoteAvailable) {
+                    val victim = game.tonightVictim
+                    if (victim == null) {
+                        append("今晚没有人被狼人袭击，你不需要用解药。")
+                    } else {
+                        append("今晚 ${victim} 号被狼人袭击。")
+                    }
+                    append("决定是否用解药，或者用毒药毒死一个人（同一夜只能用一种药）。")
+                    if (guided) {
+                        // 「留到更关键的时候」是用药时机判断；自由模式里什么时候用，女巫自己定。
+                        append("也可以什么都不做，把药留到更关键的时候。")
+                    } else {
+                        append("也可以什么都不做。")
+                    }
                 } else {
-                    append("今晚 ${victim} 号被狼人袭击。")
-                }
-                append("决定是否用解药，或者用毒药毒死一个人（同一夜只能用一种药）。")
-                if (guided) {
-                    // 「留到更关键的时候」是用药时机判断；自由模式里什么时候用，女巫自己定。
-                    append("也可以什么都不做，把药留到更关键的时候。")
-                } else {
-                    append("也可以什么都不做。")
+                    // 解药一空，夜里就是零信息：刀口、平安夜、甚至自己被刀都不再披露。
+                    // 白天的死讯播报是全场公开的，那才是她该有的信息渠道。
+                    append("你的解药已经用完，今晚谁被袭击、还是没有人被袭击，你都不会被告知。")
+                    if (game.witch.poisonAvailable) {
+                        append("你只剩毒药的抉择：决定是否毒死一个人，或者什么都不做。")
+                    } else {
+                        append("两瓶药都已用完，今晚没有可以做的事。")
+                    }
                 }
             }
 

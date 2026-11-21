@@ -183,21 +183,25 @@ internal fun buildTurn(
         }
 
         Phase.NIGHT_WITCH -> if (me.role == WerewolfRole.WITCH) {
-            // 今晚被刀的是自己、而规则又不许自救时，**不能**摆出「用解药救 X 号」那个按钮：
-            // 点了之后引擎会拒绝，玩家的操作会被静默换成「不用药」，她还以为自己救了自己。
+            // 刀口信息只在解药还可用时披露。解药一旦用完，女巫夜里就是零信息——
+            // 不知道今晚谁被刀、不知道是不是平安夜、甚至不知道自己被刀。
+            // 白天的死讯播报是全场公开的渠道，那才是她夜里之后唯一的信息来源。
+            val antidoteGone = !game.witch.antidoteAvailable
             val victim = game.tonightVictim
-            val selfDoomed = victim == humanSeat && !game.witchCanSelfHeal
-            // 「今晚谁被刀」原来只写在「用解药救 X 号」那个按钮上——解药一空，
-            // 按钮和刀口信息一起消失，女巫只剩「用毒药 / 不用药」两个选项，
-            // 再也不知道今晚谁被袭了（AI 的提示词里这条信息一直在）。补在 hint 里。
+            // 「今晚被刀的是你自己」只在解药还在时才允许出现；
+            // 解药空了连这一点都不说——她天亮前不知道自己死了。
+            val selfDoomed = !antidoteGone && victim == humanSeat && !game.witchCanSelfHeal
             val hint = when {
                 selfDoomed ->
                     "今晚被刀的是你自己，你救不了自己。" +
                         (if (game.witch.poisonAvailable) "毒药还在的话，今晚是它最后一次机会。" else "")
-                victim != null && !game.witchCanHeal ->
-                    "今晚被狼人袭击的是 $victim 号（解药已经用完）。"
-                victim != null -> null // 「用解药救 X 号」按钮上写着，不重复
-                else -> "今晚没有人被狼人袭击。"
+                antidoteGone && game.witch.poisonAvailable ->
+                    "解药已经用完，今晚的事不会再被告知，你只剩毒药的抉择。"
+                antidoteGone ->
+                    "解药和毒药都已用完，今晚没有你可以做的事。"
+                victim == null ->
+                    "今晚没有人被狼人袭击。"
+                else -> null // 「用解药救 X 号」按钮上写着，不重复
             }
             UIWerewolfTurn(
                 kind = UIWerewolfTurnKind.WITCH,
@@ -207,6 +211,7 @@ internal fun buildTurn(
                 targets = others,
                 canHeal = game.witchCanHeal && !selfDoomed,
                 canPoison = game.witchCanPoison,
+                // healTarget 只在 canHeal 时被界面渲染，解药空了不会泄露
                 healTarget = victim?.let { "$it 号" },
             )
         } else {

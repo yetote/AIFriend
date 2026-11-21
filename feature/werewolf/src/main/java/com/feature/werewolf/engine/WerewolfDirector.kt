@@ -393,6 +393,13 @@ class WerewolfDirector(
         if (game.phase != Phase.NIGHT_WITCH) return table
         val witch = game.alivePlayers.firstOrNull { it.role == WerewolfRole.WITCH } ?: return table
 
+        // 两瓶药都空了：这一夜对女巫无事可做，刀口也不再披露（零信息口径），
+        // 直接翻夜，不再问一轮「你今晚的用药决定」。
+        if (!game.witch.antidoteAvailable && !game.witch.poisonAvailable) {
+            val next = game.witchAct(heal = false)
+            return table.copy(game = next).syncBroadcasts(game)
+        }
+
         onProgress(WerewolfProgress(game.day, Phase.NIGHT_WITCH, 1, 1, seat = witch.seat))
         val outcome = askWitch(table, witch.seat)
         val choice = outcome.value
