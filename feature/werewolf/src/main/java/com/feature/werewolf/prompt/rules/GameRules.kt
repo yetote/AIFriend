@@ -34,14 +34,7 @@ internal fun rulesBrief(config: WerewolfConfig): String {
         // 写成「人数」的话，模型会按人头推，警长在手时推出来的结论整个是错的。
         append("【绑票】狼人票权不少于好人票权时，狼人直接获胜，游戏当场结束——")
         append("这时所有人一起投也压不过狼队的票，投不出人了。\n")
-        if (config.has(WerewolfRole.GUARD) && config.has(WerewolfRole.WITCH)) {
-            // 这条必须写给**所有人**：守卫和女巫互相不知道对方做了什么，
-            // 守救同归时牌桌上看起来就是「明明守了又救了，怎么还是死了」。
-            // 不提前说明，女巫会以为自己救的人被狼补刀，守卫会以为是自己守晚了。
-            append("【守救同归】守卫守的人如果同时被女巫救了，他**还是会死**：")
-            append("两种保护叠在一起反而同归于尽。守卫和女巫都只知道自己做的那一半，")
-            append("所以你守的人、你救的人有可能已经被对方「也做了一次」。\n")
-        }
+        append(mutualProtectionBrief(config))
         if (config.hasSheriff) {
             append("【白天投票】平票时，平票的人再各说一轮（PK），然后由全体重投一次；")
             append("再平票就当天无人出局。警长的一票算 1.5 票。\n")
@@ -67,6 +60,27 @@ internal fun rulesBrief(config: WerewolfConfig): String {
         append("也可以主动空刀。")
     }
 }
+
+/**
+ * 守救同归规则：守卫守的人同时被女巫救，仍然会死。
+ *
+ * **两种模式都要给。** 这不是打法教学，是本局的硬规则事实——而且只在守卫+女巫
+ * 同时在场时成立，模型无法从「标准局先验」推出来。更麻烦的是守卫自己的 notes
+ * 里写着「你守的人当夜不会被刀死」：不补这条，守救同归发生时守卫会以为自己
+ * 守晚了、女巫会以为救的人被狼补刀，好人全场据此推错。
+ *
+ * 自由模式曾把 `rulesBrief` 和 `boardBrief` 整段砍掉，连 `GuardKit.rules` 一起
+ * 砍没了（守卫 notes 里没有这条），于是这条规则在自由模式彻底消失。抽成独立
+ * 函数，两种模式共用同一份文案。
+ */
+internal fun mutualProtectionBrief(config: WerewolfConfig): String =
+    if (config.has(WerewolfRole.GUARD) && config.has(WerewolfRole.WITCH)) {
+        "【守救同归】守卫守的人如果同时被女巫救了，他**还是会死**：" +
+            "两种保护叠在一起反而同归于尽。守卫和女巫都只知道自己做的那一半，" +
+            "所以你守的人、你救的人有可能已经被对方「也做了一次」。\n"
+    } else {
+        ""
+    }
 
 /**
  * 暗牌局规则：出局不公开底牌。

@@ -1252,6 +1252,22 @@ class WerewolfPromptTest {
     }
 
     @Test
+    fun `自由式的守卫板子照样给守救同归规则`() {
+        // 和暗牌局同类：守救同归是守卫+女巫同时在场才成立的硬规则事实，
+        // 模型推不出来，而且守卫 notes 里那句「守的人当夜不会被刀死」和它直接矛盾。
+        // 自由模式砍掉 boardBrief/rulesBrief 时把这条一起砍没了，会误导守卫和女巫。
+        val guardGame = gameWithGuard()
+        val free = WerewolfPrompt.systemPrompt(guardGame, seat = 3, style = WerewolfPromptStyle.FREE)
+        val guided = WerewolfPrompt.systemPrompt(guardGame, seat = 3)
+
+        assertTrue("自由式必须给守救同归", free.contains("守救同归"))
+        assertTrue("引导式也保留", guided.contains("守救同归"))
+        // 无守卫的板子不该出现这条规则
+        val noGuard = WerewolfPrompt.systemPrompt(standardGame(), seat = 3, style = WerewolfPromptStyle.FREE)
+        assertFalse("无守卫板子不给守救同归", noGuard.contains("守救同归"))
+    }
+
+    @Test
     fun `藏身份收尾只在引导式给`() {
         // 「不要暴露身份」是打法倾向不是游戏规则：它会把模型从头到尾
         // 按死在隐藏路线上，跳身份这个最核心的自由度就没了。

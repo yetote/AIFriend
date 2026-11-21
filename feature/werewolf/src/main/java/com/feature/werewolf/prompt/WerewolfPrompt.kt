@@ -12,6 +12,7 @@ import com.feature.werewolf.game.formatVotes
 import com.feature.werewolf.prompt.boards.Boards
 import com.feature.werewolf.prompt.roles.Roles
 import com.feature.werewolf.prompt.rules.darkCardBrief
+import com.feature.werewolf.prompt.rules.mutualProtectionBrief
 import com.feature.werewolf.prompt.rules.rulesBrief
 import com.feature.werewolf.prompt.tasks.taskBrief
 
@@ -428,7 +429,10 @@ object WerewolfPrompt {
             (if (config.hasSheriff) "；有警长。" else "；没有警长。") +
             // 暗牌局是本局的硬规则事实，不是打法教学——自由模式也必须给。
             // 砍掉它，模型就按标准局的先验「放逐翻牌认好人」编造死讯（真局翻车过）。
-            "\n\n" + darkCardBrief(config)
+            "\n\n" + darkCardBrief(config) +
+            // 守救同归同理：守卫+女巫同时在场才成立的硬规则，模型推不出来，
+            // 守卫 notes 里那句「守的人不会死」还和它直接矛盾。两种模式共用一份文案。
+            mutualProtectionBrief(config)
 
     // ---------------------------------------------------------------------
     // 基本打法
