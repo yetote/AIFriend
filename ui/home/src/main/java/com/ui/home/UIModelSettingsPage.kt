@@ -321,7 +321,8 @@ private fun IntroCard() {
  * API Key 使用前的强制免责提醒。
  *
  * 狼人杀是多 AI 座位并发、自动跑完整局的「非交互式批量调用」。
- * 包月订阅套餐的 Key（千帆 Token Plan、火山 Coding Plan 等）明令禁止这种用法，
+ * 包月订阅套餐的 Key（千帆 Token Plan、火山 Coding Plan、腾讯 TokenHub 套餐、阿里百炼 Coding Plan 等）
+ * 明令禁止这种用法，
  * 违规会封 Key / 停订阅。这里把后果讲明白，让用户自己确认，责任在用户。
  *
  * [dismissible = false]：不能靠点外部或返回键划走，必须显式点确认。
@@ -347,8 +348,8 @@ private fun ApiKeyDisclaimerDialog(onAcknowledge: () -> Unit) {
             color = UIFriendBarItemSubtitleColor
         )
         Text(
-            text = "包月订阅套餐的 Key（如千帆 Token Plan、火山 Coding Plan 等）条款明令禁止这类用法，" +
-                "违规可能导致订阅停用、API Key 被封禁。",
+            text = "包月订阅套餐的 Key（千帆 Token Plan、火山 Coding Plan、腾讯 TokenHub 套餐、" +
+                "阿里百炼 Coding Plan 等）条款明令禁止这类用法，违规可能导致订阅停用、API Key 被封禁。",
             fontSize = 13.sp,
             lineHeight = 19.sp,
             color = UIFriendBarItemSubtitleColor
