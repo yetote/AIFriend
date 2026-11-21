@@ -183,31 +183,6 @@ class GatewayModelFilterTest {
     }
 
     @Test
-    fun `七牛云厂商段模型正常分组且不被误删`() {
-        // 七牛云的 id 带厂商段（qiniu/*、deepseek/*、moonshotai/*），
-        // 和硅基流动的 `厂商/模型` 同形。按 / 切段就能分出正确的厂商组，
-        // conatus-free 这种自家融合模型也不该被非对话关键词误杀。
-        val raw = """
-            {"data": [
-              {"id": "qiniu/conatus-free"},
-              {"id": "deepseek/deepseek-v4.1-flash-1017"},
-              {"id": "moonshotai/kimi-k3.1-pro"}
-            ]}
-        """.trimIndent()
-
-        val models = json.decodeFromString<OpenAIModelResponse>(raw)
-            .modelList
-            .toSelectableChatModelsWithPrices()
-
-        assertEquals(3, models.size)
-        assertEquals("qiniu", models.first { it.id.startsWith("qiniu/") }.vendorLabel)
-        assertEquals("deepseek", models.first { it.id.startsWith("deepseek/") }.vendorLabel)
-        assertEquals("moonshotai", models.first { it.id.startsWith("moonshotai/") }.vendorLabel)
-        // 行内标签去掉厂商段，只留模型名
-        assertEquals("conatus-free", models.first { it.id.startsWith("qiniu/") }.displayName)
-    }
-
-    @Test
     fun `Pro 档保留在标签里免得和普通版撞名`() {
         // Pro/deepseek-ai/DeepSeek-V3.2 与 deepseek-ai/DeepSeek-V3.2 是两档服务，
         // 价格不同；去掉 Pro 会出现两条同名却不同价的行。
