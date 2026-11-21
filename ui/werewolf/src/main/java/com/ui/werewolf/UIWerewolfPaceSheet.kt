@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.sp
 import com.ui.common.UIAvatar
 import com.ui.common.theme.UIFieldFill
 import com.ui.common.theme.UIFriendBarItemSubtitleColor
+import com.ui.common.theme.UIFriendBarOnlineGreen
 import com.ui.common.theme.UIFriendBarRed
 import com.ui.common.theme.UIFriendBarTagTextBlue
 import com.ui.common.theme.UIFriendBarTitleColor
@@ -196,7 +197,8 @@ fun UIWerewolfPaceSheet(
                     onCheckedChange = onBubbleChange,
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = Color.White,
-                        checkedTrackColor = UIFriendBarTagTextBlue,
+                        // 和座位的「思考气泡」开关同色：绿色＝显示控制，蓝色＝朗读/深度思考。
+                        checkedTrackColor = UIFriendBarOnlineGreen,
                     ),
                 )
             }
@@ -248,8 +250,16 @@ fun UIWerewolfPaceSheet(
             )
             Spacer(Modifier.height(2.dp))
             Text(
+                text = "每个座位有两个开关：蓝色「深度思考」管 AI 想得深不深，" +
+                    "绿色「思考气泡」管你看不看得见它想的内容——这是两回事，别弄混。",
+                fontSize = 11.5.sp,
+                lineHeight = 16.sp,
+                color = UIFriendBarItemSubtitleColor,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
                 text = "超时的那一步已经按兜底算完，并且这一局不再给它开深度思考。" +
-                    "想改回来就打开下面的开关。",
+                    "想改回来就打开蓝色开关。",
                 fontSize = 11.5.sp,
                 lineHeight = 16.sp,
                 color = UIFriendBarItemSubtitleColor,
@@ -377,21 +387,25 @@ private fun SeatPaceRow(
             }
         }
         Spacer(Modifier.width(8.dp))
-        Column(horizontalAlignment = Alignment.End) {
+        // 两个开关都把标签放在自己的那一行，而不是挤在正下方：
+        // 以前是两个一模一样的蓝开关上下叠、标签各在下面，扫一眼根本分不清
+        // 哪个是「AI 想得深不深」、哪个是「你看不看得见它想什么」。
+        // 现在每个开关是一个「标签 + 开关」的横向单元，再用颜色区分：
+        // 蓝色＝深度思考（改 AI 的行为），绿色＝思考气泡（改你的显示）。
+        Column(
+            horizontalAlignment = Alignment.End,
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            // 深度思考：如果这个角色的模型本来就没开思考能力，那这行就没开关可拨，
+            // 直接写明原因，免得用户对着一个不存在的功能纳闷。
             if (seat.thinkingAvailable) {
-                Switch(
+                SwitchLabelRow(
+                    label = "深度思考",
+                    labelColor = UIFriendBarTagTextBlue,
                     checked = seat.thinkingOn,
-                    onCheckedChange = { on -> if (enabled) onToggle(on) },
+                    trackColor = UIFriendBarTagTextBlue,
                     enabled = enabled,
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.White,
-                        checkedTrackColor = UIFriendBarTagTextBlue,
-                    ),
-                )
-                Text(
-                    text = "深度思考",
-                    fontSize = 9.5.sp,
-                    color = UIFriendBarItemSubtitleColor,
+                    onCheckedChange = { on -> if (enabled) onToggle(on) },
                 )
             } else {
                 Text(
@@ -400,20 +414,44 @@ private fun SeatPaceRow(
                     color = UIFriendBarItemSubtitleColor,
                 )
             }
-            Spacer(Modifier.height(4.dp))
-            Switch(
+            SwitchLabelRow(
+                label = "思考气泡",
+                labelColor = UIFriendBarOnlineGreen,
                 checked = seat.bubbleVisible,
+                trackColor = UIFriendBarOnlineGreen,
+                enabled = true,
                 onCheckedChange = onSeatBubble,
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = Color.White,
-                    checkedTrackColor = UIFriendBarTagTextBlue,
-                ),
-            )
-            Text(
-                text = if (seat.bubbleVisible) "气泡显示" else "气泡隐藏",
-                fontSize = 9.5.sp,
-                color = UIFriendBarItemSubtitleColor,
             )
         }
+    }
+}
+
+/** 一个开关 + 它自己的文字标签，排在同一行。标签放左边，颜色用来区分两种开关。 */
+@Composable
+private fun SwitchLabelRow(
+    label: String,
+    labelColor: Color,
+    checked: Boolean,
+    trackColor: Color,
+    enabled: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = label,
+            fontSize = 10.5.sp,
+            fontWeight = FontWeight.Medium,
+            color = labelColor,
+        )
+        Spacer(Modifier.width(5.dp))
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            enabled = enabled,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.White,
+                checkedTrackColor = trackColor,
+            ),
+        )
     }
 }
