@@ -499,11 +499,9 @@ fun WerewolfRoute(
                     onWitch = { heal, poison -> viewModel.submitWitch(heal, poison) },
                     onDirection = { clockwise -> viewModel.submitDirection(clockwise) },
                     onReview = if (review != null) ({ showReview = true }) else null,
-                    // 喇叭可用时切换开关；灰着（引擎没绑上）时点它重试一次绑定。
-                    onToggleSpeak = {
-                        if (speechReady) viewModel.setAutoSpeak(!autoSpeak)
-                        else viewModel.retrySpeech()
-                    },
+                    // 不传 onToggleSpeak：对局的朗读开关收进设置面板（「朗读发言」那一行），
+                    // 顶栏不再放喇叭。面板的开关打开时同样会重试绑定引擎，恢复入口没丢。
+                    // 复盘演出那条分支仍传，因为演出没有设置面板。
                     // 参与局里打开思考 = 读心。默认关着，牌桌上挂一条提示条提醒
                     onToggleThinking = { viewModel.setShowThinking(!showThinking) },
                     onOpenSettings = {

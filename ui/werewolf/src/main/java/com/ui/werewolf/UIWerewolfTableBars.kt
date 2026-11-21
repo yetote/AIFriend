@@ -73,7 +73,12 @@ internal fun TableTopBar(
     onToggleThinking: (() -> Unit)?,
     /** 传 null 就不画设置入口（复盘演出、已结束的局改了也没用）。 */
     onOpenSettings: (() -> Unit)? = null,
-    onToggleSpeak: () -> Unit,
+    /**
+     * 传 null 就不画喇叭。
+     * 正常对局不画——朗读开关在对局设置面板里，顶栏再放一个是重复入口；
+     * 复盘演出没有设置面板，保留它作为唯一的朗读入口。
+     */
+    onToggleSpeak: (() -> Unit)? = null,
     onBack: () -> Unit,
 ) {
     Row(
@@ -141,23 +146,25 @@ internal fun TableTopBar(
                 )
             }
         }
-        IconButton(
-            onClick = onToggleSpeak,
-            // 不可用时不禁用：点一下会重试绑定引擎（国产 ROM 的 init 会偶发失败，
-            // 一旦失败不重建就永远灰着）。禁用反而断了唯一的恢复入口。
-        ) {
-            Icon(
-                imageVector = if (autoSpeak) Icons.Filled.VolumeUp else Icons.Filled.VolumeOff,
-                contentDescription = if (!speechReady) {
-                    "语音暂不可用，点此重试"
-                } else if (autoSpeak) {
-                    "关闭自动朗读"
-                } else {
-                    "开启自动朗读"
-                },
-                // 不可用时用暗色，但仍可点——点它会重试，而不是没反应。
-                tint = if (speechReady) textColor else dimColor,
-            )
+        if (onToggleSpeak != null) {
+            IconButton(
+                onClick = onToggleSpeak,
+                // 不可用时不禁用：点一下会重试绑定引擎（国产 ROM 的 init 会偶发失败，
+                // 一旦失败不重建就永远灰着）。禁用反而断了唯一的恢复入口。
+            ) {
+                Icon(
+                    imageVector = if (autoSpeak) Icons.Filled.VolumeUp else Icons.Filled.VolumeOff,
+                    contentDescription = if (!speechReady) {
+                        "语音暂不可用，点此重试"
+                    } else if (autoSpeak) {
+                        "关闭自动朗读"
+                    } else {
+                        "开启自动朗读"
+                    },
+                    // 不可用时用暗色，但仍可点——点它会重试，而不是没反应。
+                    tint = if (speechReady) textColor else dimColor,
+                )
+            }
         }
     }
 }

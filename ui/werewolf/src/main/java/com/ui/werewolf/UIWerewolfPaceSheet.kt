@@ -60,7 +60,7 @@ import com.ui.werewolf.data.UIWerewolfTurnLimit
  * 遮住的只是座位那一块，中间的记录流还在下面继续。
  *
  * 面板里有三件事：
- * 1. **朗读开关**——顶栏喇叭图标的展开版，想找「让不让它出声」的人在这里能读到文字；
+ * 1. **朗读开关**——对局里唯一的朗读入口（顶栏不再放喇叭），用文字把「让不让它出声」写清楚；
  * 2. **思考时限**——这一步最多等多久，超时就兜底并关掉这个座位的深度思考；
  * 3. **每个座位的时间账本**——谁想得最久、超了几次。用户真正想问的
  *    「是不是某个模型拖慢了整局」，答案在这里，而不是在一句笼统的「AI 思考中」。
@@ -70,7 +70,7 @@ fun UIWerewolfPaceSheet(
     pace: UIWerewolfPace,
     onLimitChange: (UIWerewolfTurnLimit) -> Unit,
     onToggleThinking: (Int, Boolean) -> Unit,
-    /** 本局要不要把发言念出来。和顶栏的喇叭是同一个值。 */
+    /** 本局要不要把发言念出来。和开局页是同一个值。 */
     speechOn: Boolean,
     /** 引擎能不能出声；不能时开关仍可点，点开等同于重试一次绑定。 */
     speechReady: Boolean,
@@ -102,9 +102,14 @@ fun UIWerewolfPaceSheet(
                     color = UIGlassStroke,
                     shape = RoundedCornerShape(topStart = UIRadiusCard, topEnd = UIRadiusCard),
                 )
+                // 滚动交给整个面板：座位列表不再自己滚，手指落在标题、开关还是座位上，
+                // 都是同一块面板在滑动，不会出现「在列表里滑不动、要挪到空白才滚」的别扭。
+                // verticalScroll 放在圆角/背景内层，背景和圆角固定在面板上不随内容滚走。
+                .verticalScroll(rememberScrollState())
                 // 面板自己吃掉点击，别让点内容也触发关闭。
                 // 必须用 enabled 的 clickable：`clickable(enabled = false)` 不消费触摸，
-                // 点座位列表会一路穿到后面的遮罩上，面板当场消失
+                // 点座位列表会一路穿到后面的遮罩上，面板当场消失。
+                // 放在 verticalScroll 内层：点击照吃，滚动手势照传（tap 不拦 drag）。
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -143,8 +148,8 @@ fun UIWerewolfPaceSheet(
 
             Spacer(Modifier.height(16.dp))
 
-            // 朗读开关也放进面板：顶栏那个喇叭图标太小，用户翻「设置」时想找的是文字。
-            // 两处改的是同一个值（ViewModel 的 autoSpeak，落在 DataStore 里），不会各说各话。
+            // 朗读开关放在这里：顶栏不再放喇叭，设置面板是对局里唯一的朗读入口。
+            // 和开局页改的是同一个值（ViewModel 的 autoSpeak，落在 DataStore 里），不会各说各话。
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
@@ -268,13 +273,10 @@ fun UIWerewolfPaceSheet(
             )
 
             Spacer(Modifier.height(10.dp))
+            // 座位列表不再自己滚：滚动已经上移到整个面板，这里只管把卡片排开。
+            // 12 个座位全展开也没关系，面板的 max 高度会把超出的部分交给父容器滚。
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    // 不给 weight：外层是 wrap content 的卡片，weight 在这种父级里
-                    // 拿不到确定的剩余高度，列表会塌成 0。给一个明确的滚动上限更稳
-                    .heightIn(max = 320.dp)
-                    .verticalScroll(rememberScrollState()),
+                modifier = Modifier.fillMaxWidth(),
                 // 每行是独立卡片，留一点缝把它们分开
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {

@@ -295,9 +295,9 @@ fun UIWerewolfSetupScreen(
                     )
                 }
 
-                // 朗读放在开局这里，而不是只在牌桌上留一个喇叭图标：一局可能打半小时,
-                // 半夜躺在床上不想听、通勤路上想听，都得在「开局之前」决定。
-                // 牌桌上那个喇叭仍然在，两处改的是同一个值
+                // 朗读放在开局这里决定：一局可能打半小时，半夜躺在床上不想听、
+                // 通勤路上想听，都得在「开局之前」定下来。
+                // 进牌桌后想改，去齿轮里的对局设置——那里有同一份开关，不再顶栏放喇叭。
                 SectionTitle(
                     title = "朗读",
                     subtitle = "把 AI 的发言念出来。音色属于每个座位自己，不在这里配"
@@ -305,9 +305,9 @@ fun UIWerewolfSetupScreen(
                 SetupSwitchRow(
                     title = "自动朗读",
                     subtitle = when {
-                        !speechReady -> "语音引擎还没就绪。先打开，进牌桌后点一下喇叭重试"
+                        !speechReady -> "语音引擎还没就绪。先打开，进牌桌后在设置面板里再拨一次即可重试"
                         speechOn -> "只念说出口的话，思考和内心活动不念"
-                        else -> "关着也能随时在牌桌上打开"
+                        else -> "关着也能随时在牌桌的对局设置里打开"
                     },
                     checked = speechOn,
                     onCheckedChange = onSpeechChange,

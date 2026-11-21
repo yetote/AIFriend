@@ -72,7 +72,8 @@ fun UIWerewolfTableScreen(
     onWitch: (heal: Boolean, poison: Int?) -> Unit = { _, _ -> },
     onDirection: (clockwise: Boolean) -> Unit = {},
     onReview: (() -> Unit)? = null,
-    onToggleSpeak: () -> Unit = {},
+    /** 传 null 不画顶栏喇叭。正常对局朗读开关在设置面板里；复盘演出保留这个入口。 */
+    onToggleSpeak: (() -> Unit)? = null,
     /**
      * 切换「思考气泡」。
      *
