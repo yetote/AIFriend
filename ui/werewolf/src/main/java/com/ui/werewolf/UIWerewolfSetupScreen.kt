@@ -58,6 +58,8 @@ import com.ui.common.theme.UIFriendBarCreateButtonText
 import com.ui.common.theme.UIFriendBarItemSubtitleColor
 import com.ui.common.theme.UIFriendBarRed
 import com.ui.common.theme.UIFriendBarSubtitleColor
+import com.ui.common.theme.UIFriendBarTabUnselectedBg
+import com.ui.common.theme.UIFriendBarTabUnselectedText
 import com.ui.common.theme.UIFriendBarTagTextBlue
 import com.ui.common.theme.UIFriendBarTitleColor
 import com.ui.common.theme.UIGlassStroke
@@ -66,6 +68,7 @@ import com.ui.common.theme.UIGlassSurfaceStrong
 import com.ui.common.theme.UIGradientBackground
 import com.ui.common.theme.UIRadiusCard
 import com.ui.common.theme.UIRadiusControl
+import com.ui.common.theme.UIRadiusTab
 import com.ui.common.theme.UITopBar
 import com.ui.common.theme.uiCard
 import com.ui.common.theme.uiControl
@@ -153,6 +156,10 @@ fun UIWerewolfSetupScreen(
     onStartAnyway: () -> Unit,
 ) {
     var search by rememberSaveable { mutableStateOf("") }
+    // 0 = 组局（选人搭骨架），1 = AI 设置（调发挥）。旋转屏幕后仍停在这一页。
+    var setupTab by rememberSaveable { mutableStateOf(0) }
+    // 牌手风格的手动指定列表默认收起。
+    var styleListExpanded by rememberSaveable { mutableStateOf(false) }
     val visibleFriends = if (search.isBlank()) {
         friends
     } else {
@@ -184,149 +191,235 @@ fun UIWerewolfSetupScreen(
                 )
             }
 
+            SetupTabRow(
+                selected = setupTab,
+                onSelect = { setupTab = it },
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+            )
+
+            Text(
+                text = if (setupTab == 0) {
+                    "谁上桌、坐哪、用什么板子——先把这一局的骨架搭好"
+                } else {
+                    "想多久、说多少、要不要看它思考——调 AI 的发挥"
+                },
+                fontSize = 11.5.sp,
+                color = UIFriendBarItemSubtitleColor,
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 2.dp)
+            )
+
             Column(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp)
-                    .padding(top = 16.dp, bottom = 8.dp),
+                    .padding(top = 4.dp, bottom = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(18.dp)
             ) {
                 if (error != null) {
                     ErrorBar(text = error, onDismiss = onClearError)
                 }
-                GroupHeader(
-                    title = "这一局怎么打",
-                    caption = "谁上桌、坐哪、用什么板子——先把这一局的骨架搭好",
-                )
-                SectionTitle(
-                    title = "怎么玩",
-                    subtitle = "自己占一个座位，还是纯粹看着 AI 自己打"
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    UIWerewolfMode.entries.forEach { item ->
-                        ModeCard(
-                            mode = item,
-                            selected = item == mode,
-                            modifier = Modifier.weight(1f),
-                            onClick = { onModeChange(item) }
-                        )
+                if (setupTab == 0) {
+                    SectionTitle(
+                        title = "怎么玩",
+                        subtitle = "自己占一个座位，还是纯粹看着 AI 自己打"
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        UIWerewolfMode.entries.forEach { item ->
+                            ModeCard(
+                                mode = item,
+                                selected = item == mode,
+                                modifier = Modifier.weight(1f),
+                                onClick = { onModeChange(item) }
+                            )
+                        }
                     }
-                }
-                SectionTitle(
-                    title = "板子",
-                    subtitle = "身份构成固定，开局时随机发牌。挑一个：人数决定要凑几个好友"
-                )
-                PresetGrid(
-                    presets = presets,
-                    presetKey = presetKey,
-                    onPresetChange = onPresetChange
-                )
-                // 座位条：这是整页的主视觉，把「还差几位」变成几个空位
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    SectionTitle(
+                        title = "板子",
+                        subtitle = "身份构成固定，开局时随机发牌。挑一个：人数决定要凑几个好友"
+                    )
+                    PresetGrid(
+                        presets = presets,
+                        presetKey = presetKey,
+                        onPresetChange = onPresetChange
+                    )
+                    // 座位条：这是整页的主视觉，把「还差几位」变成几个空位
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.Bottom
+                        ) {
+                            Text(
+                                text = "本局 ${seats.size} 个位置",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = UIFriendBarTitleColor
+                            )
+                            Text(
+                                text = "座位号开局时随机",
+                                fontSize = 11.sp,
+                                color = UIFriendBarItemSubtitleColor
+                            )
+                        }
+                        SeatStrip(seats = seats)
+                    }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.Bottom
                     ) {
-                        Text(
-                            text = "本局 ${seats.size} 个位置",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = UIFriendBarTitleColor
+                        SectionTitle(
+                            modifier = Modifier.weight(1f),
+                            title = "选人",
+                            subtitle = if (needFriends > 0) {
+                                "已选 ${selectedIds.size} / $needFriends 位"
+                            } else {
+                                "还没有可选的板子"
+                            }
                         )
+                        // 检测放在这一行的右边而不是另起一块：它测的就是「上面选的这批人」，
+                        // 隔开一段距离会让人以为是个全局设置
+                        CheckApiButton(
+                            checking = checking,
+                            enabled = selectedCheckable,
+                            hasFailure = failedCount > 0,
+                            onClick = onCheckApi
+                        )
+                    }
+
+                    SearchField(
+                        value = search,
+                        onValueChange = { search = it }
+                    )
+
+                    when {
+                        friends.isEmpty() -> Text(
+                            text = "还没有 AI 好友。先去首页创建一个，再来开局。",
+                            fontSize = 13.sp,
+                            color = UIFriendBarSubtitleColor
+                        )
+
+                        visibleFriends.isEmpty() -> Text(
+                            text = "没有匹配的好友",
+                            fontSize = 13.sp,
+                            color = UIFriendBarSubtitleColor
+                        )
+                    }
+
+                    if (visibleFriends.isNotEmpty()) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .uiCard(shape = RoundedCornerShape(UIRadiusCard))
+                                .padding(vertical = 4.dp)
+                        ) {
+                            visibleFriends.forEach { friend ->
+                                val checked = friend.id in selectedIds
+                                // 选满之后仍允许取消，否则想换人得先取消一个再找
+                                val enabled = checked || selectedIds.size < needFriends
+                                FriendRow(
+                                    friend = friend,
+                                    checked = checked,
+                                    enabled = enabled,
+                                    // 没选中的人不显示检测结果：一列红点会让人以为整页都在报错，
+                                    // 而真正要关心的是「这一局坐上桌的那几个」
+                                    check = if (checked) apiChecks[friend.id] else null,
+                                    onClick = { onToggleFriend(friend.id) }
+                                )
+                            }
+                        }
+                    }
+                    // 指定身份只在纯观战局开放：参与的局自己挑身份等于作弊。
+                    // 放在选人列表后面：先确定谁上桌，再给上桌的人派身份
+                    if (mode == UIWerewolfMode.SPECTATE && selectedIds.isNotEmpty()) {
+                        SectionTitle(
+                            title = "指定身份",
+                            subtitle = "给每个座位指定身份，看一场按你剧本演的局；没指定的随机发"
+                        )
+                        SetupSwitchRow(
+                            title = "导演模式",
+                            subtitle = if (assignRoles) {
+                                "点每个名字旁的身份改派，改回随机也行；座位号开局仍然随机"
+                            } else {
+                                "打开后可以指定谁当狼、谁当预言家，其余随机"
+                            },
+                            checked = assignRoles,
+                            onCheckedChange = onAssignRolesChange,
+                        )
+                        if (assignRoles) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .uiCard(shape = RoundedCornerShape(UIRadiusCard))
+                                    .padding(vertical = 4.dp)
+                            ) {
+                                friends.filter { it.id in selectedIds }.forEach { friend ->
+                                    RoleAssignRow(
+                                        friendName = friend.name,
+                                        assignedKey = roleByFriend[friend.id],
+                                        options = roleOptions,
+                                        onPick = { key -> onAssignRole(friend.id, key) },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                if (setupTab == 1) {
+                    // 提示词风格决定 AI「按什么打」：引导式有内置打法兜底，自由式把它放出去。
+                    // 放在开局而不是设置页，是因为这是「这一局想看什么」的取舍——
+                    // 想看小模型也能像样对局就用引导式，想看强模型自己推理就用自由式。
+                    SectionTitle(
+                        title = "AI 打法",
+                        subtitle = "引导式内置读人和战术，自由式只给身份和局势、让模型自己判断"
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            UIWerewolfPromptStyle.entries.forEach { style ->
+                                SetupStyleChip(
+                                    style = style,
+                                    selected = style == promptStyle,
+                                    modifier = Modifier.weight(1f),
+                                    onClick = { onPromptStyleChange(style) },
+                                )
+                            }
+                        }
                         Text(
-                            text = "座位号开局时随机",
+                            text = promptStyle.hint,
                             fontSize = 11.sp,
                             color = UIFriendBarItemSubtitleColor
                         )
                     }
-                    SeatStrip(seats = seats)
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.Bottom
-                ) {
+                    // 牌手风格：给每个 AI 一份「在牌桌上是什么牌手」的画像。
+                    // 和陪伴人设分工——陪伴人设管怎么说（猫娘、傲娇），这里管怎么想
+                    // （多疑、强攻、盘逻辑）。实测只有陪伴人设时，AI 把脑力花在口头禅上，
+                    // 满场都是记账式发言，几乎没人去想「对手在打什么算盘」。
                     SectionTitle(
-                        modifier = Modifier.weight(1f),
-                        title = "选人",
-                        subtitle = if (needFriends > 0) {
-                            "已选 ${selectedIds.size} / $needFriends 位"
-                        } else {
-                            "还没有可选的板子"
-                        }
-                    )
-                    // 检测放在这一行的右边而不是另起一块：它测的就是「上面选的这批人」，
-                    // 隔开一段距离会让人以为是个全局设置
-                    CheckApiButton(
-                        checking = checking,
-                        enabled = selectedCheckable,
-                        hasFailure = failedCount > 0,
-                        onClick = onCheckApi
-                    )
-                }
-
-                SearchField(
-                    value = search,
-                    onValueChange = { search = it }
-                )
-
-                when {
-                    friends.isEmpty() -> Text(
-                        text = "还没有 AI 好友。先去首页创建一个，再来开局。",
-                        fontSize = 13.sp,
-                        color = UIFriendBarSubtitleColor
-                    )
-
-                    visibleFriends.isEmpty() -> Text(
-                        text = "没有匹配的好友",
-                        fontSize = 13.sp,
-                        color = UIFriendBarSubtitleColor
-                    )
-                }
-
-                if (visibleFriends.isNotEmpty()) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .uiCard(shape = RoundedCornerShape(UIRadiusCard))
-                            .padding(vertical = 4.dp)
-                    ) {
-                        visibleFriends.forEach { friend ->
-                            val checked = friend.id in selectedIds
-                            // 选满之后仍允许取消，否则想换人得先取消一个再找
-                            val enabled = checked || selectedIds.size < needFriends
-                            FriendRow(
-                                friend = friend,
-                                checked = checked,
-                                enabled = enabled,
-                                // 没选中的人不显示检测结果：一列红点会让人以为整页都在报错，
-                                // 而真正要关心的是「这一局坐上桌的那几个」
-                                check = if (checked) apiChecks[friend.id] else null,
-                                onClick = { onToggleFriend(friend.id) }
-                            )
-                        }
-                    }
-                }
-                // 指定身份只在纯观战局开放：参与的局自己挑身份等于作弊。
-                // 放在选人列表后面：先确定谁上桌，再给上桌的人派身份
-                if (mode == UIWerewolfMode.SPECTATE && selectedIds.isNotEmpty()) {
-                    SectionTitle(
-                        title = "指定身份",
-                        subtitle = "给每个座位指定身份，看一场按你剧本演的局；没指定的随机发"
+                        title = "牌手风格",
+                        subtitle = "给 AI 一个博弈的性格：它信什么、疑谁、怎么下判断"
                     )
                     SetupSwitchRow(
-                        title = "导演模式",
-                        subtitle = if (assignRoles) {
-                            "点每个名字旁的身份改派，改回随机也行；座位号开局仍然随机"
-                        } else {
-                            "打开后可以指定谁当狼、谁当预言家，其余随机"
-                        },
-                        checked = assignRoles,
-                        onCheckedChange = onAssignRolesChange,
+                        title = "启用牌手风格",
+                        subtitle = "每个 AI 自动分到不同牌风，同桌才有几种打法碰撞；关掉则只用陪伴人设",
+                        checked = playerStyleOn,
+                        onCheckedChange = onPlayerStyleOnChange,
                     )
-                    if (assignRoles) {
+                if (playerStyleOn) {
+                    // 手动指定默认折叠：一桌 8 个人就意味着 8 行「自动」，
+                    // 全是默认值等于没信息，白白把这一页撑长。真要改的人点开就行。
+                    val pinned = styleByFriend.count { it.value.isNotBlank() }
+                    SetupFoldRow(
+                        title = "手动指定",
+                        subtitle = if (pinned > 0) {
+                            "已指定 $pinned 位。点名字改风格，改回自动也行"
+                        } else {
+                            "默认自动分配，同桌尽量不重样。想固定某个人用某种牌风再点这里"
+                        },
+                        expanded = styleListExpanded,
+                        onToggle = { styleListExpanded = !styleListExpanded },
+                    )
+                    if (styleListExpanded) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -334,151 +427,86 @@ fun UIWerewolfSetupScreen(
                                 .padding(vertical = 4.dp)
                         ) {
                             friends.filter { it.id in selectedIds }.forEach { friend ->
-                                RoleAssignRow(
+                                StyleAssignRow(
                                     friendName = friend.name,
-                                    assignedKey = roleByFriend[friend.id],
-                                    options = roleOptions,
-                                    onPick = { key -> onAssignRole(friend.id, key) },
+                                    assignedId = styleByFriend[friend.id],
+                                    onPick = { styleId -> onAssignStyle(friend.id, styleId) },
                                 )
                             }
                         }
                     }
                 }
-                GroupHeader(
-                    title = "AI 怎么表现",
-                    caption = "想多久、说多少、要不要看它思考——调 AI 的发挥",
-                )
-                // 提示词风格决定 AI「按什么打」：引导式有内置打法兜底，自由式把它放出去。
-                // 放在开局而不是设置页，是因为这是「这一局想看什么」的取舍——
-                // 想看小模型也能像样对局就用引导式，想看强模型自己推理就用自由式。
-                SectionTitle(
-                    title = "AI 打法",
-                    subtitle = "引导式内置读人和战术，自由式只给身份和局势、让模型自己判断"
-                )
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        UIWerewolfPromptStyle.entries.forEach { style ->
-                            SetupStyleChip(
-                                style = style,
-                                selected = style == promptStyle,
-                                modifier = Modifier.weight(1f),
-                                onClick = { onPromptStyleChange(style) },
-                            )
+                    SectionTitle(
+                        title = "提示词微调",
+                        subtitle = "嫌 AI 打得太套路？给这张板子写几句自己的要求"
+                    )
+                    PromptEntryCard(
+                        onClick = onOpenPromptSettings
+                    )
+                    // 思考时限放在开局这里而不是藏进设置：它直接决定「这一局要打多久」，
+                    // 而用户是带着「我等不等得起」这个问题来开局的
+                    SectionTitle(
+                        title = "思考时限",
+                        subtitle = "每一步最多等多久。超时按兜底继续，并关掉那个座位本局的深度思考"
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            UIWerewolfTurnLimit.entries.forEach { limit ->
+                                SetupLimitChip(
+                                    limit = limit,
+                                    selected = limit == turnLimit,
+                                    modifier = Modifier.weight(1f),
+                                    onClick = { onTurnLimitChange(limit) },
+                                )
+                            }
                         }
+                        Text(
+                            text = turnLimit.consequence + "。开局后在牌桌上点右上角齿轮也能改。",
+                            fontSize = 11.sp,
+                            color = UIFriendBarItemSubtitleColor
+                        )
                     }
-                    Text(
-                        text = promptStyle.hint,
-                        fontSize = 11.sp,
-                        color = UIFriendBarItemSubtitleColor
+                    // 发言长度决定「AI 说多少」：只影响观感不影响公平，放开局这里
+                    // 和朗读、时限同一个理由——一局的体验要在开局前定下来
+                    SectionTitle(
+                        title = "发言长度",
+                        subtitle = "AI 每句公开发言的目标字数。说太长的会被引擎在句末裁掉"
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            UIWerewolfSpeechLength.entries.forEach { length ->
+                                SetupSpeechChip(
+                                    length = length,
+                                    selected = length == speechLength,
+                                    modifier = Modifier.weight(1f),
+                                    onClick = { onSpeechLengthChange(length) },
+                                )
+                            }
+                        }
+                        Text(
+                            text = speechLength.hint,
+                            fontSize = 11.sp,
+                            color = UIFriendBarItemSubtitleColor
+                        )
+                    }
+                    // 朗读放在开局这里决定：一局可能打半小时，半夜躺在床上不想听、
+                    // 通勤路上想听，都得在「开局之前」定下来。
+                    // 进牌桌后想改，去齿轮里的对局设置——那里有同一份开关，不再顶栏放喇叭。
+                    SectionTitle(
+                        title = "朗读",
+                        subtitle = "把 AI 的发言念出来。音色属于每个座位自己，不在这里配"
+                    )
+                    SetupSwitchRow(
+                        title = "自动朗读",
+                        subtitle = when {
+                            !speechReady -> "语音引擎还没就绪。先打开，进牌桌后在设置面板里再拨一次即可重试"
+                            speechOn -> "只念说出口的话，思考和内心活动不念"
+                            else -> "关着也能随时在牌桌的对局设置里打开"
+                        },
+                        checked = speechOn,
+                        onCheckedChange = onSpeechChange,
                     )
                 }
-                // 牌手风格：给每个 AI 一份「在牌桌上是什么牌手」的画像。
-                // 和陪伴人设分工——陪伴人设管怎么说（猫娘、傲娇），这里管怎么想
-                // （多疑、强攻、盘逻辑）。实测只有陪伴人设时，AI 把脑力花在口头禅上，
-                // 满场都是记账式发言，几乎没人去想「对手在打什么算盘」。
-                SectionTitle(
-                    title = "牌手风格",
-                    subtitle = "给 AI 一个博弈的性格：它信什么、疑谁、怎么下判断"
-                )
-                SetupSwitchRow(
-                    title = "启用牌手风格",
-                    subtitle = "每个 AI 自动分到不同牌风，同桌才有几种打法碰撞；关掉则只用陪伴人设",
-                    checked = playerStyleOn,
-                    onCheckedChange = onPlayerStyleOnChange,
-                )
-                if (playerStyleOn) {
-                    Text(
-                        text = "想让谁固定用某种风格，在下面点他的名字改；不改就自动分配。",
-                        fontSize = 11.sp,
-                        lineHeight = 16.sp,
-                        color = UIFriendBarItemSubtitleColor,
-                        modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 4.dp)
-                    )
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .uiCard(shape = RoundedCornerShape(UIRadiusCard))
-                            .padding(vertical = 4.dp)
-                    ) {
-                        friends.filter { it.id in selectedIds }.forEach { friend ->
-                            StyleAssignRow(
-                                friendName = friend.name,
-                                assignedId = styleByFriend[friend.id],
-                                onPick = { styleId -> onAssignStyle(friend.id, styleId) },
-                            )
-                        }
-                    }
-                }
-                SectionTitle(
-                    title = "提示词微调",
-                    subtitle = "嫌 AI 打得太套路？给这张板子写几句自己的要求"
-                )
-                PromptEntryCard(
-                    onClick = onOpenPromptSettings
-                )
-                // 思考时限放在开局这里而不是藏进设置：它直接决定「这一局要打多久」，
-                // 而用户是带着「我等不等得起」这个问题来开局的
-                SectionTitle(
-                    title = "思考时限",
-                    subtitle = "每一步最多等多久。超时按兜底继续，并关掉那个座位本局的深度思考"
-                )
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        UIWerewolfTurnLimit.entries.forEach { limit ->
-                            SetupLimitChip(
-                                limit = limit,
-                                selected = limit == turnLimit,
-                                modifier = Modifier.weight(1f),
-                                onClick = { onTurnLimitChange(limit) },
-                            )
-                        }
-                    }
-                    Text(
-                        text = turnLimit.consequence + "。开局后在牌桌上点右上角齿轮也能改。",
-                        fontSize = 11.sp,
-                        color = UIFriendBarItemSubtitleColor
-                    )
-                }
-                // 发言长度决定「AI 说多少」：只影响观感不影响公平，放开局这里
-                // 和朗读、时限同一个理由——一局的体验要在开局前定下来
-                SectionTitle(
-                    title = "发言长度",
-                    subtitle = "AI 每句公开发言的目标字数。说太长的会被引擎在句末裁掉"
-                )
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        UIWerewolfSpeechLength.entries.forEach { length ->
-                            SetupSpeechChip(
-                                length = length,
-                                selected = length == speechLength,
-                                modifier = Modifier.weight(1f),
-                                onClick = { onSpeechLengthChange(length) },
-                            )
-                        }
-                    }
-                    Text(
-                        text = speechLength.hint,
-                        fontSize = 11.sp,
-                        color = UIFriendBarItemSubtitleColor
-                    )
-                }
-                // 朗读放在开局这里决定：一局可能打半小时，半夜躺在床上不想听、
-                // 通勤路上想听，都得在「开局之前」定下来。
-                // 进牌桌后想改，去齿轮里的对局设置——那里有同一份开关，不再顶栏放喇叭。
-                SectionTitle(
-                    title = "朗读",
-                    subtitle = "把 AI 的发言念出来。音色属于每个座位自己，不在这里配"
-                )
-                SetupSwitchRow(
-                    title = "自动朗读",
-                    subtitle = when {
-                        !speechReady -> "语音引擎还没就绪。先打开，进牌桌后在设置面板里再拨一次即可重试"
-                        speechOn -> "只念说出口的话，思考和内心活动不念"
-                        else -> "关着也能随时在牌桌的对局设置里打开"
-                    },
-                    checked = speechOn,
-                    onCheckedChange = onSpeechChange,
-                )
                 Spacer(Modifier.height(4.dp))
             }
 
@@ -582,34 +610,102 @@ private fun SetupSwitchRow(
 }
 
 /**
- * 组标题：开局页的区块按主题分成两组，这是每组的抬头。
+ * 可展开/收起的一行。
  *
- * 和 [SectionTitle] 的区别是它带一条蓝色底纹——一长列设置里，光靠字号大小
- * 分不出「这是新的一组」还是「又一个小节」。底纹 + 组序号让眼睛一眼看到分界，
- * 下面的 SectionTitle 仍是各组内部的小节标题，两级视觉不打架。
+ * 用在「默认没什么要改、但偶尔要改」的设置上：牌手风格的手动指定、身份指派
+ * 都是这种。平时收起只占一行，需要时点开才铺开内容。
  */
 @Composable
-private fun GroupHeader(title: String, caption: String) {
-    Column(
+private fun SetupFoldRow(
+    title: String,
+    subtitle: String,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+) {
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(UIRadiusControl))
-            .background(UIFriendBarTagTextBlue.copy(alpha = 0.10f))
-            .border(1.dp, UIFriendBarTagTextBlue.copy(alpha = 0.24f), RoundedCornerShape(UIRadiusControl))
+            .background(UIGlassSurfaceStrong)
+            .clickable { onToggle() }
             .padding(horizontal = 14.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = title,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = UIFriendBarTitleColor
+            )
+            Text(
+                text = subtitle,
+                fontSize = 11.sp,
+                lineHeight = 15.sp,
+                color = UIFriendBarItemSubtitleColor
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        // 用三角而不是箭头：展开是「向下摊开」，箭头朝上读起来像「收起」。
         Text(
-            text = title,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = UIFriendBarTagTextBlue,
+            text = if (expanded) "▼" else "▶",
+            fontSize = 11.sp,
+            color = UIFriendBarItemSubtitleColor
         )
-        Text(
-            text = caption,
-            fontSize = 11.5.sp,
-            color = UIFriendBarItemSubtitleColor,
-        )
+    }
+}
+
+/**
+ * 开局页顶部的两页切换：组局 / AI 设置。
+ *
+ * 配置太多时把「怎么搭局」和「AI 怎么发挥」塞进同一个滚动里，用户得滑很久
+ * 才能改一个开关。拆成两页后每页都短到一屏多，进页面先看组局，调 AI 再切过去。
+ */
+@Composable
+private fun SetupTabRow(
+    selected: Int,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val tabs = listOf("组局", "AI 设置")
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(UIRadiusTab))
+            .background(UIFriendBarTabUnselectedBg.copy(alpha = 0.6f))
+            .padding(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        tabs.forEachIndexed { index, title ->
+            val isSelected = selected == index
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(UIRadiusTab - 3.dp))
+                    .then(
+                        if (isSelected) {
+                            Modifier
+                                .shadow(3.dp, RoundedCornerShape(UIRadiusTab - 3.dp), clip = false)
+                                .background(UIGlassSurfaceStrong)
+                        } else {
+                            Modifier
+                        }
+                    )
+                    .clickable { onSelect(index) }
+                    .padding(vertical = 8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = title,
+                    style = TextStyle(
+                        fontSize = 13.sp,
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                        color = if (isSelected) UIFriendBarTitleColor else UIFriendBarTabUnselectedText,
+                    )
+                )
+            }
+        }
     }
 }
 
