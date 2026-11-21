@@ -13,6 +13,7 @@ import com.ui.werewolf.data.UIWerewolfFate
 import com.ui.werewolf.data.UIWerewolfLine
 import com.ui.werewolf.data.UIWerewolfLineKind
 import com.ui.werewolf.data.UIWerewolfLive
+import com.ui.werewolf.data.UIWerewolfRetry
 import com.ui.werewolf.data.UIWerewolfSeatLive
 import com.ui.werewolf.data.UIWerewolfStreaming
 
@@ -52,6 +53,8 @@ internal fun WerewolfUiState.toLive(
     /** 刚刚超时的那一步，显示几秒就过。 */
     timeoutNotice: String? = null,
     timeoutAt: Long = 0L,
+    /** 某一步请求失败、正挂着等人重发。null = 没有待处理的失败。 */
+    retry: UIWerewolfRetry? = null,
 ): UIWerewolfLive {
     val table = table
     val game = table?.game
@@ -237,6 +240,8 @@ internal fun WerewolfUiState.toLive(
         spectating = humanSeat == null,
         turn = if (game != null) buildTurn(game, humanSeat, me, turn) else null,
         error = error,
+        // 局已经结束/回列表时，把迟到的重试提示丢掉——那一步的协程早被取消了
+        retry = retry?.takeIf { running && !finished },
         autoSpeak = autoSpeak,
         speechReady = speechReady,
         // 界面拿它点亮顶栏那个「思考」开关。观战 / 已结束恒为开：那两个视角本来就能看

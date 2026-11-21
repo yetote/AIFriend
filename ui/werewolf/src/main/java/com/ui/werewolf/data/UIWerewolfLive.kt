@@ -197,6 +197,14 @@ data class UIWerewolfTurn(
  * 这四件事都在这里，界面不做任何推断——尤其是「轮到谁」，判断依据是 `phase` 加本人身份，
  * 界面不去猜提示词里写了什么。
  */
+/** 一次「请求失败、等人重发」的展示数据。 */
+data class UIWerewolfRetry(
+    /** 已经翻成中文的失败原因，含座位名，例如「3 号小咪：请求过于频繁，被上游限流（429）」。 */
+    val message: String,
+    /** 这是第几次重发（第一次失败为 1）。0 或 1 都不显示「第 N 次」。 */
+    val attempt: Int,
+)
+
 data class UIWerewolfLive(
     val day: Int,
     /** 例如「白天讨论」「狼人行动」。 */
@@ -235,6 +243,13 @@ data class UIWerewolfLive(
     val turn: UIWerewolfTurn? = null,
     /** 出错信息（多为网络或 Key 问题），局面不会因此丢失。 */
     val error: String? = null,
+    /**
+     * 某一步请求失败、正挂着等用户决定重发。
+     *
+     * 和 [error] 分开：error 是整局已经停下、局面已存档；retry 是这一局还活着，
+     * 只是某个座位这次请求没通，等人点一下再用原参数重发。两者不会同时出现。
+     */
+    val retry: UIWerewolfRetry? = null,
     /** 自动朗读别人发言是否开启。 */
     val autoSpeak: Boolean = true,
     /** 系统中文语音是否可用。false 时开关点了也不出声，界面要说明原因。 */

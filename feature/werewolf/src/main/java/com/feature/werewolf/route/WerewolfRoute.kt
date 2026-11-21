@@ -42,6 +42,7 @@ import com.ui.werewolf.data.UIWerewolfNotice
 import com.ui.werewolf.data.UIWerewolfPromptStyle
 import com.ui.werewolf.data.UIWerewolfPace
 import com.ui.werewolf.data.UIWerewolfPreset
+import com.ui.werewolf.data.UIWerewolfRetry
 import com.ui.werewolf.data.UIWerewolfRoleOption
 import com.ui.werewolf.data.UIWerewolfSeatPace
 import com.ui.werewolf.data.UIWerewolfSpeechLength
@@ -81,6 +82,12 @@ fun WerewolfRoute(
     val speechBusy by viewModel.speechBusy.collectAsState()
     val speakingSeat by viewModel.speakingSeat.collectAsState()
     val notice by viewModel.notice.collectAsState()
+    // 某一步请求失败、正挂着等人重发。它不属于 controller.state（引擎根本不知道断过），
+    // 所以单独收一路，再并进牌桌的展示模型。
+    val retryPrompt by viewModel.retryPrompt.collectAsState()
+    val retryUi = remember(retryPrompt) {
+        retryPrompt?.let { UIWerewolfRetry(message = it.message, attempt = it.attempt) }
+    }
     // 这一局的节奏：档位、关掉思考的座位、每座位耗时账本。都在面板里直接呈现
     val paceLimit by viewModel.pacing.limit.collectAsState()
     val paceThinkingOff by viewModel.pacing.thinkingOff.collectAsState()
@@ -501,6 +508,7 @@ fun WerewolfRoute(
                         speechSeconds = paceLimit.speechSeconds,
                         timeoutNotice = timeoutNotice,
                         timeoutAt = state.lastTimeout?.at ?: 0L,
+                        retry = retryUi,
                     ),
                     // 牌桌左上角的返回 = 收起牌桌回列表，不是退出狼人杀
                     onExit = {
@@ -523,6 +531,8 @@ fun WerewolfRoute(
                         showPaceSheet = true
                     },
                     onHideThinkingBubble = viewModel::hideThinkingBubble,
+                    onRetry = viewModel::retryFailedStep,
+                    onGiveUpStep = viewModel::giveUpFailedStep,
                 )
                 if (showPaceSheet) {
                     UIWerewolfPaceSheet(

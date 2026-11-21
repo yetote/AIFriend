@@ -5,8 +5,10 @@ package com.ui.werewolf
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -33,6 +35,7 @@ import com.ui.common.theme.UIFriendBarRed
 import com.ui.common.theme.UIFriendBarTitleColor
 import com.ui.common.theme.UIRadiusControl
 import com.ui.werewolf.data.UIWerewolfLive
+import com.ui.werewolf.data.UIWerewolfRetry
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.animation.core.animateFloatAsState
 import kotlinx.coroutines.delay
@@ -82,6 +85,10 @@ fun UIWerewolfTableScreen(
     onToggleThinking: (() -> Unit)? = null,
     /** 打开对局设置（思考时限、每人的用时）。传 null 就不给入口。 */
     onOpenSettings: (() -> Unit)? = null,
+    /** 错误条上「重新请求」：只重发失败的那一步。 */
+    onRetry: () -> Unit = {},
+    /** 错误条上「放弃这一步」：让原来的错误照常停下整局。 */
+    onGiveUpStep: () -> Unit = {},
     /** 长按思考气泡：本局隐藏这个座位的思考气泡。不传就不响应长按。 */
     onHideThinkingBubble: ((seat: Int) -> Unit)? = null,
     /** 复盘演出：播放 / 暂停。 */
@@ -180,8 +187,15 @@ fun UIWerewolfTableScreen(
                 CheatStrip(night = night)
             }
 
-            if (live.error != null) {
-                ErrorStrip(message = live.error, night = night)
+            val retry = live.retry
+            when {
+                retry != null -> RetryStrip(
+                    retry = retry,
+                    night = night,
+                    onRetry = onRetry,
+                    onGiveUp = onGiveUpStep,
+                )
+                live.error != null -> ErrorStrip(message = live.error, night = night)
             }
 
             // 超时提示只停留几秒：它不是状态，是「刚才发生了什么」。
@@ -314,6 +328,65 @@ internal fun ErrorStrip(message: String, night: Boolean) {
             lineHeight = 19.sp,
             color = if (night) Color(0xFFFFB4B0) else UIFriendBarRed
         )
+    }
+}
+
+/**
+ * 「某一步请求失败、等人重发」的提示条。
+ *
+ * 和普通错误条的区别：这一局还活着，引擎正挂在那个请求上等决定，
+ * 所以要在原地给出两个动作——重发（原参数再来一次）或放弃（照常停下）。
+ * 不做成弹窗：弹窗会挡住牌桌，而用户可能正想看着局势判断要不要再试。
+ */
+@Composable
+internal fun RetryStrip(
+    retry: UIWerewolfRetry,
+    night: Boolean,
+    onRetry: () -> Unit,
+    onGiveUp: () -> Unit,
+) {
+    val labelColor = if (night) Color(0xFFFFB4B0) else UIFriendBarRed
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp)
+            .background(
+                UIFriendBarRed.copy(alpha = if (night) 0.24f else 0.08f),
+                RoundedCornerShape(UIRadiusControl)
+            )
+            .padding(horizontal = 12.dp, vertical = 9.dp)
+    ) {
+        Column {
+            Text(
+                text = buildString {
+                    append(retry.message)
+                    if (retry.attempt > 1) append("（第 ${retry.attempt} 次）")
+                    append("\n暂时没能连上，这一局还停在这里等你。")
+                },
+                fontSize = FsName,
+                lineHeight = 19.sp,
+                color = labelColor
+            )
+            Spacer(Modifier.height(8.dp))
+            Row {
+                Text(
+                    text = "重新请求",
+                    fontSize = FsName,
+                    color = labelColor,
+                    modifier = Modifier
+                        .clickable(onClick = onRetry)
+                        .padding(end = 14.dp, top = 2.dp, bottom = 2.dp)
+                )
+                Text(
+                    text = "放弃这一步",
+                    fontSize = 11.sp,
+                    color = if (night) Color(0xFFFFD8D6) else UIFriendBarItemSubtitleColor,
+                    modifier = Modifier
+                        .clickable(onClick = onGiveUp)
+                        .padding(start = 14.dp, top = 2.dp, bottom = 2.dp)
+                )
+            }
+        }
     }
 }
 

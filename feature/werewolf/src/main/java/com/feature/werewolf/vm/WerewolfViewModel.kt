@@ -33,7 +33,11 @@ import com.feature.werewolf.engine.SeatAgent
 import com.feature.werewolf.engine.SeatVoices
 import com.feature.werewolf.engine.MessageKind
 import com.feature.werewolf.engine.WerewolfController
+import com.feature.werewolf.engine.RetryDecision
+import com.feature.werewolf.engine.RetryPrompt
+import com.feature.werewolf.engine.RetryableAI
 import com.feature.werewolf.engine.WerewolfPacing
+import com.feature.werewolf.engine.WerewolfRetryCoordinator
 import com.feature.werewolf.engine.WerewolfTable
 import com.feature.werewolf.engine.WerewolfUiState
 import com.feature.werewolf.prompt.assignPlayerStyles
@@ -291,6 +295,15 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
 
     /** 存档生成时绑定的座位表，续档时按同样的规则重建。 */
     private var agents: Map<Int, SeatAgent> = emptyMap()
+
+    /**
+     * 「某一步请求失败、等人重发」的挂起处。
+     *
+     * 每个 AI 座位共用这一个协调器：牌桌上一次只显示一条重试条，
+     * 所以并发阶段同时撞上限流也不会冒出好几张卡片。
+     */
+    private val retryCoordinator = WerewolfRetryCoordinator()
+    val retryPrompt: StateFlow<RetryPrompt?> = retryCoordinator.prompt
 
     /**
      * 座位 → 这个座位的角色**本来**开不开深度思考。
@@ -677,6 +690,21 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
         speechEngine.retry()
     }
 
+    /**
+     * 牌桌错误条上的「重新请求」：把挂住的那一步用原参数再发一次。
+     *
+     * 没有挂起的请求时是空操作——用户可能晚点了几十毫秒，
+     * 那一步已经被时限兜底放走了，这时不该凭空再发起一次。
+     */
+    fun retryFailedStep() {
+        retryCoordinator.resolve(RetryDecision.RETRY)
+    }
+
+    /** 错误条上的「放弃这一步」：让原来的错误照常往上抛，整局按存档停下。 */
+    fun giveUpFailedStep() {
+        retryCoordinator.resolve(RetryDecision.GIVE_UP)
+    }
+
     override fun onCleared() {
         // 演出循环也要停：它和朗读共用一个喇叭，ViewModel 都没了还在演就是幽灵声音
         replayJob?.cancel()
@@ -775,6 +803,8 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
             // 上一局如果是「暂停」状态，它的协程可能还停在最后一次落档里；
             // 等它真的结束再开新局，免得两边同时写库
             previous?.cancelAndJoin()
+            // 上一局万一停在重试条上，换局时把那条挂起的请求放走，别让它跟着新局复活
+            retryCoordinator.cancelAll()
             try {
                 // 新局换新账本：上一局的耗时、被关掉的思考都不该带到这一局
                 controller.pacing.reset(turnLimit)
@@ -857,6 +887,7 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
         playJob = viewModelScope.launch {
             // 上一局可能刚「暂停」、协程还没真的停下（取消是异步的），等它收尾
             previous?.cancelAndJoin()
+            retryCoordinator.cancelAll()
             try {
                 val table = store.load(id) ?: run {
                     _error.value = "这条存档读不出来，可能已经损坏"
@@ -918,6 +949,8 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
      */
     fun pause() {
         stopSpeech(clearQueue = true)
+        // 开着重试条退出时，把挂起的那一步也放走——否则它会在后台一直等到本局时限
+        retryCoordinator.cancelAll()
         val job = playJob
         playJob = null
         viewModelScope.launch {
@@ -1620,7 +1653,9 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
                 val ai = aiFor(friend.brand)
                     ?: throw IllegalStateException("暂不支持的厂商：${friend.brand}")
                 SeatAgent(
-                    ai = ai,
+                    // 传输层失败（429 / 断网）挂在请求内部等人重发；引擎、存档都不知情。
+                    // 人类座位不包——他本来就在界面上等自己输入，没有「失败重试」这回事。
+                    ai = RetryableAI(ai, player.seat, player.name, retryCoordinator),
                     model = friend.model,
                     persona = friend.prompt,
                     thinkingEnabled = friend.thinkingEnabled,
