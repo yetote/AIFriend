@@ -41,6 +41,11 @@ internal fun WerewolfUiState.toLive(
      * 界面会明写着「这是作弊」。开关的值记在设置里，开了就一直是开的。
      */
     showThinking: Boolean = false,
+    /**
+     * 每个座位的思考气泡可见性**覆盖值**（seat → visible）。缺席 = 跟随全局开关。
+     * 长按气泡写 false，对局设置面板里可以单独开/关；优先于 [showThinking]。
+     */
+    bubbleVisible: Map<Int, Boolean> = emptyMap(),
     /** 这一局的思考时限（秒），0 表示不设限。气泡上要显示「12s / 60s」。 */
     decisionSeconds: Int = 0,
     speechSeconds: Int = 0,
@@ -199,8 +204,13 @@ internal fun WerewolfUiState.toLive(
                     avatarPath = avatars[speaker.id],
                     text = item.text,
                     isDecision = item.isDecision,
-                    // 思考内容是别人的心里话：观战/结束、或者用户自己开了开关才给
-                    reasoning = if (reveal || showThinking) item.reasoning else "",
+                    // 思考内容是别人的心里话：观战/结束、或者用户开了开关才给。
+                    // 单个座位的覆盖值优先：长按藏掉的座位，全局开着也不给。
+                    reasoning = if (bubbleVisible[item.seat] ?: (reveal || showThinking)) {
+                        item.reasoning
+                    } else {
+                        ""
+                    },
                 )
             }
         }

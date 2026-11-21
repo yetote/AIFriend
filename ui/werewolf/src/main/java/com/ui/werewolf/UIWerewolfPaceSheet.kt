@@ -72,6 +72,11 @@ fun UIWerewolfPaceSheet(
     /** 引擎能不能出声；不能时开关仍可点，点开等同于重试一次绑定。 */
     speechReady: Boolean,
     onSpeechChange: (Boolean) -> Unit,
+    /** 全局：要不要显示 AI 的思考气泡。和顶栏的思考胶囊是同一个值。 */
+    bubbleOn: Boolean,
+    onBubbleChange: (Boolean) -> Unit,
+    /** 单独开/关某个座位的思考气泡（覆盖全局）。 */
+    onSeatBubbleChange: (Int, Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
     // 遮罩直接吃掉点击：面板外面那层牌桌此刻不该被操作——正在等语音、正在投票，
@@ -168,6 +173,36 @@ fun UIWerewolfPaceSheet(
 
             Spacer(Modifier.height(18.dp))
 
+            // 思考气泡的全局开关：和顶栏胶囊同一个值，想找「文字开关」的人在这里读得到。
+            // 单个座位的开关在下面的座位行里，长按气泡也能藏掉它。
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "思考气泡",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = UIFriendBarTitleColor,
+                    )
+                    Text(
+                        text = "显示 AI 的内心活动；参与局里打开等于作弊。" +
+                            "长按某个气泡可以单独藏掉它",
+                        fontSize = 11.5.sp,
+                        color = UIFriendBarItemSubtitleColor,
+                    )
+                }
+                Spacer(Modifier.width(10.dp))
+                Switch(
+                    checked = bubbleOn,
+                    onCheckedChange = onBubbleChange,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = UIFriendBarTagTextBlue,
+                    ),
+                )
+            }
+
+            Spacer(Modifier.height(18.dp))
+
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = "思考时限",
@@ -235,6 +270,7 @@ fun UIWerewolfPaceSheet(
                         seat = seat,
                         enabled = pace.running,
                         onToggle = { on -> onToggleThinking(seat.seat, on) },
+                        onSeatBubble = { on -> onSeatBubbleChange(seat.seat, on) },
                     )
                 }
             }
@@ -285,6 +321,8 @@ private fun SeatPaceRow(
     seat: UIWerewolfSeatPace,
     enabled: Boolean,
     onToggle: (Boolean) -> Unit,
+    /** 单独开/关这个座位的思考气泡。覆盖全局开关；想跟全局就拨到和全局一样。 */
+    onSeatBubble: (Boolean) -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -339,8 +377,8 @@ private fun SeatPaceRow(
             }
         }
         Spacer(Modifier.width(8.dp))
-        if (seat.thinkingAvailable) {
-            Column(horizontalAlignment = Alignment.End) {
+        Column(horizontalAlignment = Alignment.End) {
+            if (seat.thinkingAvailable) {
                 Switch(
                     checked = seat.thinkingOn,
                     onCheckedChange = { on -> if (enabled) onToggle(on) },
@@ -355,11 +393,25 @@ private fun SeatPaceRow(
                     fontSize = 9.5.sp,
                     color = UIFriendBarItemSubtitleColor,
                 )
+            } else {
+                Text(
+                    text = "未开思考",
+                    fontSize = 10.5.sp,
+                    color = UIFriendBarItemSubtitleColor,
+                )
             }
-        } else {
+            Spacer(Modifier.height(4.dp))
+            Switch(
+                checked = seat.bubbleVisible,
+                onCheckedChange = onSeatBubble,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = UIFriendBarTagTextBlue,
+                ),
+            )
             Text(
-                text = "未开思考",
-                fontSize = 10.5.sp,
+                text = if (seat.bubbleVisible) "气泡显示" else "气泡隐藏",
+                fontSize = 9.5.sp,
                 color = UIFriendBarItemSubtitleColor,
             )
         }

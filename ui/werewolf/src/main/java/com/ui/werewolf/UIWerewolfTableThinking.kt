@@ -38,8 +38,10 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.input.pointer.pointerInput
 import kotlinx.coroutines.delay
 
 // ---------------------------------------------------------------------------
@@ -185,6 +187,8 @@ internal fun ThinkingBubble(
     speechStarted: Boolean = false,
     /** 当前段的上限，0 表示不设限。有值时才显示「/ 60s」。 */
     limitSeconds: Int = 0,
+    /** 长按气泡时回调：本局隐藏这个座位的思考气泡。null = 不响应长按。 */
+    onHide: (() -> Unit)? = null,
 ) {
     if (reasoning.isBlank()) return
     // 坐标还没算出来（座位刚布局完）或者算坏了，就先别画：
@@ -298,6 +302,17 @@ internal fun ThinkingBubble(
                 .clip(RoundedCornerShape(12.dp))
                 .background(fill)
                 .border(1.dp, border, RoundedCornerShape(12.dp))
+                // 长按 = 本局藏掉这个座位的内心戏：看着累、或者不想被剧透，
+                // 不用为一它把全场的思考都关了。对局设置面板里可以再打开。
+                .let { m ->
+                    if (onHide != null) {
+                        m.pointerInput(Unit) {
+                            detectTapGestures(onLongPress = { onHide() })
+                        }
+                    } else {
+                        m
+                    }
+                }
                 .padding(horizontal = 10.dp, vertical = 7.dp)
         ) {
             Column {

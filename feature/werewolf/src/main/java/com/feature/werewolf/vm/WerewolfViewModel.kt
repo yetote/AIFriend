@@ -198,6 +198,16 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
     val showThinking: StateFlow<Boolean> = _showThinking.asStateFlow()
 
     /**
+     * 每个座位的思考气泡可见性**覆盖值**（本局有效，不进存档）。
+     *
+     * 缺席 = 跟随全局开关；true/false = 单独开/关，优先于全局。
+     * 长按思考气泡就是写一个 false——某个 AI 的内心戏看着累，单独给它关掉，
+     * 不用为一它把全场的思考都藏了。
+     */
+    private val _bubbleVisible = MutableStateFlow<Map<Int, Boolean>>(emptyMap())
+    val bubbleVisible: StateFlow<Map<Int, Boolean>> = _bubbleVisible.asStateFlow()
+
+    /**
      * 提示词风格。默认引导式，和设置层默认值对齐；init 里读一次 DataStore 覆盖。
      *
      * 和 autoSpeak 一样是全局偏好：开局页选完写进 DataStore，续档读当前值——
@@ -604,6 +614,19 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch { runCatching { werewolfSettings.setShowThinking(enabled) } }
     }
 
+    /** 长按思考气泡：本局隐藏这个座位的气泡（覆盖全局开关）。 */
+    fun hideThinkingBubble(seat: Int) = setBubbleVisible(seat, false)
+
+    /** 单独设置一个座位的思考气泡可见性；写进覆盖表，优先于全局开关。 */
+    fun setBubbleVisible(seat: Int, visible: Boolean) {
+        _bubbleVisible.value = _bubbleVisible.value + (seat to visible)
+    }
+
+    /** 清掉本局的气泡覆盖。开新局/读档时调用：那是另一局了，别把上一局的隐藏带过来。 */
+    private fun resetBubbleVisible() {
+        _bubbleVisible.value = emptyMap()
+    }
+
     /** 切提示词风格。下一次开局或续档生效；正在跑的局不受影响（导演已按开局的值建好了）。 */
     fun setPromptStyle(style: WerewolfPromptStyle) {
         _promptStyle.value = style
@@ -727,6 +750,8 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
             try {
                 // 新局换新账本：上一局的耗时、被关掉的思考都不该带到这一局
                 controller.pacing.reset(turnLimit)
+                // 气泡的单独隐藏同样是一局一份
+                resetBubbleVisible()
 
                 val friends = _friends.value.ifEmpty { friendRepository.load().map { it.toFriend() } }
                 val chosen = friendIds.mapNotNull { id -> friends.firstOrNull { it.id == id } }
@@ -809,6 +834,8 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
                     _error.value = "这条存档读不出来，可能已经损坏"
                     return@launch
                 }
+                // 另一局了，上一局长按藏掉的气泡不跟过来
+                resetBubbleVisible()
                 val friends = _friends.value.ifEmpty { friendRepository.load().map { it.toFriend() } }
                 val humanSeat = table.game.players.firstOrNull { it.id == SELF_PLAYER_ID }?.seat
 

@@ -84,6 +84,8 @@ fun WerewolfRoute(
     val paceThinkingOff by viewModel.pacing.thinkingOff.collectAsState()
     val paceTimings by viewModel.pacing.timings.collectAsState()
     val seatThinking by viewModel.seatThinking.collectAsState()
+    // 每个座位的思考气泡覆盖值：缺席 = 跟全局，长按/面板可单独开或关
+    val bubbleVisible by viewModel.bubbleVisible.collectAsState()
     // 导出复盘要用它写缓存文件并拉起系统分享
     val context = LocalContext.current
 
@@ -447,7 +449,10 @@ fun WerewolfRoute(
                     onPlay = viewModel::requestReplay,
                 )
             } else {
-                val pace = remember(state.table, paceLimit, paceThinkingOff, paceTimings, seatThinking, avatars, state.finished) {
+                val pace = remember(
+                    state.table, paceLimit, paceThinkingOff, paceTimings, seatThinking, avatars, state.finished,
+                    bubbleVisible, humanSeat, showThinking,
+                ) {
                     buildPace(
                         table = state.table,
                         limit = paceLimit,
@@ -458,6 +463,9 @@ fun WerewolfRoute(
                         // 暂停时也给改：下一步继续时就用新档位。
                         // 只有真正结束了才禁用——那一局不会再跑起来了
                         running = !state.finished,
+                        // 气泡的默认值和牌桌用的是同一套：观战/结束恒开，参与局跟全局开关
+                        bubbleDefault = state.finished || humanSeat == null || showThinking,
+                        bubbleVisible = bubbleVisible,
                     )
                 }
                 // 面板要压在牌桌上面，必须是同一个 Box 的兄弟节点；
@@ -474,6 +482,7 @@ fun WerewolfRoute(
                         speakingSeat = speakingSeat,
                         speechBusy = speechBusy,
                         showThinking = showThinking,
+                        bubbleVisible = bubbleVisible,
                         decisionSeconds = paceLimit.decisionSeconds,
                         speechSeconds = paceLimit.speechSeconds,
                         timeoutNotice = timeoutNotice,
@@ -501,6 +510,7 @@ fun WerewolfRoute(
                         // 面板开着的时候语音还在念，那是正常的——设置不打断牌局
                         showPaceSheet = true
                     },
+                    onHideThinkingBubble = viewModel::hideThinkingBubble,
                 )
                 if (showPaceSheet) {
                     UIWerewolfPaceSheet(
@@ -510,6 +520,9 @@ fun WerewolfRoute(
                         speechOn = autoSpeak,
                         speechReady = speechReady,
                         onSpeechChange = viewModel::setAutoSpeak,
+                        bubbleOn = showThinking,
+                        onBubbleChange = viewModel::setShowThinking,
+                        onSeatBubbleChange = viewModel::setBubbleVisible,
                         onDismiss = { showPaceSheet = false },
                     )
                 }
@@ -583,6 +596,10 @@ private fun buildPace(
     roleThinking: Map<Int, Boolean>,
     avatars: Map<String, String?>,
     running: Boolean,
+    /** 气泡的全局默认值（观战/结束恒开，参与局跟顶栏开关）。 */
+    bubbleDefault: Boolean,
+    /** 每个座位的覆盖值；缺席 = 跟全局。 */
+    bubbleVisible: Map<Int, Boolean>,
 ): UIWerewolfPace {
     val seats = table?.game?.players.orEmpty().map { player ->
         val timing = timings[player.seat]
@@ -599,6 +616,7 @@ private fun buildPace(
             averageLabel = timing?.takeIf { it.turns > 1 }?.let { formatSpent(it.averageMs) },
             timeoutCount = timing?.timeouts ?: 0,
             eliminated = !player.alive,
+            bubbleVisible = bubbleVisible[player.seat] ?: bubbleDefault,
         )
     }.sortedWith(compareBy({ it.eliminated }, { it.seat }))
     return UIWerewolfPace(

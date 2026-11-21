@@ -81,6 +81,8 @@ fun UIWerewolfTableScreen(
     onToggleThinking: (() -> Unit)? = null,
     /** 打开对局设置（思考时限、每人的用时）。传 null 就不给入口。 */
     onOpenSettings: (() -> Unit)? = null,
+    /** 长按思考气泡：本局隐藏这个座位的思考气泡。不传就不响应长按。 */
+    onHideThinkingBubble: ((seat: Int) -> Unit)? = null,
     /** 复盘演出：播放 / 暂停。 */
     onReplayToggle: () -> Unit = {},
     onReplayPrev: () -> Unit = {},
@@ -275,6 +277,7 @@ fun UIWerewolfTableScreen(
                 } else {
                     live.thinkingSpeechSeconds
                 },
+                onHide = onHideThinkingBubble?.let { callback -> { callback(stream.seat) } },
             )
         }
 

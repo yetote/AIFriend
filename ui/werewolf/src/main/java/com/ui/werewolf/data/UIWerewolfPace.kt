@@ -75,6 +75,8 @@ data class UIWerewolfSeatPace(
     val timeoutCount: Int = 0,
     /** 已出局的座位不再耗时，排到后面并压暗。 */
     val eliminated: Boolean = false,
+    /** 这个座位此刻的思考气泡可见性（已算过覆盖值后的最终结果）。 */
+    val bubbleVisible: Boolean = true,
 )
 
 /**
