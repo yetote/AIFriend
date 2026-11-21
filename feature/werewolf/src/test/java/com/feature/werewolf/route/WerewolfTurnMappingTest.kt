@@ -6,6 +6,7 @@ import com.feature.werewolf.game.RosterEntry
 import com.feature.werewolf.game.WerewolfConfig
 import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfRole
+import com.feature.werewolf.game.WitchStock
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -92,5 +93,23 @@ class WerewolfTurnMappingTest {
         val turn = witchTurn(game, 4)
 
         assertTrue("第一夜能自救", turn!!.canHeal)
+    }
+
+    @Test
+    fun `解药用完后女巫照样看得到今晚谁被刀`() {
+        // 刀口原来只写在「用解药救 X 号」按钮上，解药一空按钮消失、信息也跟着没了。
+        // 女巫夜里一直被上帝告知刀口（AI 提示词里这条信息从不缺席），人类面板不能少。
+        val game = gameWithWitch().copy(
+            phase = Phase.NIGHT_WITCH,
+            day = 3,
+            tonightVictim = 5,
+            witch = WitchStock(antidoteAvailable = false, poisonAvailable = true),
+        )
+
+        val turn = witchTurn(game, 4)
+
+        assertFalse("解药空了不该有解药按钮", turn!!.canHeal)
+        assertTrue("刀口要补在提示里", turn.hint!!.contains("5 号"))
+        assertTrue("顺带说明为什么没有救的按钮", turn.hint!!.contains("解药已经用完"))
     }
 }
