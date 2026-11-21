@@ -40,6 +40,8 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ui.agent.data.UIFriendListData
+import com.ui.agent.data.groupByVendor
+import com.ui.common.theme.UIFriendBarGray
 import com.ui.common.theme.UIFriendBarItemMetaColor
 import com.ui.common.theme.UIFriendBarItemSubtitleColor
 import com.ui.common.theme.UIFriendBarItemTitleColor
@@ -93,19 +95,32 @@ fun UIFriendCrewList(
                 2 -> data.filter { !it.isOnline }
                 else -> data
             }
-            visible.forEachIndexed { index, agent ->
-                AgentListItem(
-                    data = agent,
-                    onClick = { onItemClick(agent) },
-                    onLongClick = { onItemLongClick(agent) }
-                )
-                // 如果不是最后一项，添加分割线
-                if (index < visible.size - 1) {
+            val groups = visible.groupByVendor()
+            groups.forEachIndexed { groupIndex, group ->
+                FriendGroupHeader(name = group.name, count = group.friends.size)
+                group.friends.forEachIndexed { index, agent ->
+                    AgentListItem(
+                        data = agent,
+                        onClick = { onItemClick(agent) },
+                        onLongClick = { onItemLongClick(agent) }
+                    )
+                    // 组内项之间加分割线；最后一项不加，组间留给组标题自身的留白区分
+                    if (index < group.friends.size - 1) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 76.dp, end = 16.dp)
+                                .height(0.5.dp)
+                                .background(UISeparator)
+                        )
+                    }
+                }
+                // 组和组之间加一道更明显的分隔，避免上一组末尾和下一组标题贴在一起
+                if (groupIndex < groups.size - 1) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(start = 76.dp, end = 16.dp)
-                            .height(0.5.dp)
+                            .height(6.dp)
                             .background(UISeparator)
                     )
                 }
@@ -166,6 +181,44 @@ private fun AgentTabRow(
                 )
             }
         }
+    }
+}
+
+/**
+ * 分组标题：厂商名 + 该组好友数。
+ *
+ * 用浅灰底（[UIFriendBarGray]）和列表项区分开，一眼能看出「下面这几个是同一家」。
+ * 顶部留白比底部大一点，视觉上和上一组拉开距离。
+ */
+@Composable
+private fun FriendGroupHeader(name: String, count: Int) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(UIFriendBarGray)
+            .padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = name,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            style = TextStyle(
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = UIFriendBarItemSubtitleColor,
+                platformStyle = PlatformTextStyle(includeFontPadding = false)
+            )
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = "$count",
+            style = TextStyle(
+                fontSize = 11.sp,
+                color = UIFriendBarItemMetaColor,
+                platformStyle = PlatformTextStyle(includeFontPadding = false)
+            )
+        )
     }
 }
 
@@ -319,7 +372,7 @@ private fun UIFriendCrewListPreview() {    // 假数据列表
                 "Echo",
                 "GPT-4o",
                 "产品策略顾问",
-                "墨刀",
+                "OpenAI",
                 "本月 3,841 次",
                 Color(0xFFF3F4F6),
                 Color(0xFF4B5563)
@@ -346,7 +399,7 @@ private fun UIFriendCrewListPreview() {    // 假数据列表
                 "Kora",
                 "Gemini 1.5",
                 "品牌文案专家",
-                "Google",
+                "OpenAI",
                 "本月 1,901 次",
                 Color(0xFFECFDF5),
                 Color(0xFF047857)
