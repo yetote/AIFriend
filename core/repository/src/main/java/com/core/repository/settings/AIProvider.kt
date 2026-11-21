@@ -274,6 +274,23 @@ object AIProviderCatalog {
         isGateway = true
     )
 
+    val Qiniu = AIProvider(
+        id = "qiniu",
+        name = "七牛云",
+        description = "国内直连，一把 Key 打通 DeepSeek、Kimi、GLM、GPT 等 50+ 模型",
+        baseUrl = "https://api.qnaigc.com/v1",
+        consoleUrl = "https://www.qiniu.com/ai",
+        // 拉不到 /models 时的兜底；模型 id 带厂商段（qiniu/*、deepseek/*、moonshotai/*）
+        fallbackModels = listOf(
+            "qiniu/conatus-free",
+            "deepseek/deepseek-v4.1-flash-1017",
+            "moonshotai/kimi-k3.1-pro"
+        ),
+        // 网关下模型混杂：既有自家的 conatus，也有代理的 DeepSeek/Kimi，
+        // 没有「自家前缀」这种概念，聚合平台按惯例留空、全部可选
+        isGateway = true
+    )
+
     val Custom = AIProvider(
         id = "custom",
         name = "自定义",
@@ -291,7 +308,7 @@ object AIProviderCatalog {
     )
 
     /** 一把 Key 调多家的平台，自定义放最后。 */
-    val gateways: List<AIProvider> = listOf(SiliconFlow, OpenRouter, Custom)
+    val gateways: List<AIProvider> = listOf(SiliconFlow, Qiniu, OpenRouter, Custom)
 
     /**
      * 全部服务商。

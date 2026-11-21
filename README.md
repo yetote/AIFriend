@@ -7,7 +7,7 @@ Android 端「AI 好友 / AI 智能体团队」应用：用户创建带角色设
 ## 当前进度
 
 - ✅ 首页：智能体列表、搜索、创建入口、状态卡（数据已接真实状态）
-- ✅ **10 家官方厂商 + 3 个聚合平台**：Deepseek、豆包（火山方舟）、智谱清言、Kimi、通义千问、混元（TokenHub）、MiniMax、小米 MiMo、星火、Gemini；外加硅基流动、OpenRouter、自定义（任意 OpenAI 兼容地址，本地部署用这个）
+- ✅ **10 家官方厂商 + 4 个聚合平台**：Deepseek、豆包（火山方舟）、智谱清言、Kimi、通义千问、混元（TokenHub）、MiniMax、小米 MiMo、星火、Gemini；外加硅基流动、七牛云、OpenRouter、自定义（任意 OpenAI 兼容地址，本地部署用这个）
 - ✅ 创建页支持切换模型提供方，模型列表按厂商分别拉取并缓存
 - ✅ 统一走 OpenAI 兼容的 Chat Completions 协议，角色 system prompt + 多轮历史
 - ✅ **关闭深度思考**：创建好友时可切换（默认关闭），按厂商发送 `thinking` / `enable_thinking` / `reasoning_effort`
@@ -87,6 +87,7 @@ cp core/network/key.example.kt core/network/src/main/java/com/core/network/key.k
 | 星火             | `spark-api-open.xf-yun.com/x2`                    | 无（404）                           | 固定 `x1`                                                                    |
 | Gemini         | `generativelanguage.googleapis.com/v1beta/openai` | `GET /v1beta/openai/models`      | 官方 OpenAI 兼容层，去掉 `models/` 前缀；排除 embedding / live / audio / image / omni 等 |
 | 硅基流动（聚合）       | `api.siliconflow.cn/v1`                           | `GET /v1/models`                 | 一把 Key 调数十家模型；有实时价位                                                        |
+| 七牛云（聚合）        | `api.qnaigc.com/v1`                               | `GET /v1/models`                 | 国内直连，DeepSeek/Kimi/GLM/GPT 等 50+ 模型；模型 id 带厂商段（`deepseek/*`）              |
 | OpenRouter（聚合） | `openrouter.ai/api/v1`                            | `GET /v1/models`                 | `/models` 自带 pricing，是唯一能拿到真价格的来源之一                                        |
 | 自定义（聚合）        | 用户填                                               | 按填的地址                            | 任意 OpenAI 兼容服务，本地部署（Ollama 等）选这个；Key 可留空                                   |
 
