@@ -93,12 +93,22 @@ object WerewolfPrompt {
          * 被引擎裁掉的后半段里可能藏着关键判断。
          */
         speechLength: WerewolfSpeechLength? = null,
+        /**
+         * 这一座位的打牌风格画像（见 [PlayerStyle]）。角色设定，不是打法教学，
+         * 引导式和自由式都注入。null 或关掉风格画像时不注入，老行为不变。
+         */
+        playStyle: PlayerStyle? = null,
     ): String {
         val player = game.playerAt(seat)
         return buildString {
             if (!persona.isNullOrBlank()) {
                 append(persona.trim())
                 append("\n\n")
+            }
+            // 风格画像紧贴陪伴人设之后：先告诉它平时什么语气，再告诉它打牌时怎么想，
+            // 并点明后者优先。没有这一段时，模型会把牌桌当成延续陪聊，只顾表演口头禅。
+            playerStyleBrief(playStyle, game.config)?.let {
+                append(it).append("\n\n")
             }
             append("你正在玩一局狼人杀，全程用简体中文说话，一次只说自己的话。\n")
             append("你是 ").append(seat).append(" 号玩家「").append(player.name).append("」。\n")

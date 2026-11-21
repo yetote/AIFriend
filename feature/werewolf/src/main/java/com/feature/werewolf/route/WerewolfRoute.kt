@@ -75,6 +75,8 @@ fun WerewolfRoute(
     val speechReady by viewModel.speechReady.collectAsState()
     // 提示词风格是全局偏好，直接读 VM 的那一份——开局页和对局都不做本地副本
     val promptStyle by viewModel.promptStyle.collectAsState()
+    // 牌手风格画像总开关同样是全局偏好
+    val playerStyleOn by viewModel.playerStyleOn.collectAsState()
     val revealedIndex by viewModel.revealedIndex.collectAsState()
     val speechBusy by viewModel.speechBusy.collectAsState()
     val speakingSeat by viewModel.speakingSeat.collectAsState()
@@ -114,6 +116,8 @@ fun WerewolfRoute(
     // 开局时才 valueOf 成引擎身份——存名字是为了 UI 层不依赖引擎类型
     var assignRoles by remember { mutableStateOf(false) }
     var roleByFriend by remember { mutableStateOf(emptyMap<String, String>()) }
+    // 手动指定的牌手风格（好友 id → 风格 id）。空 = 全部由引擎自动分配。
+    var styleByFriend by remember { mutableStateOf(emptyMap<String, String>()) }
     /** 牌桌上打开的对局设置面板。 */
     var showPaceSheet by remember { mutableStateOf(false) }
 
@@ -350,6 +354,16 @@ fun WerewolfRoute(
             },
             promptStyle = promptStyle.toUi(),
             onPromptStyleChange = { viewModel.setPromptStyle(it.toPromptStyle()) },
+            playerStyleOn = playerStyleOn,
+            onPlayerStyleOnChange = { viewModel.setPlayerStyleOn(it) },
+            styleByFriend = styleByFriend,
+            onAssignStyle = { friendId, styleId ->
+                styleByFriend = if (styleId == null) {
+                    styleByFriend - friendId
+                } else {
+                    styleByFriend + (friendId to styleId)
+                }
+            },
             // 朗读是全局偏好（DataStore），这里直接读同一份值：开局前关掉，进牌桌不用再找喇叭
             speechOn = autoSpeak,
             speechReady = speechReady,
@@ -397,6 +411,7 @@ fun WerewolfRoute(
                     speechLength = speechLength.toSpeechLength(),
                     roleAssignment = roleAssignmentOf(mode, assignRoles, roleByFriend),
                     alphaId = alphaIdOf(mode, assignRoles, roleByFriend),
+                    styleByFriend = styleByFriend,
                 )
             },
             onStartAnyway = {
@@ -412,6 +427,7 @@ fun WerewolfRoute(
                     speechLength = speechLength.toSpeechLength(),
                     roleAssignment = roleAssignmentOf(mode, assignRoles, roleByFriend),
                     alphaId = alphaIdOf(mode, assignRoles, roleByFriend),
+                    styleByFriend = styleByFriend,
                 )
             },
         )

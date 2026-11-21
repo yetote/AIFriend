@@ -16,6 +16,14 @@ data class SeatAgent(
     val model: String,
     val persona: String? = null,
     val thinkingEnabled: Boolean = false,
+    /**
+     * 这一座位在牌桌上的打牌风格画像（决策气质 + 读人习惯）。
+     *
+     * 和 [persona] 分工：persona 写「平时怎么说话」，这里写「打牌时怎么想」。
+     * 不进存档——续档时 buildAgents 会按同一个 friendId 重新分配，确定性保证风格不变。
+     * null = 不注入（人类座位、或用户关掉风格画像）。
+     */
+    val playStyle: com.feature.werewolf.prompt.PlayerStyle? = null,
 )
 
 /** 一条消息在局内的性质。UI 按这个决定怎么渲染，编排层按它决定谁能看见。 */

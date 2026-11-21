@@ -381,6 +381,39 @@ class WerewolfPromptTest {
         assertTrue(prompt.contains("平民"))
     }
 
+    @Test
+    fun `风格画像紧跟人设之后，且声明优先于日常人设`() {
+        val prompt = WerewolfPrompt.systemPrompt(
+            standardGame(), seat = 6,
+            persona = "你说话很冲，喜欢抬杠。",
+            playStyle = PlayerStyle.AGGRESSIVE,
+        )
+        assertTrue(prompt.startsWith("你说话很冲"))
+        val styleAt = prompt.indexOf("【你在牌桌上的性格】")
+        val personAt = prompt.indexOf("你说话很冲")
+        val identityAt = prompt.indexOf("你正在玩一局狼人杀")
+        assertTrue("风格画像要在人设之后", styleAt > personAt)
+        assertTrue("风格画像要在身份之前", styleAt < identityAt)
+        assertTrue(prompt.contains("优先于上面那段日常性格"))
+    }
+
+    @Test
+    fun `不传风格画像时提示词和老行为一样`() {
+        val withStyle = WerewolfPrompt.systemPrompt(standardGame(), seat = 6, persona = "口癖")
+        assertTrue(!withStyle.contains("【你在牌桌上的性格】"))
+    }
+
+    @Test
+    fun `自由式也注入风格画像`() {
+        val prompt = WerewolfPrompt.systemPrompt(
+            standardGame(), seat = 6,
+            style = WerewolfPromptStyle.FREE,
+            playStyle = PlayerStyle.ANALYTICAL,
+        )
+        assertTrue(prompt.contains("【你在牌桌上的性格】"))
+        assertTrue(prompt.contains("逻辑推演"))
+    }
+
     // ------------------------------------------------------------------
     // 私有信息隔离
     // ------------------------------------------------------------------

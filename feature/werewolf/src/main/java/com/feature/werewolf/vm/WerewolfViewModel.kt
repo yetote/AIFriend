@@ -36,6 +36,7 @@ import com.feature.werewolf.engine.WerewolfController
 import com.feature.werewolf.engine.WerewolfPacing
 import com.feature.werewolf.engine.WerewolfTable
 import com.feature.werewolf.engine.WerewolfUiState
+import com.feature.werewolf.prompt.assignPlayerStyles
 import com.feature.werewolf.engine.persistence.WerewolfGameFile
 import com.feature.werewolf.game.RosterEntry
 import com.feature.werewolf.game.SELF_PLAYER_ID
@@ -215,6 +216,21 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
      */
     private val _promptStyle = MutableStateFlow(WerewolfPromptStyle.GUIDED)
     val promptStyle: StateFlow<WerewolfPromptStyle> = _promptStyle.asStateFlow()
+
+    /**
+     * 牌手风格画像总开关。默认开，init 读 DataStore 覆盖。
+     *
+     * 和 promptStyle 一样是全局偏好：开局/续档读当前值，不进存档。
+     * 关掉后所有座位都不注入风格画像，回到「只有陪伴人设」的老行为。
+     */
+    private val _playerStyleOn = MutableStateFlow(true)
+    val playerStyleOn: StateFlow<Boolean> = _playerStyleOn.asStateFlow()
+
+    /**
+     * 开局页手动指定的风格（friendId → styleId）。空 = 全部自动分配。
+     * 和 roleByFriend 一样是本局选择，不持久化；续档时按 friendId 重新自动分配。
+     */
+    private var pinnedStyles: Map<String, String> = emptyMap()
 
     /** 朗读开关是否真的能出声。系统没装中文语音包时为 false，界面据此提示。 */
     private val _speechReady = MutableStateFlow(speechEngine.available)
@@ -435,6 +451,9 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch { runCatching { werewolfSettings.autoSpeak.collect { _autoSpeak.value = it } } }
         viewModelScope.launch { runCatching { werewolfSettings.showThinking.collect { _showThinking.value = it } } }
         viewModelScope.launch {
+            runCatching { werewolfSettings.playerStyleOn.collect { _playerStyleOn.value = it } }
+        }
+        viewModelScope.launch {
             runCatching {
                 werewolfSettings.promptStyle.collect { name ->
                     _promptStyle.value = runCatching {
@@ -633,6 +652,12 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch { runCatching { werewolfSettings.setPromptStyle(style.name) } }
     }
 
+    /** 牌手风格画像总开关。下一次开局/续档生效；正在跑的局不受影响。 */
+    fun setPlayerStyleOn(enabled: Boolean) {
+        _playerStyleOn.value = enabled
+        viewModelScope.launch { runCatching { werewolfSettings.setPlayerStyleOn(enabled) } }
+    }
+
     fun setAutoSpeak(enabled: Boolean) {
         _autoSpeak.value = enabled
         viewModelScope.launch { werewolfSettings.setAutoSpeak(enabled) }
@@ -741,7 +766,10 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
          * 他必须是狼（没指身份时引擎自动派成狼），指定后每晚战术都由他定直到出局。
          */
         alphaId: String? = null,
+        /** 手动指定的牌手风格（好友 id → 风格 id）。没指定的按 friendId 自动分配。 */
+        styleByFriend: Map<String, String> = emptyMap(),
     ) {
+        pinnedStyles = styleByFriend
         val previous = playJob
         playJob = viewModelScope.launch {
             // 上一局如果是「暂停」状态，它的协程可能还停在最后一次落档里；
@@ -1574,22 +1602,33 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
         players: List<WerewolfPlayer>,
         friendsById: Map<String, Friend>,
         humanSeat: Int?,
-    ): Map<Int, SeatAgent> = players.associate { player ->
-        val agent = if (player.seat == humanSeat) {
-            SeatAgent(ai = human, model = "human", persona = "玩家本人")
+    ): Map<Int, SeatAgent> {
+        // 风格按 friendId 稳定分配：同桌尽量不重样，续档重算也一致。
+        // 关掉总开关时给空映射，assignPlayerStyles 收到空 pinned 也会自动分配——
+        // 这里用 null 分支直接不注入，避免白算一遍。
+        val styleById = if (_playerStyleOn.value) {
+            assignPlayerStyles(players.map { it.id }, pinnedStyles)
         } else {
-            val friend = friendsById[player.id]
-                ?: throw IllegalStateException("找不到 ${player.name}（${player.id}）的资料")
-            val ai = aiFor(friend.brand)
-                ?: throw IllegalStateException("暂不支持的厂商：${friend.brand}")
-            SeatAgent(
-                ai = ai,
-                model = friend.model,
-                persona = friend.prompt,
-                thinkingEnabled = friend.thinkingEnabled,
-            )
+            emptyMap()
         }
-        player.seat to agent
+        return players.associate { player ->
+            val agent = if (player.seat == humanSeat) {
+                SeatAgent(ai = human, model = "human", persona = "玩家本人")
+            } else {
+                val friend = friendsById[player.id]
+                    ?: throw IllegalStateException("找不到 ${player.name}（${player.id}）的资料")
+                val ai = aiFor(friend.brand)
+                    ?: throw IllegalStateException("暂不支持的厂商：${friend.brand}")
+                SeatAgent(
+                    ai = ai,
+                    model = friend.model,
+                    persona = friend.prompt,
+                    thinkingEnabled = friend.thinkingEnabled,
+                    playStyle = styleById[player.id],
+                )
+            }
+            player.seat to agent
+        }
     }
 
     private fun aiFor(brand: String): IAI? {

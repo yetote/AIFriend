@@ -69,10 +69,12 @@ import com.ui.common.theme.UIRadiusControl
 import com.ui.common.theme.UITopBar
 import com.ui.common.theme.uiCard
 import com.ui.common.theme.uiControl
+import com.ui.werewolf.data.UI_PLAYER_STYLES
 import com.ui.werewolf.data.UIWerewolfApiCheck
 import com.ui.werewolf.data.UIWerewolfApiState
 import com.ui.werewolf.data.UIWerewolfFriend
 import com.ui.werewolf.data.UIWerewolfMode
+import com.ui.werewolf.data.UIWerewolfPlayerStyle
 import com.ui.werewolf.data.UIWerewolfPromptStyle
 import com.ui.werewolf.data.UIWerewolfPreset
 import com.ui.werewolf.data.UIWerewolfRoleOption
@@ -111,6 +113,12 @@ fun UIWerewolfSetupScreen(
     /** 提示词风格：引导式给内置打法，自由式让模型自己想。 */
     promptStyle: UIWerewolfPromptStyle,
     onPromptStyleChange: (UIWerewolfPromptStyle) -> Unit,
+    /** 要不要给每个 AI 注入牌手风格画像（决策气质 + 读人习惯）。 */
+    playerStyleOn: Boolean,
+    onPlayerStyleOnChange: (Boolean) -> Unit,
+    /** 好友 id → 手动指定的风格 id；没指定的自动分配。 */
+    styleByFriend: Map<String, String>,
+    onAssignStyle: (friendId: String, styleId: String?) -> Unit,
     /** 这一局发言的目标长度。 */
     speechLength: UIWerewolfSpeechLength,
     onSpeechLengthChange: (UIWerewolfSpeechLength) -> Unit,
@@ -363,6 +371,43 @@ fun UIWerewolfSetupScreen(
                         fontSize = 11.sp,
                         color = UIFriendBarItemSubtitleColor
                     )
+                }
+                // 牌手风格：给每个 AI 一份「在牌桌上是什么牌手」的画像。
+                // 和陪伴人设分工——陪伴人设管怎么说（猫娘、傲娇），这里管怎么想
+                // （多疑、强攻、盘逻辑）。实测只有陪伴人设时，AI 把脑力花在口头禅上，
+                // 满场都是记账式发言，几乎没人去想「对手在打什么算盘」。
+                SectionTitle(
+                    title = "牌手风格",
+                    subtitle = "给 AI 一个博弈的性格：它信什么、疑谁、怎么下判断"
+                )
+                SetupSwitchRow(
+                    title = "启用牌手风格",
+                    subtitle = "每个 AI 自动分到不同牌风，同桌才有几种打法碰撞；关掉则只用陪伴人设",
+                    checked = playerStyleOn,
+                    onCheckedChange = onPlayerStyleOnChange,
+                )
+                if (playerStyleOn) {
+                    Text(
+                        text = "想让谁固定用某种风格，在下面点他的名字改；不改就自动分配。",
+                        fontSize = 11.sp,
+                        lineHeight = 16.sp,
+                        color = UIFriendBarItemSubtitleColor,
+                        modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 4.dp)
+                    )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .uiCard(shape = RoundedCornerShape(UIRadiusCard))
+                            .padding(vertical = 4.dp)
+                    ) {
+                        friends.filter { it.id in selectedIds }.forEach { friend ->
+                            StyleAssignRow(
+                                friendName = friend.name,
+                                assignedId = styleByFriend[friend.id],
+                                onPick = { styleId -> onAssignStyle(friend.id, styleId) },
+                            )
+                        }
+                    }
                 }
                 SectionTitle(
                     title = "提示词微调",
@@ -1329,6 +1374,82 @@ private fun RoleAssignRow(
                         onClick = {
                             expanded = false
                             onPick(option.key)
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 一个好友的牌手风格选择行。
+ *
+ * 「自动」是默认：引擎按好友 id 稳定分配、同桌尽量不重样。手动挑只是给
+ * 想固定某人风格的人用，所以选单项第一条就是回到自动。
+ */
+@Composable
+private fun StyleAssignRow(
+    friendName: String,
+    assignedId: String?,
+    onPick: (String?) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = friendName,
+            fontSize = 13.sp,
+            color = UIFriendBarTitleColor,
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Box {
+            val assigned = UI_PLAYER_STYLES.firstOrNull { it.id == assignedId }
+            Text(
+                text = assigned?.label ?: "自动",
+                fontSize = 12.sp,
+                fontWeight = if (assigned != null) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (assigned != null) UIFriendBarTagTextBlue else UIFriendBarItemSubtitleColor,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(UIRadiusControl))
+                    .background(if (assigned != null) UIFriendBarTagTextBlue.copy(alpha = 0.14f) else UIFieldFill)
+                    .border(
+                        width = if (assigned != null) 1.2.dp else 1.dp,
+                        color = if (assigned != null) UIFriendBarTagTextBlue else UIGlassStroke,
+                        shape = RoundedCornerShape(UIRadiusControl)
+                    )
+                    .clickable { expanded = true }
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            )
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                DropdownMenuItem(
+                    text = { Text("自动分配（推荐）") },
+                    onClick = {
+                        expanded = false
+                        onPick(null)
+                    }
+                )
+                UI_PLAYER_STYLES.forEach { style ->
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(text = style.label, color = UIFriendBarTitleColor)
+                                Text(
+                                    text = style.tagline,
+                                    fontSize = 11.sp,
+                                    color = UIFriendBarItemSubtitleColor
+                                )
+                            }
+                        },
+                        onClick = {
+                            expanded = false
+                            onPick(style.id)
                         }
                     )
                 }

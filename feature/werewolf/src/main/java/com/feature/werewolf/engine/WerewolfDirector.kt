@@ -1044,6 +1044,7 @@ class WerewolfDirector(
         val system = WerewolfPrompt.systemPrompt(
             game, seat, agent.persona, customPrompt,
             limit = pacing.currentLimit, style = promptStyle, speechLength = speechLength,
+            playStyle = agent.playStyle,
         )
         val thinking = pacing.thinkingAllowed(seat, agent.thinkingEnabled)
         val content = StringBuilder()
@@ -1246,6 +1247,7 @@ class WerewolfDirector(
                     systemPrompt = WerewolfPrompt.systemPrompt(
                         table.game, seat, agent.persona, customPrompt,
                         limit = pacing.currentLimit, style = promptStyle, speechLength = speechLength,
+                        playStyle = agent.playStyle,
                     ),
                     enableThinking = thinking,
                     onReasoning = pushReasoning,

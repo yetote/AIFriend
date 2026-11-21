@@ -56,9 +56,24 @@ class WerewolfSettings(context: Context) {
         runCatching { store.edit { it[PROMPT_STYLE] = name } }
     }
 
+    /**
+     * 要不要给每个 AI 注入「牌手风格画像」（决策气质 + 读人习惯）。
+     *
+     * 默认开：这是让 AI 显得会博弈的主要手段。关掉就退回纯陪伴人设的行为，
+     * 给想自己用自定义提示词完全接管的人留个出口。
+     */
+    val playerStyleOn: Flow<Boolean> = store.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[PLAYER_STYLE_ON] ?: true }
+
+    suspend fun setPlayerStyleOn(enabled: Boolean) {
+        runCatching { store.edit { it[PLAYER_STYLE_ON] = enabled } }
+    }
+
     private companion object {
         val AUTO_SPEAK = booleanPreferencesKey("werewolf_auto_speak")
         val SHOW_THINKING = booleanPreferencesKey("werewolf_show_thinking")
         val PROMPT_STYLE = stringPreferencesKey("werewolf_prompt_style")
+        val PLAYER_STYLE_ON = booleanPreferencesKey("werewolf_player_style_on")
     }
 }
