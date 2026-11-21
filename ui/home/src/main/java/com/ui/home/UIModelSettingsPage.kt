@@ -56,9 +56,11 @@ import com.ui.common.theme.UIFriendBarRed
 import com.ui.common.theme.UIFriendBarTagBgBlue
 import com.ui.common.theme.UIFriendBarTagTextBlue
 import com.ui.common.theme.UIFriendBarTitleColor
+import com.ui.common.theme.UIDialogButtons
 import com.ui.common.theme.UIGlassStroke
 import com.ui.common.theme.UIGlassSurfaceStrong
 import com.ui.common.theme.UIGradientBackground
+import com.ui.common.theme.UIIosDialog
 import com.ui.common.theme.UIRadiusCard
 import com.ui.common.theme.UIRadiusControl
 import com.ui.common.theme.UITopBar
@@ -90,6 +92,13 @@ fun UIModelSettingsPage(
     onRefreshPrice: () -> Unit = {},
 ) {
     var keyVisible by remember { mutableStateOf(false) }
+    // 免责提醒：每次进这个页面都弹，必须点「我已知晓」才关得掉，
+    // 不能点外部/返回键划走 —— 这是合规底线，不是可以忽略的普通提示。
+    var showKeyDisclaimer by remember { mutableStateOf(true) }
+
+    if (showKeyDisclaimer) {
+        ApiKeyDisclaimerDialog(onAcknowledge = { showKeyDisclaimer = false })
+    }
 
     UIGradientBackground(modifier = Modifier.pageInsetsTop()) {
         Column(
@@ -304,6 +313,52 @@ private fun IntroCard() {
             fontSize = 12.sp,
             color = UIFriendBarItemSubtitleColor,
             lineHeight = 18.sp
+        )
+    }
+}
+
+/**
+ * API Key 使用前的强制免责提醒。
+ *
+ * 狼人杀是多 AI 座位并发、自动跑完整局的「非交互式批量调用」。
+ * 包月订阅套餐的 Key（千帆 Token Plan、火山 Coding Plan 等）明令禁止这种用法，
+ * 违规会封 Key / 停订阅。这里把后果讲明白，让用户自己确认，责任在用户。
+ *
+ * [dismissible = false]：不能靠点外部或返回键划走，必须显式点确认。
+ */
+@Composable
+private fun ApiKeyDisclaimerDialog(onAcknowledge: () -> Unit) {
+    UIIosDialog(
+        title = "填写 Key 前请先确认",
+        dismissible = false,
+        onDismiss = {},
+        actions = {
+            UIDialogButtons(
+                confirmText = "我已知晓，后果自负",
+                onConfirm = onAcknowledge,
+                cancelText = null
+            )
+        }
+    ) {
+        Text(
+            text = "狼人杀会同时驱动多个 AI 角色、自动跑完整局，属于「非交互式批量调用」。",
+            fontSize = 13.sp,
+            lineHeight = 19.sp,
+            color = UIFriendBarItemSubtitleColor
+        )
+        Text(
+            text = "包月订阅套餐的 Key（如千帆 Token Plan、火山 Coding Plan 等）条款明令禁止这类用法，" +
+                "违规可能导致订阅停用、API Key 被封禁。",
+            fontSize = 13.sp,
+            lineHeight = 19.sp,
+            color = UIFriendBarItemSubtitleColor
+        )
+        Text(
+            text = "请只填「按量付费」的 Key。使用套餐 Key 产生的一切后果由你自行承担。",
+            fontSize = 13.sp,
+            lineHeight = 19.sp,
+            fontWeight = FontWeight.Medium,
+            color = UIFriendBarRed
         )
     }
 }
