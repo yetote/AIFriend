@@ -11,6 +11,7 @@ import com.feature.werewolf.game.WerewolfTurnLimit
 import com.feature.werewolf.game.formatVotes
 import com.feature.werewolf.prompt.boards.Boards
 import com.feature.werewolf.prompt.roles.Roles
+import com.feature.werewolf.prompt.rules.darkCardBrief
 import com.feature.werewolf.prompt.rules.rulesBrief
 import com.feature.werewolf.prompt.tasks.taskBrief
 
@@ -424,7 +425,10 @@ object WerewolfPrompt {
      */
     private fun freeBoardBrief(config: WerewolfConfig): String =
         "【本局板子】" + compositionText(config) +
-            if (config.hasSheriff) "；有警长。" else "；没有警长。"
+            (if (config.hasSheriff) "；有警长。" else "；没有警长。") +
+            // 暗牌局是本局的硬规则事实，不是打法教学——自由模式也必须给。
+            // 砍掉它，模型就按标准局的先验「放逐翻牌认好人」编造死讯（真局翻车过）。
+            "\n\n" + darkCardBrief(config)
 
     // ---------------------------------------------------------------------
     // 基本打法

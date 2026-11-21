@@ -1241,10 +1241,14 @@ class WerewolfPromptTest {
 
         // 自由式的板子只剩一行：人数 + 配比 + 有无警长
         assertTrue("配比还在", good.contains("8 人局：2 狼人、预言家、女巫、猎人、3 平民；没有警长。"))
-        // 规则细则整段不给：胜负、遗言、自爆、暗牌……全靠模型自己按标准局理解
+        // 规则细则整段不给：胜负、遗言、自爆……全靠模型自己按标准局理解
         assertFalse("自由式不给规则说明", good.contains("【胜负规则】"))
         assertFalse("自由式不给警长竞选流程", good.contains("竞选"))
         assertFalse("自由式不给遗言规则", good.contains("【遗言】"))
+        // 但暗牌局是硬规则事实，不是打法教学：不给，模型就按标准局的先验
+        // 编造「放逐翻出好人」——真局翻车过（af0a3a4 修过，自由模式砍规则时误伤）。
+        assertTrue("自由式也必须给暗牌局规则", good.contains("暗牌局"))
+        assertTrue("自由式也要断掉翻牌谣言", good.contains("不是事实"))
     }
 
     @Test
@@ -1359,6 +1363,7 @@ class WerewolfPromptTest {
         val guidedIdiot = WerewolfPrompt.systemPrompt(idiotGame, seat = 4)
         assertTrue("翻牌机制保留", freeIdiot.contains("翻开身份但不死"))
         assertFalse("自由式不教翻牌后怎么说话", freeIdiot.contains("只剩一张嘴"))
+        assertTrue("自由式暗牌规则也要写明翻牌例外", freeIdiot.contains("唯一的例外是白痴"))
         assertTrue("引导式照旧", guidedIdiot.contains("只剩一张嘴"))
 
         // 警长私有段：移交机制保留，判断代打不给
