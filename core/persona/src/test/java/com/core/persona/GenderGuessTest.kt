@@ -17,7 +17,7 @@ class GenderGuessTest {
     fun `描述里的称谓最准`() {
         assertEquals(CharacterGender.FEMALE, GenderGuess.of("大小姐", "Claude 拟人·名门千金"))
         assertEquals(CharacterGender.FEMALE, GenderGuess.of("凛", "三无少女·一针见血"))
-        assertEquals(CharacterGender.FEMALE, GenderGuess.of("阿雪", "神社巫女·驱邪却怕鬼"))
+        assertEquals(CharacterGender.FEMALE, GenderGuess.of("雪音", "神社巫女·驱邪却怕鬼"))
         assertEquals(CharacterGender.FEMALE, GenderGuess.of("小傲", "傲娇学姐·口是心非"))
         assertEquals(CharacterGender.MALE, GenderGuess.of("半仙", "赛博算命先生"))
         assertEquals(CharacterGender.MALE, GenderGuess.of("审哥", "代码审查员"))
@@ -42,7 +42,7 @@ class GenderGuessTest {
     fun `判断不出来就说不知道`() {
         assertEquals(CharacterGender.UNKNOWN, GenderGuess.of("账本", "记账管家"))
         assertEquals(CharacterGender.UNKNOWN, GenderGuess.of("分镜", "短视频编剧"))
-        assertEquals(CharacterGender.UNKNOWN, GenderGuess.of("阿毒", "毒舌损友"))
+        assertEquals(CharacterGender.UNKNOWN, GenderGuess.of("刺头", "毒舌损友"))
     }
 
     @Test
@@ -56,9 +56,9 @@ class GenderGuessTest {
             "大肥鱼" to CharacterGender.FEMALE,
             "凛" to CharacterGender.FEMALE,
             "小傲" to CharacterGender.FEMALE,
-            "阿雪" to CharacterGender.FEMALE,
+            "雪音" to CharacterGender.FEMALE,
             "星梨" to CharacterGender.FEMALE,
-            "阿澜" to CharacterGender.FEMALE,
+            "澜汐" to CharacterGender.FEMALE,
             "夜澄" to CharacterGender.FEMALE,
             "文姐" to CharacterGender.FEMALE,
             "数姐" to CharacterGender.FEMALE,
