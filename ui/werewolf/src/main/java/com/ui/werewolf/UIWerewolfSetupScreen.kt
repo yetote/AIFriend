@@ -188,7 +188,10 @@ fun UIWerewolfSetupScreen(
                 if (error != null) {
                     ErrorBar(text = error, onDismiss = onClearError)
                 }
-
+                GroupHeader(
+                    title = "这一局怎么打",
+                    caption = "谁上桌、坐哪、用什么板子——先把这一局的骨架搭好",
+                )
                 SectionTitle(
                     title = "怎么玩",
                     subtitle = "自己占一个座位，还是纯粹看着 AI 自己打"
@@ -203,7 +206,6 @@ fun UIWerewolfSetupScreen(
                         )
                     }
                 }
-
                 SectionTitle(
                     title = "板子",
                     subtitle = "身份构成固定，开局时随机发牌。挑一个：人数决定要凑几个好友"
@@ -213,106 +215,6 @@ fun UIWerewolfSetupScreen(
                     presetKey = presetKey,
                     onPresetChange = onPresetChange
                 )
-
-                SectionTitle(
-                    title = "提示词微调",
-                    subtitle = "嫌 AI 打得太套路？给这张板子写几句自己的要求"
-                )
-                PromptEntryCard(
-                    onClick = onOpenPromptSettings
-                )
-
-                // 思考时限放在开局这里而不是藏进设置：它直接决定「这一局要打多久」，
-                // 而用户是带着「我等不等得起」这个问题来开局的
-                SectionTitle(
-                    title = "思考时限",
-                    subtitle = "每一步最多等多久。超时按兜底继续，并关掉那个座位本局的深度思考"
-                )
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        UIWerewolfTurnLimit.entries.forEach { limit ->
-                            SetupLimitChip(
-                                limit = limit,
-                                selected = limit == turnLimit,
-                                modifier = Modifier.weight(1f),
-                                onClick = { onTurnLimitChange(limit) },
-                            )
-                        }
-                    }
-                    Text(
-                        text = turnLimit.consequence + "。开局后在牌桌上点右上角齿轮也能改。",
-                        fontSize = 11.sp,
-                        color = UIFriendBarItemSubtitleColor
-                    )
-                }
-
-                // 提示词风格决定 AI「按什么打」：引导式有内置打法兜底，自由式把它放出去。
-                // 放在开局而不是设置页，是因为这是「这一局想看什么」的取舍——
-                // 想看小模型也能像样对局就用引导式，想看强模型自己推理就用自由式。
-                SectionTitle(
-                    title = "AI 打法",
-                    subtitle = "引导式内置读人和战术，自由式只给身份和局势、让模型自己判断"
-                )
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        UIWerewolfPromptStyle.entries.forEach { style ->
-                            SetupStyleChip(
-                                style = style,
-                                selected = style == promptStyle,
-                                modifier = Modifier.weight(1f),
-                                onClick = { onPromptStyleChange(style) },
-                            )
-                        }
-                    }
-                    Text(
-                        text = promptStyle.hint,
-                        fontSize = 11.sp,
-                        color = UIFriendBarItemSubtitleColor
-                    )
-                }
-
-                // 发言长度决定「AI 说多少」：只影响观感不影响公平，放开局这里
-                // 和朗读、时限同一个理由——一局的体验要在开局前定下来
-                SectionTitle(
-                    title = "发言长度",
-                    subtitle = "AI 每句公开发言的目标字数。说太长的会被引擎在句末裁掉"
-                )
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        UIWerewolfSpeechLength.entries.forEach { length ->
-                            SetupSpeechChip(
-                                length = length,
-                                selected = length == speechLength,
-                                modifier = Modifier.weight(1f),
-                                onClick = { onSpeechLengthChange(length) },
-                            )
-                        }
-                    }
-                    Text(
-                        text = speechLength.hint,
-                        fontSize = 11.sp,
-                        color = UIFriendBarItemSubtitleColor
-                    )
-                }
-
-                // 朗读放在开局这里决定：一局可能打半小时，半夜躺在床上不想听、
-                // 通勤路上想听，都得在「开局之前」定下来。
-                // 进牌桌后想改，去齿轮里的对局设置——那里有同一份开关，不再顶栏放喇叭。
-                SectionTitle(
-                    title = "朗读",
-                    subtitle = "把 AI 的发言念出来。音色属于每个座位自己，不在这里配"
-                )
-                SetupSwitchRow(
-                    title = "自动朗读",
-                    subtitle = when {
-                        !speechReady -> "语音引擎还没就绪。先打开，进牌桌后在设置面板里再拨一次即可重试"
-                        speechOn -> "只念说出口的话，思考和内心活动不念"
-                        else -> "关着也能随时在牌桌的对局设置里打开"
-                    },
-                    checked = speechOn,
-                    onCheckedChange = onSpeechChange,
-                )
-
                 // 座位条：这是整页的主视觉，把「还差几位」变成几个空位
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(
@@ -334,7 +236,6 @@ fun UIWerewolfSetupScreen(
                     }
                     SeatStrip(seats = seats)
                 }
-
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.Bottom
@@ -400,7 +301,6 @@ fun UIWerewolfSetupScreen(
                         }
                     }
                 }
-
                 // 指定身份只在纯观战局开放：参与的局自己挑身份等于作弊。
                 // 放在选人列表后面：先确定谁上桌，再给上桌的人派身份
                 if (mode == UIWerewolfMode.SPECTATE && selectedIds.isNotEmpty()) {
@@ -436,7 +336,104 @@ fun UIWerewolfSetupScreen(
                         }
                     }
                 }
-
+                GroupHeader(
+                    title = "AI 怎么表现",
+                    caption = "想多久、说多少、要不要看它思考——调 AI 的发挥",
+                )
+                // 提示词风格决定 AI「按什么打」：引导式有内置打法兜底，自由式把它放出去。
+                // 放在开局而不是设置页，是因为这是「这一局想看什么」的取舍——
+                // 想看小模型也能像样对局就用引导式，想看强模型自己推理就用自由式。
+                SectionTitle(
+                    title = "AI 打法",
+                    subtitle = "引导式内置读人和战术，自由式只给身份和局势、让模型自己判断"
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        UIWerewolfPromptStyle.entries.forEach { style ->
+                            SetupStyleChip(
+                                style = style,
+                                selected = style == promptStyle,
+                                modifier = Modifier.weight(1f),
+                                onClick = { onPromptStyleChange(style) },
+                            )
+                        }
+                    }
+                    Text(
+                        text = promptStyle.hint,
+                        fontSize = 11.sp,
+                        color = UIFriendBarItemSubtitleColor
+                    )
+                }
+                SectionTitle(
+                    title = "提示词微调",
+                    subtitle = "嫌 AI 打得太套路？给这张板子写几句自己的要求"
+                )
+                PromptEntryCard(
+                    onClick = onOpenPromptSettings
+                )
+                // 思考时限放在开局这里而不是藏进设置：它直接决定「这一局要打多久」，
+                // 而用户是带着「我等不等得起」这个问题来开局的
+                SectionTitle(
+                    title = "思考时限",
+                    subtitle = "每一步最多等多久。超时按兜底继续，并关掉那个座位本局的深度思考"
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        UIWerewolfTurnLimit.entries.forEach { limit ->
+                            SetupLimitChip(
+                                limit = limit,
+                                selected = limit == turnLimit,
+                                modifier = Modifier.weight(1f),
+                                onClick = { onTurnLimitChange(limit) },
+                            )
+                        }
+                    }
+                    Text(
+                        text = turnLimit.consequence + "。开局后在牌桌上点右上角齿轮也能改。",
+                        fontSize = 11.sp,
+                        color = UIFriendBarItemSubtitleColor
+                    )
+                }
+                // 发言长度决定「AI 说多少」：只影响观感不影响公平，放开局这里
+                // 和朗读、时限同一个理由——一局的体验要在开局前定下来
+                SectionTitle(
+                    title = "发言长度",
+                    subtitle = "AI 每句公开发言的目标字数。说太长的会被引擎在句末裁掉"
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        UIWerewolfSpeechLength.entries.forEach { length ->
+                            SetupSpeechChip(
+                                length = length,
+                                selected = length == speechLength,
+                                modifier = Modifier.weight(1f),
+                                onClick = { onSpeechLengthChange(length) },
+                            )
+                        }
+                    }
+                    Text(
+                        text = speechLength.hint,
+                        fontSize = 11.sp,
+                        color = UIFriendBarItemSubtitleColor
+                    )
+                }
+                // 朗读放在开局这里决定：一局可能打半小时，半夜躺在床上不想听、
+                // 通勤路上想听，都得在「开局之前」定下来。
+                // 进牌桌后想改，去齿轮里的对局设置——那里有同一份开关，不再顶栏放喇叭。
+                SectionTitle(
+                    title = "朗读",
+                    subtitle = "把 AI 的发言念出来。音色属于每个座位自己，不在这里配"
+                )
+                SetupSwitchRow(
+                    title = "自动朗读",
+                    subtitle = when {
+                        !speechReady -> "语音引擎还没就绪。先打开，进牌桌后在设置面板里再拨一次即可重试"
+                        speechOn -> "只念说出口的话，思考和内心活动不念"
+                        else -> "关着也能随时在牌桌的对局设置里打开"
+                    },
+                    checked = speechOn,
+                    onCheckedChange = onSpeechChange,
+                )
                 Spacer(Modifier.height(4.dp))
             }
 
@@ -535,6 +532,38 @@ private fun SetupSwitchRow(
                 checkedThumbColor = Color.White,
                 checkedTrackColor = UIFriendBarTagTextBlue
             )
+        )
+    }
+}
+
+/**
+ * 组标题：开局页的区块按主题分成两组，这是每组的抬头。
+ *
+ * 和 [SectionTitle] 的区别是它带一条蓝色底纹——一长列设置里，光靠字号大小
+ * 分不出「这是新的一组」还是「又一个小节」。底纹 + 组序号让眼睛一眼看到分界，
+ * 下面的 SectionTitle 仍是各组内部的小节标题，两级视觉不打架。
+ */
+@Composable
+private fun GroupHeader(title: String, caption: String) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(UIRadiusControl))
+            .background(UIFriendBarTagTextBlue.copy(alpha = 0.10f))
+            .border(1.dp, UIFriendBarTagTextBlue.copy(alpha = 0.24f), RoundedCornerShape(UIRadiusControl))
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text(
+            text = title,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = UIFriendBarTagTextBlue,
+        )
+        Text(
+            text = caption,
+            fontSize = 11.5.sp,
+            color = UIFriendBarItemSubtitleColor,
         )
     }
 }

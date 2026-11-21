@@ -421,8 +421,6 @@ fun WerewolfRoute(
             LaunchedEffect(presetKey) { viewModel.loadPromptSettings(presetKey) }
             UIWerewolfPromptSettingsScreen(
                 state = promptState,
-                showThinking = showThinking,
-                onShowThinkingChange = viewModel::setShowThinking,
                 onSave = { global, board -> viewModel.savePromptSettings(global, board) },
                 onClearGlobal = { viewModel.clearPromptSettings(global = true) },
                 onClearBoard = { viewModel.clearPromptSettings(global = false) },
