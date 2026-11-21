@@ -35,11 +35,25 @@ class GalgamePersonaTest {
     fun `覆盖 Galgame 常见配置`() {
         val archetypes = listOf(
             "幼驯染", "学园偶像", "转校生", "巫女", "图书委员",
-            "甜点", "剑道", "天文", "魔女", "同人"
+            "甜点", "剑道", "天文", "魔女", "同人",
+            "茶道", "学生会", "归国", "将棋", "保健", "轻音"
         )
         val text = gal.joinToString(" ") { it.role + it.tags.joinToString("") + it.prompt }
         archetypes.forEach { type ->
             assertTrue("缺了 $type 配置", text.contains(type))
+        }
+    }
+
+    @Test
+    fun `不点破性别与关系标签`() {
+        // 角色只写举止和说话方式，让形象自己立起来；
+        // 「女装 / 兄弟 / BL」这类标签既不必要，也容易把人设写歪。
+        val labels = listOf("女装", "伪娘", "男娘", "兄弟", "基友", "BL")
+        gal.forEach { persona ->
+            val content = persona.name + persona.role + persona.prompt + persona.tags.joinToString("")
+            labels.forEach { label ->
+                assertFalse("${persona.id} 点了标签：$label", label in content)
+            }
         }
     }
 
