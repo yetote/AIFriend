@@ -653,7 +653,7 @@ class WerewolfDirector(
                         text = (if (target == null) "我弃票。" else "我选 $target 号当警长。") + outcome.value.reason,
                         // 警长投票是私下的：理由只有投票人自己看得到，不进别人的上下文，
                         // 别人在牌桌上也看不到。这和 INNER_REASON_HINT 里告诉模型的
-                        // 「没人听见」终于对上了（放逐投票是另一回事，它明说了会公开）。
+                        // 「没人听见」终于对上了（放逐投票同理，也只给本人）。
                         // 观战是上帝视角，emergedVisible 对 humanSeat==null 不过滤，照样看得见。
                         audience = setOf(seat),
                         reasoning = outcome.reasoning,
@@ -787,6 +787,12 @@ class WerewolfDirector(
                         seat = seat,
                         kind = MessageKind.VOTE,
                         text = voteText(target, outcome.value.reason),
+                        // 投票理由是内心活动：只有投票人自己看得到。这和
+                        // INNER_REASON_HINT 里告诉模型的「没人听见」终于对上了；
+                        // 谁投了谁是公开的，但那由 castVotes 后的播报（票数）负责，
+                        // 不靠这条原文。观战是上帝视角，emergedVisible 对
+                        // humanSeat==null 不过滤，照样看得见。
+                        audience = setOf(seat),
                         reasoning = outcome.reasoning,
                     )
                 )

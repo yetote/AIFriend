@@ -546,13 +546,25 @@ class WerewolfDirectorTest {
     }
 
     @Test
-    fun `投票会公布每个人的票`() = runBlocking {
+    fun `放逐投票理由只有投票人自己看得到`() = runBlocking {
         val ais = (1..9).associateWith { _ -> AutoAI() as IAI }
         val director = WerewolfDirector(ais.mapValues { SeatAgent(it.value, "test-model") })
 
         val result = director.vote(WerewolfTable(standard9().copy(phase = Phase.DAY_VOTE)))
 
-        assertEquals(9, result.publicTranscript.count { it.kind == MessageKind.VOTE })
+        // 票型是公开的（由播报的票数负责），但「我投 X 号 + 理由」这条内心活动
+        // 只对投票人自己可见——和警长投票、INNER_REASON_HINT 的「没人听见」对齐。
+        val ballots = result.transcript.filter {
+            it.phase == Phase.DAY_VOTE && it.kind == MessageKind.VOTE
+        }
+        assertEquals(9, ballots.size)
+        assertTrue("没有一条是全员可见的", ballots.none { it.isPublic })
+        ballots.forEach { ballot ->
+            val voter = ballot.seat!!
+            assertEquals("投票人看得到自己的票", true, ballot.visibleTo(voter))
+            val other = if (voter == 1) 2 else 1
+            assertEquals("别人看不到这条票", false, ballot.visibleTo(other))
+        }
     }
 
     // ------------------------------------------------------------------
@@ -940,7 +952,8 @@ class WerewolfDirectorTest {
                 result.publicTranscript.last { it.kind == MessageKind.DIVINE }.text.contains("游戏结束"),
             )
             assertTrue("应该有人发过言", result.publicTranscript.any { it.kind == MessageKind.SPEECH })
-            assertTrue("应该投过票", result.publicTranscript.any { it.kind == MessageKind.VOTE })
+            // 投票理由是私有消息（只有投票人自己看得到），所以这里查完整 transcript
+            assertTrue("应该投过票", result.transcript.any { it.kind == MessageKind.VOTE })
         }
     }
 
