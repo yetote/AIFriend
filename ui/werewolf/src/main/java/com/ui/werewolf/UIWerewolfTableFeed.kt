@@ -32,6 +32,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ui.common.UIAvatar
+import com.ui.common.UIMarkdownText
 import com.ui.werewolf.data.UIWerewolfLine
 import com.ui.werewolf.data.UIWerewolfBubbleKind
 import com.ui.werewolf.data.UIWerewolfLineKind
@@ -190,12 +191,14 @@ internal fun StreamingLine(
                 )
             }
             if (stream.text.isNotBlank()) {
-                Text(
-                    text = stream.text + "▌",
+                // 光标走 trailing 单独追加，不参与 MD 解析——否则半句里的 `**` 会被当标记吃掉
+                UIMarkdownText(
+                    text = stream.text,
+                    trailing = "▌",
                     modifier = Modifier.padding(top = 2.dp),
-                    fontSize = FsSpeech,
-                    lineHeight = FsSpeechLine,
-                    color = textColor.copy(alpha = 0.92f)
+                    baseSize = FsSpeech,
+                    baseLineHeight = FsSpeechLine,
+                    color = textColor.copy(alpha = 0.92f),
                 )
             } else {
                 // 还在思考、一个字没说：只显示「正在组织语言」，不把思考流放出来——
@@ -331,12 +334,12 @@ internal fun SpeechRow(
                 Spacer(Modifier.width(6.dp))
                 BubbleTag(text = style.tag, accent = style.accent)
             }
-            Text(
+            UIMarkdownText(
                 text = line.text,
                 modifier = Modifier.padding(top = 2.dp),
-                fontSize = FsSpeech,
-                lineHeight = FsSpeechLine,
-                color = textColor.copy(alpha = 0.92f)
+                baseSize = FsSpeech,
+                baseLineHeight = FsSpeechLine,
+                color = textColor.copy(alpha = 0.92f),
             )
         }
     }
@@ -384,12 +387,12 @@ internal fun InnerRow(
                 )
             }
         }
-        Text(
+        UIMarkdownText(
             text = line.text,
             modifier = Modifier.padding(top = 2.dp),
-            fontSize = FsName,
-            lineHeight = 18.sp,
-            color = dimColor
+            baseSize = FsName,
+            baseLineHeight = 18.sp,
+            color = dimColor,
         )
     }
 }
@@ -430,12 +433,12 @@ internal fun PrivateRow(
                 color = dimColor.copy(alpha = 0.6f)
             )
         }
-        Text(
+        UIMarkdownText(
             text = line.text,
             modifier = Modifier.padding(top = 3.dp),
-            fontSize = 13.sp,
-            lineHeight = 19.sp,
-            color = textColor.copy(alpha = 0.9f)
+            baseSize = 13.sp,
+            baseLineHeight = 19.sp,
+            color = textColor.copy(alpha = 0.9f),
         )
     }
 }
