@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -35,9 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ui.common.UIAvatar
 import com.ui.common.UIMarkdownText
-import com.ui.werewolf.data.UIWerewolfBallot
 import com.ui.werewolf.data.UIWerewolfBallotCard
-import com.ui.werewolf.data.UIWerewolfBallotTally
 import com.ui.werewolf.data.UIWerewolfLine
 import com.ui.werewolf.data.UIWerewolfBubbleKind
 import com.ui.werewolf.data.UIWerewolfLineKind
@@ -500,86 +499,75 @@ internal fun BallotCardRow(
             )
         }
 
-        // 「3 → 5」的票流。弃票写成「7 → 弃票」，灰掉，和真投出去的票一眼分开。
+        // 按目标分组：一行一个「被投的人」，下面挂着投给他的人——
+        // 和网易狼人杀的票型一致，扫一眼就知道票集中在哪里，不用在箭头流里找。
+        // 排序：得票多的在前，弃票沉底；同票数按座位号，稳定好读。
+        val votesBySeat = card.tally.associate { it.seat to it.votes }
+        val groups = card.ballots.groupBy({ it.targetSeat }, { it.voterSeat })
+        val orderedTargets = groups.keys.sortedWith(
+            compareByDescending<Int?> { votesBySeat[it] ?: 0.0 }
+                .thenBy { it == null } // null = 弃票，排最后
+                .thenBy { it ?: Int.MAX_VALUE }
+        )
+        orderedTargets.forEach { target ->
+            val voters = groups.getValue(target)
+            TargetVotesRow(
+                target = target,
+                voters = voters,
+                votes = votesBySeat[target] ?: voters.size.toDouble(),
+                textColor = textColor,
+                dimColor = dimColor,
+            )
+        }
+    }
+}
+
+/**
+ * 一组票：第一行是被投的目标 + 得票数，第二行是投给他的人。
+ * 弃票的目标为空，整组灰掉、票数不显示，只列投票人。
+ */
+@Composable
+private fun TargetVotesRow(
+    target: Int?,
+    voters: List<Int>,
+    votes: Double,
+    textColor: Color,
+    dimColor: Color,
+) {
+    val abstain = target == null
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = if (abstain) "弃票" else "$target 号",
+                fontSize = FsName,
+                fontWeight = FontWeight.SemiBold,
+                color = if (abstain) dimColor else VoteRed,
+            )
+            if (!abstain) {
+                Spacer(Modifier.width(6.dp))
+                val label = if (votes % 1.0 == 0.0) {
+                    votes.toInt().toString()
+                } else {
+                    String.format(java.util.Locale.US, "%.1f", votes)
+                }
+                Text(text = "$label 票", fontSize = FsMeta, color = dimColor)
+            }
+        }
+        Spacer(Modifier.height(2.dp))
         FlowRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            card.ballots.forEach { ballot ->
-                BallotChip(ballot = ballot, textColor = textColor, dimColor = dimColor)
+            voters.forEach { voter ->
+                Text(
+                    text = "${voter}号",
+                    fontSize = FsMeta,
+                    color = if (abstain) dimColor.copy(alpha = 0.8f) else textColor,
+                )
             }
         }
-
-        // 得票统计。警长票算 1.5，所以票数是 Double——整点不写小数点，半点写 .5。
-        if (card.tally.isNotEmpty()) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(text = "得票", fontSize = FsMeta, color = dimColor)
-                Spacer(Modifier.width(8.dp))
-                FlowRow(
-                    modifier = Modifier.weight(1f),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                    card.tally.forEach { row -> TallyChip(row = row, dimColor = dimColor) }
-                }
-            }
-        }
-        if (card.abstained > 0) {
-            Text(
-                text = "${card.abstained} 人弃票",
-                fontSize = FsMeta,
-                color = dimColor,
-            )
-        }
     }
-}
-
-/** 一张票：「3 → 5」。目标用票色强调，弃票灰掉。 */
-@Composable
-private fun BallotChip(ballot: UIWerewolfBallot, textColor: Color, dimColor: Color) {
-    val abstain = ballot.targetSeat == null
-    Row(
-        modifier = Modifier
-            .clip(RoundedCornerShape(50))
-            .background(
-                if (abstain) dimColor.copy(alpha = 0.12f) else VoteRed.copy(alpha = 0.14f)
-            )
-            .border(
-                1.dp,
-                if (abstain) dimColor.copy(alpha = 0.3f) else VoteRed.copy(alpha = 0.32f),
-                RoundedCornerShape(50),
-            )
-            .padding(horizontal = 9.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(text = "${ballot.voterSeat}", fontSize = FsName, color = if (abstain) dimColor else textColor)
-        Text(text = " → ", fontSize = FsMeta, color = dimColor)
-        Text(
-            text = ballot.targetSeat?.toString() ?: "弃票",
-            fontSize = FsName,
-            fontWeight = FontWeight.SemiBold,
-            color = if (abstain) dimColor else VoteRed,
-        )
-    }
-}
-
-/** 一行得票：「5 号 3 票」。半点票写一位小数。 */
-@Composable
-private fun TallyChip(row: UIWerewolfBallotTally, dimColor: Color) {
-    val label = if (row.votes % 1.0 == 0.0) {
-        row.votes.toInt().toString()
-    } else {
-        String.format(java.util.Locale.US, "%.1f", row.votes)
-    }
-    Text(
-        text = "${row.seat} 号 · $label 票",
-        fontSize = FsMeta,
-        color = dimColor,
-    )
 }
 
 // ---------------------------------------------------------------------------

@@ -1516,4 +1516,16 @@ class WerewolfPromptTest {
         // 公共「神职不要报身份」要被点破为不约束狼，否则模型自相矛盾
         assertTrue("要澄清神职保密不约束狼", night.contains("不约束你"))
     }
+
+    @Test
+    fun `术语约定两种风格都给 且否掉自造说法`() {
+        val game = standardGame()
+        listOf(WerewolfPromptStyle.GUIDED, WerewolfPromptStyle.FREE).forEach { style ->
+            val prompt = WerewolfPrompt.systemPrompt(game, seat = 3, style = style)
+            assertTrue("$style 也要有术语约定", prompt.contains("【术语约定】"))
+            assertTrue("$style 要说警徽流", prompt.contains("警徽流"))
+            assertTrue("$style 要禁止验人链这种自造词", prompt.contains("不要说成「验人链"))
+            assertTrue("$style 要禁止自造身份", prompt.contains("不要生造"))
+        }
+    }
 }

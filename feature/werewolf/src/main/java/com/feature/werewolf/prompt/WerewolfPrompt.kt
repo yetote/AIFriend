@@ -14,6 +14,7 @@ import com.feature.werewolf.prompt.roles.Roles
 import com.feature.werewolf.prompt.rules.darkCardBrief
 import com.feature.werewolf.prompt.rules.mutualProtectionBrief
 import com.feature.werewolf.prompt.rules.rulesBrief
+import com.feature.werewolf.prompt.rules.terminologyBrief
 import com.feature.werewolf.prompt.tasks.taskBrief
 
 /**
@@ -133,6 +134,9 @@ object WerewolfPrompt {
             if (style == WerewolfPromptStyle.GUIDED) {
                 append(strategyBrief(game.config, player.role.isWerewolf).trimEnd()).append("\n\n")
             }
+            // 术语约定两种风格都给：它是语言约定，不是打法。
+            // 自由式虽然不给内置打法，但没理由让 AI 自造黑话、把词用反。
+            append(terminologyBrief()).append("\n\n")
             append(publicSituation(game).trimEnd()).append("\n\n")
             append(privateBriefing(game, seat, style)).append("\n\n")
             // 残局挡刀是打法，自由式不给——能不能靠穿神衣服晃狼，让它自己判断。
