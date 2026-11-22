@@ -10,6 +10,7 @@ import com.feature.werewolf.decision.DirectionChoice
 import com.feature.werewolf.decision.VoteChoice
 import com.feature.werewolf.decision.WerewolfDecisions
 import com.feature.werewolf.decision.WitchChoice
+import com.feature.werewolf.game.Ballot
 import com.feature.werewolf.game.DeathCause
 import com.feature.werewolf.game.Phase
 import com.feature.werewolf.game.SpeechDirection
@@ -668,6 +669,7 @@ class WerewolfDirector(
                 )
             }
             val votes = outcomes.associate { (seat, outcome) -> seat to outcome.value.target }
+            next = next.append(ballotMessage(game, Phase.DAY_SHERIFF_VOTE, votes))
             val after = game.castSheriffVotes(votes)
             current = next.copy(game = after).syncBroadcasts(game)
             onTranscript(current)
@@ -806,11 +808,55 @@ class WerewolfDirector(
             }
 
             val votes = outcomes.associate { (seat, outcome) -> seat to outcome.value.target }
+            // 唱票卡在结算前生成：警长权重取的是**投票那一刻**的 sheriffSeat，
+            // 用 afterVote 的话，投出的警长一旦出局/移交，票就按新警长算了。
+            next = next.append(ballotMessage(game, Phase.DAY_VOTE, votes))
             val afterVote = game.castVotes(votes)
             current = next.copy(game = afterVote).syncBroadcasts(game)
             rounds++
         }
         return current
+    }
+
+    /**
+     * 一轮投票的公开唱票卡。
+     *
+     * 只在白天两种投票里调用（放逐、选警长），夜间狼人下刀绝不生成——那是私有信息。
+     * 消息本身公开（audience=null，全员可见），但 [MessageKind.BALLOT] 不朗读，
+     * 免得把「3→5、5→5」念成一串。理由不在卡里：那是内心活动，各自看各自的。
+     */
+    private fun ballotMessage(
+        game: WerewolfGame,
+        phase: Phase,
+        votes: Map<Int, Int?>,
+    ): WerewolfMessage {
+        val ballots = votes.entries.sortedBy { it.key }.map { Ballot(it.key, it.value) }
+        val sheriffVote = phase == Phase.DAY_SHERIFF_VOTE
+        // 警长投票没有 1.5 权重（那时警长还没选出来），放逐票才有。
+        val tally = mutableMapOf<Int, Double>()
+        votes.forEach { (voter, target) ->
+            if (target != null && !sheriffVote) {
+                tally.merge(target, game.voteWeight(voter) / 2.0, Double::plus)
+            } else if (target != null) {
+                tally.merge(target, 1.0, Double::plus)
+            }
+        }
+        val card = BallotCard(ballots = ballots, tally = tally.toSortedMap())
+        // 摘要只给没有卡片渲染的场合（日志、旧版存档）读，界面不显示这行。
+        val summary = buildString {
+            append("第 ").append(game.day).append(" 天 ")
+            append(if (sheriffVote) "警长投票" else "投票")
+            append("：")
+            append(ballots.joinToString("、") { "${it.voterSeat}→${it.targetSeat ?: "弃票"}" })
+        }
+        return WerewolfMessage(
+            day = game.day,
+            phase = phase,
+            seat = null,
+            kind = MessageKind.BALLOT,
+            text = summary,
+            ballot = card,
+        )
     }
 
     /** 开枪。此时猎人或狼王已经出局，开枪宣言所有人都能看到。 */
@@ -1430,6 +1476,12 @@ class WerewolfDirector(
         var index = 0
         while (index < messages.size) {
             val message = messages[index]
+            // 唱票卡是画给**人**看的结果，不喂模型：票型已经由下面 VOTE 压成的那一行
+            // 表达了，再塞一条上帝摘要既重复、又会让匿名投票的 AI 看到全场票型。
+            if (message.kind == MessageKind.BALLOT) {
+                index++
+                continue
+            }
             if (message.kind != MessageKind.VOTE) {
                 lines += "${message.seat?.let { "$it 号" } ?: "上帝"}：${message.text}"
                 index++

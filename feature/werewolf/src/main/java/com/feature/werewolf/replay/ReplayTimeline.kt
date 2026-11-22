@@ -92,7 +92,7 @@ object ReplayTimeline {
                     text = message.text,
                     // 上帝视角才把夜聊、播报也念出来；参与的普通视角只念听得见的公开发言
                     readEverything = godView,
-                    isInnerThought = message.kind.isInnerThought,
+                    isInnerThought = message.kind.neverSpoken,
                 ),
             )
         }

@@ -567,6 +567,53 @@ class WerewolfDirectorTest {
         }
     }
 
+    @Test
+    fun `放逐投票结束后留下公开唱票卡，但不朗读也不泄理由`() = runBlocking {
+        val ais = (1..9).associateWith { _ -> AutoAI() as IAI }
+        val director = WerewolfDirector(ais.mapValues { SeatAgent(it.value, "test-model") })
+
+        val result = director.vote(WerewolfTable(standard9().copy(phase = Phase.DAY_VOTE)))
+
+        val cards = result.transcript.filter { it.kind == MessageKind.BALLOT }
+        assertEquals("每轮一张唱票卡", 1, cards.size)
+        val card = cards.single()
+        assertTrue("唱票卡全员可见", card.isPublic)
+        assertTrue("唱票卡不朗读", card.kind.neverSpoken)
+        assertFalse("不是内心活动", card.kind.isInnerThought)
+        assertEquals("9 个人都投了", 9, card.ballot!!.ballots.size)
+        assertTrue("得票统计非空", card.ballot!!.tally.isNotEmpty())
+        assertFalse("票型卡里不写投票理由", card.text.contains("我跟票"))
+    }
+
+    @Test
+    fun `唱票卡不进 AI 上下文 匿名投票仍只知道自己那票`() = runBlocking {
+        val cardText = "第 1 天 投票：1→3、2→3、4→弃票"
+        val ballotCard = WerewolfMessage(
+            day = 1, phase = Phase.DAY_VOTE, seat = null, kind = MessageKind.BALLOT,
+            text = cardText,
+            ballot = com.feature.werewolf.engine.BallotCard(
+                ballots = listOf(
+                    com.feature.werewolf.game.Ballot(1, 3),
+                    com.feature.werewolf.game.Ballot(2, 3),
+                    com.feature.werewolf.game.Ballot(4, null),
+                ),
+                tally = mapOf(3 to 2.0),
+            ),
+        )
+        val ai = ScriptedAI(listOf("""{"target": 3, "reason": "我跟票。"}"""))
+        val table = WerewolfTable(
+            game = standard9().copy(phase = Phase.DAY_VOTE),
+            transcript = listOf(ballotCard),
+        )
+        val director = WerewolfDirector((1..9).associate { it to SeatAgent(ai, "test-model") })
+
+        director.vote(table)
+
+        // 唱票卡画给牌桌上的人看，不该出现在模型的请求里——
+        // 那会让它看到全场票型，破坏匿名投票。
+        assertFalse("AI 上下文里不该有唱票卡摘要", ai.calls.first().userText.contains(cardText))
+    }
+
     // ------------------------------------------------------------------
     // 上下文：票型压缩
     // ------------------------------------------------------------------

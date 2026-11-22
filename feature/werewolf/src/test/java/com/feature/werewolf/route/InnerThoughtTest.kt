@@ -30,6 +30,16 @@ class InnerThoughtTest {
         assertFalse(MessageKind.VOTE.isSpokenOutLoud)
         assertFalse(MessageKind.NIGHT_ACT.isSpokenOutLoud)
         assertFalse(MessageKind.DIVINE.isSpokenOutLoud)
+        assertFalse(MessageKind.BALLOT.isSpokenOutLoud)
+    }
+
+    @Test
+    fun `唱票卡不朗读 但不算内心活动`() {
+        // 它是「结果」不是「谁说的话」也不是「谁心里想的」：
+        // 永不朗读靠 neverSpoken，排版靠独立的 BALLOT 卡片，两者分开。
+        assertTrue("永不朗读", MessageKind.BALLOT.neverSpoken)
+        assertFalse("不是内心活动", MessageKind.BALLOT.isInnerThought)
+        assertEquals(UIWerewolfLineKind.BALLOT, lineKindOf(MessageKind.BALLOT))
     }
 
     @Test

@@ -3,9 +3,11 @@ package com.ui.werewolf
 // 对话流：发言人气泡、内心、密谈、上帝播报、流式行。
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -33,6 +35,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ui.common.UIAvatar
 import com.ui.common.UIMarkdownText
+import com.ui.werewolf.data.UIWerewolfBallot
+import com.ui.werewolf.data.UIWerewolfBallotCard
+import com.ui.werewolf.data.UIWerewolfBallotTally
 import com.ui.werewolf.data.UIWerewolfLine
 import com.ui.werewolf.data.UIWerewolfBubbleKind
 import com.ui.werewolf.data.UIWerewolfLineKind
@@ -257,6 +262,10 @@ internal fun LineRow(
     surface: Color,
 ) {
     when (line.kind) {
+        UIWerewolfLineKind.BALLOT -> line.ballot?.let { card ->
+            BallotCardRow(card = card, night = night, textColor = textColor, dimColor = dimColor)
+        } ?: Unit
+
         UIWerewolfLineKind.DIVINE -> Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.Center
@@ -441,6 +450,136 @@ internal fun PrivateRow(
             color = textColor.copy(alpha = 0.9f),
         )
     }
+}
+
+// ---------------------------------------------------------------------------
+// 唱票卡
+// ---------------------------------------------------------------------------
+
+/**
+ * 一轮投票的公开票型。
+ *
+ * 刻意做成一张**卡片**而不是一句播报：投票最想知道的是「谁和谁投在一起」，
+ * 一行「3→5、5→5」的箭头流再加一条得票统计，扫一眼就能对上。
+ *
+ * 时刻意和发言气泡拉开——它有标题、有边框、没有头像，一眼看出是「结果」不是「谁说的话」。
+ * 不朗读（[com.feature.werewolf.engine.MessageKind.neverSpoken]），否则观战时会被念成
+ * 一串「三到五」。
+ */
+@Composable
+internal fun BallotCardRow(
+    card: UIWerewolfBallotCard,
+    night: Boolean,
+    textColor: Color,
+    dimColor: Color,
+) {
+    val stroke = if (night) Color(0x2FFFFFFF) else Color(0x1A000000)
+    val cardBg = if (night) Color(0x14FFFFFF) else Color(0x06000000)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(cardBg)
+            .border(1.dp, stroke, RoundedCornerShape(12.dp))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        // 标题条：投票类型 + 已投票数。弃票也算投了，所以分母是 totalVotes。
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = card.title,
+                fontSize = FsName,
+                fontWeight = FontWeight.SemiBold,
+                color = textColor,
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = "· ${card.totalVotes} 人投票",
+                fontSize = FsMeta,
+                color = dimColor,
+            )
+        }
+
+        // 「3 → 5」的票流。弃票写成「7 → 弃票」，灰掉，和真投出去的票一眼分开。
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            card.ballots.forEach { ballot ->
+                BallotChip(ballot = ballot, textColor = textColor, dimColor = dimColor)
+            }
+        }
+
+        // 得票统计。警长票算 1.5，所以票数是 Double——整点不写小数点，半点写 .5。
+        if (card.tally.isNotEmpty()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(text = "得票", fontSize = FsMeta, color = dimColor)
+                Spacer(Modifier.width(8.dp))
+                FlowRow(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    card.tally.forEach { row -> TallyChip(row = row, dimColor = dimColor) }
+                }
+            }
+        }
+        if (card.abstained > 0) {
+            Text(
+                text = "${card.abstained} 人弃票",
+                fontSize = FsMeta,
+                color = dimColor,
+            )
+        }
+    }
+}
+
+/** 一张票：「3 → 5」。目标用票色强调，弃票灰掉。 */
+@Composable
+private fun BallotChip(ballot: UIWerewolfBallot, textColor: Color, dimColor: Color) {
+    val abstain = ballot.targetSeat == null
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(
+                if (abstain) dimColor.copy(alpha = 0.12f) else VoteRed.copy(alpha = 0.14f)
+            )
+            .border(
+                1.dp,
+                if (abstain) dimColor.copy(alpha = 0.3f) else VoteRed.copy(alpha = 0.32f),
+                RoundedCornerShape(50),
+            )
+            .padding(horizontal = 9.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text = "${ballot.voterSeat}", fontSize = FsName, color = if (abstain) dimColor else textColor)
+        Text(text = " → ", fontSize = FsMeta, color = dimColor)
+        Text(
+            text = ballot.targetSeat?.toString() ?: "弃票",
+            fontSize = FsName,
+            fontWeight = FontWeight.SemiBold,
+            color = if (abstain) dimColor else VoteRed,
+        )
+    }
+}
+
+/** 一行得票：「5 号 3 票」。半点票写一位小数。 */
+@Composable
+private fun TallyChip(row: UIWerewolfBallotTally, dimColor: Color) {
+    val label = if (row.votes % 1.0 == 0.0) {
+        row.votes.toInt().toString()
+    } else {
+        String.format(java.util.Locale.US, "%.1f", row.votes)
+    }
+    Text(
+        text = "${row.seat} 号 · $label 票",
+        fontSize = FsMeta,
+        color = dimColor,
+    )
 }
 
 // ---------------------------------------------------------------------------

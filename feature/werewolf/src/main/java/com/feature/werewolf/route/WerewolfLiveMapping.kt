@@ -9,6 +9,9 @@ import com.feature.werewolf.engine.WerewolfUiState
 import com.feature.werewolf.game.DeathCause
 import com.feature.werewolf.game.Phase
 import com.feature.werewolf.game.WerewolfRole
+import com.ui.werewolf.data.UIWerewolfBallot
+import com.ui.werewolf.data.UIWerewolfBallotCard
+import com.ui.werewolf.data.UIWerewolfBallotTally
 import com.ui.werewolf.data.UIWerewolfFate
 import com.ui.werewolf.data.UIWerewolfLine
 import com.ui.werewolf.data.UIWerewolfLineKind
@@ -176,6 +179,15 @@ internal fun WerewolfUiState.toLive(
             text = message.text,
             innerLabel = innerLabelOf(message),
             secret = !message.isPublic,
+            ballot = message.ballot?.let { card ->
+                UIWerewolfBallotCard(
+                    ballots = card.ballots.map { UIWerewolfBallot(it.voterSeat, it.targetSeat) },
+                    tally = card.tally.map { (seat, votes) -> UIWerewolfBallotTally(seat, votes) }
+                        .sortedWith(compareByDescending<UIWerewolfBallotTally> { it.votes }.thenBy { it.seat }),
+                    abstained = card.abstained,
+                    title = if (message.phase == Phase.DAY_SHERIFF_VOTE) "警长投票" else "放逐投票",
+                )
+            },
         )
     }
 
@@ -271,6 +283,7 @@ internal fun WerewolfUiState.toLive(
  */
 internal fun lineKindOf(kind: MessageKind): UIWerewolfLineKind = when (kind) {
     MessageKind.DIVINE -> UIWerewolfLineKind.DIVINE
+    MessageKind.BALLOT -> UIWerewolfLineKind.BALLOT
     MessageKind.SPEECH -> UIWerewolfLineKind.SPEECH
     MessageKind.WOLF_CHAT -> UIWerewolfLineKind.PRIVATE
     MessageKind.VOTE, MessageKind.NIGHT_ACT -> UIWerewolfLineKind.INNER

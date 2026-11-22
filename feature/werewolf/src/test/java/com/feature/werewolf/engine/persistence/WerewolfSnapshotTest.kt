@@ -128,6 +128,18 @@ class WerewolfSnapshotTest {
                 day = 1, phase = Phase.DAY_VOTE, seat = 6, kind = MessageKind.VOTE,
                 text = "我投 2 号。",
             ),
+            com.feature.werewolf.engine.BallotCard(
+                ballots = listOf(
+                    Ballot(1, 2), Ballot(2, 2), Ballot(4, null), Ballot(6, 2),
+                ),
+                tally = mapOf(2 to 4.5),
+            ).let { card ->
+                WerewolfMessage(
+                    day = 1, phase = Phase.DAY_VOTE, seat = null, kind = MessageKind.BALLOT,
+                    text = "第 1 天 投票：1→2、2→2、4→弃票、6→2",
+                    ballot = card,
+                )
+            },
             WerewolfMessage(
                 day = 1, phase = Phase.DAY_VOTE, seat = null, kind = MessageKind.DIVINE,
                 text = "第1天 投票：2 号被放逐（5 票）",
@@ -223,6 +235,16 @@ class WerewolfSnapshotTest {
         val table = WerewolfTable(WerewolfGame.deal(WerewolfConfig(), roster(8)))
         val restored = WerewolfSnapshot.decode(WerewolfSnapshot.encode(table))
         assertEquals(table, restored)
+    }
+
+    @Test
+    fun `唱票卡的票型与半点票数跟着存档走`() {
+        val restored = WerewolfSnapshot.decode(WerewolfSnapshot.encode(richTable()))!!
+        val ballot = restored.transcript.first { it.kind == MessageKind.BALLOT }.ballot!!
+
+        assertEquals("四张票都在", 4, ballot.ballots.size)
+        assertEquals("弃票也留着", null, ballot.ballots.first { it.voterSeat == 4 }.targetSeat)
+        assertEquals("警长的半点票不能丢", 4.5, ballot.tally.getValue(2), 0.0)
     }
 
     @Test

@@ -520,7 +520,7 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
                 selfSeat = self,
                 text = message.text,
                 readEverything = readEverything,
-                isInnerThought = message.kind.isInnerThought,
+                isInnerThought = message.kind.neverSpoken,
             )
             SpeechCandidate(
                 text = message.text,

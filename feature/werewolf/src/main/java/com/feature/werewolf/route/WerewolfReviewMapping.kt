@@ -205,6 +205,7 @@ internal fun WerewolfUiState.toReview(
                 MessageKind.WOLF_CHAT -> "狼人夜聊"
                 MessageKind.NIGHT_ACT -> "夜间行动"
                 MessageKind.DIVINE -> "播报"
+                MessageKind.BALLOT -> "唱票"
             },
             text = text,
             secret = !message.isPublic,

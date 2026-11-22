@@ -78,6 +78,9 @@ enum class UIWerewolfLineKind {
     /** 上帝播报：所有人都知道的事实。 */
     DIVINE,
 
+    /** 唱票卡：一轮投票结束后公开的全场票型。视觉上是一张卡，不朗读。 */
+    BALLOT,
+
     /** 说出口的发言（白天发言、狼人夜聊）。 */
     SPEECH,
 
@@ -93,6 +96,30 @@ enum class UIWerewolfLineKind {
     PRIVATE,
 }
 
+/** 唱票卡里的一张票：谁投给了谁。targetSeat 为 null 是弃票。 */
+data class UIWerewolfBallot(
+    val voterSeat: Int,
+    val targetSeat: Int?,
+)
+
+/** 唱票卡里的一行得票统计。票是 Double 是因为警长一票算 1.5。 */
+data class UIWerewolfBallotTally(
+    val seat: Int,
+    val votes: Double,
+)
+
+/** 唱票卡的完整内容。只有 [UIWerewolfLineKind.BALLOT] 的记录才有。 */
+data class UIWerewolfBallotCard(
+    val ballots: List<UIWerewolfBallot> = emptyList(),
+    val tally: List<UIWerewolfBallotTally> = emptyList(),
+    /** 弃票人数。 */
+    val abstained: Int = 0,
+    /** 「放逐投票」/「警长投票」。 */
+    val title: String = "投票",
+) {
+    val totalVotes: Int get() = ballots.size
+}
+
 /** 牌桌上的一条记录。 */
 data class UIWerewolfLine(
     val index: Int,
@@ -105,6 +132,8 @@ data class UIWerewolfLine(
     val innerLabel: String? = null,
     /** 只有当前视角看得见。内心活动在参与局里恒为 true。 */
     val secret: Boolean = false,
+    /** 唱票卡数据。只有 [UIWerewolfLineKind.BALLOT] 才非 null。 */
+    val ballot: UIWerewolfBallotCard? = null,
 )
 
 /**

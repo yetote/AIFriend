@@ -1,5 +1,6 @@
 package com.feature.werewolf.engine.persistence
 
+import com.feature.werewolf.engine.BallotCard
 import com.feature.werewolf.engine.MessageKind
 import com.feature.werewolf.engine.WerewolfMessage
 import com.feature.werewolf.engine.WerewolfTable
@@ -67,8 +68,11 @@ object WerewolfSnapshot {
      * v18：事件多出 `SPEECH_DIRECTION`（警长每天选的发言方向）。
      * 新事件走 EventSnapshot 的 type 分派，旧档没有这个类型自然读不到，
      * speechDirection 落到默认的顺时针——就是旧行为。
+     *
+     * v19：消息多出 `ballot`（白天投票的公开票型卡）。带默认值的新增字段，
+     * 旧档读出来是 null——那些局本来也没有唱票卡，复盘照旧显示播报那一句。
      */
-    const val VERSION = 18
+    const val VERSION = 19
 
     private val json = Json {
         ignoreUnknownKeys = true   // 旧档多出来的字段不该让新版本读不出来
@@ -354,6 +358,15 @@ internal data class MessageSnapshot(
     val audience: List<Int>? = null,
     /** v6 起：发言时的思考过程，只在复盘展示。旧档没有，默认空。 */
     val reasoning: String = "",
+    /** v19 起：唱票卡的结构化票型。只有 BALLOT 消息才有，其余为 null。 */
+    val ballot: BallotSnapshotCard? = null,
+)
+
+/** 唱票卡的存档形态。tally 的键（座位号）序列化成字符串，反序列化时转回 Int。 */
+@Serializable
+internal data class BallotSnapshotCard(
+    val ballots: List<BallotSnapshot> = emptyList(),
+    val tally: Map<String, Double> = emptyMap(),
 )
 
 // ---------------------------------------------------------------------------
@@ -448,6 +461,13 @@ internal fun WerewolfTable.toSnapshot(
                 text = it.text,
                 audience = it.audience?.sorted(),
                 reasoning = it.reasoning,
+                ballot = it.ballot?.let { card ->
+                    BallotSnapshotCard(
+                        ballots = card.ballots.map { b -> BallotSnapshot(b.voterSeat, b.targetSeat) },
+                        // kotlinx.serialization 的 Map key 只能是 String，Int 座位号转一下
+                        tally = card.tally.mapKeys { (seat, _) -> seat.toString() },
+                    )
+                },
             )
         },
     )
@@ -573,6 +593,14 @@ internal fun TableSnapshot.toTable(): WerewolfTable = WerewolfTable(
             text = it.text,
             audience = it.audience?.toSet(),
             reasoning = it.reasoning,
+            ballot = it.ballot?.let { card ->
+                BallotCard(
+                    ballots = card.ballots.map { b -> Ballot(b.voterSeat, b.targetSeat) },
+                    tally = card.tally.mapNotNull { (seat, votes) ->
+                        seat.toIntOrNull()?.to(votes)
+                    }.toMap(),
+                )
+            },
         )
     },
 )

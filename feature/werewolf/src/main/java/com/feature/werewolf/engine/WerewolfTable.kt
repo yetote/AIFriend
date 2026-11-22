@@ -1,6 +1,7 @@
 package com.feature.werewolf.engine
 
 import com.core.ai.entity.IAI
+import com.feature.werewolf.game.Ballot
 import com.feature.werewolf.game.Phase
 import com.feature.werewolf.game.WerewolfGame
 
@@ -42,6 +43,15 @@ enum class MessageKind {
 
     /** 上帝播报，来自 [WerewolfGame.history]。 */
     DIVINE,
+
+    /**
+     * 唱票卡：一轮投票结束后公开全场票型。
+     *
+     * 和 [DIVINE] 的区别是它带结构化的 [BallotCard]（谁投谁 + 加权票数），
+     * 界面画成一张卡而不是一句播报。仍是**公开**消息，但刻意不朗读——
+     * 把「3→5、5→5」念成一串既难听又没信息量。
+     */
+    BALLOT,
     ;
 
     /**
@@ -64,6 +74,30 @@ enum class MessageKind {
      */
     val isInnerThought: Boolean
         get() = this == VOTE || this == NIGHT_ACT
+
+    /**
+     * 永不朗读：内心活动 + 唱票卡。
+     *
+     * 唱票卡不是「想」也不是「说」，是把票型画成卡片的数据；念成
+     * 「三到五、五到五」没有意义。观战的上帝视角也照此处理。
+     */
+    val neverSpoken: Boolean
+        get() = isInnerThought || this == BALLOT
+}
+
+/**
+ * 一轮唱票的结构化数据。
+ *
+ * [ballots] 是原始票型（谁投谁，[Ballot.targetSeat] 为 null 是弃票），
+ * [tally] 是**当时的加权票数**（目标座位 → 票，警长 1.5、普通 1）。
+ * 权重在投票那一刻就算好存下来，不靠复盘时的终局状态反推——警长可能已经移交或出局。
+ */
+data class BallotCard(
+    val ballots: List<Ballot> = emptyList(),
+    val tally: Map<Int, Double> = emptyMap(),
+) {
+    /** 弃票人数。每一张 targetSeat 为 null 的票就是一个人放弃。 */
+    val abstained: Int get() = ballots.count { it.targetSeat == null }
 }
 
 /**
@@ -93,6 +127,13 @@ data class WerewolfMessage(
      * 只会复读上一次的推理。
      */
     val reasoning: String = "",
+    /**
+     * [MessageKind.BALLOT] 携带的结构化票型。其余消息为 null。
+     *
+     * 不塞进 [text]：票型要按座位画成卡片（谁→谁、每人几票），是数据不是文案。
+     * text 里只留一句给人读的摘要，方便存档兼容、日志和没有卡片渲染的场合。
+     */
+    val ballot: BallotCard? = null,
 ) {
     val isPublic: Boolean get() = audience == null
 
