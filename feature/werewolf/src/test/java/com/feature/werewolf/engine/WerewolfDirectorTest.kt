@@ -509,6 +509,63 @@ class WerewolfDirectorTest {
     }
 
     @Test
+    fun `发言退化刷屏时截断并掐断流 只留正常部分`() = runBlocking {
+        // 复现 12 号那种故障：正常说了半句，然后同一个字符刷一整屏。
+        // 期望：正文只留半句，且刷屏的后续 delta 不再被拉取（早掐断、省 token）。
+        class DegenerateAI : IAI {
+            var emitted = 0
+            override suspend fun requestModel() = Unit
+            override var modelSet: MutableSet<String> = mutableSetOf()
+            override var brandName: String = "坏模型"
+            override var company: String = "测试"
+
+            override fun chatStream(
+                messages: List<ChatMessage>,
+                model: String,
+                systemPrompt: String?,
+                enableThinking: Boolean,
+                jsonMode: Boolean,
+            ): kotlinx.coroutines.flow.Flow<ChatDelta> = kotlinx.coroutines.flow.flow {
+                emit(ChatDelta(content = "我觉得 3 号这轮"))
+                emitted++
+                // 满屏刷字符，分多段吐；掐断生效的话后面几段根本不会被收集
+                repeat(12) {
+                    emit(ChatDelta(content = "▮".repeat(20)))
+                    emitted++
+                }
+            }
+
+            @Deprecated("测试用不到")
+            override suspend fun chat(message: String, model: String): String = fallbackText
+            override suspend fun chat(
+                messages: List<ChatMessage>,
+                model: String,
+                systemPrompt: String?,
+                enableThinking: Boolean,
+                jsonMode: Boolean,
+            ): String = fallbackText
+            val fallbackText = "我不发表意见。"
+        }
+
+        val degenerate = DegenerateAI()
+        val game = standard9()
+        val agents = game.players.associate { player ->
+            player.seat to SeatAgent(
+                ai = if (player.seat == 1) degenerate else AutoAI(),
+                model = "test",
+            )
+        }
+        val director = WerewolfDirector(agents = agents)
+
+        val result = director.discussion(WerewolfTable(game.copy(phase = Phase.DAY_DISCUSSION)))
+
+        val speech = result.transcript.first { it.kind == MessageKind.SPEECH && it.seat == 1 }
+        assertEquals("只留退化前的半句", "我觉得 3 号这轮", speech.text)
+        assertFalse("不能把刷屏字符落进存档", speech.text.contains("▮"))
+        assertTrue("刷屏的后续分段没被继续拉取", degenerate.emitted < 12)
+    }
+
+    @Test
     fun `每说完一句就往外推一次，不是攒完一圈才给`() = runBlocking {
         // 一圈九个人要等一分多钟。全攒到阶段结束才推，中间界面是静止的，
         // 看着像卡死；这个用例锁住的是「说完一个就推一个」

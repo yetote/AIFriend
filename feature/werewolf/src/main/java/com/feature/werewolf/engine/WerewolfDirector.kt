@@ -27,6 +27,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
@@ -1100,6 +1101,8 @@ class WerewolfDirector(
         // 底层超时降级（关思考重试）是正常返回的，外层看不到异常。
         // 靠 delta 带出来的标志记一笔，好在下面对这个座位关思考。
         var degradedByTimeout = false
+        // 模型输出退化（同一字符/短串刷屏）：掐断流后留着这半句，不当成故障。
+        var cutByDegeneration = false
 
         suspend fun consume() {
             agent.ai.chatStream(
@@ -1107,11 +1110,27 @@ class WerewolfDirector(
                 model = agent.model,
                 systemPrompt = system,
                 enableThinking = thinking,
-            ).collect { delta ->
+            ).takeWhile { delta ->
                 if (delta.timeoutDegraded) degradedByTimeout = true
-                if (delta.content.isEmpty() && delta.reasoning.isEmpty()) return@collect
+                if (delta.content.isEmpty() && delta.reasoning.isEmpty()) return@takeWhile true
                 content.append(delta.content)
                 reasoning.append(delta.reasoning)
+                // 退化检测放在推送之前：命中就把正文截到退化起点，并掐断上游。
+                // 用 takeWhile 而不是在 collect 里 return，是为了真把 SSE 流关掉，
+                // 不然模型还在后台一直吐，既烧 token 也拖着这一轮不结束。
+                val cut = SpeechDegeneration.cutIndex(content)
+                if (cut != null) {
+                    content.setLength(cut)
+                    cutByDegeneration = true
+                    return@takeWhile false
+                }
+                // 思考过程即便退化也不影响发言，但要防复盘里出现一屏复读。
+                // 这里只截断、不掐断：正文可能还在正常往外说。
+                SpeechDegeneration.cutIndex(reasoning)?.let { reasoning.setLength(it) }
+                true
+            }.collect { delta ->
+                // 空 delta 只用来带超时降级标志，没内容可推，别刷界面。
+                if (delta.content.isEmpty() && delta.reasoning.isEmpty()) return@collect
                 val now = System.currentTimeMillis()
                 if (!pushed || now - lastPush >= streamIntervalMs) {
                     lastPush = now
@@ -1217,7 +1236,8 @@ class WerewolfDirector(
         // 这时给一句能接得上的话，比留个空白或者让整局报错都好。
         val raw = when {
             content.isNotEmpty() -> content.toString()
-            timedOut -> SILENT_SPEECH
+            // 整段都是刷屏、被截成空：再发一次完整请求多半还是坏的，直接兜底。
+            timedOut || cutByDegeneration -> SILENT_SPEECH
             else -> agent.ai.chat(
                 messages = messages,
                 model = agent.model,
