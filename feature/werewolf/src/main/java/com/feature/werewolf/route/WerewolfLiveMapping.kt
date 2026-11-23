@@ -292,7 +292,8 @@ internal fun lineKindOf(kind: MessageKind): UIWerewolfLineKind = when (kind) {
     MessageKind.BALLOT -> UIWerewolfLineKind.BALLOT
     MessageKind.SPEECH -> UIWerewolfLineKind.SPEECH
     MessageKind.WOLF_CHAT -> UIWerewolfLineKind.PRIVATE
-    MessageKind.VOTE, MessageKind.NIGHT_ACT -> UIWerewolfLineKind.INNER
+    MessageKind.VOTE -> UIWerewolfLineKind.VOTE
+    MessageKind.NIGHT_ACT -> UIWerewolfLineKind.INNER
 }
 
 /**

@@ -40,7 +40,6 @@ import com.ui.werewolf.data.UIWerewolfBallotCard
 import com.ui.werewolf.data.UIWerewolfLine
 import com.ui.werewolf.data.UIWerewolfBubbleKind
 import com.ui.werewolf.data.UIWerewolfLineKind
-import com.ui.werewolf.data.bubbleStyle
 import com.ui.werewolf.data.tableBubbleStyle
 import com.ui.werewolf.data.UIWerewolfLive
 import com.ui.werewolf.data.UIWerewolfSeatLive
@@ -266,27 +265,40 @@ internal fun LineRow(
             BallotCardRow(card = card, night = night, textColor = textColor, dimColor = dimColor)
         } ?: Unit
 
-        UIWerewolfLineKind.DIVINE -> Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center
-        ) {
-            Text(
-                text = line.text,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(50))
-                    .background(if (night) Color(0x14FFFFFF) else Color(0x0D000000))
-                    .padding(horizontal = 10.dp, vertical = 4.dp),
-                fontSize = FsName,
-                color = dimColor,
-                lineHeight = 19.sp,
-                textAlign = TextAlign.Center
-            )
+        UIWerewolfLineKind.DIVINE -> {
+            // 播报是居中的一行字，不套卡片，但底色也跟着类型走
+            val style = tableBubbleStyle(UIWerewolfBubbleKind.BROADCAST, night)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = line.text,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(style.fill)
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                    fontSize = FsName,
+                    color = dimColor,
+                    lineHeight = 19.sp,
+                    textAlign = TextAlign.Center
+                )
+            }
         }
 
         UIWerewolfLineKind.INNER -> InnerRow(
             line = line,
             night = night,
             dimColor = dimColor
+        )
+
+        // 投票和夜里那些念头共用一套排版，但底色不同：
+        // 投票是会被当场执行的表态，念头的底色必须压得比它低
+        UIWerewolfLineKind.VOTE -> InnerRow(
+            line = line,
+            night = night,
+            dimColor = dimColor,
+            kind = UIWerewolfBubbleKind.VOTE
         )
 
         UIWerewolfLineKind.SPEECH -> SpeechRow(
@@ -367,8 +379,9 @@ internal fun InnerRow(
     line: UIWerewolfLine,
     night: Boolean,
     dimColor: Color,
+    kind: UIWerewolfBubbleKind = UIWerewolfBubbleKind.INNER,
 ) {
-    val style = bubbleStyle(UIWerewolfBubbleKind.INNER, night)
+    val style = tableBubbleStyle(kind, night)
     UIWerewolfBubble(
         style = style,
         modifier = Modifier
@@ -416,7 +429,7 @@ internal fun PrivateRow(
     dimColor: Color,
     surface: Color,
 ) {
-    val style = bubbleStyle(UIWerewolfBubbleKind.SECRET, night)
+    val style = tableBubbleStyle(UIWerewolfBubbleKind.SECRET, night)
     UIWerewolfBubble(
         style = style,
         modifier = Modifier
@@ -474,14 +487,14 @@ internal fun BallotCardRow(
     textColor: Color,
     dimColor: Color,
 ) {
-    val stroke = if (night) Color(0x2FFFFFFF) else Color(0x1A000000)
-    val cardBg = if (night) Color(0x14FFFFFF) else Color(0x06000000)
+    // 记票卡走青蓝：和投票的琥珀分开——「我投了谁」和「全场投了谁」是两件事
+    val style = tableBubbleStyle(UIWerewolfBubbleKind.BALLOT, night)
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(cardBg)
-            .border(1.dp, stroke, RoundedCornerShape(12.dp))
+            .background(style.fill)
+            .border(1.dp, style.border, RoundedCornerShape(12.dp))
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {

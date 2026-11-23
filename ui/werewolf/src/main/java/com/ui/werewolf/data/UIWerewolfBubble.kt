@@ -1,9 +1,6 @@
 package com.ui.werewolf.data
 
 import androidx.compose.ui.graphics.Color
-import com.ui.werewolf.DaySurface
-import com.ui.werewolf.NightStroke
-import com.ui.werewolf.NightSurface
 
 /**
  * 一条对话气泡的类别。
@@ -21,6 +18,9 @@ enum class UIWerewolfBubbleKind(val label: String) {
 
     /** 投票与表态。 */
     VOTE("投票"),
+
+    /** 唱票卡：一轮投票结束后的公开票型。 */
+    BALLOT("记票"),
 
     /** 夜间队内沟通：狼人夜聊、神职的夜间行动。 */
     SECRET("密谈"),
@@ -53,31 +53,66 @@ data class UIWerewolfBubbleStyle(
 )
 
 /**
- * 牌桌纸片底。
+ * 牌桌气泡样式：一类一个色相，全部半透明。
  *
- * 牌桌背景是插画（白天天空 + 远山、夜里星月），半透明气泡会跟着背景一起变色 ——
- * 同一句发言躺在暖色的地平线上偏黄、躺到山影里偏灰，一列读下来像两种东西。
- * 牌桌改用牌桌自己的卡片色做不透明纸片底，字永远压在同一块底色上。
+ * 牌桌背景是插画（白天天空 + 远山、夜里星月），气泡必须能透出背景，
+ * 才看得出「浮在牌桌上」而不是糊了一张卡片；可全用一个中性色，
+ * 投票、记票、密谈、内心又会长得一模一样——而这几类恰恰是最该一眼分清的。
  *
- * 复盘页不跟着改：静态列表里那种淡底更容易分清主次，而且复盘没有插画背景。
+ * 所以：**色相区分类型，透明度统一压得很低**。不做实底。
+ *
+ * 和 [bubbleStyle] 的分工：复盘页是静态列表、没有插画，用 [bubbleStyle] 的淡底；
+ * 牌桌有背景，用这里的色相版。两边的 accent 和角标保持一致。
  */
-fun tablePaperFill(night: Boolean): Color = if (night) NightSurface else DaySurface
+fun tableBubbleStyle(kind: UIWerewolfBubbleKind, night: Boolean): UIWerewolfBubbleStyle {
+    val base = bubbleStyle(kind, night)
+    val fill = when (kind) {
+        // 发言：中性。场上最普通的一类，所有颜色的底子
+        UIWerewolfBubbleKind.SPEECH ->
+            if (night) Color(0x1AFFFFFF) else Color(0x0F1B2230)
 
-/** 纸片底的细描边，只负责把气泡从背景上勾出来。 */
-fun tablePaperStroke(night: Boolean): Color =
-    if (night) NightStroke else Color(0x1A1B2230)
+        // 投票：琥珀。票是唯一会被当场执行的表态
+        UIWerewolfBubbleKind.VOTE ->
+            if (night) Color(0x26E0A94A) else Color(0x1AC48A12)
 
-/**
- * 牌桌气泡样式：[bubbleStyle] 只换底色和描边。
- *
- * accent（左侧竖线、角标）和文字色一概不动 —— 类型仍靠它们区分，
- * 否则所有气泡都成了同一张白纸。
- */
-fun tableBubbleStyle(kind: UIWerewolfBubbleKind, night: Boolean): UIWerewolfBubbleStyle =
-    bubbleStyle(kind, night).copy(
-        fill = tablePaperFill(night),
-        border = tablePaperStroke(night),
-    )
+        // 记票：青蓝。它是一张统计结果，不是谁说的话，和投票的琥珀分开
+        UIWerewolfBubbleKind.BALLOT ->
+            if (night) Color(0x242FA8FF) else Color(0x172B6BFF)
+
+        // 密谈：紫。紫是唯一只出现在夜里的颜色
+        UIWerewolfBubbleKind.SECRET ->
+            if (night) Color(0x247A5AF7) else Color(0x177A5AF7)
+
+        // 内心：冷灰蓝。比发言更淡，色相也偏冷——这些字没人听见，分量最轻
+        UIWerewolfBubbleKind.INNER ->
+            if (night) Color(0x1F8C9BB5) else Color(0x157C8CA8)
+
+        // 思考：靛蓝。和密谈的紫拉开，否则两团紫会混
+        UIWerewolfBubbleKind.THOUGHT ->
+            if (night) Color(0x24808CFF) else Color(0x17808CFF)
+
+        // 播报：中性极淡。它是居中的一行字，不套卡片
+        UIWerewolfBubbleKind.BROADCAST ->
+            if (night) Color(0x14FFFFFF) else Color(0x0D000000)
+    }
+    val border = when (kind) {
+        UIWerewolfBubbleKind.SPEECH ->
+            if (night) Color(0x26FFFFFF) else Color(0x141B2230)
+        UIWerewolfBubbleKind.VOTE ->
+            if (night) Color(0x4DD8A22E) else Color(0x33B58A00)
+        UIWerewolfBubbleKind.BALLOT ->
+            if (night) Color(0x4D6FB6FF) else Color(0x332B6BFF)
+        UIWerewolfBubbleKind.SECRET ->
+            if (night) Color(0x4D9A7CFF) else Color(0x337A5AF7)
+        UIWerewolfBubbleKind.INNER ->
+            if (night) Color(0x1AFFFFFF) else Color(0x141B2230)
+        UIWerewolfBubbleKind.THOUGHT ->
+            if (night) Color(0x4DA0AAFF) else Color(0x33808CFF)
+        // 播报不画框
+        UIWerewolfBubbleKind.BROADCAST -> Color.Transparent
+    }
+    return base.copy(fill = fill, border = border)
+}
 
 /**
  * 按类别和明暗取气泡样式。
@@ -106,6 +141,13 @@ fun bubbleStyle(kind: UIWerewolfBubbleKind, night: Boolean): UIWerewolfBubbleSty
             UIWerewolfBubbleStyle(Color(0x1F7A5AF7), Color(0x3D9A7CFF), Color(0xFFA894FF), "密谈")
         } else {
             UIWerewolfBubbleStyle(Color(0x147A5AF7), Color(0x2E7A5AF7), Color(0xFF6B4BD9), "密谈")
+        }
+
+        // 记票：青蓝。和投票的琥珀分开——一个是「我投了谁」，一个是「全场投了谁」
+        UIWerewolfBubbleKind.BALLOT -> if (night) {
+            UIWerewolfBubbleStyle(Color(0x0F2FA8FF), Color(0x266FB6FF), Color(0xFF7FC0FF), "记票")
+        } else {
+            UIWerewolfBubbleStyle(Color(0x0A2B6BFF), Color(0x1F2B6BFF), Color(0xFF2B6BFF), "记票")
         }
 
         // 内心活动：灰 + 竖线。刻意做得比发言更淡、更小，

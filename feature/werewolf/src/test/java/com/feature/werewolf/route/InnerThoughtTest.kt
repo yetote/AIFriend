@@ -54,7 +54,9 @@ class InnerThoughtTest {
 
     @Test
     fun `内心活动排成内心样式 不冒充发言`() {
-        assertEquals(UIWerewolfLineKind.INNER, lineKindOf(MessageKind.VOTE))
+        // 投票单列一类：它和夜里那些念头一样没人听见，但牌桌上要换个底色 ——
+        // 票会被当场执行，念头的分量比它轻
+        assertEquals(UIWerewolfLineKind.VOTE, lineKindOf(MessageKind.VOTE))
         assertEquals(UIWerewolfLineKind.INNER, lineKindOf(MessageKind.NIGHT_ACT))
 
         assertEquals(UIWerewolfLineKind.SPEECH, lineKindOf(MessageKind.SPEECH))
