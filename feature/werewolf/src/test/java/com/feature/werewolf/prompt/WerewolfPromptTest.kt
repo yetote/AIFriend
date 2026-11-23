@@ -1068,7 +1068,7 @@ class WerewolfPromptTest {
         val good = WerewolfPrompt.systemPrompt(game, seat = 3)
 
         assertTrue("狼要看到屠边账", wolf.contains("屠边账"))
-        assertTrue("账本要按存活神民算", wolf.contains("张神牌") && wolf.contains("个平民"))
+        assertTrue("账本要给出先打哪边的结论", wolf.contains("哪边更近就先打穿哪边"))
         assertFalse("屠边账不能漏给好人", good.contains("屠边账"))
         // 账本只能说「还有几张神牌」，不能替狼点名谁是哪个身份。
         assertFalse("不能泄露具体身份", wolf.contains("3 号是预言家"))
@@ -1380,24 +1380,24 @@ class WerewolfPromptTest {
         val city = WerewolfPrompt.systemPrompt(cityGame, seat = 3, style = WerewolfPromptStyle.FREE)
         assertTrue("屠城局规则是票权", city.contains("屠城局"))
         assertFalse("屠城局没有选边这回事", city.contains("两条边必须选一条打穿"))
-        assertFalse("屠城局不给屠边进度", city.contains("【屠边进度】"))
+        assertFalse("屠城局也不给屠边账", city.contains("【屠边账"))
     }
 
     @Test
-    fun `自由式狼也看得到屠边进度，但看不到该打哪边`() {
-        // 「狼完全不找神」的根之一：自由式连「还剩几张神」都不给，只能凭谁嘴像预言家下刀。
-        // 计数是公开可数的事实（板子开局公布、出局有播报），两种风格都给；
-        // 「哪边更近、怎么打」是打法，仍然只给引导式。
+    fun `自由式狼既没有屠边进度也没有屠边账`() {
+        // 屠边进度（还剩几神几民）曾经两种风格都发，理由是「板子开局公布、出局有播报，谁都数得出来」。
+        // 撤回：数得出来不等于该替它数。真人坐牌桌上，数剩余神民是玩家自己的一步；
+        // 把算好的数字直接摆在狼面前，等于给它配计算器，而好人没有任何对等的东西。
+        // 现在规则里仍点名本局神职名单（硬规则），剩下数几张、打哪边让它自己算。
         val game = gameWithGuard()
         val free = WerewolfPrompt.systemPrompt(game, seat = 1, style = WerewolfPromptStyle.FREE)
-        assertTrue("自由式狼要知道还剩几张神", free.contains("【屠边进度】"))
-        assertTrue("要给出数字", free.contains("张神牌"))
-        assertFalse("哪边更近是打法，自由式不给", free.contains("【屠边账"))
-        assertFalse("也不给打哪边的结论", free.contains("更近"))
+        assertFalse("自由式不给屠边进度", free.contains("【屠边进度】"))
+        assertFalse("自由式也不给屠边账", free.contains("【屠边账"))
+        assertFalse("更不会替它算哪边更近", free.contains("更近"))
 
         val guided = WerewolfPrompt.systemPrompt(game, seat = 1, style = WerewolfPromptStyle.GUIDED)
         assertTrue("引导式照旧给账本", guided.contains("【屠边账"))
-        assertTrue("引导式也会看到进度", guided.contains("【屠边进度】"))
+        assertFalse("账本也不再单独甩一份剩余神民数", guided.contains("【屠边进度】"))
     }
 
     @Test
