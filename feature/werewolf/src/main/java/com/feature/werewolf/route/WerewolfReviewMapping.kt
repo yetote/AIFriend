@@ -265,7 +265,11 @@ internal fun WerewolfUiState.toReview(
                     if (seerCheck == null) {
                         head
                     } else {
-                        "$head → " + if (seerCheck.isWerewolf) "狼人" else "好人"
+                        val verdict = if (seerCheck.isWerewolf) "狼人" else "好人"
+                        // 新版的消息正文里已经写明结论（「查验 1 号：狼人」），
+                        // 再拼一次就成了「查验 1 号：狼人 → 狼人」。
+                        // 老存档的消息只有「查验 1 号」，才需要靠状态补上结论。
+                        if (head.contains(verdict)) head else "$head → $verdict"
                     }
                 },
                 witchPlan = firstOf(Phase.NIGHT_WITCH),

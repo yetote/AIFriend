@@ -69,7 +69,7 @@ internal fun WerewolfReplay.toLive(
         val speaker = message.seat?.let { seat -> game.players.firstOrNull { it.seat == seat } }
         UIWerewolfLine(
             index = index,
-            kind = lineKindOf(message.kind),
+            kind = lineKindOf(message),
             seat = message.seat,
             speaker = speaker?.name,
             avatarPath = speaker?.id?.let { avatars[it] },

@@ -12,6 +12,7 @@ import com.feature.werewolf.game.WerewolfRole
 import com.ui.werewolf.data.UIWerewolfBallot
 import com.ui.werewolf.data.UIWerewolfBallotCard
 import com.ui.werewolf.data.UIWerewolfBallotTally
+import com.ui.werewolf.data.UIWerewolfCheck
 import com.ui.werewolf.data.UIWerewolfFate
 import com.ui.werewolf.data.UIWerewolfLine
 import com.ui.werewolf.data.UIWerewolfLineKind
@@ -181,7 +182,7 @@ internal fun WerewolfUiState.toLive(
         val speaker = message.seat?.let { seat -> game?.players?.firstOrNull { it.seat == seat } }
         UIWerewolfLine(
             index = index,
-            kind = lineKindOf(message.kind),
+            kind = lineKindOf(message),
             seat = message.seat,
             speaker = speaker?.name,
             avatarPath = speaker?.id?.let { avatars[it] },
@@ -270,6 +271,14 @@ internal fun WerewolfUiState.toLive(
         selfSeat = humanSeat,
         selfRoleLabel = me?.role?.displayName,
         selfFactionLabel = me?.role?.faction?.displayName,
+        // 验人本只给**预言家本人**。它是私有信息：别人的牌桌上不能有它，
+        // 否则界面就等于把「谁被验出是狼」发到了客户端。
+        // 观战看不到这一份——上帝视角要看验人记录，去复盘页那一节。
+        selfChecks = if (me?.role == WerewolfRole.SEER) {
+            game?.seerChecks.orEmpty().map { UIWerewolfCheck(it.targetSeat, it.isWerewolf) }
+        } else {
+            emptyList()
+        },
         spectating = humanSeat == null,
         turn = if (game != null) buildTurn(game, humanSeat, me, turn) else null,
         // 自爆按钮比 turn 宽一档：别人说话时就能点。状态机是唯一判据
@@ -314,6 +323,23 @@ internal fun lineKindOf(kind: MessageKind): UIWerewolfLineKind = when (kind) {
     MessageKind.VOTE -> UIWerewolfLineKind.VOTE
     MessageKind.NIGHT_ACT -> UIWerewolfLineKind.INNER
 }
+
+/**
+ * 按整条消息定排版。
+ *
+ * 只有一个地方要比 [lineKindOf] 更细：**预言家的查验结论**。
+ *
+ * 它在引擎里也是 `NIGHT_ACT`（夜里发生、没人听见），但它跟「投票念头」
+ * 分量完全不同：那是预言家唯一的价值所在，他白天要拿它去带票、去对账。
+ * 做成压暗小字，玩家多半当成一句闲话划过去——查验完什么都不知道，
+ * 这个身份就废了。所以单独给一档。
+ */
+internal fun lineKindOf(message: com.feature.werewolf.engine.WerewolfMessage): UIWerewolfLineKind =
+    if (message.kind == MessageKind.NIGHT_ACT && message.phase == Phase.NIGHT_SEER) {
+        UIWerewolfLineKind.SEER_RESULT
+    } else {
+        lineKindOf(message.kind)
+    }
 
 /**
  * 内心活动的小标签：投票、守人、查验、用药、开枪。

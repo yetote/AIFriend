@@ -380,6 +380,7 @@ class WerewolfDirector(
         onProgress(WerewolfProgress(game.day, Phase.NIGHT_SEER, 1, 1, seat = seer.seat))
         val outcome = askSeer(table, seer.seat)
         val next = game.seerCheck(outcome.value.target)
+        val check = next.seerChecks.last()
         return table
             .append(
                 WerewolfMessage(
@@ -387,7 +388,13 @@ class WerewolfDirector(
                     phase = Phase.NIGHT_SEER,
                     seat = seer.seat,
                     kind = MessageKind.NIGHT_ACT,
-                    text = "查验 ${outcome.value.target} 号。" + outcome.value.reason,
+                    // **必须写明结论**。AI 预言家能从提示词的 `seerChecks` 里读到结果，
+                    // 人类预言家没有提示词——他只能看这条消息。原来这里只写
+                    // 「查验 N 号」加一句理由，谁是狼一个字都不说，
+                    // 于是人类预言家查完人什么都不知道，等于这个身份废了。
+                    // 这条消息的 audience 只有预言家本人，写结论不构成泄露。
+                    text = "查验 ${check.targetSeat} 号：${if (check.isWerewolf) "狼人" else "好人"}。" +
+                        outcome.value.reason,
                     reasoning = outcome.reasoning,
                     usage = outcome.usage,
                     audience = setOf(seer.seat),
