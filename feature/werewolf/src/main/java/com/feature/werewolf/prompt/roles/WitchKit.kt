@@ -10,6 +10,15 @@ internal object WitchKit : RoleKit {
 
     override val roles = setOf(WerewolfRole.WITCH)
 
+    // 写进公共板子说明：女巫的药怎么用，直接影响**所有人**怎么读死讯。
+    // 原来这几条只在女巫自己的 notes 里，别人一概不知道——于是「昨夜死了人、女巫没救」
+    // 会被当成「场上没有女巫」，或者把「同夜死了两个」解释成见鬼。
+    override fun rules(role: WerewolfRole): List<String> = listOf(
+        "女巫有一瓶解药和一瓶毒药，每种只能用一次；同一夜不能同时用两瓶药。" +
+            "解药能救活被狼人刀死的人，但一般不能救自己（第一夜是否允许自救看本局设定），" +
+            "毒药能让一个人当夜死亡。",
+    )
+
     override fun notes(game: WerewolfGame, seat: Int): List<String> {
         val lines = mutableListOf<String>()
         lines += "解药：" + if (game.witch.antidoteAvailable) "还在" else "已经用完"

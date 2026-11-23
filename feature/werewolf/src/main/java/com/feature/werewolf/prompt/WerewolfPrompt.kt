@@ -79,11 +79,11 @@ object WerewolfPrompt {
         /**
          * 提示词风格。默认 [WerewolfPromptStyle.GUIDED]＝现状，所有老测试与存档行为不变。
          *
-         * [WerewolfPromptStyle.FREE] 砍到只剩事实：内置打法不给，【规则】整段不给，
-         * 板子只留一行「人数 + 配比 + 有无警长」——怎么判胜负、遗言怎么留、
-         * 能不能自爆，全靠模型自己对标准局的理解。私有信息（队友、验人、保密底线）
-         * 和本轮任务照旧：这是「谁在玩、现在轮到谁干什么」，不是教学，
-         * 拿掉游戏就没法打。自由不等于允许在白天报验人或说出队友。
+         * [WerewolfPromptStyle.FREE] 砍掉的是**打法**：读人框架、板型结论、狼队战术菜单、
+         * 身份作业、藏身诱导、残局挡刀都不给。规则（胜负、平票、遗言、自爆、警长、
+         * 每个身份的技能与限制）**照给**——那是事实不是答案，而且本局有几条不是标准局
+         * 先验（屠边、警长 1.5 票、守救同归、自爆当晚仍定刀），不给它就会拿网上的记忆
+         * 去推，推出来的结论整个是错的。私有信息与保密底线同样照旧。
          */
         style: WerewolfPromptStyle = WerewolfPromptStyle.GUIDED,
         /**
@@ -121,14 +121,19 @@ object WerewolfPrompt {
                     .append("（").append(player.faction.displayName).append("阵营），")
                     .append("这个身份只有你自己知道。\n\n")
             }
-            if (style == WerewolfPromptStyle.FREE) {
-                // 自由式只留三样开局事实：人数、配比、有无警长。规则说明整段不给——
-                // 模型按自己训练里的标准局去打，这才是「自由」的本意。
-                append(freeBoardBrief(game.config)).append("\n\n")
-            } else {
-                append(rulesBrief(game.config)).append("\n\n")
-                append(boardBrief(game.config).trimEnd()).append("\n\n")
-            }
+            // 规则两种风格都给，只有**打法**分风格。
+            //
+            // 这里曾经把规则整段砍掉，理由是「标准局规则都在模型训练数据里，
+            // 文案越少它自己的打法空间越大」。实测站不住：本局有好几条规则不是
+            // 标准局先验——屠边还是屠城、警长一票算 1.5 票、守救同归、
+            // 自爆后当晚仍要参加定刀——模型按网上的记忆推，推出的结论整个是错的；
+            // 更常见的是它不知道**别人那张牌**能干什么（白痴翻牌不死、狼王被毒不能开枪），
+            // 推理全靠脑补，白天一本正经地把规则说错。
+            //
+            // 规则是**事实**，打法才是答案。自由式要砍的是后者（strategyBrief /
+            // playbook / 狼队战术菜单 / 板型结论都不再出现），不该连事实一起砍。
+            append(rulesBrief(game.config)).append("\n\n")
+            append(boardBrief(game.config).trimEnd()).append("\n\n")
             // 引导式才给内置打法。自由式的核心就是「不给方法，只给事实和底线」——
             // 读人框架、板型结论、狼队菜单都在 strategyBrief 里，整段不出现。
             if (style == WerewolfPromptStyle.GUIDED) {
@@ -443,9 +448,15 @@ object WerewolfPrompt {
      *
      * 按「谁会改变夜里的结果」排：守卫最影响判断，狼王和白痴其次。顺序写死在这里，
      * 而不是直接遍历 [WerewolfRole.entries]——枚举的声明顺序是代码组织，不该决定文案顺序。
+     *
+     * 女巫和猎人原来不在这张表里，因为它们的 `rules` 是空的（机制只写进了本人 notes）。
+     * 现在补上了公共机制：别人要靠它解释「死了为什么没开枪」「昨夜为什么没人死」，
+     * 所以必须进这张表，否则 `rules()` 写了也不会被拼进板子说明。
      */
     private val RULE_ORDER = listOf(
         WerewolfRole.GUARD,
+        WerewolfRole.WITCH,
+        WerewolfRole.HUNTER,
         WerewolfRole.IDIOT,
         WerewolfRole.WEREWOLF_KING,
         WerewolfRole.BEAR,
@@ -477,24 +488,6 @@ object WerewolfPrompt {
                 }
             }
             .joinToString("、")
-
-    /**
-     * 自由模式的板子说明：只说人数、配比、有无警长，一句话结束。
-     *
-     * 规则细则（守卫怎么守、警长怎么竞选、白痴翻牌）全部不给。有意为之：
-     * 这些规则的标准玩法都在模型的训练数据里，自由模式的卖点就是
-     * 「不教它打，看它自己怎么打」——文案越少，模型自己的打法空间越大。
-     * 竞选流程也不写：局势段里「警长：暂无」本身就会把这件事暴露出来。
-     */
-    private fun freeBoardBrief(config: WerewolfConfig): String =
-        "【本局板子】" + compositionText(config) +
-            (if (config.hasSheriff) "；有警长。" else "；没有警长。") +
-            // 暗牌局是本局的硬规则事实，不是打法教学——自由模式也必须给。
-            // 砍掉它，模型就按标准局的先验「放逐翻牌认好人」编造死讯（真局翻车过）。
-            "\n\n" + darkCardBrief(config) +
-            // 守救同归同理：守卫+女巫同时在场才成立的硬规则，模型推不出来，
-            // 守卫 notes 里那句「守的人不会死」还和它直接矛盾。两种模式共用一份文案。
-            mutualProtectionBrief(config)
 
     // ---------------------------------------------------------------------
     // 基本打法

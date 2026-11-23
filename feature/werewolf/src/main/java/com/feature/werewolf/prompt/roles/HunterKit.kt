@@ -9,6 +9,14 @@ internal object HunterKit : RoleKit {
 
     override val roles = setOf(WerewolfRole.HUNTER)
 
+    // 公共机制：**别人**要靠它解释「他死了为什么没开枪」。
+    // 只写在猎人自己的 notes 里，其他人就会把「被毒死没开枪」判成「这人是狼在装猎人」，
+    // 或者反过来相信一个假的猎人。
+    override fun rules(role: WerewolfRole): List<String> = listOf(
+        "猎人被狼人杀死或被投票放逐时可以开枪带走一个人；被女巫毒死时不能开枪。" +
+            "这一枪在出局结算前打出，可能直接改写胜负。",
+    )
+
     override fun notes(game: WerewolfGame, seat: Int): List<String> = listOf(
         "你是猎人：被狼人杀死或被投票放逐时可以开枪带走一个人；如果是被女巫毒死的，不能开枪。"
     )

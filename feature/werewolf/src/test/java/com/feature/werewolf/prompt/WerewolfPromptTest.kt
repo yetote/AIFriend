@@ -1258,7 +1258,12 @@ class WerewolfPromptTest {
     }
 
     @Test
-    fun `自由式只给板子配比，规则说明整段不给`() {
+    fun `自由式照样给规则与身份机制，只砍打法`() {
+        // 曾经这一档只给「人数 + 配比 + 有无警长」，理由是规则都在模型训练数据里。
+        // 实测打不住：本局有几条不是标准局先验（屠边、警长 1.5 票、守救同归、
+        // 自爆当晚仍定刀），模型按网上的记忆推，结论整个是错的；更常见的是它压根
+        // 不知道别人那张牌能干什么，白天一本正经把规则说错。
+        // 现在口径：**规则是事实，照给；打法才是答案，砍掉。**
         val game = standardGame()
         val good = WerewolfPrompt.systemPrompt(game, seat = 3, style = WerewolfPromptStyle.FREE)
         val wolf = WerewolfPrompt.systemPrompt(game, seat = 1, style = WerewolfPromptStyle.FREE)
@@ -1272,16 +1277,80 @@ class WerewolfPromptTest {
         // 保密底线（狼队内部的事不出白天）是硬规则，自由式照给
         assertTrue("保密底线还在", wolf.contains("不许出现「队友」"))
 
-        // 自由式的板子只剩一行：人数 + 配比 + 有无警长
-        assertTrue("配比还在", good.contains("8 人局：2 狼人、预言家、女巫、猎人、3 平民；没有警长。"))
-        // 规则细则整段不给：胜负、遗言、自爆……全靠模型自己按标准局理解
-        assertFalse("自由式不给规则说明", good.contains("【胜负规则】"))
-        assertFalse("自由式不给警长竞选流程", good.contains("竞选"))
-        assertFalse("自由式不给遗言规则", good.contains("【遗言】"))
-        // 但暗牌局是硬规则事实，不是打法教学：不给，模型就按标准局的先验
-        // 编造「放逐翻出好人」——真局翻车过（af0a3a4 修过，自由模式砍规则时误伤）。
-        assertTrue("自由式也必须给暗牌局规则", good.contains("暗牌局"))
-        assertTrue("自由式也要断掉翻牌谣言", good.contains("不是事实"))
+        assertTrue("配比还在", good.contains("8 人局：2 狼人、预言家、女巫、猎人、3 平民"))
+        // 全局规则：胜负、绑票、平票、遗言、自爆、暗牌
+        assertTrue("胜负规则要给", good.contains("【胜负规则】"))
+        assertTrue("绑票要给", good.contains("【绑票】"))
+        assertTrue("平票怎么处理要给", good.contains("【白天投票】"))
+        assertTrue("遗言规则要给", good.contains("【遗言】"))
+        assertTrue("自爆机制要给", good.contains("【自爆】"))
+        assertTrue("要让狼知道自爆当晚仍定刀", wolf.contains("当晚仍在狼队里"))
+        assertTrue("暗牌局要给", good.contains("暗牌局"))
+        assertTrue("要断掉翻牌谣言", good.contains("不是事实"))
+        // 身份技能与限制：**别人也要知道**，否则解释不了场上的事
+        assertTrue("猎人的枪要给", good.contains("猎人被狼人杀死或被投票放逐时可以开枪"))
+        assertTrue("猎人枪的毒例外要给", good.contains("被女巫毒死时不能开枪"))
+        assertTrue("女巫的药要给", good.contains("一瓶解药和一瓶毒药"))
+        assertTrue("女巫同夜不能双药要给", good.contains("同一夜不能同时用两瓶药"))
+
+        // 打法仍然一句不给
+        assertFalse("不给基本打法整段", good.contains("【基本打法】"))
+        assertFalse("不给读人框架", good.contains("怎么从发言读人"))
+        assertFalse("不给身份作业", good.contains("你的白天发言只有三件任务"))
+        assertFalse("不给狼队战术菜单", wolf.contains("【狼队打法】"))
+        assertFalse("不给刀法分析", wolf.contains("撞守"))
+        assertFalse("不给屠边账", wolf.contains("屠边账"))
+    }
+
+    @Test
+    fun `自由式的狼王板子要给枪的完整限制`() {
+        // 狼王最容易错的两条：被票出能开枪（回合内也算）、被毒不能开枪。
+        // 只有 rules 层写着，自由式曾整段拿不到——它会把「被毒死没开枪」当成别人在装。
+        val kingGame = WerewolfGame.withRoles(
+            config = WerewolfConfig(
+                composition = mapOf(
+                    WerewolfRole.WEREWOLF to 1,
+                    WerewolfRole.WEREWOLF_KING to 1,
+                    WerewolfRole.SEER to 1,
+                    WerewolfRole.WITCH to 1,
+                    WerewolfRole.HUNTER to 1,
+                    WerewolfRole.VILLAGER to 3,
+                ),
+                winRule = WinRule.SLAY_SIDE,
+                hasSheriff = false,
+            ),
+            roster = roster(8),
+            roles = listOf(
+                WerewolfRole.WEREWOLF,
+                WerewolfRole.WEREWOLF_KING,
+                WerewolfRole.SEER,
+                WerewolfRole.WITCH,
+                WerewolfRole.HUNTER,
+                WerewolfRole.VILLAGER,
+                WerewolfRole.VILLAGER,
+                WerewolfRole.VILLAGER,
+            ),
+        )
+        val free = WerewolfPrompt.systemPrompt(kingGame, seat = 6, style = WerewolfPromptStyle.FREE)
+
+        assertTrue("被票出能开枪", free.contains("被投票放逐时可以开枪"))
+        assertTrue("被毒不能开枪", free.contains("被毒死或被猎人带走时不能开枪"))
+    }
+
+    @Test
+    fun `特殊身份的机制进公共板子说明`() {
+        // 白痴、熊、狼王的机制都只在各自 kit 的 rules 里。自由式砍掉 boardBrief 时
+        // 它们一起消失，于是场上没人知道「被票翻牌不死、此后没投票权」「熊为什么咆哮」。
+        val fool = WerewolfPrompt.boardBrief(WerewolfBoards.configOf(WerewolfBoards.FOOL_12))
+        assertTrue("白痴翻牌机制", fool.contains("白痴被投票放逐时翻开身份"))
+        assertTrue("翻牌后失去投票权", fool.contains("不能再投票"))
+
+        val bear = WerewolfPrompt.boardBrief(WerewolfBoards.configOf(WerewolfBoards.BEAR_12))
+        assertTrue("熊咆哮机制", bear.contains("熊是好人神职"))
+        assertTrue("熊死了不咆哮", bear.contains("熊死了也不会咆哮"))
+
+        val guard = WerewolfPrompt.boardBrief(WerewolfBoards.configOf(WerewolfBoards.GUARD_10))
+        assertTrue("守卫不能连守", guard.contains("不能连续两夜守同一个人"))
     }
 
     @Test
