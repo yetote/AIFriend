@@ -895,9 +895,11 @@ class WerewolfPromptTest {
 
         val discussTask = WerewolfPrompt.task(game.copy(phase = Phase.DAY_DISCUSSION), seat = 6)
         assertTrue(discussTask.contains("轮到你发言"))
+        assertTrue("发言结尾要交代这一票给谁", discussTask.contains("我这一票投"))
 
         val voteTask = WerewolfPrompt.task(game.copy(phase = Phase.DAY_VOTE), seat = 6)
         assertTrue(voteTask.contains("投票"))
+        assertTrue("弃票不是随手可用的出口", voteTask.contains("弃票也是一张票"))
 
         val hunterTask = WerewolfPrompt.task(game.copy(phase = Phase.HUNTER_SHOOT), seat = 5)
         assertTrue(hunterTask.contains("可以开枪"))

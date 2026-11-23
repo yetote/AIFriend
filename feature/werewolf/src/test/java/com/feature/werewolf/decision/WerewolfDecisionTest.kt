@@ -201,6 +201,19 @@ class WerewolfDecisionTest {
     }
 
     @Test
+    fun `投票指令要求真投，并要求与发言一致`() {
+        // 这两句是「AI 不会玩」的重要来源：旧指令把「不想投任何人就填 null」
+        // 摆在最显眼的位置，模型拿不准就弃票，一天下来没人出局。
+        val g = game().copy(phase = Phase.DAY_VOTE, voteCandidates = listOf(1, 6, 7))
+        val text = WerewolfDecisions.vote(g, candidates = listOf(1, 6, 7)).instruction
+
+        assertTrue("必须投出去", text.contains("这一票必须投出去"))
+        assertTrue("弃票要有前提", text.contains("确认的好人"))
+        assertTrue("不能发言说 A 投票投 B", text.contains("票要和你今天说过的话一致"))
+        assertTrue("理由要有依据", text.contains("别只写「感觉」「像狼」"))
+    }
+
+    @Test
     fun `猎人可以选择不开枪`() {
         val spec = WerewolfDecisions.hunterShoot(game())
         assertTrue(spec.validate(VoteChoice(target = null)))

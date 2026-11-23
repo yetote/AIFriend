@@ -230,8 +230,13 @@ object WerewolfDecisions {
         val valid = candidates.filter { it in game.votingSeats }
         return StructuredSpec(
             instruction = "输出 {\"target\": 座位号或 null, \"reason\": \"一句话理由\"}。" +
-                "target 是你要投的人，只能从 ${list(valid)} 中选；不想投任何人就填 null。" +
-                INNER_REASON_HINT,
+                "target 是你要投的人，只能从 ${list(valid)} 中选。**这一票必须投出去**：" +
+                "弃票只有在名单里全是你已经确认的好人（自己验出来的金水、公开认下的好人）时才成立，" +
+                "「拿不准」「不想得罪人」「再看看」都不是弃票的理由——好人常常是被自己的弃票输掉的。" +
+                "**票要和你今天说过的话一致**：你在发言里说怀疑谁，就投谁；" +
+                "说了 A 却投 B，在场上等于当众承认自己在打哑谜。" +
+                "reason 是心里的依据（没人听见）：一句话点出你凭什么怀疑他——" +
+                "他的哪句话前后对不上、哪张票反常，别只写「感觉」「像狼」。",
             serializer = VoteChoice.serializer(),
             validate = { it.target == null || it.target in valid },
         )
