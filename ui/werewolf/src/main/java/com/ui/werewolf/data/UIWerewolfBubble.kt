@@ -31,6 +31,16 @@ enum class UIWerewolfBubbleKind(val label: String) {
     /** 内心活动（只有本人知道的心思）。 */
     INNER("内心"),
 
+    /**
+     * 预言家的查验结论。
+     *
+     * 单独一个色相：它不是「心里话」，是**情报**——预言家唯一的价值所在。
+     * 跟内心活动（灰蓝）共用排版会被当成闲话划过去。
+     * 用青绿：跟记票的青蓝（偏蓝）、投票的琥珀、密谈的紫都拉得开，
+     * 也不带「红=狼 / 绿=好人」的暗示，免得玩家把气泡颜色当成验人结论。
+     */
+    SEER_RESULT("查验"),
+
     /** 模型的思考过程（复盘才有）。 */
     THOUGHT("思考"),
 }
@@ -87,6 +97,10 @@ fun tableBubbleStyle(kind: UIWerewolfBubbleKind, night: Boolean): UIWerewolfBubb
         UIWerewolfBubbleKind.INNER ->
             if (night) Color(0x1F8C9BB5) else Color(0x157C8CA8)
 
+        // 查验结论：青绿。情报色，和记票的青蓝差一个色相（那边偏蓝）
+        UIWerewolfBubbleKind.SEER_RESULT ->
+            if (night) Color(0x1F2BB3A3) else Color(0x1520A396)
+
         // 思考：靛蓝。和密谈的紫拉开，否则两团紫会混
         UIWerewolfBubbleKind.THOUGHT ->
             if (night) Color(0x24808CFF) else Color(0x17808CFF)
@@ -106,6 +120,9 @@ fun tableBubbleStyle(kind: UIWerewolfBubbleKind, night: Boolean): UIWerewolfBubb
             if (night) Color(0x4D9A7CFF) else Color(0x337A5AF7)
         UIWerewolfBubbleKind.INNER ->
             if (night) Color(0x1AFFFFFF) else Color(0x141B2230)
+        // 查验结论：描边要比内心重一档——它是结论，不是念头
+        UIWerewolfBubbleKind.SEER_RESULT ->
+            if (night) Color(0x4D2FB3A3) else Color(0x3320A396)
         UIWerewolfBubbleKind.THOUGHT ->
             if (night) Color(0x4DA0AAFF) else Color(0x33808CFF)
         // 播报不画框
@@ -156,6 +173,13 @@ fun bubbleStyle(kind: UIWerewolfBubbleKind, night: Boolean): UIWerewolfBubbleSty
             UIWerewolfBubbleStyle(Color(0x0DFFFFFF), Color(0x14FFFFFF), Color(0x66FFFFFF), "内心")
         } else {
             UIWerewolfBubbleStyle(Color(0x0A1B2230), Color(0x141B2230), Color(0x667C8496), "内心")
+        }
+
+        // 查验结论：青绿。正文用正常字号和强调色——它是这局最该被看清的一条私信
+        UIWerewolfBubbleKind.SEER_RESULT -> if (night) {
+            UIWerewolfBubbleStyle(Color(0x1F2BB3A3), Color(0x4D2FB3A3), Color(0xFF5FD9C6), "查验")
+        } else {
+            UIWerewolfBubbleStyle(Color(0x1520A396), Color(0x3320A396), Color(0xFF1E8C7F), "查验")
         }
 
         // 思考过程：虚线框 + 极淡底。虚线是「这不是他说出口的话」的视觉信号

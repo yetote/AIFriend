@@ -351,6 +351,14 @@ internal fun LineRow(
             dimColor = dimColor
         )
 
+        // 查验结论：预言家唯一的价值所在，做成「结论卡」而不是一行心里话
+        UIWerewolfLineKind.SEER_RESULT -> SeerResultRow(
+            line = line,
+            night = night,
+            textColor = textColor,
+            dimColor = dimColor
+        )
+
         UIWerewolfLineKind.PRIVATE -> PrivateRow(
             line = line,
             night = night,
@@ -459,6 +467,60 @@ internal fun InnerRow(
             baseSize = FsName,
             baseLineHeight = 18.sp,
             color = dimColor,
+        )
+    }
+}
+
+/**
+ * 预言家的查验结论。
+ *
+ * 单独一档排版，因为它是**这局分量最重的一条私信**：
+ * 预言家白天要拿它去带票、去跟人对账，做成灰色小字就等于把它埋了。
+ *
+ * 所以给它正常字号 + 强调色 + 一句「仅你可见」。
+ * 「仅你可见」不是装饰：这条消息只有预言家本人收得到，
+ * 但观战视角看到的是同一条记录——那不是「仅你可见」，是上帝视角。
+ */
+@Composable
+internal fun SeerResultRow(
+    line: UIWerewolfLine,
+    night: Boolean,
+    textColor: Color,
+    dimColor: Color,
+) {
+    val style = tableBubbleStyle(UIWerewolfBubbleKind.SEER_RESULT, night)
+    UIWerewolfBubble(
+        style = style,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 8.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            BubbleTag(text = style.tag, accent = style.accent)
+            val who = listOfNotNull(line.seat?.let { "$it 号" }, line.speaker)
+                .joinToString(" ")
+            if (who.isNotBlank()) {
+                Text(
+                    text = " · $who",
+                    fontSize = FsMeta,
+                    color = dimColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Spacer(Modifier.weight(1f))
+            Text(
+                text = if (line.secret) "仅你可见" else "上帝视角",
+                fontSize = FsMeta,
+                color = dimColor.copy(alpha = 0.6f)
+            )
+        }
+        UIMarkdownText(
+            text = line.text,
+            modifier = Modifier.padding(top = 3.dp),
+            baseSize = 13.5.sp,
+            baseLineHeight = 20.sp,
+            color = textColor.copy(alpha = 0.95f),
         )
     }
 }

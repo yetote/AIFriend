@@ -198,6 +198,15 @@ fun UIWerewolfTableScreen(
                 dimColor = dimColor
             )
 
+            // 预言家的验人本：常驻在自己身份条下面，白天报验人时一眼就有。
+            // 别的身份这一条是空的，界面上什么都不会多出来。
+            SeerCheckBar(
+                live = live,
+                night = night,
+                textColor = textColor,
+                dimColor = dimColor
+            )
+
             // 开着思考就是作弊：这一条必须一直挂在桌上，不能只在点开那一下闪一句。
             // 人一旦看惯了别人的心里话，会忘记自己手里的信息比 AI 还多。
             if (live.showThinking && !live.spectating && live.running) {

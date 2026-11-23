@@ -1,6 +1,16 @@
 package com.ui.werewolf.data
 
 /**
+ * 一次查验：被验的座位 + 结论。
+ *
+ * 只给**预言家本人**。它是私有信息，别人的牌桌上拿不到。
+ */
+data class UIWerewolfCheck(
+    val seat: Int,
+    val isWerewolf: Boolean,
+)
+
+/**
  * 牌桌上一枚座位的实时状态。
  *
  * 这里面**没有**「是不是狼」之外的任何私有信息：谁是什么身份由 [roleLabel] 决定，
@@ -99,6 +109,17 @@ enum class UIWerewolfLineKind {
      * 票是会被当场执行、并且改写局面的动作，念头的分量比它轻得多。
      */
     VOTE,
+
+    /**
+     * 预言家的查验结论：被验的人是狼还是好人。
+     *
+     * 这条**不能**跟 [INNER] 共用排版。内心活动是「他自己的一点念头」，
+     * 压暗一点没毛病；查验结论是预言家唯一的价值所在——他白天要拿它去带票、
+     * 去对账。做成灰色小字，玩家多半会当成一句闲话划过去。
+     *
+     * 所以它单独一档：正常字号 + 强调色 + 「仅你可见」。
+     */
+    SEER_RESULT,
 
     /** 只有这个视角看得见的话（狼人夜聊）。 */
     PRIVATE,
@@ -302,6 +323,16 @@ data class UIWerewolfLive(
     val selfRoleLabel: String? = null,
     /** 你的阵营，例如「好人」。 */
     val selfFactionLabel: String? = null,
+    /**
+     * **你的验人本**：你验过的每一个人和结论。
+     *
+     * 只有预言家本人拿得到（映射层只在本人身份是预言家时才给），别人牌桌上是空的。
+     *
+     * 为什么要有这一份：夜里那条「查验 3 号：狼人」留在记录流里，
+     * 可到了第 3 天记录流几十条，要回看第 1 天验的人得一路往上翻。
+     * 预言家白天报验人、对账，全靠这张小本子——它是这个身份最趁手的东西。
+     */
+    val selfChecks: List<UIWerewolfCheck> = emptyList(),
     /** 纯观战：看的是上帝视角，别人的身份和狼人夜聊都可见。 */
     val spectating: Boolean = false,
     /** 轮到你时的操作面板。null 表示现在不归你。 */

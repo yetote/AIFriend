@@ -62,3 +62,11 @@ internal val VoteRed = Color(0xFFE0564F)
 
 /** 警徽的金色。和票数的红、自己的蓝都拉开，扫一眼不会认错。 */
 internal val SheriffGold = Color(0xFFC79A2E)
+
+/**
+ * 查验结论的青绿。和记票的青蓝（偏蓝）、投票的琥珀、密谈的紫都拉得开。
+ *
+ * 刻意不用红绿：狼人杀里「红 = 狼」已经是约定，气泡用红绿会让人
+ * 把气泡颜色当成验人结论本身。
+ */
+internal val SeerTeal = Color(0xFF1E8C7F)

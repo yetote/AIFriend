@@ -56,6 +56,55 @@ import com.ui.werewolf.data.UIWerewolfReplay
 /** 发言正文。整页最该被读的东西，字号也最大。 */
 
 /**
+ * 预言家的验人本。
+ *
+ * 夜里那条「查验 3 号：狼人」留在记录流里，可到了第三天记录流几十条，
+ * 要回看第一晚验的人得一路往上翻。预言家白天报验人、对账，全靠这一行——
+ * 它是这个身份最趁手的东西，所以常驻在身份条下面，不藏进任何菜单。
+ *
+ * 只有**预言家本人**看得到（映射层只在他自己是预言家时才给这份数据），
+ * 所以这里不需要再判视角。
+ */
+@Composable
+internal fun SeerCheckBar(
+    live: UIWerewolfLive,
+    night: Boolean,
+    textColor: Color,
+    dimColor: Color,
+) {
+    val checks = live.selfChecks
+    if (checks.isEmpty()) return
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp)
+            .padding(bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Tag(text = "验人本", night = night, color = SeerTeal)
+        checks.forEach { check ->
+            Text(
+                text = "${check.seat}号",
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(if (night) NightStroke else UIFieldFill)
+                    .padding(horizontal = 8.dp, vertical = 2.dp),
+                fontSize = FsMeta,
+                fontWeight = FontWeight.SemiBold,
+                color = if (check.isWerewolf) VoteRed else SeerTeal,
+            )
+            Text(
+                text = if (check.isWerewolf) "狼" else "好人",
+                fontSize = FsMeta,
+                color = dimColor,
+            )
+        }
+    }
+}
+
+/**
  * 自绘顶栏而不是用 `UITopBar`：全局那个组件写死了浅色文字，夜里会直接看不见。
  * 为了一个页面去改公共组件不划算，也不该让公共组件背上主题分支。
  */
