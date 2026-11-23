@@ -43,8 +43,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.input.pointer.pointerInput
 import com.ui.werewolf.data.UITokenUsage
-import com.ui.werewolf.data.UIWerewolfBubbleKind
-import com.ui.werewolf.data.tableBubbleStyle
 import kotlinx.coroutines.delay
 
 // ---------------------------------------------------------------------------
@@ -209,13 +207,10 @@ internal fun ThinkingBubble(
     // 既难看又挤地方的问题自然被预算挡住了。
     val lines = remember(reasoning) { ThinkingTail.lines(reasoning) }
 
-    // 牌桌背景是插画，底色半透明才像浮在桌上；又不能和密谈的紫撞——
-    // 思考用靛蓝，描边和尖角保持紫（那一整套紫气是「这是心里想的」的记号）。
-    //
-    // 不透明度比列表里的气泡高：这个框里是成段的推理，底下还有座位和山影，
-    // 太透会把字吃掉。仍然是半透明的，只是压得住背景。
-    val fill = tableBubbleStyle(UIWerewolfBubbleKind.THOUGHT, night).fill
-        .copy(alpha = if (night) 0.42f else 0.34f)
+    // 思考气泡不透底：框里是成段推理，背后就是座位和山影，
+    // 半透明会把字吃掉，还显得脏。牌桌其他气泡透出去是为了「浮在桌上」，
+    // 这一个的职责是「读得清」，两码事。
+    val fill = if (night) Color(0xFF221D2E) else Color(0xFFFFFEFB)
     val border = if (night) Color(0x4DA894FF) else Color(0x336B4BD9)
     val textColor = if (night) Color(0xFFE6EAF3) else Color(0xFF3A4152)
 
