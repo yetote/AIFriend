@@ -891,7 +891,19 @@ class WerewolfDirector(
         )
     }
 
-    /** 开枪。此时猎人或狼王已经出局，开枪宣言所有人都能看到。 */
+    /**
+     * 开枪。**只有结果公开，理由是心里话。**
+     *
+     * 线下猎人是「砰」一声加一句「我带走 3 号」，不会站那儿先讲一段推理再动手——
+     * 枪口对着谁本身就是全部信息，把「为什么认定他是狼」说出来，等于把剩下几只狼
+     * 明天的藏身处白送出去。所以：
+     *
+     * - 结果走 [MessageKind.SPEECH]：全场可见，会被朗读，也进别人的上下文；
+     * - 理由走 [MessageKind.NIGHT_ACT] 且 `audience` 只给自己：牌桌上不念、不进别人的
+     *   上下文，只有上帝视角（观战 / 复盘）摊得开。
+     *
+     * 顺序是「先念头、后枪响」，和夜里查验、用药一致。
+     */
     suspend fun hunterShoot(table: WerewolfTable): WerewolfTable {
         val game = table.game
         if (game.phase != Phase.HUNTER_SHOOT) return table
@@ -901,16 +913,38 @@ class WerewolfDirector(
         val outcome = askHunter(table, hunterSeat)
         val target = outcome.value.target
         val next = game.hunterShoot(target)
+        val reason = outcome.value.reason.trim()
         return table
+            .let { before ->
+                if (reason.isEmpty()) {
+                    before
+                } else {
+                    before.append(
+                        WerewolfMessage(
+                            day = game.day,
+                            phase = Phase.HUNTER_SHOOT,
+                            seat = hunterSeat,
+                            kind = MessageKind.NIGHT_ACT,
+                            text = reason,
+                            // 只有枪手自己看得到。观战（humanSeat==null）不过滤，
+                            // 复盘要开上帝视角才摊开——和投票理由同一套口径。
+                            audience = setOf(hunterSeat),
+                        )
+                    )
+                }
+            }
             .append(
                 WerewolfMessage(
                     day = game.day,
                     phase = Phase.HUNTER_SHOOT,
                     seat = hunterSeat,
                     kind = MessageKind.SPEECH,
-                    text = if (target == null) "我不开枪。" + outcome.value.reason
-                    else "我开枪带走 $target 号。" + outcome.value.reason,
+                    text = if (target == null) "我不开枪。" else "我开枪带走 $target 号。",
                     usage = outcome.usage,
+                    // 思考过程和这次调用记在公开那条上：它本来就不进别人的上下文
+                    // （只有复盘摊得开），而按消息汇总 token 时不会因为公开视角
+                    // 看不到上面那条内心而漏掉这一次调用。
+                    reasoning = outcome.reasoning,
                 )
             )
             .let { it.copy(game = next).syncPublicEvents(game) }

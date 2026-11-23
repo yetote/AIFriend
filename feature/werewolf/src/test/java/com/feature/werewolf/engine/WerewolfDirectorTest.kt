@@ -626,6 +626,74 @@ class WerewolfDirectorTest {
         }
     }
 
+    // ------------------------------------------------------------------
+    // 开枪：结果公开，理由是心里话
+    // ------------------------------------------------------------------
+
+    /** 5 人局票出 3 号猎人，停在开枪阶段。 */
+    private fun atHunterShoot(): WerewolfGame {
+        val roles = listOf(
+            WerewolfRole.WEREWOLF,
+            WerewolfRole.WEREWOLF,
+            WerewolfRole.HUNTER,
+            WerewolfRole.SEER,
+            WerewolfRole.VILLAGER,
+        )
+        val start = WerewolfGame.withRoles(
+            config = WerewolfConfig(composition = roles.groupingBy { it }.eachCount()),
+            roster = roster(5),
+            roles = roles,
+        ).copy(phase = Phase.DAY_VOTE)
+        val exiled = start.castVotes(start.aliveSeats.associateWith { 3 })
+        val shooting = exiled.finishLastWords()
+        assertEquals(Phase.HUNTER_SHOOT, shooting.phase)
+        return shooting
+    }
+
+    @Test
+    fun `猎人开枪只公开结果，理由是心里话`() = runBlocking {
+        val hunter = ScriptedAI(
+            listOf("""{"target": 1, "reason": "1 号两次把警徽流说反了，这枪给他。"}""")
+        )
+        val director = WerewolfDirector(agentsOf(3 to hunter))
+
+        val result = director.hunterShoot(WerewolfTable(atHunterShoot()))
+
+        // 枪响是全场的事：一句「我带走 X 号」，会被朗读，也进所有人的上下文
+        val shout = result.transcript.single {
+            it.phase == Phase.HUNTER_SHOOT && it.kind == MessageKind.SPEECH
+        }
+        assertEquals("我开枪带走 1 号。", shout.text)
+        assertTrue("枪响全场可见", shout.isPublic)
+        assertTrue("枪响要朗读", shout.kind.isSpokenOutLoud)
+
+        // 理由不是：牌桌上没人听见，别人也拿不到，复盘要开上帝视角才看得到。
+        // 这一段真说出去等于把「他靠什么认定我是狼」白送给还活着的狼。
+        val thought = result.transcript.single {
+            it.phase == Phase.HUNTER_SHOOT && it.kind == MessageKind.NIGHT_ACT
+        }
+        assertFalse("理由不能进公开那条", shout.text.contains("警徽流"))
+        assertFalse("理由不是全员可见", thought.isPublic)
+        assertTrue("理由算内心活动", thought.kind.isInnerThought)
+        assertTrue("理由永不朗读", thought.kind.neverSpoken)
+        assertTrue("枪手自己看得到", thought.visibleTo(3))
+        assertFalse("别人看不到", thought.visibleTo(1))
+    }
+
+    @Test
+    fun `开枪的思考过程不进别人的上下文`() = runBlocking {
+        val hunter = ScriptedAI(listOf("""{"target": 1, "reason": "我觉得 1 号是狼。"}"""))
+        val director = WerewolfDirector(agentsOf(3 to hunter))
+
+        val result = director.hunterShoot(WerewolfTable(atHunterShoot()))
+
+        // 整局里别人能看到的消息中，不该出现任何解释这一枪的文字
+        listOf(1, 4, 5).forEach { seat ->
+            val seen = result.transcriptFor(seat).joinToString("\n") { it.text }
+            assertFalse("$seat 号不该看到开枪理由", seen.contains("我觉得 1 号是狼"))
+        }
+    }
+
     @Test
     fun `放逐投票结束后留下公开唱票卡，但不朗读也不泄理由`() = runBlocking {
         val ais = (1..9).associateWith { _ -> AutoAI() as IAI }

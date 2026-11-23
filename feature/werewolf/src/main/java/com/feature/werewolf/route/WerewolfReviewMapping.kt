@@ -205,7 +205,9 @@ internal fun WerewolfUiState.toReview(
                 MessageKind.SPEECH -> "发言"
                 MessageKind.VOTE -> "投票"
                 MessageKind.WOLF_CHAT -> "狼人夜聊"
-                MessageKind.NIGHT_ACT -> "夜间行动"
+                // 开枪发生在白天，但它和夜里的念头一样是心理活动，
+                // 标成「夜间行动」会让人以为那是昨晚的事
+                MessageKind.NIGHT_ACT -> if (message.phase == Phase.HUNTER_SHOOT) "开枪" else "夜间行动"
                 MessageKind.DIVINE -> "播报"
                 MessageKind.BALLOT -> "唱票"
             },

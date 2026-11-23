@@ -301,7 +301,7 @@ internal fun lineKindOf(kind: MessageKind): UIWerewolfLineKind = when (kind) {
 }
 
 /**
- * 内心活动的小标签：投票、守人、查验、用药。
+ * 内心活动的小标签：投票、守人、查验、用药、开枪。
  *
  * 只写「内心」的话，一夜里的几条记录看起来像同一件事说了好几遍，
  * 玩家要靠点开上下文才知道刚才那是在守人还是在查验。
@@ -313,6 +313,9 @@ internal fun innerLabelOf(message: com.feature.werewolf.engine.WerewolfMessage):
             Phase.NIGHT_GUARD -> "守人"
             Phase.NIGHT_SEER -> "查验"
             Phase.NIGHT_WITCH -> "用药"
+            // 开枪是白天的事，但「为什么打这一枪」跟夜里那些念头同类：
+            // 枪响公开、理由不公开
+            Phase.HUNTER_SHOOT -> "开枪"
             else -> "念头"
         }
         else -> null

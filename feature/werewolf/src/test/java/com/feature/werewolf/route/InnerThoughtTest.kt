@@ -74,11 +74,14 @@ class InnerThoughtTest {
         val seer = guard.copy(phase = Phase.NIGHT_SEER, text = "我查 7 号。")
         val witch = guard.copy(phase = Phase.NIGHT_WITCH, text = "我用解药。")
         val vote = guard.copy(phase = Phase.DAY_VOTE, kind = MessageKind.VOTE, text = "我投 3 号。")
+        // 开枪：枪响公开，但「为什么打这一枪」跟夜里那些念头是同一类
+        val shoot = guard.copy(phase = Phase.HUNTER_SHOOT, text = "1 号把警徽流说反了。")
 
         assertEquals("守人", innerLabelOf(guard))
         assertEquals("查验", innerLabelOf(seer))
         assertEquals("用药", innerLabelOf(witch))
         assertEquals("投票", innerLabelOf(vote))
+        assertEquals("开枪", innerLabelOf(shoot))
         // 说出口的话不该挂内心标签
         assertNull(innerLabelOf(vote.copy(kind = MessageKind.SPEECH)))
     }
