@@ -24,6 +24,7 @@ import com.feature.werewolf.engine.SeatTiming
 import com.feature.werewolf.engine.TurnKind
 import com.feature.werewolf.engine.WerewolfTable
 import com.feature.werewolf.engine.WerewolfUiState
+import com.feature.werewolf.game.SpeechDirection
 import com.feature.werewolf.game.WerewolfBoards
 import com.feature.werewolf.game.WerewolfPromptStyle
 import com.feature.werewolf.game.WerewolfRole
@@ -596,7 +597,10 @@ fun WerewolfRoute(
                     onVote = { viewModel.submitTarget(it) },
                     onSeat = { viewModel.submitSeat(it) },
                     onWitch = { heal, poison -> viewModel.submitWitch(heal, poison) },
-                    onDirection = { clockwise -> viewModel.submitDirection(clockwise) },
+                    // 界面枚举和 SpeechDirection 同名同序，按名字转过去就够，不必再写一遍映射
+                    onDirection = { direction ->
+                        viewModel.submitDirection(SpeechDirection.valueOf(direction.name))
+                    },
                     onReview = if (review != null) ({ showReview = true }) else null,
                     // 不传 onToggleSpeak：对局的朗读开关收进设置面板（「朗读发言」那一行），
                     // 顶栏不再放喇叭。面板的开关打开时同样会重试绑定引擎，恢复入口没丢。

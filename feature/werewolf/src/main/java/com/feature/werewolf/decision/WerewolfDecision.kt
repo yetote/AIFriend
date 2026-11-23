@@ -2,6 +2,7 @@ package com.feature.werewolf.decision
 
 import com.core.ai.structured.StructuredSpec
 import com.feature.werewolf.game.DeathCause
+import com.feature.werewolf.game.SpeechDirection
 import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfRole
 import kotlinx.serialization.Serializable
@@ -30,13 +31,14 @@ data class VoteChoice(
 )
 
 /**
- * 警长选发言方向。`clockwise` = 顺时针（从警长下一位起），false = 逆时针（从上一位倒着绕）。
+ * 警长选发言方向：警左 / 警右 / 死左 / 死右。
  *
- * 只有两个选项且都合法，`validate` 恒真；兜底选顺时针（老规则），宁可平淡也不赌。
+ * 用中文标签当值而不是布尔，是因为选项从两个变成四个了；[SpeechDirection.ofLabel]
+ * 认中文名，也认旧档里的「顺时针 / 逆时针」。兜底永远选警左，宁可平淡也不赌。
  */
 @Serializable
 data class DirectionChoice(
-    val clockwise: Boolean,
+    val direction: String = SpeechDirection.SHERIFF_LEFT.displayName,
     val reason: String = "",
 )
 
@@ -308,27 +310,40 @@ object WerewolfDecisions {
     }
 
     /**
-     * 警长选今天的发言方向。
+     * 警长选今天的发言顺序：警左 / 警右 / 死左 / 死右。
      *
-     * 把两头的「第一个发言的人」算给模型看——方向选择的战术意义全在
-     * 「谁先开口、谁挨着警长说话」，只给顺/逆两个字它只能瞎猜。
-     * 警长自己最后归票，两个方向都不变，instruction 里说明白，
-     * 免得模型以为选逆序就能让自己早说。
+     * 把每个选项的**第一个发言人**算给模型看——方向选择的战术意义全在
+     * 「谁先开口、谁挨着谁说话」，只给四个词它只能瞎猜。
+     * 警左 / 警右自己都是最后归票；死左 / 死右按死者的位置排，自己不一定垫底，
+     * 这两条差别也要写进去，否则模型会以为选死左等于让自己早说。
      *
-     * [free] 为 true 时不给「想帮可疑的人先说/可信的人定调」的策略举例。
+     * 平安夜没人倒牌，死左 / 死右直接不给：没有锚点，给了也排不出来。
+     *
+     * [free] 为 true 时不给「想帮可疑的人先说 / 可信的人定调」的策略举例。
      */
     fun speechDirection(game: WerewolfGame, seat: Int, free: Boolean = false): StructuredSpec<DirectionChoice> {
-        val alive = game.aliveSeats.sorted()
-        val clockwiseFirst = alive.firstOrNull { it > seat }
-        val counterFirst = alive.lastOrNull { it < seat } ?: alive.lastOrNull()
+        val dead = game.dawnDeadSeats
+        val options = SpeechDirection.options(hasDawnDeath = dead.isNotEmpty())
         return StructuredSpec(
             instruction = buildString {
-                append("输出 {\"clockwise\": true 或 false, \"reason\": \"一句话理由\"}。")
-                append("你是警长，现在决定今天白天的发言方向：")
-                append("clockwise=true 是顺时针，从 $clockwiseFirst 号开始按座位号递增绕一圈；")
-                append("clockwise=false 是逆时针，从 $counterFirst 号开始按座位号递减倒着绕一圈。")
-                append("两种方向你自己都是最后一个发言（归票位），")
-                append("选方向等于选「谁第一个开口、谁紧挨着你说话」。")
+                append("输出 {\"direction\": \"").append(options.joinToString("|") { it.displayName })
+                append("\", \"reason\": \"一句话理由\"}。")
+                append("你是警长，现在决定今天白天的发言顺序（左 = 座位号增大的方向，右 = 座位号减小的方向）：")
+                options.forEach { direction ->
+                    append("· ").append(direction.displayName).append("：")
+                    append("从 ").append(game.discussionOrderFor(direction).firstOrNull() ?: 0).append(" 号开始")
+                    if (direction.anchoredOnDeath) {
+                        append("（昨夜倒牌的是 ${list(dead)}，按座位号最小的算）")
+                    }
+                    append("；")
+                }
+                append("警左 / 警右都是你自己最后一个发言（归票位）")
+                // 平安夜没有死左 / 死右，这句话也得跟着消失：
+                // 只减选项、留着「死左死右按死者排」，模型会照着这句话硬选一个不存在的
+                if (options.any { it.anchoredOnDeath }) {
+                    append("；死左 / 死右按死者的位置排，你自己不一定垫底")
+                }
+                append("。")
                 if (!free) {
                     append("想想哪个方向对你今天的判断更有利：")
                     append("比如想让可疑的人先说、或者让可信的人先定调。")
@@ -336,7 +351,10 @@ object WerewolfDecisions {
                 append(INNER_REASON_HINT)
             },
             serializer = DirectionChoice.serializer(),
-            validate = { true },
+            validate = { choice ->
+                val picked = SpeechDirection.ofLabel(choice.direction)
+                picked != null && picked in options
+            },
         )
     }
 

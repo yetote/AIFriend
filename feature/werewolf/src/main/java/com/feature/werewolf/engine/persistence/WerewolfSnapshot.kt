@@ -78,6 +78,11 @@ object WerewolfSnapshot {
      *
      * v21：对局多出 `ghostWolves`（自爆出局、但当夜还没走的狼）。
      * 默认空集合，旧档读出来就是「那晚没有自爆狼」，行为不变。
+     *
+     * v22：对局多出 `sheriffElectionVoids`（竞选被自爆打断的次数），
+     * 事件多出 `SHERIFF_POSTPONED`（警徽顺延）。默认 0 / 读不到就是旧行为。
+     * 同一版里 `SPEECH_DIRECTION` 的取值从「顺时针 / 逆时针」换成
+     * 「警左 / 警右 / 死左 / 死右」——解码走 [SpeechDirection.ofLabel]，旧名字照样认。
      */
     const val VERSION = 22
 
@@ -704,7 +709,10 @@ private fun EventSnapshot.toEvent(): GameEvent = when (type) {
     "SPEECH_DIRECTION" -> GameEvent.SpeechDirectionChosen(
         day = day,
         seat = requireNotNull(seat) { "SPEECH_DIRECTION 缺少 seat" },
-        direction = enumOf<SpeechDirection>(requireNotNull(direction) { "SPEECH_DIRECTION 缺少 direction" }),
+        // 旧档写的是 CLOCKWISE / COUNTER_CLOCKWISE，ofLabel 把它们当警左 / 警右读回来
+        direction = requireNotNull(SpeechDirection.ofLabel(direction)) {
+            "SPEECH_DIRECTION 无法识别的方向：$direction"
+        },
     )
     "GAME_OVER" -> GameEvent.GameOver(
         day = day,

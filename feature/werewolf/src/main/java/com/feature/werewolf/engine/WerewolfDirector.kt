@@ -499,10 +499,11 @@ class WerewolfDirector(
     // ---------------------------------------------------------------------
     // 警长竞选
     /**
-     * 警长选今天的发言方向（顺 / 逆）。每天讨论开始前走一次，选完写公开事件。
+     * 警长选今天的发言顺序（警左 / 警右 / 死左 / 死右）。每天讨论开始前走一次，
+     * 选完写公开事件。
      *
      * 人类警长和 AI 警长走同一条 [ask] 通道——[HumanSeatAI] 会把请求推给界面，
-     * 牌桌上弹「顺 / 逆」两个按钮，选完提交，与 AI 的决策路径毫无区别。
+     * 牌桌上弹四个按钮，选完提交，与 AI 的决策路径毫无区别。
      */
     private suspend fun chooseSpeechDirection(table: WerewolfTable): WerewolfTable {
         val game = table.game
@@ -518,13 +519,13 @@ class WerewolfDirector(
             )
         )
         val outcome = askSpeechDirection(table, sheriff)
-        val direction = if (outcome.value.clockwise) {
-            SpeechDirection.CLOCKWISE
-        } else {
-            SpeechDirection.COUNTER_CLOCKWISE
-        }
+        // 模型偶尔会答一个今天不可选的（平安夜答死左），按警左兜底：
+        // 宁可平淡也不能让死左在没有死者的日子里排出一套怪顺序
+        val direction = SpeechDirection.ofLabel(outcome.value.direction)
+            ?.takeIf { !it.anchoredOnDeath || game.dawnDeadSeats.isNotEmpty() }
+            ?: SpeechDirection.SHERIFF_LEFT
         // 选方向是公开事件，syncPublicEvents 会照 history 里的新事件生成播报，
-        // 牌桌上所有人（和观战）都能看到「X 号选了顺时针」。
+        // 牌桌上所有人（和观战）都能看到「X 号选了警左」。
         val next = table.copy(game = table.game.setSpeechDirection(direction)).syncPublicEvents(game)
         onTranscript(next)
         return next
@@ -1118,7 +1119,7 @@ class WerewolfDirector(
         )
     }
 
-    /** 警长选发言方向。兜底顺时针（老规则），宁可平淡也不赌。 */
+    /** 警长选发言顺序。兜底警左（老规则），宁可平淡也不赌。 */
     private suspend fun askSpeechDirection(
         table: WerewolfTable,
         seat: Int,
@@ -1128,8 +1129,8 @@ class WerewolfDirector(
             table = table,
             seat = seat,
             spec = WerewolfDecisions.speechDirection(game, seat, free = promptStyle == WerewolfPromptStyle.FREE),
-            fallback = { DirectionChoice(clockwise = true, reason = "就按常规顺序来。") },
-            task = "请决定今天白天的发言方向。",
+            fallback = { DirectionChoice(reason = "就按常规顺序来。") },
+            task = "请决定今天白天的发言顺序。",
         )
     }
 

@@ -507,7 +507,7 @@ class WerewolfDirectorTest {
         // 4 号的前后邻居必须是确定的，否则算出来的上下位会飘
         val game = standard9()
             .copy(phase = Phase.DAY_DISCUSSION, sheriffSeat = 9)
-            .setSpeechDirection(SpeechDirection.CLOCKWISE)
+            .setSpeechDirection(SpeechDirection.SHERIFF_LEFT)
         val result = director.discussion(WerewolfTable(game))
 
         val speeches = result.transcript.filter { it.kind == MessageKind.SPEECH }
@@ -520,6 +520,37 @@ class WerewolfDirectorTest {
         val fourthCall = (ais[4] as AutoAI).calls.single()
         assertTrue(fourthCall.userText.contains("${order[pos - 1]} 号："))
         assertFalse("不能提前看到后面的人", fourthCall.userText.contains("${order[pos + 1]} 号："))
+    }
+
+    @Test
+    fun `警长可以选死左，发言从死者的下一位起`() = runBlocking {
+        val sheriff = ScriptedAI(listOf("""{"direction":"死左","reason":"从死者边上起，看谁先慌。"}"""))
+        val ais = (1..9).associateWith { seat -> if (seat == 2) sheriff as IAI else AutoAI() as IAI }
+        val director = WerewolfDirector(ais.mapValues { SeatAgent(it.value, "test-model") })
+
+        // 昨夜 5 号倒牌：死左 = 从 6 号起绕一圈，警长 2 号不再垫底
+        val base = standard9().copy(phase = Phase.DAY_DISCUSSION, sheriffSeat = 2)
+        val game = base.copy(
+            history = base.history + GameEvent.Dawn(base.day, listOf(5)),
+            players = base.players.map {
+                if (it.seat == 5) {
+                    it.copy(alive = false, deathCause = DeathCause.WOLF_KILL, deathDay = base.day)
+                } else {
+                    it
+                }
+            },
+        )
+
+        val result = director.discussion(WerewolfTable(game))
+
+        assertEquals(SpeechDirection.DEATH_LEFT, result.game.speechDirection)
+        assertEquals("从死者的下一位起", 6, result.game.discussionOrder.first())
+        assertEquals("顺序照这个方向走", game.discussionOrderFor(SpeechDirection.DEATH_LEFT),
+            result.transcript.filter { it.kind == MessageKind.SPEECH }.map { it.seat })
+        assertTrue(
+            "选方向要播报出来",
+            result.transcript.any { it.kind == MessageKind.DIVINE && it.text.contains("死左") },
+        )
     }
 
     @Test
@@ -1066,7 +1097,7 @@ class WerewolfDirectorTest {
             WerewolfTable(
                 standard9()
                     .copy(day = 1, phase = Phase.DAY_DISCUSSION, sheriffSeat = 9)
-                    .setSpeechDirection(SpeechDirection.CLOCKWISE)
+                    .setSpeechDirection(SpeechDirection.SHERIFF_LEFT)
             )
         )
 
@@ -1560,7 +1591,7 @@ class WerewolfDirectorTest {
             WerewolfTable(
                 standard9()
                     .copy(phase = Phase.DAY_DISCUSSION, sheriffSeat = 9)
-                    .setSpeechDirection(SpeechDirection.CLOCKWISE)
+                    .setSpeechDirection(SpeechDirection.SHERIFF_LEFT)
             )
         )
 

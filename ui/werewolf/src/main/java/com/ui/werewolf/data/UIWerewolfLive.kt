@@ -194,7 +194,7 @@ enum class UIWerewolfTurnKind {
     /** 女巫用药。 */
     WITCH,
 
-    /** 警长选发言方向（顺时针 / 逆时针），两个按钮，没有目标可选。 */
+    /** 警长选发言顺序（警左 / 警右 / 死左 / 死右），四个按钮，没有目标可选。 */
     DIRECTION,
 }
 
@@ -227,7 +227,30 @@ data class UIWerewolfTurn(
     val canPoison: Boolean = false,
     /** 女巫：今晚被刀的是谁（解药救的就是他）。 */
     val healTarget: String? = null,
+    /**
+     * 今天天亮有没有人倒牌。
+     *
+     * 警长选发言顺序时用来灰掉死左 / 死右：平安夜没有死者，这两个选项排不出来。
+     */
+    val hasDawnDeath: Boolean = false,
 )
+
+/**
+ * 警长能选的四种发言顺序。
+ *
+ * 名字和引擎的 `SpeechDirection` 一一对应（界面层不依赖 feature 模块，
+ * 接线时按名字转过去），改一边就要改另一边。
+ */
+enum class UIWerewolfDirection(val label: String) {
+    SHERIFF_LEFT("警左"),
+    SHERIFF_RIGHT("警右"),
+    DEATH_LEFT("死左"),
+    DEATH_RIGHT("死右");
+
+    /** 锚在昨夜死者身上，平安夜不可选。 */
+    val anchoredOnDeath: Boolean
+        get() = this == DEATH_LEFT || this == DEATH_RIGHT
+}
 
 /**
  * 对局进行中的一份快照。

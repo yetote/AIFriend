@@ -1,5 +1,7 @@
 package com.feature.werewolf.decision
 
+import com.feature.werewolf.game.DeathCause
+import com.feature.werewolf.game.GameEvent
 import com.feature.werewolf.game.Phase
 import com.feature.werewolf.game.RosterEntry
 import com.feature.werewolf.game.WerewolfConfig
@@ -38,6 +40,18 @@ class WerewolfDecisionTest {
             WerewolfRole.VILLAGER,
             WerewolfRole.VILLAGER,
         ),
+    )
+
+    /** 造一个「今天天亮有人倒牌」的局面：补 Dawn 事件，并把那几个人标成出局。 */
+    private fun withDead(game: WerewolfGame, vararg seats: Int): WerewolfGame = game.copy(
+        history = game.history + GameEvent.Dawn(game.day, seats.toList()),
+        players = game.players.map {
+            if (it.seat in seats) {
+                it.copy(alive = false, deathCause = DeathCause.WOLF_KILL, deathDay = game.day)
+            } else {
+                it
+            }
+        },
     )
 
     // ------------------------------------------------------------------
@@ -239,5 +253,33 @@ class WerewolfDecisionTest {
     fun `候选为空时兜底返回 null 而不是抛异常`() {
         assertNull(WerewolfDecisions.pick(emptyList<Int>(), Random(1)))
         assertEquals(3, WerewolfDecisions.pick(listOf(3), Random(1)))
+    }
+
+    // ------------------------------------------------------------------
+    // 警长定发言顺序
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `警长定顺序：四个方向都摆出来，第一个发言人算好`() {
+        val dead = withDead(game().copy(phase = Phase.DAY_DISCUSSION, sheriffSeat = 2), 5)
+        val spec = WerewolfDecisions.speechDirection(dead, seat = 2)
+
+        assertTrue(spec.instruction.contains("警左"))
+        assertTrue(spec.instruction.contains("死右"))
+        // 只给四个词模型只能瞎猜，必须把「从谁起」算出来
+        assertTrue("死左要从 6 号起", spec.instruction.contains("从 6 号开始"))
+        assertTrue(spec.validate(DirectionChoice(direction = "死右")))
+        assertTrue("兜底值本身合法", spec.validate(DirectionChoice()))
+    }
+
+    @Test
+    fun `平安夜只给警左警右，死左被判非法`() {
+        val peaceful = game().copy(phase = Phase.DAY_DISCUSSION, sheriffSeat = 2)
+        val spec = WerewolfDecisions.speechDirection(peaceful, seat = 2)
+
+        assertFalse("没有死者，不能把死左死右摆出来", spec.instruction.contains("死左"))
+        assertFalse(spec.validate(DirectionChoice(direction = "死左")))
+        assertTrue(spec.validate(DirectionChoice(direction = "警右")))
+        assertFalse("瞎填的标签也不认", spec.validate(DirectionChoice(direction = "斜着来")))
     }
 }

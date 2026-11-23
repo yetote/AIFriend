@@ -36,6 +36,7 @@ import com.ui.common.theme.UIFriendBarTitleColor
 import com.ui.common.theme.UIDialogButtons
 import com.ui.common.theme.UIIosDialog
 import com.ui.common.theme.UIRadiusControl
+import com.ui.werewolf.data.UIWerewolfDirection
 import com.ui.werewolf.data.UIWerewolfLive
 import com.ui.werewolf.data.UIWerewolfRetry
 import androidx.compose.ui.geometry.Offset
@@ -75,7 +76,7 @@ fun UIWerewolfTableScreen(
     onVote: (Int?) -> Unit = {},
     onSeat: (Int) -> Unit = {},
     onWitch: (heal: Boolean, poison: Int?) -> Unit = { _, _ -> },
-    onDirection: (clockwise: Boolean) -> Unit = {},
+    onDirection: (UIWerewolfDirection) -> Unit = {},
     onReview: (() -> Unit)? = null,
     /** 传 null 不画顶栏喇叭。正常对局朗读开关在设置面板里；复盘演出保留这个入口。 */
     onToggleSpeak: (() -> Unit)? = null,

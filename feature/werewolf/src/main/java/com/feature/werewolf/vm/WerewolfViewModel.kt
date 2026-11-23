@@ -47,6 +47,7 @@ import com.feature.werewolf.game.RosterEntry
 import com.feature.werewolf.game.SELF_PLAYER_ID
 import com.feature.werewolf.game.WerewolfBoards
 import com.feature.werewolf.game.WerewolfConfig
+import com.feature.werewolf.game.SpeechDirection
 import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfPlayer
 import com.feature.werewolf.game.WerewolfPromptStyle
@@ -1777,10 +1778,10 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
         human.submit(text)
     }
 
-    /** 警长选发言方向。顺时针 = 从警长下一位起；逆时针倒着绕。 */
-    fun submitDirection(clockwise: Boolean) {
+    /** 警长选发言顺序：警左 / 警右（从自己左右手边起）、死左 / 死右（从昨夜死者起）。 */
+    fun submitDirection(direction: SpeechDirection) {
         if (humanTurn.value?.jsonMode != true) return
-        human.submit(json.encodeToString(DirectionChoice(clockwise)))
+        human.submit(json.encodeToString(DirectionChoice(direction.displayName)))
     }
 
     /**

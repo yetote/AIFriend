@@ -38,6 +38,7 @@ import com.ui.common.theme.UIFieldFill
 import com.ui.common.theme.UIRadiusControl
 import com.ui.werewolf.data.UIWerewolfTarget
 import com.ui.werewolf.data.UIWerewolfTurn
+import com.ui.werewolf.data.UIWerewolfDirection
 import com.ui.werewolf.data.UIWerewolfTurnKind
 
 // ---------------------------------------------------------------------------
@@ -71,7 +72,7 @@ internal fun TurnPanel(
     onVote: (Int?) -> Unit,
     onSeat: (Int) -> Unit,
     onWitch: (Boolean, Int?) -> Unit,
-    onDirection: (Boolean) -> Unit = {},
+    onDirection: (UIWerewolfDirection) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -134,6 +135,7 @@ internal fun TurnPanel(
             UIWerewolfTurnKind.DIRECTION -> DirectionRow(
                 textColor = textColor,
                 dimColor = dimColor,
+                hasDawnDeath = turn.hasDawnDeath,
                 onPick = onDirection
             )
         }
@@ -245,39 +247,34 @@ internal fun TargetRow(
 }
 
 /**
- * 警长选发言方向。两个按钮，没有目标可选——顺/逆就是全部答案。
+ * 警长选发言顺序：警左 / 警右 / 死左 / 死右，四个按钮，没有目标可选。
+ *
+ * 平安夜没人倒牌时死左 / 死右灰掉——留着可点会让玩家以为引擎会把顺序排错。
  */
 @Composable
 internal fun DirectionRow(
     textColor: Color,
     dimColor: Color,
-    onPick: (Boolean) -> Unit,
+    hasDawnDeath: Boolean,
+    onPick: (UIWerewolfDirection) -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Text(
-            text = "顺时针",
-            modifier = Modifier
-                .clip(RoundedCornerShape(50))
-                .background(UIActionBrush)
-                .clickable { onPick(true) }
-                .padding(horizontal = 16.dp, vertical = 9.dp),
-            fontSize = FsAction,
-            fontWeight = FontWeight.SemiBold,
-            color = Color.White
-        )
-        Text(
-            text = "逆时针",
-            modifier = Modifier
-                .clip(RoundedCornerShape(50))
-                .background(UIFieldFill)
-                .clickable { onPick(false) }
-                .padding(horizontal = 16.dp, vertical = 9.dp),
-            fontSize = FsAction,
-            color = textColor
-        )
+        UIWerewolfDirection.entries.forEach { direction ->
+            val enabled = hasDawnDeath || !direction.anchoredOnDeath
+            Text(
+                text = direction.label,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(if (enabled) UIFieldFill else UIFieldFill.copy(alpha = 0.4f))
+                    .clickable(enabled = enabled) { onPick(direction) }
+                    .padding(horizontal = 16.dp, vertical = 9.dp),
+                fontSize = FsAction,
+                color = if (enabled) textColor else dimColor.copy(alpha = 0.5f)
+            )
+        }
     }
 }
 

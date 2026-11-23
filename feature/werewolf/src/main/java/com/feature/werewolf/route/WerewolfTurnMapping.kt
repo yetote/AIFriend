@@ -96,8 +96,10 @@ internal fun buildTurn(
             UIWerewolfTurn(
                 kind = UIWerewolfTurnKind.DIRECTION,
                 seat = humanSeat,
-                title = "选今天的发言方向",
-                hint = "顺时针从你下一位开始，逆时针倒着绕；你都是最后发言",
+                title = "选今天的发言顺序",
+                // 「左 / 右」在线上没有真正的左右手，只能钉死成座位号方向，否则每个人理解不同
+                hint = "左 = 座位号增大的方向。警左 / 警右从你两边起，你最后说；死左 / 死右从昨夜死者起",
+                hasDawnDeath = game.dawnDeadSeats.isNotEmpty(),
             )
         } else {
             UIWerewolfTurn(

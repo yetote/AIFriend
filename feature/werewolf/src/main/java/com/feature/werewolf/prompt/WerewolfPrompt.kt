@@ -364,7 +364,7 @@ object WerewolfPrompt {
             if (event.toSeat == null) "警徽作废" else "警徽交给 ${event.toSeat} 号"
 
         is GameEvent.SpeechDirectionChosen ->
-            "警长 ${event.seat} 号定了${event.direction.displayName}发言"
+            "警长 ${event.seat} 号定了从${event.direction.displayName}起发言"
 
         is GameEvent.GameOver -> "${event.winner.displayName}阵营获胜"
     }
@@ -438,7 +438,7 @@ object WerewolfPrompt {
         }
 
         is GameEvent.SpeechDirectionChosen ->
-            "第${event.day}天：警长 ${event.seat} 号决定今天${event.direction.displayName}发言"
+            "第${event.day}天：警长 ${event.seat} 号决定今天从${event.direction.displayName}起发言"
 
         is GameEvent.GameOver ->
             "游戏结束：${event.winner.displayName}阵营获胜"
@@ -593,8 +593,9 @@ object WerewolfPrompt {
         // 警长、竞选、遗言这三件事和身份无关，任何座位都可能碰上，所以放在身份之外。
         // 尤其是「你是警长」——警长本身是公开身份，但**只有本人**需要知道自己的票权是 1.5。
         if (game.sheriffSeat == seat && game.phase != Phase.FINISHED) {
-            lines += "你是警长：你的一票算 1.5 票，每天讨论开始前由你选一次发言方向（顺时针或逆时针），" +
-                "选完你最后说（归票位）。"
+            lines += "你是警长：你的一票算 1.5 票，每天讨论开始前由你选一次发言顺序——" +
+                "警左 / 警右（从你自己左手边 / 右手边起，你最后说，归票位），" +
+                "或者死左 / 死右（从昨夜死者左手边 / 右手边起，这时你不一定最后说）。"
             lines +=
                 // 「交给错的人比撕掉更糟」是判断代打；徽给谁、撕不撕，警长自己定。
                 // 移交和遗言是两件事则是硬规则：被枪带走时说不了话但徽照样要处理。
