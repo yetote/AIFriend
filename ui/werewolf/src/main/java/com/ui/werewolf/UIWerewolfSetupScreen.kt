@@ -1453,11 +1453,13 @@ private fun RoleAssignRow(
                     val left = if (option.key == assignedKey) option.remaining + 1 else option.remaining
                     DropdownMenuItem(
                         text = {
+                            // 用「·」分隔而不是再加一层括号：有些身份的名字本身带括号
+                            // （「头狼（定战术）」），套进去就是三层括号
                             Text(
                                 text = if (left == option.total) {
-                                    "${option.label}（${option.total} 个名额）"
+                                    "${option.label} · ${option.total} 个名额"
                                 } else {
-                                    "${option.label}（剩 $left 个名额）"
+                                    "${option.label} · 剩 $left 个名额"
                                 },
                                 color = if (left > 0 || option.key == assignedKey) {
                                     UIFriendBarTitleColor

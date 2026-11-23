@@ -232,6 +232,8 @@ fun WerewolfRoute(
         val composition = configOf(presetKey).composition
         val wolfCount = composition[WerewolfRole.WEREWOLF] ?: 0
         fun usedWolf() = roleByFriend.values.count { it == WerewolfRole.WEREWOLF.name || it == ALPHA_WOLF_KEY }
+        // 头狼只有一个名额（见下面的选项），和普通狼分开数
+        fun alphaUsed() = roleByFriend.values.count { it == ALPHA_WOLF_KEY }
         val list = composition.map { (role, count) ->
             val used = if (role == WerewolfRole.WEREWOLF) {
                 // 头狼也算狼名额：指定了头狼，普通狼的名额就少一个
@@ -253,8 +255,11 @@ fun WerewolfRoute(
                 UIWerewolfRoleOption(
                     key = ALPHA_WOLF_KEY,
                     label = "头狼（定战术）",
-                    total = wolfCount,
-                    remaining = (wolfCount - usedWolf()).coerceAtLeast(0),
+                    // 头狼**只有一个**：他是狼队里定战术的那一只，不是一种可以凑数的身份。
+                    // 之前把 total 写成狼的总数，选单上就出现了「3 个名额」——
+                    // 看着像能指定三只头狼，实际点第二个人时旧的那个会被顶掉。
+                    total = 1,
+                    remaining = (1 - alphaUsed()).coerceAtLeast(0),
                 ),
             )
         }
