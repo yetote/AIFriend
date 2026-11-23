@@ -165,7 +165,7 @@ class WerewolfDirector(
                     audience = setOf(guard.seat),
                 )
             )
-            .let { it.copy(game = next).syncBroadcasts(game) }
+            .let { it.copy(game = next).syncPublicEvents(game) }
     }
 
     /**
@@ -277,7 +277,7 @@ class WerewolfDirector(
 
             val votes = outcomes.associate { (seat, outcome) -> seat to outcome.value.target }
             val afterVote = game.wolfVote(votes)
-            current = next.copy(game = afterVote).syncBroadcasts(game)
+            current = next.copy(game = afterVote).syncPublicEvents(game)
             // 定刀结果也推一次：平票时界面要能立刻看到「谁指了谁」，
             // 否则下一轮商议的发言会显得凭空多出来一段
             onTranscript(current)
@@ -392,7 +392,7 @@ class WerewolfDirector(
                     audience = setOf(seer.seat),
                 )
             )
-            .let { it.copy(game = next).syncBroadcasts(game) }
+            .let { it.copy(game = next).syncPublicEvents(game) }
     }
 
     /**
@@ -409,7 +409,7 @@ class WerewolfDirector(
         // 直接翻夜，不再问一轮「你今晚的用药决定」。
         if (!game.witch.antidoteAvailable && !game.witch.poisonAvailable) {
             val next = game.witchAct(heal = false)
-            return table.copy(game = next).syncBroadcasts(game)
+            return table.copy(game = next).syncPublicEvents(game)
         }
 
         onProgress(WerewolfProgress(game.day, Phase.NIGHT_WITCH, 1, 1, seat = witch.seat))
@@ -429,7 +429,7 @@ class WerewolfDirector(
                     audience = setOf(witch.seat),
                 )
             )
-            .let { it.copy(game = next).syncBroadcasts(game) }
+            .let { it.copy(game = next).syncPublicEvents(game) }
     }
 
     // ---------------------------------------------------------------------
@@ -523,9 +523,9 @@ class WerewolfDirector(
         } else {
             SpeechDirection.COUNTER_CLOCKWISE
         }
-        // 选方向是公开事件，syncBroadcasts 会照 history 里的新事件生成播报，
+        // 选方向是公开事件，syncPublicEvents 会照 history 里的新事件生成播报，
         // 牌桌上所有人（和观战）都能看到「X 号选了顺时针」。
-        val next = table.copy(game = table.game.setSpeechDirection(direction)).syncBroadcasts(game)
+        val next = table.copy(game = table.game.setSpeechDirection(direction)).syncPublicEvents(game)
         onTranscript(next)
         return next
     }
@@ -566,7 +566,7 @@ class WerewolfDirector(
             .map { it.first }
             .toSet()
         val after = game.signUpSheriff(runners)
-        return table.copy(game = after).syncBroadcasts(game).also { onTranscript(it) }
+        return table.copy(game = after).syncPublicEvents(game).also { onTranscript(it) }
     }
 
     /**
@@ -646,7 +646,7 @@ class WerewolfDirector(
             if (voters.isEmpty()) {
                 // 全员上警：没人有资格投票。引擎会直接判「没有警长」
                 val after = game.castSheriffVotes(emptyMap())
-                current = current.copy(game = after).syncBroadcasts(game)
+                current = current.copy(game = after).syncPublicEvents(game)
                 break
             }
 
@@ -699,7 +699,7 @@ class WerewolfDirector(
             val votes = outcomes.associate { (seat, outcome) -> seat to outcome.value.target }
             next = next.append(ballotMessage(game, Phase.DAY_SHERIFF_VOTE, votes))
             val after = game.castSheriffVotes(votes)
-            current = next.copy(game = after).syncBroadcasts(game)
+            current = next.copy(game = after).syncPublicEvents(game)
             onTranscript(current)
             rounds++
         }
@@ -751,7 +751,7 @@ class WerewolfDirector(
                     )
                 )
                 val before = current.game
-                current = current.copy(game = before.transferBadge(seat, target)).syncBroadcasts(before)
+                current = current.copy(game = before.transferBadge(seat, target)).syncPublicEvents(before)
             } else {
                 val text = askSpeech(
                     current,
@@ -844,7 +844,7 @@ class WerewolfDirector(
             // 用 afterVote 的话，投出的警长一旦出局/移交，票就按新警长算了。
             next = next.append(ballotMessage(game, Phase.DAY_VOTE, votes))
             val afterVote = game.castVotes(votes)
-            current = next.copy(game = afterVote).syncBroadcasts(game)
+            current = next.copy(game = afterVote).syncPublicEvents(game)
             rounds++
         }
         return current
@@ -913,7 +913,7 @@ class WerewolfDirector(
                     usage = outcome.usage,
                 )
             )
-            .let { it.copy(game = next).syncBroadcasts(game) }
+            .let { it.copy(game = next).syncPublicEvents(game) }
     }
 
     // ---------------------------------------------------------------------
@@ -1658,7 +1658,12 @@ class WerewolfDirector(
             // 标记被拒、正文又是空的：留一句占位，否则牌桌上会出现一条空白发言
             text = EMPTY_SPEECH_FALLBACK
         }
-        var next = append(
+        // 自爆的记账走 recordExplode——和人类点「自爆」按钮是同一条路。
+        // 正文为空（人类按的是按钮，不出字）时它会补一句「我自爆。」。
+        if (exploding) {
+            return recordExplode(seat, text = text, reasoning = reasoning, usage = usage)
+        }
+        return append(
             WerewolfMessage(
                 day = game.day,
                 phase = phase,
@@ -1669,11 +1674,6 @@ class WerewolfDirector(
                 usage = usage,
             )
         )
-        if (exploding) {
-            val before = game
-            next = next.copy(game = before.wolfExplode(seat)).syncBroadcasts(before)
-        }
-        return next
     }
 
     /**
@@ -1696,19 +1696,7 @@ class WerewolfDirector(
         for (seat in candidates) {
             val decision = askExplodeNow(this, seat, speaker, speech)
             if (!decision.value.explode) continue
-            var next = append(
-                WerewolfMessage(
-                    day = now.day,
-                    phase = now.phase,
-                    seat = seat,
-                    kind = MessageKind.SPEECH,
-                    text = "我自爆。",
-                    usage = decision.usage,
-                )
-            )
-            val before = next.game
-            next = next.copy(game = before.wolfExplode(seat)).syncBroadcasts(before)
-            return next
+            return recordExplode(seat, usage = decision.usage)
         }
         return this
     }
@@ -1754,34 +1742,6 @@ class WerewolfDirector(
      */
     private fun killLine(who: String, target: Int?): String =
         if (target == null) "$who 今晚空刀。" else "$who 定刀 $target 号。"
-
-    /**
-     * 把阶段推进产生的新播报补成消息。
-     *
-     * 用「history 的长度差」判断新增，而不是让每个阶段自己记得播报什么——
-     * 播报文案只有 [WerewolfPrompt.describe] 一处，规则改了不用同步改第二个地方。
-     *
-     * 消息的 phase 取 **previous.phase**，也就是「产生这条播报的那个阶段」，不是推进后的阶段。
-     * 这里差一步会出真问题：投票结束时状态机直接翻到下一夜，如果标成新阶段，
-     * 一条「无人被放逐」的公开播报就会被记成「守卫阶段」的事情，谁都看得见。
-     */
-    private fun WerewolfTable.syncBroadcasts(previous: WerewolfGame): WerewolfTable {
-        val fresh = game.history.drop(previous.history.size)
-        if (fresh.isEmpty()) return this
-        var next = this
-        fresh.forEach { event ->
-            next = next.append(
-                WerewolfMessage(
-                    day = event.day,
-                    phase = previous.phase,
-                    seat = null,
-                    kind = MessageKind.DIVINE,
-                    text = WerewolfPrompt.describe(event),
-                )
-            )
-        }
-        return next
-    }
 
     /**
      * 剥掉模型爱加的前缀。
@@ -1948,7 +1908,7 @@ class WerewolfDirector(
          * 自爆标记。模型写成全角、半角方括号都认，中文括号也认——
          * 这几个写法都是它自己会写出来的，多认一种就少一次「明明爆了却没算」。
          */
-        val EXPLODE_MARKERS = listOf("【自爆】", "[自爆]", "（自爆）", "(自爆)")
+        val EXPLODE_MARKERS = listOf(EXPLODE_MARKER, "[自爆]", "（自爆）", "(自爆)")
 
         /** 整局的调度步数上限，防止某处状态不推进导致死循环。 */
         const val MAX_STEPS = 500

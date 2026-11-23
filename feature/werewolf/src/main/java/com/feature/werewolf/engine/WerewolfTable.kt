@@ -167,3 +167,74 @@ data class WerewolfTable(
     internal fun append(message: WerewolfMessage): WerewolfTable =
         copy(transcript = transcript + message)
 }
+
+/** 自爆时如果没留下别的话，牌桌上就显示这一句。 */
+internal const val I_EXPLODED = "我自爆。"
+
+/**
+ * 人类点「自爆」时提交的文本。
+ *
+ * 刻意复用 AI 的标记通道：受理条件、记账、播报全在 [recordExplode] 一条路上，
+ * 人类和 AI 的自爆不可能是两套规则。
+ */
+internal const val EXPLODE_MARKER = "【自爆】"
+
+/**
+ * 落一次自爆：先记那句「我自爆。」（或狼自己写的那句话），再让状态机翻夜，
+ * 最后把新增的公开事件补成播报。
+ *
+ * 三个入口共用这一段：
+ * - AI 在发言开头写标记（`WerewolfDirector.speakAndMaybeExplode`）；
+ * - AI 被别人点名后插爆（`WerewolfDirector.watchExplode`）；
+ * - 人类点牌桌上的「自爆」按钮（`WerewolfController.explodeNow`）。
+ *
+ * 播报文案只在 [com.feature.werewolf.prompt.WerewolfPrompt.describe] 一处，
+ * 抄三份迟早有一份忘了改。同一条也保证了「谁爆的、几点爆的、后面还有没有投票」
+ * 在三条路径上完全一致。
+ */
+internal fun WerewolfTable.recordExplode(
+    seat: Int,
+    text: String = "",
+    reasoning: String = "",
+    usage: TokenUsage = TokenUsage.EMPTY,
+): WerewolfTable {
+    val before = game
+    val said = text.trim().ifEmpty { I_EXPLODED }
+    val recorded = append(
+        WerewolfMessage(
+            day = before.day,
+            phase = before.phase,
+            seat = seat,
+            kind = MessageKind.SPEECH,
+            text = said,
+            reasoning = reasoning,
+            usage = usage,
+        )
+    )
+    return recorded.copy(game = before.wolfExplode(seat)).syncPublicEvents(before)
+}
+
+/**
+ * 把 [previous] 之后新增的 history 事件补成上帝播报。
+ *
+ * 播报消息的 phase 取 **previous.phase**，也就是「产生这条播报的那个阶段」，
+ * 不是推进后的阶段：投票结束时状态机直接翻到下一夜，标成新阶段的话，
+ * 一条「无人被放逐」的播报就会被记成「守卫阶段」的事情，谁都看得见。
+ */
+internal fun WerewolfTable.syncPublicEvents(previous: WerewolfGame): WerewolfTable {
+    val fresh = game.history.drop(previous.history.size)
+    if (fresh.isEmpty()) return this
+    var next = this
+    fresh.forEach { event ->
+        next = next.append(
+            WerewolfMessage(
+                day = event.day,
+                phase = previous.phase,
+                seat = null,
+                kind = MessageKind.DIVINE,
+                text = com.feature.werewolf.prompt.WerewolfPrompt.describe(event),
+            )
+        )
+    }
+    return next
+}
