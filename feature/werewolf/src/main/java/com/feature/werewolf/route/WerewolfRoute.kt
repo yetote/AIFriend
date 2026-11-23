@@ -11,6 +11,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -29,6 +30,7 @@ import com.feature.werewolf.game.WerewolfRole
 import com.feature.werewolf.game.WerewolfSpeechLength
 import com.feature.werewolf.game.WerewolfTurnLimit
 import com.feature.werewolf.vm.WerewolfViewModel
+import kotlinx.coroutines.launch
 import com.ui.werewolf.UIWerewolfHistoryScreen
 import com.ui.werewolf.UIWerewolfPaceSheet
 import com.ui.werewolf.UIWerewolfPromptSettingsScreen
@@ -288,6 +290,42 @@ fun WerewolfRoute(
         WerewolfExport.shareGame(context, table, gameId, createdAt, customPrompt)
     }
 
+    /**
+     * 列表里导出某一局。
+     *
+     * 点导出时手上只有 id，所以要先读一次存档；两种格式共用这一次读取。
+     * 读不到（存档坏了）就在列表上挂一条红提示——不弹 Toast，
+     * 这一页的提示条已经是统一出口。
+     */
+    val exportScope = rememberCoroutineScope()
+    fun exportRecord(id: String, markdown: Boolean) {
+        exportScope.launch {
+            val view = viewModel.readRecord(id)
+            if (view == null) {
+                viewModel.notify("这一局的存档读不出来，可能已经损坏", error = true)
+                return@launch
+            }
+            if (markdown) {
+                // 列表里能点到 Markdown 的只有已结束的局，这里仍判一次：
+                // 没有赢家就没有复盘，硬拼一份文档只会让人以为导出坏了
+                val review = WerewolfUiState(
+                    table = view.table,
+                    finished = true,
+                    customPrompt = view.customPrompt,
+                ).toReview(view.humanSeat, avatars)
+                if (review == null) {
+                    viewModel.notify("这一局还生不出复盘文档", error = true)
+                    return@launch
+                }
+                WerewolfExport.share(context, review)
+            } else {
+                val createdAt = summaries.firstOrNull { it.id == id }?.createdAt
+                    ?: System.currentTimeMillis()
+                WerewolfExport.shareGame(context, view.table, id, createdAt, view.customPrompt)
+            }
+        }
+    }
+
     // 演出盖在复盘上面：它是从复盘页点进来的，退回去应该回到复盘，而不是直接回列表
     val replay = replayState
     if (replay != null) {
@@ -348,6 +386,9 @@ fun WerewolfRoute(
             },
             onOpenRecord = { id -> viewModel.openRecord(id) },
             onDiscard = { id -> viewModel.discard(id) },
+            // 导出从这里走：任何一局都能导对局文件，Markdown 只给已结束的局
+            onExportGame = { id -> exportRecord(id, markdown = false) },
+            onExportMarkdown = { id -> exportRecord(id, markdown = true) },
             onClearFinished = viewModel::clearFinished,
             onNewGame = { screen = WerewolfScreen.Setup },
             onBack = onExit,
@@ -567,9 +608,6 @@ fun WerewolfRoute(
                     // 自爆：能不能点由 live.canExplode 决定（牌桌内部再 gate 一次），
                     // 这里只负责把动作交下去
                     onExplode = viewModel::explodeNow,
-                    // 随时可导出：打到一半也要能把这局带走（换机器、留个备份再试别的打法）。
-                    // 导出的是当前进度，导入端认识「还没打完」的存档，导进去能接着打。
-                    onExportGame = { shareGameFile(state.table, state.gameId, state.customPrompt) },
                 )
                 if (showPaceSheet) {
                     UIWerewolfPaceSheet(

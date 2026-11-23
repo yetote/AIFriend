@@ -21,7 +21,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.IosShare
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -81,6 +85,20 @@ fun UIWerewolfHistoryScreen(
     onResume: (String) -> Unit,
     onOpenRecord: (String) -> Unit,
     onDiscard: (String) -> Unit,
+    /**
+     * 导出这一局的对局文件（`.wwg`）。
+     *
+     * 任何一局都能导，包括还没打完的：导出来是当前进度，换台手机导进去可以接着打。
+     * 放在列表而不是牌桌上——用户想带走一局时，人通常在列表里挑，不在牌桌上。
+     */
+    onExportGame: (String) -> Unit = {},
+    /**
+     * 导出复盘 Markdown。只对**已结束**的局提供。
+     *
+     * 复盘得有「谁赢了」，没打完的局生不出这么一份文档；硬导只会得到一份
+     * 没有结局的战报，比不给更让人困惑。
+     */
+    onExportMarkdown: (String) -> Unit = {},
     onClearFinished: () -> Unit,
     onNewGame: () -> Unit,
     onBack: () -> Unit,
@@ -102,6 +120,10 @@ fun UIWerewolfHistoryScreen(
     // 放弃是不可逆的（存档直接删），所以只在这一页做二次确认，不在列表行里直接删
     var pendingDiscard by remember { mutableStateOf<UIWerewolfRecord?>(null) }
     var confirmClear by remember { mutableStateOf(false) }
+
+    // 导出：已结束的局弹「Markdown / 对局文件」二选一；没打完的局没有复盘文档，
+    // 点一下直接导存档，不弹只有一个选项的框。
+    var exportTarget by remember { mutableStateOf<UIWerewolfRecord?>(null) }
 
     // 换人面板：错误条上的「换人」打开它。选择按座位存，提交时摊成 Map。
     var recastOpen by remember { mutableStateOf(false) }
@@ -186,6 +208,8 @@ fun UIWerewolfHistoryScreen(
                                 record = record,
                                 resuming = record.id == resumingId,
                                 onResume = { onResume(record.id) },
+                                // 没打完：没有复盘可导，直接给存档（点开就是系统分享面板）
+                                onExport = { onExportGame(record.id) },
                                 onDiscard = { pendingDiscard = record }
                             )
                         }
@@ -213,7 +237,8 @@ fun UIWerewolfHistoryScreen(
                                 finished.forEach { record ->
                                     FinishedRow(
                                         record = record,
-                                        onClick = { onOpenRecord(record.id) }
+                                        onClick = { onOpenRecord(record.id) },
+                                        onExport = { exportTarget = record },
                                     )
                                 }
                             }
@@ -238,6 +263,20 @@ fun UIWerewolfHistoryScreen(
             onConfirm = {
                 recastOpen = false
                 onSwapSeats(picks)
+            },
+        )
+    }
+
+    exportTarget?.let { record ->
+        UIWerewolfExportDialog(
+            onDismiss = { exportTarget = null },
+            onMarkdown = {
+                exportTarget = null
+                onExportMarkdown(record.id)
+            },
+            onGame = {
+                exportTarget = null
+                onExportGame(record.id)
             },
         )
     }
@@ -414,6 +453,7 @@ private fun ResumeCard(
     record: UIWerewolfRecord,
     resuming: Boolean,
     onResume: () -> Unit,
+    onExport: () -> Unit,
     onDiscard: () -> Unit,
 ) {
     Column(
@@ -448,6 +488,16 @@ private fun ResumeCard(
                     text = "${record.metaLabel} · ${record.timeLabel}",
                     fontSize = 12.sp,
                     color = Color.White.copy(alpha = 0.78f)
+                )
+            }
+            // 导出放在右上角：它是「把这一局带走」，和「接着打 / 放弃」不是一类动作，
+            // 混在下面那排按钮里会被当成第三个选项
+            IconButton(onClick = onExport, modifier = Modifier.size(34.dp)) {
+                Icon(
+                    imageVector = Icons.Filled.IosShare,
+                    contentDescription = "导出这一局",
+                    tint = Color.White.copy(alpha = 0.85f),
+                    modifier = Modifier.size(18.dp),
                 )
             }
             Box(
@@ -490,9 +540,13 @@ private fun ResumeCard(
     }
 }
 
-/** 已结束的一局：一行信息，点开是复盘。 */
+/** 已结束的一局：一行信息，点开是复盘；右边那个图标是导出。 */
 @Composable
-private fun FinishedRow(record: UIWerewolfRecord, onClick: () -> Unit) {
+private fun FinishedRow(
+    record: UIWerewolfRecord,
+    onClick: () -> Unit,
+    onExport: () -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -511,6 +565,15 @@ private fun FinishedRow(record: UIWerewolfRecord, onClick: () -> Unit) {
                 text = "${record.metaLabel} · ${record.timeLabel}",
                 fontSize = 12.5.sp,
                 color = UIFriendBarItemSubtitleColor
+            )
+        }
+        // 导出图标点击是独立的：整行点开复盘，点这里只导出，不进复盘页
+        IconButton(onClick = onExport, modifier = Modifier.size(34.dp)) {
+            Icon(
+                imageVector = Icons.Filled.IosShare,
+                contentDescription = "导出这一局",
+                tint = UIFriendBarItemMetaColor,
+                modifier = Modifier.size(18.dp),
             )
         }
         Text(

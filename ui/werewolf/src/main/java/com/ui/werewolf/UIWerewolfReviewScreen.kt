@@ -22,11 +22,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -251,7 +249,7 @@ fun UIWerewolfReviewScreen(
         }
 
         if (exportChoice) {
-            ExportDialog(
+            UIWerewolfExportDialog(
                 onDismiss = { exportChoice = false },
                 onMarkdown = onExport?.let { action ->
                     {
@@ -267,65 +265,6 @@ fun UIWerewolfReviewScreen(
                 },
             )
         }
-    }
-}
-
-/**
- * 「导出什么」的选择框。
- *
- * 两种导出的读法完全不同：Markdown 是拿给别人读的文档，对局文件只有 App 认得。
- * 挤成一个按钮上写两个名字，用户只能靠猜；分成两个按钮又太占顶栏。
- */
-@Composable
-private fun ExportDialog(
-    onDismiss: () -> Unit,
-    onMarkdown: (() -> Unit)?,
-    onGame: (() -> Unit)?,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(text = "导出这一局", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = ReviewTitle)
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (onMarkdown != null) {
-                    ExportOption(
-                        title = "复盘文档 · Markdown",
-                        subtitle = "一份能直接读、能贴进笔记软件的复盘",
-                        onClick = onMarkdown,
-                    )
-                }
-                if (onGame != null) {
-                    ExportOption(
-                        title = "对局文件 · .wwg",
-                        subtitle = "导回 App 就能重看、重演，换台手机也能带走",
-                        onClick = onGame,
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(text = "取消", color = ReviewDim)
-            }
-        },
-        containerColor = Color.White,
-    )
-}
-
-@Composable
-private fun ExportOption(title: String, subtitle: String, onClick: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(UIRadiusControl))
-            .background(UIFieldFill)
-            .clickable { onClick() }
-            .padding(horizontal = 12.dp, vertical = 10.dp)
-    ) {
-        Text(text = title, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = ReviewTitle)
-        Text(text = subtitle, fontSize = 11.sp, color = ReviewDim)
     }
 }
 

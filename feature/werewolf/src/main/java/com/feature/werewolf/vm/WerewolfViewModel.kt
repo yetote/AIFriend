@@ -462,6 +462,16 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
     }
 
     /**
+     * 界面层要报一句话时用（导出失败、存档读不出来）。
+     *
+     * 不直接在界面里弹 Toast：这一页的提示条已经是统一出口，
+     * 多一种提示样式只会让人以为出了不同级别的问题。
+     */
+    fun notify(text: String, error: Boolean = false) {
+        _notice.value = WerewolfNotice(text, error = error)
+    }
+
+    /**
      * 续档探活失败后等的换人决定。非空时列表页弹换人面板。
      *
      * 和 [error] 分开：错误条说「连不上」，面板说「换成谁」。两者同时出现，
@@ -1261,18 +1271,29 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
      */
     fun openRecord(id: String) {
         viewModelScope.launch {
-            val table = store.load(id)
-            if (table == null) {
+            val view = readRecord(id)
+            if (view == null) {
                 _error.value = "这条存档读不出来，可能已经损坏"
                 return@launch
             }
-            _record.value = WerewolfRecordView(
-                id = id,
-                table = table,
-                humanSeat = table.game.players.firstOrNull { it.id == SELF_PLAYER_ID }?.seat,
-                customPrompt = store.customPrompt(id),
-            )
+            _record.value = view
         }
+    }
+
+    /**
+     * 读一局存档，**不改任何界面状态**。
+     *
+     * 列表上的「导出」要用它：用户只是想把这局带走，不该被顺手丢进复盘页。
+     * 导出失败（存档坏了）时返回 null，由调用方决定怎么提示。
+     */
+    suspend fun readRecord(id: String): WerewolfRecordView? {
+        val table = store.load(id) ?: return null
+        return WerewolfRecordView(
+            id = id,
+            table = table,
+            humanSeat = table.game.players.firstOrNull { it.id == SELF_PLAYER_ID }?.seat,
+            customPrompt = store.customPrompt(id),
+        )
     }
 
     /** 关掉复盘，回列表。 */
