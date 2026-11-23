@@ -474,6 +474,40 @@ class WerewolfPromptTest {
     }
 
     @Test
+    fun `规则写清自爆的终局与无警长时的发言顺序`() {
+        val day = standardGame().copy(phase = Phase.DAY_DISCUSSION)
+        // 自由式也吃同一份规则：这两条是硬事实（自爆永久出局、没人主持就随机），不是打法
+        val free = WerewolfPrompt.systemPrompt(day, seat = 1, style = WerewolfPromptStyle.FREE)
+
+        assertTrue("自爆的狼这一局不再回来", free.contains("出局是永久的"))
+        assertTrue("没有警长时起点和方向随机", free.contains("起点和方向都由系统随机指定"))
+        assertFalse("不再写「从死者下位起」的固定起点", free.contains("从昨夜死者的下一位开始"))
+    }
+
+    @Test
+    fun `有警长的板子也说明警长不在场时随机`() {
+        val roles = listOf(
+            WerewolfRole.WEREWOLF, WerewolfRole.WEREWOLF,
+            WerewolfRole.SEER, WerewolfRole.WITCH,
+            WerewolfRole.HUNTER, WerewolfRole.VILLAGER,
+            WerewolfRole.VILLAGER, WerewolfRole.VILLAGER,
+        )
+        val game = WerewolfGame.withRoles(
+            config = WerewolfConfig(
+                composition = roles.groupingBy { it }.eachCount(),
+                hasSheriff = true,
+                maxVoteRounds = 2,
+            ),
+            roster = roster(roles.size),
+            roles = roles,
+        ).copy(phase = Phase.DAY_DISCUSSION)
+
+        val text = WerewolfPrompt.systemPrompt(game, seat = 1)
+        assertTrue("警长缺席也要说明", text.contains("警长不在场时"))
+        assertTrue(text.contains("由系统随机指定"))
+    }
+
+    @Test
     fun `自爆提示只写给狼 受理条件是标记本身`() {
         val day = standardGame().copy(phase = Phase.DAY_DISCUSSION)
 

@@ -44,17 +44,37 @@ class WerewolfDayFlowTest {
     }
 
     @Test
-    fun `没有警长时从昨夜死者下位起`() {
+    fun `没有警长时起点和方向随机，顺序绕满一圈`() {
         val mode = day().copy(history = listOf(GameEvent.Dawn(1, listOf(5))))
 
-        assertEquals(listOf(6, 1, 2, 3, 4, 5), mode.discussionOrder)
+        val order = mode.discussionOrder
+        assertEquals("每人一次、不死不漏", listOf(1, 2, 3, 4, 5, 6), order.sorted())
+        // 不管顺时针还是逆时针，相邻两人在环形上都必须是相邻座位
+        order.zipWithNext().forEach { (a, b) ->
+            val diff = ((b - a) + 6) % 6
+            assertTrue("$a → $b 不是环形相邻", diff == 1 || diff == 5)
+        }
+        // 同一局面反复取要一致：续档、复盘、拼上下文都得对齐
+        assertEquals(order, mode.discussionOrder)
     }
 
     @Test
-    fun `平安夜从 1 号起，死人不会留在发言顺序里`() {
+    fun `没有警长时每天的起点会变`() {
+        // 原来固定「昨夜死者下位起、顺时针」，等于每天都是同一两个人先开口。
+        // 改成随机之后，至少不能每天都是同一个起点。
+        val starts = (1..10).map { d ->
+            day().copy(history = listOf(GameEvent.Dawn(d, listOf(5))), day = d)
+                .discussionOrder.first()
+        }
+
+        assertTrue("起点不该固定在 1 号", starts.toSet().size > 1)
+    }
+
+    @Test
+    fun `死人不会留在发言顺序里`() {
         val mode = day().copy(players = day().players.map { if (it.seat == 1) it.copy(alive = false) else it })
 
-        assertEquals(listOf(2, 3, 4, 5, 6), mode.discussionOrder)
+        assertEquals(listOf(2, 3, 4, 5, 6), mode.discussionOrder.sorted())
     }
 
     // ------------------------------------------------------------------

@@ -308,14 +308,14 @@ data class WerewolfGame(
     /**
      * 白天发言顺序。
      *
-     * 两条线下惯例，按优先级：
+     * 两条规则，按优先级：
      * 1. **有警长从警长该方向的下一位起**——警长最后一个发言。他是归票位，先说完就等于
      *    把自己的判断摊在桌上，后面的人全在顺着他说。方向由警长每天讨论前选
      *    （[speechDirection]）：顺时针从座位号增大的下一位起，逆时针反过来倒着绕。
-     * 2. 没警长从**昨夜死者的下位**起，按座位号递增（方向固定顺时针）。
-     *    让紧挨着死者的人先开口，是线下最自然的起手，
-     *    因为他们最先看到尸体、也最容易被怀疑。
-     * 3. 都没有就从 1 号起。
+     * 2. **没有警长时起点和方向都由系统随机指定**（[opening]）。没人主持就只能掷骰子：
+     *    原来固定「从昨夜死者下位起、顺时针」，等于让固定位置的人每个白天都先开口，
+     *    而先说话的人在 AI 局里优势明显（先立靶子，后面全在接话）。
+     *    警长竞选被自爆炸掉、警长死了没交接，都会落到这一条。
      *
      * 返回的是**从起点绕一圈**的完整顺序（越过最大座位号后回到最小的），
      * 不是「排好序的活人」——差一个绕圈，7 号之后的 1 号就会被漏掉。
@@ -327,18 +327,42 @@ data class WerewolfGame(
             val alive = aliveSeats.sorted()
             if (alive.isEmpty()) return emptyList()
             val sheriff = aliveSheriffSeat
-            if (sheriff != null && speechDirection == SpeechDirection.COUNTER_CLOCKWISE) {
-                // 先按顺时针排（警长垫底），再把除警长外的整段倒过来：
-                // [3,4,5,6,1,2]（警长 2）→ [1,6,5,4,3,2]。警长仍是最后一个，
-                // 但发言本身倒着走，这正是「警长选逆序」要的效果。
-                val forward = alive.filter { it > sheriff } + alive.filter { it < sheriff }
-                return forward.reversed() + sheriff
+            if (sheriff != null) {
+                if (speechDirection == SpeechDirection.COUNTER_CLOCKWISE) {
+                    // 先按顺时针排（警长垫底），再把除警长外的整段倒过来：
+                    // [3,4,5,6,1,2]（警长 2）→ [1,6,5,4,3,2]。警长仍是最后一个，
+                    // 但发言本身倒着走，这正是「警长选逆序」要的效果。
+                    val forward = alive.filter { it > sheriff } + alive.filter { it < sheriff }
+                    return forward.reversed() + sheriff
+                }
+                val start = alive.firstOrNull { it > sheriff } ?: alive.first()
+                return alive.filter { it >= start } + alive.filter { it < start }
             }
-            val anchor = sheriff ?: lastDawnDeadSeats.firstOrNull()
-            if (anchor == null) return alive
-            val start = alive.firstOrNull { it > anchor } ?: alive.first()
-            return alive.filter { it >= start } + alive.filter { it < start }
+            val (start, clockwise) = opening(alive)
+            return if (clockwise) {
+                alive.filter { it >= start } + alive.filter { it < start }
+            } else {
+                listOf(start) +
+                    alive.filter { it < start }.sortedDescending() +
+                    alive.filter { it > start }.sortedDescending()
+            }
         }
+
+    /**
+     * 没有警长时的起点与方向。
+     *
+     * 用「天数 + 身份派单 + 存活名单」拼种子，而不是 [Random.Default]：随机必须**可重放**。
+     * 同一个局面每次拼上下文、续档、复盘都要算出同一套顺序，否则 A 的提示词写着
+     * 「你是第二个说」，牌桌上他却排在第五个。
+     *
+     * 身份派单一起进种子是为了**不同局不同序**：同一张板子、同样的死者，
+     * 换个座次就换一套顺序，免得每局都是同一两个人先开口。
+     */
+    private fun opening(alive: List<Int>): Pair<Int, Boolean> {
+        val seed = day * 31 + players.hashCode() * 17 + alive.hashCode()
+        val rng = Random(seed)
+        return alive[rng.nextInt(alive.size)] to rng.nextBoolean()
+    }
 
     /**
      * 今天白天还需不需要警长选方向。
@@ -370,13 +394,6 @@ data class WerewolfGame(
         require(speechDirectionPending) { "今天已经选过发言方向" }
         return copy(history = history + GameEvent.SpeechDirectionChosen(day, sheriff, direction))
     }
-
-    /** 今天天亮时死的人。只用来定发言起点和遗言，不参与判定。 */
-    private val lastDawnDeadSeats: List<Int>
-        get() = history.lastOrNull { it is GameEvent.Dawn && it.day == day }
-            ?.let { it as GameEvent.Dawn }
-            ?.deadSeats
-            .orEmpty()
 
     /** 此刻还有没有遗言没说完。 */
     val hasPendingLastWords: Boolean get() = pendingLastWords.isNotEmpty()

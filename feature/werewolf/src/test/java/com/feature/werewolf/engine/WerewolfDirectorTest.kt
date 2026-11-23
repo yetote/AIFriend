@@ -7,6 +7,7 @@ import com.feature.werewolf.game.DeathCause
 import com.feature.werewolf.game.GameEvent
 import com.feature.werewolf.game.Phase
 import com.feature.werewolf.game.RosterEntry
+import com.feature.werewolf.game.SpeechDirection
 import com.feature.werewolf.game.WerewolfConfig
 import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfRole
@@ -498,16 +499,23 @@ class WerewolfDirectorTest {
         val ais = (1..9).associateWith { _ -> AutoAI() as IAI }
         val director = WerewolfDirector(ais.mapValues { SeatAgent(it.value, "test-model") })
 
-        val result = director.discussion(WerewolfTable(standard9().copy(phase = Phase.DAY_DISCUSSION)))
+        // 钉死发言顺序：没有警长时起点与方向是随机的，这个用例验的是「串行」，
+        // 4 号的前后邻居必须是确定的，否则算出来的上下位会飘
+        val game = standard9()
+            .copy(phase = Phase.DAY_DISCUSSION, sheriffSeat = 9)
+            .setSpeechDirection(SpeechDirection.CLOCKWISE)
+        val result = director.discussion(WerewolfTable(game))
 
         val speeches = result.transcript.filter { it.kind == MessageKind.SPEECH }
         assertEquals("存活 9 人，一人一句", 9, speeches.size)
-        assertEquals("按座位顺序发言", (1..9).toList(), speeches.map { it.seat })
+        assertEquals("按发言顺序发言", game.discussionOrder, speeches.map { it.seat })
 
-        // 4 号的请求里必须已经包含 3 号说过的话；同时不能包含 5 号（还没轮到）
+        // 4 号的请求里必须已经包含前一位说过的话；同时不能包含下一位（还没轮到）
+        val order = game.discussionOrder
+        val pos = order.indexOf(4)
         val fourthCall = (ais[4] as AutoAI).calls.single()
-        assertTrue(fourthCall.userText.contains("3 号："))
-        assertFalse("不能提前看到后面的人", fourthCall.userText.contains("5 号："))
+        assertTrue(fourthCall.userText.contains("${order[pos - 1]} 号："))
+        assertFalse("不能提前看到后面的人", fourthCall.userText.contains("${order[pos + 1]} 号："))
     }
 
     @Test
@@ -1045,13 +1053,17 @@ class WerewolfDirectorTest {
         // 1、2、3 号是狼。受理只看标记，正文救谁还是保自己都不管
         val exploding = ScriptedAI(listOf("【自爆】救 3 号，别再投他了。"))
         val quiet = ScriptedAI(listOf("我觉得 2 号有点急。"))
-        // 只有 1 号会开口：没有警长、没有死讯，发言从 1 号起，他自爆之后这一天就结束了
+        // 钉死发言顺序（否则起点随机）：1 号第一个开口，他自爆之后这一天就结束了
         val director = WerewolfDirector(
             agentsOf(1 to exploding, 2 to quiet, 3 to quiet, 4 to quiet, 5 to quiet, 6 to quiet, 7 to quiet, 8 to quiet, 9 to quiet),
         )
 
         val result = director.discussion(
-            WerewolfTable(standard9().copy(day = 1, phase = Phase.DAY_DISCUSSION))
+            WerewolfTable(
+                standard9()
+                    .copy(day = 1, phase = Phase.DAY_DISCUSSION, sheriffSeat = 9)
+                    .setSpeechDirection(SpeechDirection.CLOCKWISE)
+            )
         )
 
         assertFalse(result.game.playerAt(1).alive)
@@ -1540,7 +1552,13 @@ class WerewolfDirectorTest {
         }
         val director = WerewolfDirector(ais.mapValues { SeatAgent(it.value, "test-model") })
 
-        val result = director.discussion(WerewolfTable(standard9().copy(phase = Phase.DAY_DISCUSSION)))
+        val result = director.discussion(
+            WerewolfTable(
+                standard9()
+                    .copy(phase = Phase.DAY_DISCUSSION, sheriffSeat = 9)
+                    .setSpeechDirection(SpeechDirection.CLOCKWISE)
+            )
+        )
 
         assertFalse("自爆就是出局", result.game.playerAt(1).alive)
         assertEquals(DeathCause.SELF_EXPLODE, result.game.playerAt(1).deathCause)

@@ -65,12 +65,15 @@ class WerewolfSpeechDirectionTest {
     }
 
     @Test
-    fun `没有警长的局面不需要选方向`() {
+    fun `没有警长的局面不选方向，起点和顺序由系统随机`() {
         val game = atDiscussion(sheriff = 2).copy(sheriffSeat = null)
 
         assertFalse(game.speechDirectionPending)
-        // 没警长的老规则不被动：从死者下位起（这里没人死，从最小座位起）
-        assertEquals(listOf(1, 2, 3, 4, 5, 6, 7, 8, 9), game.discussionOrder)
+        val order = game.discussionOrder
+        // 不写死从谁起：随机起点 + 随机方向，但一定绕满一圈、每人一次
+        assertEquals((1..9).toList(), order.sorted())
+        // 同一局面反复取要一致：续档、复盘、拼上下文都得对齐
+        assertEquals(order, game.discussionOrder)
     }
 
     @Test

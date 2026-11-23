@@ -89,10 +89,12 @@ class WerewolfProgressTest {
         val agents = (1..9).associate { it to SeatAgent(ConstAI(), "test") }
         val director = WerewolfDirector(agents, onProgress = { events += it })
 
-        director.discussion(WerewolfTable(standard9().copy(phase = Phase.DAY_DISCUSSION)))
+        // 没有警长时起点与方向随机：进度只需要跟发言顺序一致，不要求从 1 号起
+        val game = standard9().copy(phase = Phase.DAY_DISCUSSION)
+        director.discussion(WerewolfTable(game))
 
         assertEquals("9 个人各报一次", 9, events.size)
-        assertEquals("座位顺序", (1..9).toList(), events.map { it.seat })
+        assertEquals("和发言顺序一致", game.discussionOrder, events.map { it.seat })
         assertEquals("步进从 1 到 9", (1..9).toList(), events.map { it.step })
         assertTrue("每一步都知道总数是 9", events.all { it.total == 9 })
     }
