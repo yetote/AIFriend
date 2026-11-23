@@ -1,6 +1,7 @@
 package com.core.ai.entity
 
 import com.core.ai.isTimeoutLike
+import com.core.ai.looksLikeSearchConflict
 import com.core.ai.model.ChatCompletionRequest
 import com.core.ai.model.ChatCompletionResponse
 import com.core.ai.model.ChatDelta
@@ -156,7 +157,9 @@ abstract class OpenAICompatibleAI(
                     chatWithUsage(messages, model, systemPrompt, retryThinking, jsonMode, webSearch)
                 }.getOrElse { error ->
                     if (error is CancellationException) throw error
-                    if (!webSearch) throw error
+                    // 只在「看起来是搜索冲突」时才摘：限流、5xx、断网跟联网无关，
+                    // 摘掉搜索照样失败，还白丢一次检索（用户会以为搜索式从不搜）。
+                    if (!webSearch || !error.looksLikeSearchConflict()) throw error
                     chatWithUsage(messages, model, systemPrompt, retryThinking, jsonMode, webSearch = false)
                 }
                 send(

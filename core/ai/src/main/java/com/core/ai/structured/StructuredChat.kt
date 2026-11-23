@@ -2,6 +2,7 @@ package com.core.ai.structured
 
 import com.core.ai.entity.IAI
 import com.core.ai.isTimeoutLike
+import com.core.ai.looksLikeSearchConflict
 import com.core.ai.model.ChatMessage
 import com.core.ai.model.TokenCounter
 import com.core.ai.model.TokenUsage
@@ -124,8 +125,11 @@ suspend fun <T> IAI.decide(
             }
             // 搜索把这一次请求弄挂了：去掉搜索再问一次。宁可这一步没查，
             // 也别让整个决策失败——决策失败会把这个座位的一步直接推成兜底动作。
+            //
+            // 但只在「看起来是搜索冲突」时才摘：限流、5xx、断网跟联网无关，
+            // 摘掉照样失败，还白丢一次检索（见 [looksLikeSearchConflict]）。
             // 只摘一次；摘掉之后再失败就是真的失败，异常照常往上抛。
-            if (search && attempt < maxAttempts) {
+            if (search && attempt < maxAttempts && error.looksLikeSearchConflict()) {
                 search = false
                 continue
             }

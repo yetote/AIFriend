@@ -13,3 +13,25 @@ package com.core.ai
 fun Throwable.isTimeoutLike(): Boolean =
     generateSequence(this) { it.cause }
         .any { cause -> cause::class.simpleName?.contains("Timeout", ignoreCase = true) == true }
+
+/**
+ * 这次失败像不像「联网字段把请求弄挂了」。
+ *
+ * 摘搜索重试是有代价的：这一次检索白丢，模型退化成凭记忆答。所以只在两种情况下摘——
+ * 错误信息点名 search / tool（厂商直接说不认这个组合），或者是参数类拒绝（400 / 422）：
+ * 那时请求形状本身不被接受，去掉搜索还有机会成。
+ *
+ * **429 限流、5xx、断网一律不摘**：它们跟联网无关，摘掉搜索照样失败，却白丢一次检索，
+ * 而且用户看到的是「选了搜索式却从不搜索」。
+ *
+ * 只看 message 文本，按类名判断行不通：core:ai 不依赖 core:network，拿不到 `DomainException`。
+ */
+fun Throwable.looksLikeSearchConflict(): Boolean {
+    val text = generateSequence(this) { it.cause }
+        .mapNotNull { it.message }
+        .joinToString(" ")
+        .lowercase()
+    if (text.isEmpty()) return false
+    if ("search" in text || "tool" in text) return true
+    return listOf("400", "422", "bad request", "invalid").any { it in text }
+}

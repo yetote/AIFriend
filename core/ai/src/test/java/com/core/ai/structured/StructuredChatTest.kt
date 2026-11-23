@@ -497,4 +497,49 @@ class StructuredChatTest {
         // 可能 400，也可能是静默忽略，两种都不该发生
         assertEquals(listOf(false), ai.searchFlags)
     }
+
+    /**
+     * 429 限流的假厂商。
+     *
+     * 真实场景：撞上限流跟联网毫无关系，摘掉搜索再打一次照样 429，
+     * 却白丢一次检索——用户看到的是「选了搜索式却从不搜索」。
+     */
+    private class RateLimitedAI : IAI {
+        override val supportsWebSearch: Boolean = true
+        val searchFlags = mutableListOf<Boolean>()
+
+        override suspend fun requestModel() = Unit
+        override var modelSet: MutableSet<String> = mutableSetOf()
+        override var brandName: String = "测试厂商"
+        override var company: String = "测试"
+
+        override suspend fun chat(
+            messages: List<ChatMessage>,
+            model: String,
+            systemPrompt: String?,
+            enableThinking: Boolean,
+            jsonMode: Boolean,
+            webSearch: Boolean,
+        ): String {
+            searchFlags += webSearch
+            throw IllegalStateException("请求过于频繁（429），请稍后再试")
+        }
+
+        @Deprecated("测试用不到")
+        override suspend fun chat(message: String, model: String): String =
+            chat(listOf(ChatMessage.user(message)), model)
+    }
+
+    @Test
+    fun `限流失败不会顺手把搜索摘掉`() {
+        val ai = RateLimitedAI()
+
+        assertThrows(IllegalStateException::class.java) {
+            runBlocking {
+                ai.decide(userMessage, "m", spec, fallback = { VoteDecision(1) }, webSearch = true)
+            }
+        }
+        // 只发过一次、而且是带搜索的：没有偷偷降级成「不搜再来一次」
+        assertEquals(listOf(true), ai.searchFlags)
+    }
 }
