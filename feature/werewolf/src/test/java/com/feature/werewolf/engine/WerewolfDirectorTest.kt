@@ -236,13 +236,13 @@ class WerewolfDirectorTest {
     }
 
     /**
-     * 竞选发言里自爆 = 炸掉警徽。
+     * 竞选发言里自爆 = 竞选中止，警徽顺延（单爆吞不掉警徽，双爆才吞）。
      *
      * 这条以前被卡住了：自爆要求发言里点名一个活着的队友（救队友那条判据），
      * 而「吞警徽」本来就不需要救谁，于是这个正经花板子永远触发不了。
      */
     @Test
-    fun `竞选发言里自爆会炸掉警徽`() = runBlocking {
+    fun `竞选发言里自爆会中止竞选，但警徽顺延`() = runBlocking {
         val exploder = ScriptedAI(listOf("【自爆】这个警徽今天谁也别想拿。"))
         val director = WerewolfDirector(agentsOf(1 to exploder))
         val game = standard9().copy(
@@ -254,8 +254,12 @@ class WerewolfDirectorTest {
 
         val result = director.sheriffSpeech(WerewolfTable(game))
 
-        assertTrue("选举要收尾，否则下次 dayOpening 会把游戏拽回上警", result.game.sheriffElectionDone)
-        assertNull("本局没有警长", result.game.sheriffSeat)
+        assertFalse("单爆只是顺延，下一次天亮还要上警", result.game.sheriffElectionDone)
+        assertTrue(
+            "要记下这次顺延",
+            result.game.history.any { it is GameEvent.SheriffPostponed },
+        )
+        assertNull("这一次没人当选", result.game.sheriffSeat)
         assertNotEquals("不能停在竞选发言", Phase.DAY_SHERIFF_SPEECH, result.game.phase)
         assertFalse("爆的狼已经出局", result.game.playerAt(1).alive)
     }

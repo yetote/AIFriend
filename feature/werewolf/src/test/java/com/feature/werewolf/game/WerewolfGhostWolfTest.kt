@@ -64,15 +64,15 @@ class WerewolfGhostWolfTest {
     }
 
     @Test
-    fun `警长竞选里自爆仍然中止选举`() {
+    fun `警长竞选里自爆仍然中止本次选举`() {
         val exploded = day().copy(phase = Phase.DAY_SHERIFF_SPEECH, sheriffCandidates = listOf(1, 2))
             .wolfExplode(1)
 
-        assertTrue("选举就此作废", exploded.sheriffElectionDone)
+        assertFalse("单爆不吞警徽，选举只是顺延", exploded.sheriffElectionDone)
         assertTrue("候选人清空", exploded.sheriffCandidates.isEmpty())
         assertTrue(
-            "要留下「没有警长」这条播报",
-            exploded.history.any { it is GameEvent.SheriffVacant },
+            "要留下「警徽顺延」这条播报",
+            exploded.history.any { it is GameEvent.SheriffPostponed },
         )
     }
 }

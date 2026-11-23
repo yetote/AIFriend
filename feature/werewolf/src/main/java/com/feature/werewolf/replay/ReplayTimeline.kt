@@ -54,6 +54,8 @@ object ReplayTimeline {
                 is GameEvent.HunterShot -> event.targetSeat?.let { dead = dead + it }
                 is GameEvent.SheriffElected -> sheriff = event.seat
                 is GameEvent.SheriffVacant -> sheriff = null
+                // 顺延不改警徽：本来就没选出来，接着挂着
+                is GameEvent.SheriffPostponed -> Unit
                 is GameEvent.SheriffBadgePassed -> sheriff = event.toSeat
                 // 报名、PK、白痴翻牌、熊咆哮、结束都只影响播报文案，不改变座位状态的这两项
                 else -> Unit
@@ -131,7 +133,8 @@ object ReplayTimeline {
     private fun rankOf(event: GameEvent): Int = event.day * 100 + when (event) {
         is GameEvent.Dawn, is GameEvent.BearRoar -> 9
         is GameEvent.SheriffSignup -> 10
-        is GameEvent.SheriffPk, is GameEvent.SheriffElected, is GameEvent.SheriffVacant -> 12
+        is GameEvent.SheriffPk, is GameEvent.SheriffElected, is GameEvent.SheriffVacant,
+        is GameEvent.SheriffPostponed -> 12
         // 警长定方向发生在讨论发言之前，和讨论同段（13），排在当轮发言记录前面
         is GameEvent.SpeechDirectionChosen -> 13
         is GameEvent.WolfExploded, is GameEvent.Exiled,

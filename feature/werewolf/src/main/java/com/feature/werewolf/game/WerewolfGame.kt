@@ -117,8 +117,20 @@ data class WerewolfGame(
     val sheriffRunners: List<Int> = emptyList(),
     /** 警长选举轮次：1 首次投票，2 平票后的 PK。 */
     val sheriffRound: Int = 1,
-    /** 警长选举是否已经办过。第 1 天办过一次就不再办，无人上警也算办过。 */
+    /**
+     * 警长选举是否已经办过。办过一次就不再办，无人上警也算办过。
+     *
+     * 例外是**竞选被自爆打断**：那一次没选出人、也没决定作废，只是顺延，
+     * 所以这里仍然是 false，下一个天亮的第一件事还是上警（见 [sheriffElectionVoids]）。
+     */
     val sheriffElectionDone: Boolean = false,
+    /**
+     * 竞选被自爆打断了几次。
+     *
+     * 「单爆吞白天，双爆吞警徽」：第一次只是把竞选推到明天，第二次才作废——
+     * 这个计数就是判「第几次」用的，所以它跨天累计、不随 `startNextNight()` 清零。
+     */
+    val sheriffElectionVoids: Int = 0,
     /**
      * 待发表遗言的座位，按顺序处理。
      *
@@ -315,7 +327,7 @@ data class WerewolfGame(
      * 2. **没有警长时起点和方向都由系统随机指定**（[opening]）。没人主持就只能掷骰子：
      *    原来固定「从昨夜死者下位起、顺时针」，等于让固定位置的人每个白天都先开口，
      *    而先说话的人在 AI 局里优势明显（先立靶子，后面全在接话）。
-     *    警长竞选被自爆炸掉、警长死了没交接，都会落到这一条。
+     *    警徽顺延期间（竞选被打断）、双爆作废、警长死了没交接，都会落到这一条。
      *
      * 返回的是**从起点绕一圈**的完整顺序（越过最大座位号后回到最小的），
      * 不是「排好序的活人」——差一个绕圈，7 号之后的 1 号就会被漏掉。
@@ -903,9 +915,10 @@ data class WerewolfGame(
      * 是警长——警徽得交出去，所以走一遍遗言。
      *
      * 两个容易漏的收尾：
-     * - **竞选发言里自爆**：选举当场中止，本局没有警长。必须按「无人上警」那样清掉
-     *   竞选名单、补一条 [GameEvent.SheriffVacant]，并置 [sheriffElectionDone]；
-     *   否则 `sheriffElectionDone` 还是 false，下一次 `dayOpening()` 会把游戏拽回上警。
+     * - **竞选发言里自爆**：选举当场中止，但警徽**不在这里作废**——单爆只吞掉一个白天，
+     *   警徽顺延到下一个白天重新竞选（[GameEvent.SheriffPostponed]）；连第二次也被自爆
+     *   打断（双爆）才按「无人上警」那样清掉竞选名单、补 [GameEvent.SheriffVacant]、
+     *   置 [sheriffElectionDone]。**只有后者**才能让 `dayOpening()` 不再把游戏拽回上警。
      * - **别人的遗言还在排队**：首夜死者（或警长）可能正在等遗言。自爆不能覆盖
      *   那个队列，只能把自己的座位并进去——并完还要走完遗言再入夜。
      */
@@ -924,14 +937,27 @@ data class WerewolfGame(
         next = next.copy(history = next.history + GameEvent.WolfExploded(next.day, seat))
 
         if (wasCampaigning) {
-            next = next.copy(
-                sheriffCandidates = emptyList(),
-                sheriffRunners = emptyList(),
-                sheriffRound = 1,
-                sheriffElectionDone = true,
-                history = next.history + GameEvent.SheriffVacant(next.day, "竞选发言时狼人自爆，选举中止"),
-            )
-            // 竞选自爆会把死讯的公布时机一起炸掉：第 1 天有警长时，昨夜死讯压在
+            val voids = next.sheriffElectionVoids + 1
+            next = if (voids >= 2) {
+                next.copy(
+                    sheriffCandidates = emptyList(),
+                    sheriffRunners = emptyList(),
+                    sheriffRound = 1,
+                    sheriffElectionDone = true,
+                    sheriffElectionVoids = voids,
+                    history = next.history +
+                        GameEvent.SheriffVacant(next.day, "连续两次竞选被自爆打断，警徽流失"),
+                )
+            } else {
+                next.copy(
+                    sheriffCandidates = emptyList(),
+                    sheriffRunners = emptyList(),
+                    sheriffRound = 1,
+                    sheriffElectionVoids = voids,
+                    history = next.history + GameEvent.SheriffPostponed(next.day, seat),
+                )
+            }
+            // 竞选自爆会把死讯的公布时机一起炸掉：有警长时，昨夜死讯压在
             // pendingDawn 里等竞选结束才说（见 [settleNight]）。自爆直接跳过竞选，
             // 这里不补的话，首夜死者会在一句「昨夜谁倒牌」都没播过的情况下直接留遗言，
             // 而下一夜结算会把 pendingDawn 覆盖掉——这条死讯就永久消失了。
@@ -1036,9 +1062,10 @@ data class WerewolfGame(
         // 熊在结算完之后判断：他可能刚死，左右邻居也可能刚死。只看天亮那一刻的存活状态，
         // 所以「今天没咆哮」并不等于「两边都是好人」——这条区别要写进播报文案。
         val bearRoar = next.bearRoarSeat()?.let { GameEvent.BearRoar(next.day, it) }
-        // 第一天有警长选举时，死讯要**等竞选结束再公布**：竞选发言是在看不见死讯的时候说的。
+        // 有警长选举时，死讯要**等竞选结束再公布**：竞选发言是在看不见死讯的时候说的。
+        // 竞选被自爆打断、警徽顺延到下一天时，第二天照样先竞选，所以这里同样不能只看第 1 天。
         // 所以这段时间它不进 history，只暂存在 [pendingDawn] 里。
-        val holdDawn = config.hasSheriff && next.day == 1 && !next.sheriffElectionDone
+        val holdDawn = config.hasSheriff && !next.sheriffElectionDone
         next = next.copy(
             history = if (holdDawn) {
                 next.history
@@ -1216,8 +1243,9 @@ data class WerewolfGame(
         voteCandidates = null,
         ballots = emptyList(),
         pendingHunterSeat = null,
-        // 竞选只在第 1 天办一次，跨夜时把选举过程的中间状态收干净；
-        // sheriffElectionDone 留着，它记录的是「办过了」
+        // 竞选最多办到选出来为止（被自爆打断就顺延到下一天），跨夜时把选举过程的
+        // 中间状态收干净；sheriffElectionDone / sheriffElectionVoids 留着，
+        // 它们记录的是「办完了没有」和「被打断过几次」
         sheriffCandidates = emptyList(),
         sheriffRunners = emptyList(),
         sheriffRound = 1,
@@ -1228,14 +1256,17 @@ data class WerewolfGame(
     /**
      * 天亮之后先做什么。
      *
-     * 顺序是有讲究的：**第 1 天先选警长，再让死者留遗言**。反过来先遗言的话，
+     * 顺序是有讲究的：**先选警长，再让死者留遗言**。反过来先遗言的话，
      * 死者的指控会直接左右警长投票——等于给死人一张选票，而且这张票还没有成本。
+     *
+     * 竞选被自爆打断时警徽顺延，所以这里不按天数判「第 1 天」：只要警徽还没着落
+     * （没选出来、也没作废），每一个天亮都是先上警。
      *
      * 警长死了、但遗言还没说的时候，不能在这里把警徽清掉：他得先在遗言里指定继任者。
      */
     private fun dayOpening(): WerewolfGame {
         val cleaned = if (pendingLastWords.contains(sheriffSeat)) this else dropDeadBadge()
-        if (cleaned.day == 1 && cleaned.config.hasSheriff && !cleaned.sheriffElectionDone) {
+        if (cleaned.config.hasSheriff && !cleaned.sheriffElectionDone) {
             return cleaned.copy(phase = Phase.DAY_SHERIFF_SIGNUP)
         }
         return if (cleaned.pendingLastWords.isNotEmpty()) {
@@ -1273,10 +1304,10 @@ data class WerewolfGame(
     /**
      * 把暂存在 [pendingDawn] 里的昨夜死讯写进公开事件流。
      *
-     * 第 1 天有警长时，死讯要等竞选结束再公布（竞选发言是在看不见死讯时说的）。
-     * 有两个地方会「提前结束竞选」——正常选出警长 / 无人上警，以及**竞选发言里
-     * 狼人自爆**。两处都必须调这里，漏掉任何一处，那条死讯就没有第二次机会：
-     * 没有别的地方会再读 pendingDawn。
+     * 有警长的局，死讯要等竞选结束再公布（竞选发言是在看不见死讯时说的）。
+     * 有三个地方会「提前结束竞选」——正常选出警长 / 无人上警、**竞选发言里
+     * 狼人自爆，以及自爆打断导致的顺延**。三处都必须调这里，漏掉任何一处，
+     * 那条死讯就没有第二次机会：没有别的地方会再读 pendingDawn。
      */
     private fun publishDawnIfHeld(): WerewolfGame {
         val pending = pendingDawn ?: return this

@@ -121,6 +121,18 @@ sealed interface GameEvent {
         val reason: String,
     ) : GameEvent
 
+    /**
+     * 竞选被自爆打断，警徽**没选出来、也没作废**，顺延到下一个白天重新竞选。
+     *
+     * 和「双爆吞警徽」是同一条规则的两半：单爆只吞掉一个白天，警徽还挂着，
+     * 下一次天亮的开场第一件事还是上警；第二天再被自爆打断一次（双爆），
+     * 才补 [SheriffVacant] 把警徽彻底作废。
+     */
+    data class SheriffPostponed(
+        override val day: Int,
+        val seat: Int,
+    ) : GameEvent
+
     /** 警长投票平票，进入 PK：这几个座位再各说一轮，然后重投。 */
     data class SheriffPk(
         override val day: Int,

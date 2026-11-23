@@ -354,6 +354,8 @@ object WerewolfPrompt {
 
         is GameEvent.SheriffVacant -> "没有警长（${event.reason}）"
 
+        is GameEvent.SheriffPostponed -> "竞选被自爆打断，警徽顺延到明天再选"
+
         // PK 是过程：平票这件事对结局没有额外后果，结果已经由 SheriffElected 或
         // SheriffVacant 表达过了，折叠之后再留一行只是重复占位
         is GameEvent.SheriffPk -> null
@@ -422,6 +424,9 @@ object WerewolfPrompt {
 
         is GameEvent.SheriffVacant ->
             "第${event.day}天：本局没有警长（${event.reason}）"
+
+        is GameEvent.SheriffPostponed ->
+            "第${event.day}天：${event.seat} 号自爆，警长竞选中止，警徽顺延到下一个白天"
 
         is GameEvent.SheriffPk ->
             "第${event.day}天：警长投票平票（${seatsText(event.seats)}），进入 PK 发言"

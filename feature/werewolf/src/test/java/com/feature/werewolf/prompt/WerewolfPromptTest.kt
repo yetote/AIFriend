@@ -508,6 +508,31 @@ class WerewolfPromptTest {
     }
 
     @Test
+    fun `规则写清单爆顺延、双爆才吞警徽`() {
+        val roles = listOf(
+            WerewolfRole.WEREWOLF, WerewolfRole.WEREWOLF, WerewolfRole.WEREWOLF,
+            WerewolfRole.SEER, WerewolfRole.WITCH, WerewolfRole.HUNTER,
+            WerewolfRole.VILLAGER, WerewolfRole.VILLAGER, WerewolfRole.VILLAGER,
+        )
+        val game = WerewolfGame.withRoles(
+            config = WerewolfConfig(
+                composition = roles.groupingBy { it }.eachCount(),
+                hasSheriff = true,
+                maxVoteRounds = 2,
+            ),
+            roster = roster(9),
+            roles = roles,
+        ).copy(phase = Phase.DAY_DISCUSSION)
+
+        // 自由式也吃这份 rulesBrief：警徽顺延是硬规则，不是打法
+        val free = WerewolfPrompt.systemPrompt(game, seat = 1, style = WerewolfPromptStyle.FREE)
+
+        assertTrue("单爆只是顺延", free.contains("顺延到下一个白天重新竞选"))
+        assertTrue("双爆才吞警徽", free.contains("双爆"))
+        assertFalse("不能再写「一次自爆就没有警长」", free.contains("本局按「无人上警」处理"))
+    }
+
+    @Test
     fun `自爆提示只写给狼 受理条件是标记本身`() {
         val day = standardGame().copy(phase = Phase.DAY_DISCUSSION)
 

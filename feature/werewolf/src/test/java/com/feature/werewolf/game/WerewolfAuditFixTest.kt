@@ -39,6 +39,9 @@ class WerewolfAuditFixTest {
         val start = WerewolfGame.withRoles(configOf(roles, hasSheriff), roster(roles.size), roles)
         val trimmed = start.copy(
             day = 2,
+            // 这些用例都从「警长已经选完」的位置开始：竞选没办完的话，
+            // 第二天开场会先回到上警（见顺延那条规则）
+            sheriffElectionDone = true,
             sheriffSeat = sheriff,
             players = start.players.map {
                 if (it.seat == 6) it.copy(alive = false, deathCause = DeathCause.EXILE, deathDay = 1) else it
@@ -132,7 +135,7 @@ class WerewolfAuditFixTest {
         // 他开枪后到遗言之前，警徽必须还挂在他名下，否则没法交代继任者。
         val roles = listOf(WEREWOLF, WEREWOLF, WEREWOLF, HUNTER, WITCH, VILLAGER, VILLAGER, VILLAGER, VILLAGER)
         val start = WerewolfGame.withRoles(configOf(roles), roster(9), roles)
-            .copy(day = 2, sheriffSeat = 4)
+            .copy(day = 2, sheriffSeat = 4, sheriffElectionDone = true)
             .beginWolfVote()
         var mode = start.wolfVote(mapOf(1 to 4, 2 to 4, 3 to 4)).witchAct(heal = false)
 
@@ -151,7 +154,7 @@ class WerewolfAuditFixTest {
     // ------------------------------------------------------------------
 
     @Test
-    fun `竞选发言时自爆不吞首夜遗言，也不把选举留成未完成`() {
+    fun `竞选发言时自爆不吞首夜遗言，警徽顺延而不是作废`() {
         val roles = listOf(WEREWOLF, WEREWOLF, WEREWOLF, SEER, WITCH, HUNTER, VILLAGER, VILLAGER, VILLAGER)
         var mode = WerewolfGame.withRoles(configOf(roles), roster(9), roles).beginWolfVote()
         mode = mode.wolfVote(mapOf(1 to 7, 2 to 7, 3 to 7)).seerCheck(1).witchAct(heal = false)
@@ -162,12 +165,47 @@ class WerewolfAuditFixTest {
 
         val after = mode.wolfExplode(1)
         assertEquals("7 号的遗言不能因为别人自爆而消失", listOf(7), after.pendingLastWords)
-        assertTrue("选举已中止，第二天不能再回到上警", after.sheriffElectionDone)
-        assertTrue("公开历史要说明本局为什么没有警长", after.history.any { it is GameEvent.SheriffVacant })
+        assertFalse("单爆只吞一个白天，警徽还挂着", after.sheriffElectionDone)
+        assertEquals("记下第一次被打断", 1, after.sheriffElectionVoids)
+        assertTrue("公开历史要说明警徽顺延", after.history.any { it is GameEvent.SheriffPostponed })
+        assertFalse("这时候不能宣布没有警长", after.history.any { it is GameEvent.SheriffVacant })
         assertTrue(after.sheriffCandidates.isEmpty())
         assertTrue(after.sheriffRunners.isEmpty())
         assertEquals(Phase.DAY_LAST_WORDS, after.phase)
 
         assertEquals(Phase.NIGHT_WOLF_CHAT, after.finishLastWords().phase)
+    }
+
+    @Test
+    fun `单爆只顺延一天，第二天天亮照样先上警`() {
+        val roles = listOf(WEREWOLF, WEREWOLF, WEREWOLF, SEER, WITCH, HUNTER, VILLAGER, VILLAGER, VILLAGER)
+        var mode = WerewolfGame.withRoles(configOf(roles), roster(9), roles).beginWolfVote()
+        mode = mode.wolfVote(mapOf(1 to 7, 2 to 7, 3 to 7)).seerCheck(1).witchAct(heal = false)
+        mode = mode.signUpSheriff(setOf(1, 2)).wolfExplode(1).finishLastWords().beginWolfVote()
+
+        // 自爆的 1 号当晚仍然在狼队里，定刀这一票照样算（定刀结束才离场）
+        mode = mode.wolfVote(mapOf(1 to 8, 2 to 8, 3 to 8)).seerCheck(2).witchAct(heal = false)
+        assertTrue("定刀结束，自爆狼离场", mode.ghostWolves.isEmpty())
+
+        assertEquals("警徽没作废，第二天开场还是先上警", Phase.DAY_SHERIFF_SIGNUP, mode.phase)
+        assertFalse(mode.sheriffElectionDone)
+        assertNull("还没人当选", mode.sheriffSeat)
+    }
+
+    @Test
+    fun `连续两次竞选被打断，警徽才作废`() {
+        val roles = listOf(WEREWOLF, WEREWOLF, WEREWOLF, SEER, WITCH, HUNTER, VILLAGER, VILLAGER, VILLAGER)
+        var mode = WerewolfGame.withRoles(configOf(roles), roster(9), roles).beginWolfVote()
+        mode = mode.wolfVote(mapOf(1 to 7, 2 to 7, 3 to 7)).seerCheck(1).witchAct(heal = false)
+        mode = mode.signUpSheriff(setOf(1, 2)).wolfExplode(1).finishLastWords().beginWolfVote()
+        mode = mode.wolfVote(mapOf(1 to 8, 2 to 8, 3 to 8)).seerCheck(2).witchAct(heal = false)
+
+        // 第二天重新上警，第二只狼又爆一次
+        val after = mode.signUpSheriff(setOf(2, 3)).wolfExplode(2)
+
+        assertEquals("第二次才算双爆", 2, after.sheriffElectionVoids)
+        assertTrue("双爆之后不再竞选", after.sheriffElectionDone)
+        assertTrue("要播报警徽流失", after.history.any { it is GameEvent.SheriffVacant })
+        assertNull(after.sheriffSeat)
     }
 }

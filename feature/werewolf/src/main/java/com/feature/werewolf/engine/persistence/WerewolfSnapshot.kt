@@ -79,7 +79,7 @@ object WerewolfSnapshot {
      * v21：对局多出 `ghostWolves`（自爆出局、但当夜还没走的狼）。
      * 默认空集合，旧档读出来就是「那晚没有自爆狼」，行为不变。
      */
-    const val VERSION = 21
+    const val VERSION = 22
 
     private val json = Json {
         ignoreUnknownKeys = true   // 旧档多出来的字段不该让新版本读不出来
@@ -241,6 +241,8 @@ internal data class TableSnapshot(
     val sheriffRunners: List<Int> = emptyList(),
     val sheriffRound: Int = 1,
     val sheriffElectionDone: Boolean = false,
+    /** v22 起：竞选被自爆打断的次数。第一次只是顺延，第二次（双爆）才吞掉警徽。 */
+    val sheriffElectionVoids: Int = 0,
     /** v4 起：待说遗言的座位，以及遗言结束后去哪。 */
     val pendingLastWords: List<Int> = emptyList(),
     val afterLastWordsPhase: String = Phase.DAY_DISCUSSION.name,
@@ -464,6 +466,7 @@ internal fun WerewolfTable.toSnapshot(
         sheriffRunners = game.sheriffRunners,
         sheriffRound = game.sheriffRound,
         sheriffElectionDone = game.sheriffElectionDone,
+        sheriffElectionVoids = game.sheriffElectionVoids,
         pendingLastWords = game.pendingLastWords,
         afterLastWordsPhase = game.afterLastWordsPhase.name,
         afterHunterPhase = game.afterHunterPhase.name,
@@ -534,6 +537,8 @@ private fun GameEvent.toSnapshot(): EventSnapshot = when (this) {
     is GameEvent.SheriffElected ->
         EventSnapshot(type = "SHERIFF_ELECTED", day = day, seat = seat, voteCount = votes.toDouble())
     is GameEvent.SheriffVacant -> EventSnapshot(type = "SHERIFF_VACANT", day = day, reason = reason)
+    is GameEvent.SheriffPostponed ->
+        EventSnapshot(type = "SHERIFF_POSTPONED", day = day, seat = seat)
     is GameEvent.SheriffPk -> EventSnapshot(type = "SHERIFF_PK", day = day, seats = seats)
     is GameEvent.SheriffBadgePassed ->
         EventSnapshot(type = "SHERIFF_BADGE_PASSED", day = day, fromSeat = fromSeat, targetSeat = toSeat)
@@ -597,6 +602,7 @@ internal fun TableSnapshot.toTable(): WerewolfTable = WerewolfTable(
         sheriffRunners = sheriffRunners,
         sheriffRound = sheriffRound,
         sheriffElectionDone = sheriffElectionDone,
+        sheriffElectionVoids = sheriffElectionVoids,
         pendingLastWords = pendingLastWords,
         afterLastWordsPhase = enumOf<Phase>(afterLastWordsPhase),
         afterHunterPhase = enumOf<Phase>(afterHunterPhase),
@@ -684,6 +690,10 @@ private fun EventSnapshot.toEvent(): GameEvent = when (type) {
     "SHERIFF_VACANT" -> GameEvent.SheriffVacant(
         day = day,
         reason = reason ?: "警徽流失",
+    )
+    "SHERIFF_POSTPONED" -> GameEvent.SheriffPostponed(
+        day = day,
+        seat = requireNotNull(seat) { "SHERIFF_POSTPONED 缺少 seat" },
     )
     "SHERIFF_PK" -> GameEvent.SheriffPk(day = day, seats = seats.orEmpty())
     "SHERIFF_BADGE_PASSED" -> GameEvent.SheriffBadgePassed(
