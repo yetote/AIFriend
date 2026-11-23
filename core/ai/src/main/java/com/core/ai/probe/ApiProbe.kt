@@ -41,6 +41,15 @@ private const val PROBE_PROMPT = "这是一次连通性检查，请只回复 OK�
 const val DEFAULT_PROBE_TIMEOUT_MS = 20_000L
 
 /**
+ * 要求联网检索时的超时。
+ *
+ * 检索不是一次普通对话：厂商要先去搜、再把网页内容塞回上下文，多花的这十几秒
+ * 不属于「模型慢」。沿用 20 秒会把所有支持联网的厂商都判成超时——
+ * 那等于把搜索式整档钉死在开局页上。
+ */
+const val SEARCH_PROBE_TIMEOUT_MS = 45_000L
+
+/**
  * 真发一次极短的对话请求，判断这个模型是否可用。
  *
  * 为什么不用拉模型列表来代替：
@@ -56,6 +65,13 @@ const val DEFAULT_PROBE_TIMEOUT_MS = 20_000L
 suspend fun IAI.probe(
     model: String,
     timeoutMs: Long = DEFAULT_PROBE_TIMEOUT_MS,
+    /**
+     * 这一测要不要代表「搜索式」这一个前提。
+     *
+     * 同一个座位在两种前提下结论可能不同：厂商没有内置搜索时，普通探活是通的，
+     * 搜索式探活必须是红的——它连得上，但连上了也不会去查。开局前要拦的正是这件事。
+     */
+    webSearch: Boolean = false,
 ): ApiProbeResult {
     val startedAt = System.currentTimeMillis()
     fun elapsed() = System.currentTimeMillis() - startedAt
@@ -70,8 +86,21 @@ suspend fun IAI.probe(
         )
     }
 
+    // 搜索式 + 这家没有内置搜索：一个字节都不发。
+    // 发出去要么被静默忽略（最糟：提示词写着可以查，模型把记忆当查证结果），
+    // 要么 400 回来一条看不懂的报错。直接说清楚是哪件事不行，用户才知道该换人还是换风格
+    if (webSearch && !supportsWebSearch) {
+        return ApiProbeResult(
+            ok = false,
+            elapsedMs = 0,
+            message = "「$brandName」的对话接口不支持联网搜索",
+        )
+    }
+
+    val budget = if (webSearch) maxOf(timeoutMs, SEARCH_PROBE_TIMEOUT_MS) else timeoutMs
+
     return try {
-        withTimeout(timeoutMs) {
+        withTimeout(budget) {
             chat(
                 messages = listOf(ChatMessage.user(PROBE_PROMPT)),
                 model = model,
@@ -79,6 +108,8 @@ suspend fun IAI.probe(
                 // 关掉深度思考：开着的话一个推理模型可能先想十几秒，
                 // 白白吃掉超时额度，而这只是一次「你在不在」的确认
                 enableThinking = false,
+                // 搜索式这一测的意义就在于「带着搜索也能回话」，不带就白测
+                webSearch = webSearch,
             )
         }
         // 空内容也算通：模型回空串是它自己的问题，但链路、Key、模型名都是对的，
@@ -89,7 +120,7 @@ suspend fun IAI.probe(
         ApiProbeResult(
             ok = false,
             elapsedMs = elapsed(),
-            message = "${timeoutMs / 1000} 秒没有响应",
+            message = "${budget / 1000} 秒没有响应",
         )
     } catch (cancelled: CancellationException) {
         throw cancelled

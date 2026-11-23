@@ -23,11 +23,15 @@ class ApiProbeTest {
     /** 只负责按剧本回话或抛错的最小 IAI。 */
     private class FakeAI(
         private val configured: Boolean = true,
-        // 放在最后保持尾随 lambda 的写法：`FakeAI { "OK" }`
+        // 放在中间：respond 必须是最后一个参数，尾随 lambda 的写法才成立
+        override val supportsWebSearch: Boolean = false,
         private val respond: suspend () -> String,
     ) : IAI {
         /** 记录真正发出过几次请求，用来断言「没 Key 时一次都不该发」。 */
         var chatCalls: Int = 0
+
+        /** 每次请求实际带的搜索开关，用来断言「该带的带上了」。 */
+        val searchFlags: MutableList<Boolean> = mutableListOf()
 
         override var modelSet: MutableSet<String> = mutableSetOf()
         override var brandName: String = "Fake"
@@ -46,6 +50,7 @@ class ApiProbeTest {
             webSearch: Boolean,
         ): String {
             chatCalls++
+            searchFlags += webSearch
             return respond()
         }
 
@@ -134,5 +139,38 @@ class ApiProbeTest {
         }
 
         assertTrue(propagated)
+    }
+
+    @Test
+    fun `搜索式下这家没有联网搜索时，一个请求都不发`() = runBlocking {
+        // 关键在「不发」而不是「发了再报错」：不支持的厂商收到未知字段可能静默忽略，
+        // 那样探活反而是绿的，而用户开局后看到的才是「写着可以查、其实一次没查」
+        val ai = FakeAI(supportsWebSearch = false) { "OK" }
+        val result = ai.probe("m", webSearch = true)
+
+        assertFalse(result.ok)
+        assertEquals(0, ai.chatCalls)
+        assertTrue(
+            "要指名是联网这件事不行：${result.message}",
+            result.message.orEmpty().contains("不支持联网搜索"),
+        )
+    }
+
+    @Test
+    fun `搜索式下支持联网时，请求真的带上搜索`() = runBlocking {
+        // 不带搜索的探活是另一道题：它证明连得上，证明不了「带着检索也能回话」
+        val ai = FakeAI(supportsWebSearch = true) { "OK" }
+        val result = ai.probe("m", webSearch = true)
+
+        assertTrue(result.ok)
+        assertEquals(listOf(true), ai.searchFlags)
+    }
+
+    @Test
+    fun `普通探活不带搜索`() = runBlocking {
+        val ai = FakeAI(supportsWebSearch = true) { "OK" }
+        ai.probe("m")
+
+        assertEquals(listOf(false), ai.searchFlags)
     }
 }

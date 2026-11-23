@@ -504,6 +504,9 @@ fun WerewolfRoute(
             },
             onClearError = viewModel::clearError,
             onCheckApi = { viewModel.checkApi(selectedIds) },
+            // 切到 AI 设置页 / 换打法时自动验一遍：搜索式和不搜索式对同一个座位
+            // 结论可能相反，不重验就会带着「其实不会联网」的座位开局
+            onAutoCheck = { viewModel.checkApiIfNeeded(selectedIds) },
             onOpenPromptSettings = { screen = WerewolfScreen.PromptSettings },
             // 回列表而不是退出页面：配置页是从列表进来的，退出去等于多按一次
             onBack = { screen = WerewolfScreen.History },

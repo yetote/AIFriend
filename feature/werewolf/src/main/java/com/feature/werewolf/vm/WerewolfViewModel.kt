@@ -805,10 +805,40 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
         if (state.value.running) return
         viewModelScope.launch {
             val friends = _friends.value.ifEmpty { friendRepository.load().map { it.toFriend() } }
-            val allOk = runProbe(friends.filter { it.id in friendIds }, force = true)
+            val allOk = runProbe(
+                chosen = friends.filter { it.id in friendIds },
+                force = true,
+                webSearch = probeRequiresSearch(),
+            )
             // 用户点这个按钮就是要解掉那条红字，全绿了还挂着会让人以为没生效。
             // 万一是别的原因（比如人数不对），点开局会重新提示一次，不会被藏掉
             if (allOk) _error.value = null
+        }
+    }
+
+    /**
+     * 进到「AI 设置」页、或者改了打法风格之后自动验一遍。
+     *
+     * 和 [checkApi] 的区别是**不强制**：十分钟内、同一前提下测通过的座位直接复用，
+     * 所以来回翻页不会再花一次钱。但前提换了（普通 → 搜索式）就必须重测——
+     * 这正是「开局后才发现某个座位不支持联网」的堵口处。
+     *
+     * 失败不写 [_error]：这时候用户只是路过这一页，把红字顶到他脸上等于报错。
+     * 结论会落在每个座位自己的标记上，点开局时才升级成一条明确的拦截。
+     */
+    fun checkApiIfNeeded(friendIds: Collection<String>) {
+        if (friendIds.isEmpty()) return
+        if (state.value.running) return
+        viewModelScope.launch {
+            val friends = _friends.value.ifEmpty { friendRepository.load().map { it.toFriend() } }
+            // 不加 `if (_verifying) return`：正在跑的那一轮可能是上一个前提的，
+            // 直接丢掉等于让风格切换后的检查永远不发生。probeLock 会排队，
+            // 轮到这一轮时 planProbes 已经能看出前提变了
+            runProbe(
+                chosen = friends.filter { it.id in friendIds },
+                force = false,
+                webSearch = probeRequiresSearch(),
+            )
         }
     }
 
@@ -1649,19 +1679,32 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
      */
     private suspend fun verifyReachable(chosen: List<Friend>): List<Friend> {
         if (chosen.isEmpty()) return emptyList()
-        runProbe(chosen, force = false)
+        runProbe(chosen, force = false, webSearch = probeRequiresSearch())
 
         val checks = _apiChecks.value
         return chosen.filter { checks[it.id]?.state == ApiCheckState.FAILED }
     }
 
+    /**
+     * 这一局要不要按「搜索式」的前提去验连通。
+     *
+     * 风格是全局偏好、不进存档，所以续档也跟着当前选择走——
+     * 用户切回引导式再续旧局，本来就不需要联网。
+     */
+    private fun probeRequiresSearch(): Boolean = _promptStyle.value == WerewolfPromptStyle.SEARCH
+
     /** 把探活失败写成一句人话。开局和续档共用，保证两处说法一致。 */
     private fun reachabilityError(failed: List<Friend>, suffix: String): String {
         val names = failed.joinToString("、") { it.name }
         val reason = _apiChecks.value[failed.first().id]?.message.orEmpty()
-        // 把「谁的哪把 Key 不行」写清楚：只说「开局失败」，用户只能一个个去试
+        // 把「谁的哪把 Key 不行」写清楚：只说「开局失败」，用户只能一个个去试。
+        // 搜索式下失败的多半是「连得上、但不会联网」，说成「连不上」会把人往 Key 上引
         return buildString {
-            append("${failed.size} 个座位连不上：$names")
+            if (probeRequiresSearch()) {
+                append("搜索式要求真的联网检索，${failed.size} 个座位做不到：$names")
+            } else {
+                append("${failed.size} 个座位连不上：$names")
+            }
             if (reason.isNotBlank()) append("（$reason）")
             append(suffix)
         }.take(200)
@@ -1672,7 +1715,7 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
      *
      * 已通过且还新鲜的结果会被跳过（见 [planProbes]），所以反复调用不会反复花钱。
      */
-    private suspend fun runProbe(chosen: List<Friend>, force: Boolean): Boolean = probeLock.withLock {
+    private suspend fun runProbe(chosen: List<Friend>, force: Boolean, webSearch: Boolean): Boolean = probeLock.withLock {
         if (chosen.isEmpty()) return@withLock true
 
         // 每次检测前重读一次凭证：用户完全可能刚在设置页换了 Key，
@@ -1684,6 +1727,7 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
             known = _apiChecks.value,
             force = force,
             now = System.currentTimeMillis(),
+            webSearch = webSearch,
         )
         if (tasks.isEmpty()) return@withLock true
 
@@ -1709,7 +1753,7 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
                         val result = if (ai == null) {
                             ApiProbeResult(ok = false, elapsedMs = 0, message = "暂不支持的厂商：${task.brand}")
                         } else {
-                            ai.probe(task.model)
+                            ai.probe(task.model, webSearch = webSearch)
                         }
                         task to result
                     }
@@ -1726,6 +1770,9 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
                             message = result.message,
                             elapsedMs = result.elapsedMs,
                             at = at,
+                            // 结论挂上前提：搜索式测出来的绿，不能拿去给普通探活复用，
+                            // 反过来也一样
+                            webSearch = webSearch,
                         )
                     }
                 }

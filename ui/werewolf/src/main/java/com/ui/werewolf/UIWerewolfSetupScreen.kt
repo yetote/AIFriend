@@ -29,6 +29,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -152,6 +153,13 @@ fun UIWerewolfSetupScreen(
     onToggleFriend: (String) -> Unit,
     onClearError: () -> Unit,
     onCheckApi: () -> Unit,
+    /**
+     * 进到「AI 设置」页、或改了打法之后自动验一遍连接。
+     *
+     * 和 [onCheckApi] 分开：这个不强制，测过且在有效期内的座位会跳过；
+     * 但换了打法（尤其切到搜索式）前提就变了，必须重验。
+     */
+    onAutoCheck: () -> Unit,
     /** 去微调这一局的提示词。 */
     onOpenPromptSettings: () -> Unit,
     onBack: () -> Unit,
@@ -182,15 +190,44 @@ fun UIWerewolfSetupScreen(
     // 只在「已选且查过」的人里数：没选的人查不查无所谓，不该影响开局按钮
     val failedCount = selectedIds.count { apiChecks[it]?.state == UIWerewolfApiState.FAILED }
     val selectedCheckable = selectedIds.isNotEmpty() && !checking
+    val searchStyle = promptStyle == UIWerewolfPromptStyle.SEARCH
+    val okCount = selectedIds.count { apiChecks[it]?.state == UIWerewolfApiState.OK }
+    // 第一条失败原因：搜索式下多半就是「这家不支持联网」，
+    // 直接摆在自检卡上，比让用户自己去座位列表里找那个红点快
+    val firstFailure = selectedIds.firstNotNullOfOrNull { id ->
+        apiChecks[id]
+            ?.takeIf { it.state == UIWerewolfApiState.FAILED }
+            ?.message
+            ?.takeIf { it.isNotBlank() }
+    }
+
+    // 进「AI 设置」页、或改了打法，就按当前前提重验一遍。
+    // 关键在「按当前前提」：搜索式和普通探活对同一个座位可能给出相反结论，
+    // 不重验等于拿旧结论骗自己——那正是「开局后才发现不支持联网」的来路
+    LaunchedEffect(setupTab, promptStyle) {
+        if (setupTab == 1 && selectedIds.isNotEmpty()) onAutoCheck()
+    }
 
     UIGradientBackground(modifier = Modifier.pageInsetsTop()) {
         Column(modifier = Modifier.fillMaxSize()) {
             UITopBar(title = "新开一局", onBack = onBack) {
                 Text(
-                    text = if (canStart) "可以开局" else "差 $missing 位",
+                    text = when {
+                        !canStart -> "差 $missing 位"
+                        failedCount > 0 -> "$failedCount 个要处理"
+                        // 第一页只是搭好了局，开局要到第二页配完打法、验过连接
+                        setupTab == 0 -> "人数齐了"
+                        else -> "可以开局"
+                    },
                     modifier = Modifier.padding(end = 12.dp),
                     fontSize = 13.sp,
-                    color = if (canStart) UIFriendBarTagTextBlue else UIFriendBarItemSubtitleColor
+                    color = if (failedCount > 0) {
+                        UIFriendBarRed
+                    } else if (canStart) {
+                        UIFriendBarTagTextBlue
+                    } else {
+                        UIFriendBarItemSubtitleColor
+                    }
                 )
             }
 
@@ -204,7 +241,7 @@ fun UIWerewolfSetupScreen(
                 text = if (setupTab == 0) {
                     "谁上桌、坐哪、用什么板子——先把这一局的骨架搭好"
                 } else {
-                    "想多久、说多少、要不要看它思考——调 AI 的发挥"
+                    "想多久、说多少、要不要联网——调 AI 的发挥，顺手验一遍连接"
                 },
                 fontSize = 11.5.sp,
                 color = UIFriendBarItemSubtitleColor,
@@ -391,6 +428,27 @@ fun UIWerewolfSetupScreen(
                     }
                 }
                 if (setupTab == 1) {
+                    // 自检放在这一页最前面：打法一改，检查的**前提**就变了。
+                    // 搜索式要的是「带着联网也能回话」，和普通探活不是同一道题，
+                    // 所以每次进这一页、每次换打法都重新验一遍
+                    SectionTitle(
+                        title = "连接自检",
+                        subtitle = if (searchStyle) {
+                            "搜索式要求每个座位真的能联网检索；连得上但不会查，同样算不合格"
+                        } else {
+                            "开局前确认每个人背后的模型能回话"
+                        }
+                    )
+                    SetupCheckCard(
+                        searchStyle = searchStyle,
+                        checking = checking,
+                        total = selectedIds.size,
+                        okCount = okCount,
+                        failedCount = failedCount,
+                        firstFailure = firstFailure,
+                        enabled = selectedCheckable,
+                        onCheck = onCheckApi,
+                    )
                     // 提示词风格决定 AI「按什么打」：引导式有内置打法兜底，自由式把它放出去，
                     // 搜索式连规则细节都放出去（模型自己回忆或联网查，只留版型与胜负）。
                     // 放在开局而不是设置页，是因为这是「这一局想看什么」的取舍——
@@ -541,6 +599,10 @@ fun UIWerewolfSetupScreen(
                 playMode = mode == UIWerewolfMode.PLAY,
                 checking = checking,
                 failedCount = failedCount,
+                // 第一页只负责搭局，开局必须发生在第二页：打法是开局条件的一部分，
+                // 而连接自检要按打法验——两件事不能分在两道门后面
+                nextStep = setupTab == 0,
+                onNext = { setupTab = 1 },
                 onStart = onStart,
                 onStartAnyway = onStartAnyway
             )
@@ -805,9 +867,73 @@ private fun CheckApiButton(
     }
 }
 
+/**
+ * 「连接自检」卡。
+ *
+ * 和选人列表里那枚小按钮是同一件事，但这一页回答的是另一个问题：不是「这个人连不连得上」，
+ * 而是「按这一档打法，它够不够用」。搜索式下这两者会分叉——模型连得上，
+ * 但它的对话接口没有联网搜索，开局后才会发现「说的是自己查，其实一次都没查」。
+ */
 @Composable
-private fun ErrorBar(text: String, onDismiss: () -> Unit) {
-    Row(
+private fun SetupCheckCard(
+    searchStyle: Boolean,
+    checking: Boolean,
+    total: Int,
+    okCount: Int,
+    failedCount: Int,
+    firstFailure: String?,
+    enabled: Boolean,
+    onCheck: () -> Unit,
+) {
+    val statusText = when {
+        checking -> if (searchStyle) "正在按搜索式检测…" else "正在检测…"
+        failedCount > 0 -> "$failedCount 个座位过不了这一档"
+        total == 0 -> "还没选人"
+        okCount == 0 -> "还没检测"
+        okCount >= total -> "全部连通"
+        else -> "已连通 $okCount / $total"
+    }
+    val statusColor = when {
+        failedCount > 0 -> UIFriendBarRed
+        okCount > 0 && okCount >= total -> ConnectedGreen
+        else -> UIFriendBarItemSubtitleColor
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .uiCard(shape = RoundedCornerShape(UIRadiusCard))
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(7.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = statusText,
+                modifier = Modifier.weight(1f),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = statusColor
+            )
+            CheckApiButton(
+                checking = checking,
+                enabled = enabled,
+                hasFailure = failedCount > 0,
+                onClick = onCheck
+            )
+        }
+        if (!firstFailure.isNullOrBlank()) {
+            Text(
+                text = "「$firstFailure」",
+                fontSize = 11.5.sp,
+                lineHeight = 16.sp,
+                color = UIFriendBarRed
+            )
+        }
+    }
+}
+
+@Composable
+private fun ErrorBar(text: String, onDismiss: () -> Unit) {    Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(UIRadiusControl))
@@ -1228,11 +1354,17 @@ private fun StartBar(
     playMode: Boolean,
     checking: Boolean,
     failedCount: Int,
+    /** 还在第一页：这一下只负责「去配打法」，不开局。 */
+    nextStep: Boolean,
+    onNext: () -> Unit,
     onStart: () -> Unit,
     onStartAnyway: () -> Unit,
 ) {
     val hasFailure = failedCount > 0
-    val clickable = canStart && !checking
+    // 第一页不受检测影响：正在测的是上一页那批人，挡着切页只会让人以为卡住了
+    val clickable = canStart && (nextStep || !checking)
+    // 检测中只有第二页要等——第二页的按钮才真的会开局
+    val highlighted = clickable && (nextStep || !hasFailure)
 
     Box(
         modifier = Modifier
@@ -1243,9 +1375,9 @@ private fun StartBar(
             .padding(horizontal = 10.dp, vertical = 6.dp)
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            if (hasFailure && canStart) {
+            if (hasFailure && canStart && !nextStep) {
                 Text(
-                    text = "$failedCount 个座位连不上，开局后第一回合就可能卡住",
+                    text = "$failedCount 个座位过不了这一档，开局后第一回合就可能卡住",
                     modifier = Modifier.padding(horizontal = 6.dp),
                     fontSize = 11.sp,
                     color = UIFriendBarRed
@@ -1256,7 +1388,7 @@ private fun StartBar(
                     .fillMaxWidth()
                     .height(50.dp)
                     .shadow(
-                        elevation = if (clickable && !hasFailure) 10.dp else 0.dp,
+                        elevation = if (highlighted) 10.dp else 0.dp,
                         shape = RoundedCornerShape(UIRadiusControl),
                         clip = false,
                         ambientColor = UIBlobBlue,
@@ -1264,14 +1396,18 @@ private fun StartBar(
                     )
                     .clip(RoundedCornerShape(UIRadiusControl))
                     .then(
-                        if (clickable && !hasFailure) {
+                        if (highlighted) {
                             Modifier.background(UIActionBrush)
                         } else {
                             Modifier.background(UIGlassSurface)
                         }
                     )
                     .clickable(enabled = clickable) {
-                        if (hasFailure) onStartAnyway() else onStart()
+                        when {
+                            nextStep -> onNext()
+                            hasFailure -> onStartAnyway()
+                            else -> onStart()
+                        }
                     },
                 contentAlignment = Alignment.Center
             ) {
@@ -1279,6 +1415,7 @@ private fun StartBar(
                     text = when {
                         // 缺人比「正在检测」更该先说：检测跑完也开不了局，用户需要知道的是还差几位
                         !canStart -> "还差 $missing 位好友"
+                        nextStep -> "下一步 · AI 设置"
                         checking -> "检查连接中…"
                         hasFailure -> "忽略问题，仍然开局"
                         playMode -> "开局，我参与"
@@ -1288,6 +1425,7 @@ private fun StartBar(
                     fontWeight = FontWeight.SemiBold,
                     color = when {
                         !canStart -> UIFriendBarItemSubtitleColor
+                        nextStep -> Color.White
                         checking -> UIFriendBarItemSubtitleColor
                         hasFailure -> UIFriendBarRed
                         else -> Color.White

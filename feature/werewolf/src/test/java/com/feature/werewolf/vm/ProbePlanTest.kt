@@ -18,7 +18,8 @@ class ProbePlanTest {
         model: String = "deepseek-chat",
     ) = ProbeTarget(friendId = id, brand = brand, model = model)
 
-    private fun ok(at: Long) = ApiCheck(state = ApiCheckState.OK, at = at)
+    private fun ok(at: Long, webSearch: Boolean = false) =
+        ApiCheck(state = ApiCheckState.OK, at = at, webSearch = webSearch)
 
     @Test
     fun `同厂商同模型只发一次请求，结果归属整组`() {
@@ -138,5 +139,33 @@ class ProbePlanTest {
     @Test
     fun `空输入不产生任何请求`() {
         assertTrue(planProbes(emptyList(), emptyMap(), force = false, now = 0L).isEmpty())
+    }
+
+    @Test
+    fun `普通探活的绿灯不能当成搜索式的通过`() {
+        // 「连得上」和「连得上而且会联网查」是两个问题。拿前者的绿灯放过后者，
+        // 用户就会在开局后才发现搜索式根本没搜——这正是这次要堵的那条路
+        val tasks = planProbes(
+            targets = listOf(target("a")),
+            known = mapOf("a" to ok(1_000L, webSearch = false)),
+            force = false,
+            now = 1_000L,
+            webSearch = true,
+        )
+
+        assertEquals(1, tasks.size)
+    }
+
+    @Test
+    fun `同一前提下刚测过的搜索式结果可以复用`() {
+        val tasks = planProbes(
+            targets = listOf(target("a")),
+            known = mapOf("a" to ok(1_000L, webSearch = true)),
+            force = false,
+            now = 1_000L + 60_000L,
+            webSearch = true,
+        )
+
+        assertTrue("同一前提、十分钟内，不该再花一次检索的钱", tasks.isEmpty())
     }
 }

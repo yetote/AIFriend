@@ -20,6 +20,14 @@ data class ApiCheck(
     val message: String? = null,
     val elapsedMs: Long? = null,
     val at: Long = 0,
+    /**
+     * 这条结论是在「要求联网检索」的前提下测出来的（搜索式）。
+     *
+     * 两种前提对同一个座位可能给出相反结论：厂商没有内置搜索时，普通探活是绿的，
+     * 搜索式探活必须是红的。所以复用缓存之前要比这个标记，否则「自由式测绿了」
+     * 会让搜索式直接跳过检查、带着一个不会联网的座位开局。
+     */
+    val webSearch: Boolean = false,
 )
 
 /** 结果多久之后不算数。 */
@@ -56,6 +64,8 @@ internal fun planProbes(
     force: Boolean,
     now: Long,
     ttlMs: Long = API_CHECK_TTL_MS,
+    /** 这一轮是不是「搜索式」的检查，见 [ApiCheck.webSearch]。 */
+    webSearch: Boolean = false,
 ): List<ProbeTask> {
     val groups = LinkedHashMap<Pair<String, String>, MutableList<String>>()
     targets.forEach { target ->
@@ -65,10 +75,15 @@ internal fun planProbes(
     return groups.mapNotNull { (key, ids) ->
         // 必须整组都有新鲜的通过结果才算数。同组共享一个结果，正常不会出现半绿半空；
         // 真出现了（比如中途往同模型的座位里加了一个新人）就重测一次，
-        // 总比让某个座位带着「不知道什么状态」上桌要好
+        // 总比让某个座位带着「不知道什么状态」上桌要好。
+        // 前提标记必须一致：拿着「普通探活绿」去放过「搜索式检查」，正是开局后才发现
+        // 不支持联网的那条老路
         val stillFresh = !force && ids.all { id ->
             val check = known[id]
-            check != null && check.state == ApiCheckState.OK && now - check.at <= ttlMs
+            check != null &&
+                check.state == ApiCheckState.OK &&
+                check.webSearch == webSearch &&
+                now - check.at <= ttlMs
         }
         if (stillFresh) {
             null
