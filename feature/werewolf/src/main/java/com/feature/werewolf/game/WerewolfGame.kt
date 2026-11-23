@@ -914,6 +914,11 @@ data class WerewolfGame(
                 sheriffElectionDone = true,
                 history = next.history + GameEvent.SheriffVacant(next.day, "竞选发言时狼人自爆，选举中止"),
             )
+            // 竞选自爆会把死讯的公布时机一起炸掉：第 1 天有警长时，昨夜死讯压在
+            // pendingDawn 里等竞选结束才说（见 [settleNight]）。自爆直接跳过竞选，
+            // 这里不补的话，首夜死者会在一句「昨夜谁倒牌」都没播过的情况下直接留遗言，
+            // 而下一夜结算会把 pendingDawn 覆盖掉——这条死讯就永久消失了。
+            next = next.publishDawnIfHeld()
         }
 
         val winnerFaction = next.evaluateWinner()
@@ -1235,26 +1240,36 @@ data class WerewolfGame(
      * 更糟的是名单里会留下当天被票出的人。
      */
     private fun afterSheriffElection(): WerewolfGame {
-        val closed = copy(
+        // 竞选结束，现在可以公布昨夜的死讯了（见 [pendingDawn]）。
+        val announced = copy(
             sheriffCandidates = emptyList(),
             sheriffRunners = emptyList(),
             sheriffElectionDone = true,
-        )
-        // 竞选结束，现在可以公布昨夜的死讯了（见 [pendingDawn]）。
-        val announced = closed.pendingDawn?.let { pending ->
-            closed.copy(
-                history = closed.history + buildList {
-                    add(GameEvent.Dawn(pending.day, pending.deaths))
-                    pending.bearRoarSeat?.let { add(GameEvent.BearRoar(pending.day, it)) }
-                },
-                pendingDawn = null,
-            )
-        } ?: closed
+        ).publishDawnIfHeld()
         return if (announced.pendingLastWords.isNotEmpty()) {
             announced.copy(phase = Phase.DAY_LAST_WORDS, afterLastWordsPhase = Phase.DAY_DISCUSSION)
         } else {
             announced.copy(phase = Phase.DAY_DISCUSSION)
         }
+    }
+
+    /**
+     * 把暂存在 [pendingDawn] 里的昨夜死讯写进公开事件流。
+     *
+     * 第 1 天有警长时，死讯要等竞选结束再公布（竞选发言是在看不见死讯时说的）。
+     * 有两个地方会「提前结束竞选」——正常选出警长 / 无人上警，以及**竞选发言里
+     * 狼人自爆**。两处都必须调这里，漏掉任何一处，那条死讯就没有第二次机会：
+     * 没有别的地方会再读 pendingDawn。
+     */
+    private fun publishDawnIfHeld(): WerewolfGame {
+        val pending = pendingDawn ?: return this
+        return copy(
+            history = history + buildList {
+                add(GameEvent.Dawn(pending.day, pending.deaths))
+                pending.bearRoarSeat?.let { add(GameEvent.BearRoar(pending.day, it)) }
+            },
+            pendingDawn = null,
+        )
     }
 
     private fun electSheriff(seat: Int, votes: Int): WerewolfGame = copy(

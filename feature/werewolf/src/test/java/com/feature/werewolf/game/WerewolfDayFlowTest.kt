@@ -146,6 +146,40 @@ class WerewolfDayFlowTest {
     }
 
     @Test
+    fun `竞选发言时自爆也要先把昨夜死讯公布出来`() {
+        // 有警长的局，第 1 天死讯压在 pendingDawn 里，等竞选结束才公布。
+        // 自爆把竞选直接炸停，公布时机也一起没了——必须在这里补上。
+        val base = game()
+        val campaigning = base.copy(
+            config = WerewolfConfig(composition = roles.groupingBy { it }.eachCount(), hasSheriff = true),
+            day = 1,
+            phase = Phase.DAY_SHERIFF_SPEECH,
+            sheriffElectionDone = false,
+            sheriffCandidates = listOf(1, 4),
+            sheriffRunners = listOf(1, 4),
+            pendingDawn = PendingDawn(day = 1, deaths = listOf(5)),
+            pendingLastWords = listOf(5),
+            players = base.players.map {
+                if (it.seat == 5) it.copy(alive = false, deathCause = DeathCause.WOLF_KILL) else it
+            },
+        )
+
+        val exploded = campaigning.wolfExplode(1)
+
+        assertTrue(
+            "自爆中止竞选后，死讯再没有别的时机可以公布",
+            exploded.history.any { it is GameEvent.Dawn && 5 in it.deadSeats },
+        )
+        assertNull("死讯公布完就该清空，否则下一夜结算会把它覆盖掉", exploded.pendingDawn)
+        assertEquals("首夜死者还要留遗言", Phase.DAY_LAST_WORDS, exploded.phase)
+        assertTrue(
+            "先说自爆、再说昨夜倒牌，顺序反了像在自爆之前就公布过",
+            exploded.history.indexOfFirst { it is GameEvent.WolfExploded } <
+                exploded.history.indexOfFirst { it is GameEvent.Dawn },
+        )
+    }
+
+    @Test
     fun `普通狼人自爆不留遗言`() {
         val exploded = day().wolfExplode(1)
 
