@@ -12,10 +12,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
@@ -46,12 +49,17 @@ import com.ui.common.theme.UIFriendBarSubtitleColor
 import com.ui.common.theme.UIFriendBarTagTextBlue
 import com.ui.common.theme.UIFriendBarTitleColor
 import com.ui.common.theme.UIGradientBackground
+import com.ui.common.theme.UIIosDialog
+import com.ui.common.theme.UIFriendBarItemMetaColor
 import com.ui.common.theme.UIHeroBrush
 import com.ui.common.theme.UIRadiusCard
 import com.ui.common.theme.UIRadiusControl
 import com.ui.common.theme.UITopBar
 import com.ui.common.theme.uiCard
 import com.ui.werewolf.data.UIWerewolfNotice
+import com.ui.werewolf.data.UIWerewolfRecast
+import com.ui.werewolf.data.UIWerewolfRecastCandidate
+import com.ui.werewolf.data.UIWerewolfRecastSeat
 import com.ui.werewolf.data.UIWerewolfRecord
 
 /**
@@ -81,6 +89,11 @@ fun UIWerewolfHistoryScreen(
     /** 导入结果这类「做成了 / 没做成」的提示，和 [error] 分开：它是蓝的，不是红的。 */
     notice: UIWerewolfNotice? = null,
     onClearNotice: () -> Unit = {},
+    /** 续档连不上时的换人面板数据。null = 没有要换的人。 */
+    recast: UIWerewolfRecast? = null,
+    /** 选好每个座位的替身后提交。参数是「座位号 → 新好友 id」。 */
+    onSwapSeats: (Map<Int, String>) -> Unit = {},
+    onDismissRecast: () -> Unit = {},
 ) {
     // 未打完的排前面：一类是「接着打」，一类是「翻旧账」，混在一起排会看不出区别
     val unfinished = remember(records) { records.filter { !it.finished } }
@@ -89,6 +102,14 @@ fun UIWerewolfHistoryScreen(
     // 放弃是不可逆的（存档直接删），所以只在这一页做二次确认，不在列表行里直接删
     var pendingDiscard by remember { mutableStateOf<UIWerewolfRecord?>(null) }
     var confirmClear by remember { mutableStateOf(false) }
+
+    // 换人面板：错误条上的「换人」打开它。选择按座位存，提交时摊成 Map。
+    var recastOpen by remember { mutableStateOf(false) }
+    var picks by remember { mutableStateOf<Map<Int, String>>(emptyMap()) }
+    val onOpenRecast: () -> Unit = {
+        picks = emptyMap()
+        recastOpen = true
+    }
 
     UIGradientBackground(modifier = Modifier.pageInsetsTop()) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -124,7 +145,9 @@ fun UIWerewolfHistoryScreen(
                     text = error,
                     tint = UIFriendBarRed,
                     onDismiss = onClearError,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    actionLabel = if (recast != null) "换人" else null,
+                    onAction = onOpenRecast,
                 )
             }
             if (notice != null) {
@@ -203,6 +226,22 @@ fun UIWerewolfHistoryScreen(
         }
     }
 
+    if (recastOpen && recast != null) {
+        RecastDialog(
+            data = recast,
+            picks = picks,
+            onPick = { seat, friendId -> picks = picks + (seat to friendId) },
+            onDismiss = {
+                recastOpen = false
+                onDismissRecast()
+            },
+            onConfirm = {
+                recastOpen = false
+                onSwapSeats(picks)
+            },
+        )
+    }
+
     pendingDiscard?.let { record ->
         AlertDialog(
             onDismissRequest = { pendingDiscard = null },
@@ -277,6 +316,8 @@ private fun HistoryBar(
     tint: Color,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
+    actionLabel: String? = null,
+    onAction: () -> Unit = {},
 ) {
     Row(
         modifier = modifier
@@ -292,6 +333,20 @@ private fun HistoryBar(
             fontSize = 12.sp,
             color = tint
         )
+        if (actionLabel != null) {
+            Text(
+                text = actionLabel,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(tint.copy(alpha = 0.16f))
+                    .clickable { onAction() }
+                    .padding(horizontal = 10.dp, vertical = 3.dp),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = tint
+            )
+            Spacer(Modifier.padding(horizontal = 2.dp))
+        }
         Text(
             text = "知道了",
             modifier = Modifier
@@ -531,6 +586,146 @@ private fun NewGameBar(onClick: () -> Unit) {
                 fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = Color.White
+            )
+        }
+    }
+}
+
+/**
+ * 续档连不上时的换人面板。
+ *
+ * 每个连不上的座位一张卡，从候选好友里挑一个顶上；探活是绿的标「推荐」。
+ * 全部座位都选了才能提交——漏一个就等于那一局还是打不下去，
+ * 与其让他点完才发现卡住，不如把按钮先按住。
+ */
+@Composable
+private fun RecastDialog(
+    data: UIWerewolfRecast,
+    picks: Map<Int, String>,
+    onPick: (seat: Int, friendId: String) -> Unit,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    val allPicked = data.seats.all { picks[it.seat] != null }
+    // 同一个好友不能顶两个座位（牌桌会出现两个同名同模型的人）
+    val unique = picks.values.toSet().size == picks.values.size
+    val canSubmit = allPicked && unique
+    UIIosDialog(
+        title = "换人继续这一局",
+        subtitle = if (data.reason.isNotBlank()) {
+            "原座位连不上：${data.reason}。换人后身份、历史、进度都保留。"
+        } else {
+            "原座位连不上。换人后身份、历史、进度都保留。"
+        },
+        onDismiss = onDismiss,
+        actions = {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                TextButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
+                    Text("取消", color = UIFriendBarItemSubtitleColor, fontSize = 14.sp)
+                }
+                TextButton(
+                    onClick = onConfirm,
+                    enabled = canSubmit,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(
+                        text = when {
+                            !allPicked -> "请为每个座位选人"
+                            !unique -> "别选重复的好友"
+                            else -> "换人并继续"
+                        },
+                        color = if (canSubmit) UIFriendBarTagTextBlue else UIFriendBarItemMetaColor,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
+        },
+    ) {
+        Column(
+            modifier = Modifier
+                .heightIn(max = 420.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            data.seats.forEach { seat ->
+                RecastSeatCard(
+                    seat = seat,
+                    picked = picks[seat.seat],
+                    onPick = { onPick(seat.seat, it) },
+                )
+            }
+        }
+    }
+}
+
+/** 一个要换人的座位：原来是谁 + 候选好友单选。 */
+@Composable
+private fun RecastSeatCard(
+    seat: UIWerewolfRecastSeat,
+    picked: String?,
+    onPick: (String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = "${seat.seat} 号 · 原 ${seat.oldName}（${seat.oldModel}）连不上",
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = UIFriendBarTitleColor,
+        )
+        if (seat.candidates.isEmpty()) {
+            Text(
+                text = "没有可换的好友，去好友页加一个能连上的再来",
+                fontSize = 12.sp,
+                color = UIFriendBarRed,
+            )
+        } else {
+            seat.candidates.forEach { candidate -> RecastCandidateRow(candidate, picked, onPick) }
+        }
+    }
+}
+
+/** 候选好友的一行：点一下即选中，当前选中的描蓝边。 */
+@Composable
+private fun RecastCandidateRow(
+    candidate: UIWerewolfRecastCandidate,
+    picked: String?,
+    onPick: (String) -> Unit,
+) {
+    val selected = picked == candidate.id
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(UIRadiusControl))
+            .background(
+                if (selected) UIFriendBarTagTextBlue.copy(alpha = 0.10f)
+                else Color.Transparent
+            )
+            .border(
+                width = 1.dp,
+                color = if (selected) UIFriendBarTagTextBlue else UIFriendBarItemMetaColor.copy(alpha = 0.3f),
+                shape = RoundedCornerShape(UIRadiusControl),
+            )
+            .clickable { onPick(candidate.id) }
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = candidate.name, fontSize = 13.sp, color = UIFriendBarTitleColor)
+            Text(
+                text = candidate.model,
+                fontSize = 11.sp,
+                color = UIFriendBarItemMetaColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (candidate.reachable) {
+            Text(
+                text = "推荐",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                color = UIFriendBarTagTextBlue,
             )
         }
     }

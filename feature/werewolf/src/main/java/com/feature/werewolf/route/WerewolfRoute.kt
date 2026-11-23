@@ -42,6 +42,9 @@ import com.ui.werewolf.data.UIWerewolfNotice
 import com.ui.werewolf.data.UIWerewolfPromptStyle
 import com.ui.werewolf.data.UIWerewolfPace
 import com.ui.werewolf.data.UIWerewolfPreset
+import com.ui.werewolf.data.UIWerewolfRecast
+import com.ui.werewolf.data.UIWerewolfRecastCandidate
+import com.ui.werewolf.data.UIWerewolfRecastSeat
 import com.ui.werewolf.data.UIWerewolfRetry
 import com.ui.werewolf.data.UIWerewolfRoleOption
 import com.ui.werewolf.data.UIWerewolfSeatPace
@@ -82,6 +85,8 @@ fun WerewolfRoute(
     val speechBusy by viewModel.speechBusy.collectAsState()
     val speakingSeat by viewModel.speakingSeat.collectAsState()
     val notice by viewModel.notice.collectAsState()
+    // 续档连不上时的换人面板数据。null = 不需要换人。
+    val recast by viewModel.recast.collectAsState()
     // 某一步请求失败、正挂着等人重发。它不属于 controller.state（引擎根本不知道断过），
     // 所以单独收一路，再并进牌桌的展示模型。
     val retryPrompt by viewModel.retryPrompt.collectAsState()
@@ -193,6 +198,26 @@ fun WerewolfRoute(
     }
 
     val uiFriends = remember(friends) { friends.map { it.toUiFriend() } }
+    // 续档换人面板：feature 的 WerewolfRecast → ui 展示模型。
+    val uiRecast = remember(recast) {
+        recast?.let {
+            UIWerewolfRecast(
+                reason = it.reason,
+                seats = it.failed.map { failed ->
+                    UIWerewolfRecastSeat(
+                        seat = failed.seat,
+                        oldName = failed.oldName,
+                        oldModel = failed.oldModel,
+                        candidates = (it.candidatesBySeat[failed.seat].orEmpty()).map { c ->
+                            UIWerewolfRecastCandidate(
+                                id = c.id, name = c.name, model = c.model, reachable = c.reachable,
+                            )
+                        },
+                    )
+                },
+            )
+        }
+    }
     // 座位 → 好友头像。牌桌上认人主要靠头像，名字在 60dp 里会被截断。
     val avatars = remember(friends) { friends.associate { it.id to it.avatarPath } }
     val records = remember(summaries) { summaries.map { it.toRecord() } }
@@ -330,6 +355,12 @@ fun WerewolfRoute(
             onImport = { importLauncher.launch(arrayOf("*/*")) },
             notice = notice?.let { UIWerewolfNotice(text = it.text, error = it.error) },
             onClearNotice = viewModel::clearNotice,
+            recast = uiRecast,
+            onSwapSeats = { swaps ->
+                pendingEnter = true
+                recast?.gameId?.let { viewModel.swapSeatsAndResume(it, swaps) }
+            },
+            onDismissRecast = viewModel::clearRecast,
         )
 
         WerewolfScreen.Setup -> UIWerewolfSetupScreen(

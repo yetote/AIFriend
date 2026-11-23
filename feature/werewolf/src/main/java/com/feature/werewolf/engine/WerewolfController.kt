@@ -264,6 +264,31 @@ class WerewolfController(
     }
 
     /**
+     * 续档探活失败后换人：用新的座位表替换当前局面并立刻落档。
+     *
+     * 必须在 [resume] 之后调——gameId 和 createdAt 由 resume 从存档恢复，
+     * 这里不能自己拿当前时间当开局时间，否则列表排序会乱。
+     * 换人只动座位背后的好友，身份、死活、历史全是 [table] 里带过来的原样事实；
+     * agents 的重建在调用方（上层持有按座位取 agent 的映射）。
+     */
+    suspend fun recast(table: WerewolfTable) {
+        val id = gameId ?: return
+        _state.update {
+            it.copy(
+                table = table,
+                finished = table.game.isFinished,
+                error = null,
+                live = null,
+                progress = null,
+            )
+        }
+        store.save(
+            id, table, createdAt, customPrompt,
+            pacing.currentLimit, pacing.thinkingOff.value, speechLength,
+        )
+    }
+
+    /**
      * 把界面上当前的局面落一次档。
      *
      * 暂停时用：存档的粒度是「阶段」，而牌桌上可能已经又说了几句。

@@ -18,6 +18,33 @@ data class UIWerewolfFriend(
 )
 
 /**
+ * 续档连不上、让用户换人再打时的一条面板数据。
+ *
+ * 一个座位换一次：[seat] 是牌桌号码，[candidates] 是能顶上来的好友。
+ * 这里不带 feature 层的类型，映射在 route 层做。
+ */
+data class UIWerewolfRecastSeat(
+    val seat: Int,
+    val oldName: String,
+    val oldModel: String,
+    val candidates: List<UIWerewolfRecastCandidate>,
+)
+
+data class UIWerewolfRecastCandidate(
+    val id: String,
+    val name: String,
+    val model: String,
+    /** 探活是绿的：换上去大概率直接能打通，界面给个「推荐」。 */
+    val reachable: Boolean,
+)
+
+/** 一局要换人的完整面板。 */
+data class UIWerewolfRecast(
+    val reason: String,
+    val seats: List<UIWerewolfRecastSeat>,
+)
+
+/**
  * 座位条上的一格。
  *
  * 只表达「这一局有几个位置、填了几个」，不表达「谁坐几号」——

@@ -126,6 +126,43 @@ data class WerewolfRecordView(
 data class WerewolfNotice(val text: String, val error: Boolean = false)
 
 /**
+ * 续档探活失败后，给用户一次「换人再打」的机会。
+ *
+ * 一个座位连不上，多数时候不是存档坏了，而是那个好友的 Key 过期、模型下线。
+ * 与其让用户把整局删了重开（进度全丢），不如让他把这个座位换成另一个能连上的好友：
+ * 座位号、身份、死活、已经产生的历史发言全保留，只换背后跑的那个人。
+ *
+ * 这里只装**展示所需**的快照：连不上的是哪几个座位、每个座位可以换谁。
+ * 真正的替换在 [WerewolfViewModel.swapSeatsAndResume] 里做，界面不碰领域数据。
+ */
+data class WerewolfRecast(
+    val gameId: String,
+    /** 连不上的座位。seat 是牌桌号码，oldName 是原好友名。 */
+    val failed: List<FailedSeat>,
+    /**
+     * 每个失败座位能换成谁。key 是座位号，value 是候选好友快照。
+     * 已经探活 OK 的好友优先排前面——换上去能直接打通，不用再赌一把。
+     */
+    val candidatesBySeat: Map<Int, List<RecastCandidate>>,
+    /** 上一条探活错误，留在面板顶部说明「为什么让你换人」。 */
+    val reason: String,
+) {
+    data class FailedSeat(
+        val seat: Int,
+        val oldName: String,
+        val oldModel: String,
+    )
+
+    data class RecastCandidate(
+        val id: String,
+        val name: String,
+        val model: String,
+        /** 这个好友此刻探活是不是绿的。 */
+        val reachable: Boolean,
+    )
+}
+
+/**
  * 开演出之前要补人的那几位。
  *
  * [candidates] 已经**排除这一局出现过的角色**：替身的名字和声音会直接出现在牌桌上，
@@ -421,6 +458,19 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
 
     fun clearNotice() {
         _notice.value = null
+    }
+
+    /**
+     * 续档探活失败后等的换人决定。非空时列表页弹换人面板。
+     *
+     * 和 [error] 分开：错误条说「连不上」，面板说「换成谁」。两者同时出现，
+     * 用户才知道发生了什么、下一步能做什么。
+     */
+    private val _recast = MutableStateFlow<WerewolfRecast?>(null)
+    val recast: StateFlow<WerewolfRecast?> = _recast.asStateFlow()
+
+    fun clearRecast() {
+        _recast.value = null
     }
 
     /** 好友 id → 那个模型的连通状况。只存内存，不进存档。 */
@@ -830,7 +880,13 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
 
                 // 开局前先确认每个模型真的能回话。这一步失败比打到第三天某个 AI 突然
                 // 报错要好得多：那时牌桌已经铺开，用户分不清是游戏坏了还是模型坏了
-                if (!skipCheck && !verifyReachable(chosen)) return@launch
+                if (!skipCheck) {
+                    val failed = verifyReachable(chosen)
+                    if (failed.isNotEmpty()) {
+                        _error.value = reachabilityError(failed, "。可以换人重试，或者仍然开局")
+                        return@launch
+                    }
+                }
 
                 val roster = chosen.map { RosterEntry(id = it.id, name = it.name, model = it.model) } +
                     if (mode == WerewolfMode.PLAY) {
@@ -912,7 +968,13 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
                 val participants = table.game.players
                     .filter { it.seat != humanSeat }
                     .mapNotNull { player -> friends.firstOrNull { it.id == player.id } }
-                if (!verifyReachable(participants)) return@launch
+                val failed = verifyReachable(participants)
+                if (failed.isNotEmpty()) {
+                    _error.value = reachabilityError(failed, "。点下方换人后继续这一局")
+                    _recast.value = buildRecast(id, table, failed, friends, humanSeat)
+                    return@launch
+                }
+                _recast.value = null
 
                 // 先备好座位再让控制器接手：座位表没建好就 resume，
                 // 一旦 play() 起来会立刻撞上「X 号没有模型」
@@ -937,6 +999,109 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
                 throw cancelled
             } catch (t: Throwable) {
                 _error.value = t.message?.take(200) ?: "续档失败，请重试"
+            }
+        }
+    }
+
+    /**
+     * 续档探活失败后，算出「哪几个座位要换、每个能换成谁」。
+     *
+     * 失败好友通过 id 反查座位——存档的 player.id 就是好友 id，这是唯一的连接点。
+     * 人类座位（SELF_PLAYER_ID）不参与：他不是模型，换不了。
+     */
+    private fun buildRecast(
+        gameId: String,
+        table: com.feature.werewolf.engine.WerewolfTable,
+        failed: List<Friend>,
+        friends: List<Friend>,
+        humanSeat: Int?,
+    ): WerewolfRecast {
+        val failedIds = failed.map { it.id }.toSet()
+        val failedSeats = table.game.players
+            .filter { it.id in failedIds && it.seat != humanSeat }
+            .map { player ->
+                WerewolfRecast.FailedSeat(
+                    seat = player.seat,
+                    oldName = player.name,
+                    oldModel = player.model,
+                )
+            }
+        // 失败好友里若有人类座位（理论上不会），reason 仍要把他说出来，
+        // 否则用户只看到「有人连不上」却不知道是谁——错误文案已包含，这里只留一句
+        val reason = _apiChecks.value[failed.firstOrNull()?.id]?.message.orEmpty()
+        return WerewolfRecast(
+            gameId = gameId,
+            failed = failedSeats,
+            candidatesBySeat = recastCandidates(
+                failedSeats = failedSeats.map { it.seat },
+                players = table.game.players,
+                friends = friends,
+                checks = _apiChecks.value,
+            ),
+            reason = reason,
+        )
+    }
+
+    /**
+     * 换人后接着打：把 [swaps]（座位 → 新好友 id）落到这一局，保留进度并续上。
+     *
+     * 流程刻意复用 [resume] 的收尾（controller.resume 恢复 createdAt/节奏、重建 agents、
+     * 复位朗读），只在中间插一步 [WerewolfController.recast] 把换过的座位表写进去。
+     * 这样「换人续档」和「普通续档」走的是同一条路，不会两处行为长歪。
+     */
+    fun swapSeatsAndResume(gameId: String, swaps: Map<Int, String>) {
+        val previous = playJob
+        playJob = viewModelScope.launch {
+            previous?.cancelAndJoin()
+            retryCoordinator.cancelAll()
+            try {
+                val table = store.load(gameId) ?: run {
+                    _error.value = "这条存档读不出来，可能已经损坏"
+                    return@launch
+                }
+                val friends = _friends.value.ifEmpty { friendRepository.load().map { it.toFriend() } }
+                val friendsById = friends.associateBy { it.id }
+                val humanSeat = table.game.players.firstOrNull { it.id == SELF_PLAYER_ID }?.seat
+
+                val newPlayers = applyRecast(table.game.players, friendsById, swaps)
+                // 换上去的好友找不到时 applyRecast 会原样留着那个座位——这里兜底报出来，
+                // 不让一局带着坏座位继续跑
+                val bad = swaps.filter { (seat, fid) ->
+                    newPlayers.first { it.seat == seat }.id != fid
+                }
+                if (bad.isNotEmpty()) {
+                    _error.value = "换人的好友资料找不到了，请重试"
+                    return@launch
+                }
+                val newTable = table.copy(game = table.game.copy(players = newPlayers))
+
+                controller.applyCustomPrompt(loadCustomPrompt(WerewolfBoards.keyOf(table.game.config)))
+                controller.applyPromptStyle(_promptStyle.value)
+
+                if (!controller.resume(gameId)) {
+                    _error.value = "这条存档读不出来，可能已经损坏"
+                    return@launch
+                }
+                // resume 用的是存档里的旧座位表，立刻用换过的新表替换并落档
+                controller.recast(newTable)
+
+                // agents / 音色 / TTS 映射全部按新座位重建，否则 play 时会拿旧好友的资料
+                agents = buildAgents(newPlayers, friendsById, humanSeat)
+                _seatThinking.value = agents.mapValues { it.value.thinkingEnabled }
+                seatVoiceIds = buildSeatVoiceIds(newPlayers, friendsById, humanSeat)
+                seatTtsConfigIds = buildSeatTtsConfigIds(newPlayers, friendsById)
+                stopSpeech(clearQueue = true)
+                _humanSeat.value = humanSeat
+                resetSpeech(fromIndex = newTable.transcript.size)
+
+                _recast.value = null
+                _error.value = null
+                controller.play(awaitStage = { awaitSpeechCaughtUp() })
+                refresh()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (t: Throwable) {
+                _error.value = t.message?.take(200) ?: "换人失败，请重试"
             }
         }
     }
@@ -1450,27 +1615,31 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
     // ---------------------------------------------------------------------
 
     /**
-     * 确认这些座位背后的模型都能回话。
+     * 确认这些座位背后的模型都能回话，返回**连不上的好友**（空 = 全通过）。
      *
      * 只看 [ApiCheckState.FAILED]：还没测的说明刚被跳过（同厂商已绿），不能当成失败。
+     *
+     * 返回列表而不是 Boolean：续档要用这列表算出「哪几个座位要换人」，
+     * 只给一个 true/false 的话，调用方还得再翻一遍 [apiChecks]，两处口径容易错开。
      */
-    private suspend fun verifyReachable(chosen: List<Friend>): Boolean {
-        if (chosen.isEmpty()) return true
+    private suspend fun verifyReachable(chosen: List<Friend>): List<Friend> {
+        if (chosen.isEmpty()) return emptyList()
         runProbe(chosen, force = false)
 
         val checks = _apiChecks.value
-        val failed = chosen.filter { checks[it.id]?.state == ApiCheckState.FAILED }
-        if (failed.isEmpty()) return true
+        return chosen.filter { checks[it.id]?.state == ApiCheckState.FAILED }
+    }
 
+    /** 把探活失败写成一句人话。开局和续档共用，保证两处说法一致。 */
+    private fun reachabilityError(failed: List<Friend>, suffix: String): String {
         val names = failed.joinToString("、") { it.name }
-        val reason = checks[failed.first().id]?.message.orEmpty()
+        val reason = _apiChecks.value[failed.first().id]?.message.orEmpty()
         // 把「谁的哪把 Key 不行」写清楚：只说「开局失败」，用户只能一个个去试
-        _error.value = buildString {
+        return buildString {
             append("${failed.size} 个座位连不上：$names")
             if (reason.isNotBlank()) append("（$reason）")
-            append("。可以重试、换人，或者仍然开局")
+            append(suffix)
         }.take(200)
-        return false
     }
 
     /**
