@@ -36,6 +36,24 @@ class WerewolfDealAssignTest {
     }
 
     @Test
+    fun `人类座位也能被指定身份`() {
+        // 参与局的「我的身份」走的就是这条路：只指定自己一席，其余随机补。
+        val config = WerewolfConfig()
+        val roster = roster(7) + RosterEntry(SELF_PLAYER_ID, "你", model = "human")
+        val game = WerewolfGame.deal(
+            config, roster, Random(11),
+            assignment = mapOf(SELF_PLAYER_ID to WerewolfRole.WEREWOLF),
+        )
+
+        assertEquals(
+            "自己选的身份要落到自己头上",
+            WerewolfRole.WEREWOLF,
+            game.players.first { it.id == SELF_PLAYER_ID }.role,
+        )
+        assertEquals("构成不能变", config.composition, game.players.groupingBy { it.role }.eachCount())
+    }
+
+    @Test
     fun `全部指定时就是一场纯剧本局`() {
         val config = WerewolfConfig()
         val roles = listOf(

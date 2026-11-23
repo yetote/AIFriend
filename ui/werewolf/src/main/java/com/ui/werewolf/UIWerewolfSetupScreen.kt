@@ -125,6 +125,9 @@ fun UIWerewolfSetupScreen(
     /** 这一局发言的目标长度。 */
     speechLength: UIWerewolfSpeechLength,
     onSpeechLengthChange: (UIWerewolfSpeechLength) -> Unit,
+    /** 参与局里「我」的身份 key（和 [roleOptions] 同构，含头狼伪 key）；null = 随机。 */
+    myRole: String?,
+    onMyRoleChange: (String?) -> Unit,
     /** 纯观战局的导演模式：指定每个 AI 拿什么身份，没指定的随机。 */
     assignRoles: Boolean,
     onAssignRolesChange: (Boolean) -> Unit,
@@ -264,6 +267,27 @@ fun UIWerewolfSetupScreen(
                             )
                         }
                         SeatStrip(seats = seats)
+                    }
+                    // 参与局先定「我是谁」，放在选人之前：先定自己这张牌，再挑对手。
+                    // 只改自己那一席，其他座位照常随机——想练狼不必为此开整页导演模式。
+                    if (mode == UIWerewolfMode.PLAY) {
+                        SectionTitle(
+                            title = "我的身份",
+                            subtitle = "只影响你自己这一席，其他座位照常随机发"
+                        )
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .uiCard(shape = RoundedCornerShape(UIRadiusCard))
+                                .padding(vertical = 4.dp)
+                        ) {
+                            RoleAssignRow(
+                                friendName = "你",
+                                assignedKey = myRole,
+                                options = roleOptions,
+                                onPick = onMyRoleChange,
+                            )
+                        }
                     }
                     Row(
                         modifier = Modifier.fillMaxWidth(),

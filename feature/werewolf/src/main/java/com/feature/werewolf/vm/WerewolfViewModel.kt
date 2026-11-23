@@ -848,13 +848,13 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
         /** 这一局发言的目标长度。引擎裁剪与提示词共用。 */
         speechLength: WerewolfSpeechLength = WerewolfSpeechLength.STANDARD,
         /**
-         * 指定身份（玩家 id → 身份），纯观战局的导演模式。没指定的人随机补；
-         * 人数超过板子构成会报错并显示到开局页。
+         * 指定身份（玩家 id → 身份）。参与局只会有「我」那一席，纯观战局是整页导演派单；
+         * 没指定的人随机补，人数超过板子构成会报错并显示到开局页。
          */
         roleAssignment: Map<String, WerewolfRole> = emptyMap(),
         /**
-         * 指定头狼（狼队指挥）的玩家 id，纯观战局导演模式的延伸。
-         * 他必须是狼（没指身份时引擎自动派成狼），指定后每晚战术都由他定直到出局。
+         * 指定头狼（狼队指挥）的玩家 id。他必须是狼（没指身份时引擎自动派成狼），
+         * 指定后每晚战术都由他定直到出局。参与局里只能是自己。
          */
         alphaId: String? = null,
         /** 手动指定的牌手风格（好友 id → 风格 id）。没指定的按 friendId 自动分配。 */
@@ -910,10 +910,11 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
 
                 val game = WerewolfGame.deal(
                     config, roster, Random.Default,
-                    // 指定身份只在纯观战局开放：参与的局自己选身份等于作弊
-                    assignment = if (mode == WerewolfMode.SPECTATE) roleAssignment else emptyMap(),
-                    // 头狼指定同理，只在纯观战局生效
-                    alphaId = if (mode == WerewolfMode.SPECTATE) alphaId else null,
+                    // 派单由调用方按模式过滤：参与局只有「我」那一席，观战局是整页导演。
+                    // 不在这里再按 mode 拦一道——那会让 route 新开的入口默认失效，
+                    // 而且「哪些模式能指定身份」本来就不该记在引擎入口上。
+                    assignment = roleAssignment,
+                    alphaId = alphaId,
                 )
                 val humanSeat = if (mode == WerewolfMode.PLAY) {
                     game.players.first { it.id == SELF_PLAYER_ID }.seat

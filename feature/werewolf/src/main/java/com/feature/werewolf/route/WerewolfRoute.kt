@@ -24,6 +24,7 @@ import com.feature.werewolf.engine.SeatTiming
 import com.feature.werewolf.engine.TurnKind
 import com.feature.werewolf.engine.WerewolfTable
 import com.feature.werewolf.engine.WerewolfUiState
+import com.feature.werewolf.game.SELF_PLAYER_ID
 import com.feature.werewolf.game.SpeechDirection
 import com.feature.werewolf.game.WerewolfBoards
 import com.feature.werewolf.game.WerewolfPromptStyle
@@ -131,6 +132,9 @@ fun WerewolfRoute(
     // 开局时才 valueOf 成引擎身份——存名字是为了 UI 层不依赖引擎类型
     var assignRoles by remember { mutableStateOf(false) }
     var roleByFriend by remember { mutableStateOf(emptyMap<String, String>()) }
+    // 参与局里「我」的身份：null = 随机。key 和 roleOptions 一致（含头狼的伪 key）。
+    // 只动自己这一席，其他人照常随机——娱乐局想练预言家或想当狼，不必为此开导演模式。
+    var myRole by remember { mutableStateOf<String?>(null) }
     // 手动指定的牌手风格（好友 id → 风格 id）。空 = 全部由引擎自动分配。
     var styleByFriend by remember { mutableStateOf(emptyMap<String, String>()) }
     /** 牌桌上打开的对局设置面板。 */
@@ -426,6 +430,8 @@ fun WerewolfRoute(
             onSpeechLengthChange = { speechLength = it },
             assignRoles = assignRoles,
             onAssignRolesChange = { assignRoles = it },
+            myRole = myRole,
+            onMyRoleChange = { myRole = it },
             roleOptions = roleOptions,
             roleByFriend = roleByFriend,
             onAssignRole = { friendId, key ->
@@ -462,6 +468,9 @@ fun WerewolfRoute(
                 if (next == UIWerewolfMode.PLAY) {
                     assignRoles = false
                     roleByFriend = emptyMap()
+                } else {
+                    // 「我的身份」是参与局专用，切去观战局交给导演模式
+                    myRole = null
                 }
             },
             onPresetChange = { key ->
@@ -469,6 +478,8 @@ fun WerewolfRoute(
                 selectedIds = trimSelection(selectedIds, uiFriends, mode, key)
                 // 板子换了构成就变了，旧派单对不上新板子，整份作废
                 roleByFriend = emptyMap()
+                // 自己选的身份同理：新板子里可能根本没有这个身份
+                myRole = null
             },
             onToggleFriend = { id ->
                 selectedIds = if (id in selectedIds) {
@@ -494,8 +505,8 @@ fun WerewolfRoute(
                     boardKey = presetKey,
                     turnLimit = turnLimit.toTurnLimit(),
                     speechLength = speechLength.toSpeechLength(),
-                    roleAssignment = roleAssignmentOf(mode, assignRoles, roleByFriend),
-                    alphaId = alphaIdOf(mode, assignRoles, roleByFriend),
+                    roleAssignment = roleAssignmentOf(mode == UIWerewolfMode.PLAY, assignRoles, roleByFriend, myRole),
+                    alphaId = alphaIdOf(mode == UIWerewolfMode.PLAY, assignRoles, roleByFriend, myRole),
                     styleByFriend = styleByFriend,
                 )
             },
@@ -510,8 +521,8 @@ fun WerewolfRoute(
                     skipCheck = true,
                     turnLimit = turnLimit.toTurnLimit(),
                     speechLength = speechLength.toSpeechLength(),
-                    roleAssignment = roleAssignmentOf(mode, assignRoles, roleByFriend),
-                    alphaId = alphaIdOf(mode, assignRoles, roleByFriend),
+                    roleAssignment = roleAssignmentOf(mode == UIWerewolfMode.PLAY, assignRoles, roleByFriend, myRole),
+                    alphaId = alphaIdOf(mode == UIWerewolfMode.PLAY, assignRoles, roleByFriend, myRole),
                     styleByFriend = styleByFriend,
                 )
             },
@@ -743,20 +754,36 @@ private fun UIWerewolfSpeechLength.toSpeechLength(): WerewolfSpeechLength =
     WerewolfSpeechLength.entries.firstOrNull { it.name == name } ?: WerewolfSpeechLength.STANDARD
 
 /**
- * 把导演模式的派单转成引擎要的「玩家 id → 身份」。
+ * 把开局页的选择转成引擎要的「玩家 id → 身份」。
  *
- * 只在「纯观战 + 开了导演模式」时生效；身份名认不出（换过板子、旧数据）就丢弃，
- * 那个座位回落到随机——宁可随机也不要让一个坏 key 卡死开局。
+ * 两条路：
+ * - **参与局**只允许指定「我」这一席（[myRole]），其他座位照常随机——
+ *   娱乐局想练某个身份很正常，不必为此打开整页导演模式；
+ * - **纯观战局**走 [assignRoles] 的逐座位派单。
+ *
+ * 身份名认不出（换过板子、旧数据）就丢弃，那个座位回落到随机——宁可随机，
+ * 也不要让一个坏 key 卡死开局。
  */
 /** 头狼在 UI 侧的伪角色 key。不对应任何 WerewolfRole，开局时单独取走。 */
-private const val ALPHA_WOLF_KEY = "ALPHA_WOLF"
+internal const val ALPHA_WOLF_KEY = "ALPHA_WOLF"
 
-private fun roleAssignmentOf(
-    mode: UIWerewolfMode,
+internal fun roleAssignmentOf(
+    /**
+     * true = 自己上桌的参与局，false = 纯观战。
+     *
+     * 用 Boolean 而不是 UI 枚举：这个判断只关心「我在不在桌上」，
+     * 而这个纯函数要能在不依赖 UI 层的单测里跑。
+     */
+    playing: Boolean,
     assignRoles: Boolean,
     roleByFriend: Map<String, String>,
+    myRole: String?,
 ): Map<String, WerewolfRole> {
-    if (mode != UIWerewolfMode.SPECTATE || !assignRoles) return emptyMap()
+    if (playing) {
+        val role = myRoleOf(myRole) ?: return emptyMap()
+        return mapOf(SELF_PLAYER_ID to role)
+    }
+    if (!assignRoles) return emptyMap()
     // 头狼的伪 key 在这里被自然剔除（它不对应任何真实身份）：头狼必须
     // 是狼这件事由 deal 用 alphaId 保证，不靠这份派单
     return roleByFriend.mapNotNull { (id, key) ->
@@ -764,13 +791,29 @@ private fun roleAssignmentOf(
     }.toMap()
 }
 
-/** 头狼只能有一个，也只在纯观战局的导演模式下生效。 */
-private fun alphaIdOf(
-    mode: UIWerewolfMode,
+/**
+ * 「我的身份」的 key 转成引擎身份。
+ *
+ * 头狼在 UI 侧是伪 key（引擎里它就是狼 + `alphaId`），所以这里先落成狼人，
+ * 谁是头狼由 [alphaIdOf] 单独交代。
+ */
+private fun myRoleOf(key: String?): WerewolfRole? = when {
+    key == null -> null
+    key == ALPHA_WOLF_KEY -> WerewolfRole.WEREWOLF
+    else -> WerewolfRole.entries.firstOrNull { it.name == key }
+}
+
+/** 头狼只能有一个：参与局就是「我」，观战局走导演派单。 */
+internal fun alphaIdOf(
+    playing: Boolean,
     assignRoles: Boolean,
     roleByFriend: Map<String, String>,
+    myRole: String?,
 ): String? {
-    if (mode != UIWerewolfMode.SPECTATE || !assignRoles) return null
+    if (playing) {
+        return if (myRole == ALPHA_WOLF_KEY) SELF_PLAYER_ID else null
+    }
+    if (!assignRoles) return null
     return roleByFriend.entries.firstOrNull { it.value == ALPHA_WOLF_KEY }?.key
 }
 
