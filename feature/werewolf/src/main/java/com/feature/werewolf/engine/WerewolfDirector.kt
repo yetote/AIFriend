@@ -614,7 +614,8 @@ class WerewolfDirector(
         var rounds = 0
         while (current.game.phase == Phase.DAY_SHERIFF_VOTE && rounds < WerewolfGame.SHERIFF_MAX_ROUNDS) {
             val game = current.game
-            val voters = game.sheriffVoters
+            // 首轮警下投；PK 轮台上不投、其余存活（含上过警没进 PK 的）都能投。
+            val voters = game.sheriffVoteVoters
             val candidates = game.sheriffCandidates
 
             if (voters.isEmpty()) {
@@ -761,7 +762,8 @@ class WerewolfDirector(
         var rounds = 0
         while (current.game.phase == Phase.DAY_VOTE && rounds < current.game.config.maxVoteRounds) {
             val game = current.game
-            val voters = game.votingSeats
+            // 用本轮口径：首轮人人有票；PK 轮台上的人不投、其余存活玩家都投。
+            val voters = game.exileVoters
             val candidates = game.voteCandidates ?: voters
 
             // 分批并发，每回一票就报一次进度，并带上「这一批还没回话的人」。

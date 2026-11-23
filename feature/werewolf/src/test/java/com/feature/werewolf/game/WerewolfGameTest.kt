@@ -439,19 +439,25 @@ private fun WerewolfGame.atWolfVote(): WerewolfGame =
         mode = playNight(mode, victim = 5) // 存活 1/2/3/4/6
         mode = mode.atDiscussion().beginVote()
 
-        // 3 号 2 票、1 号 2 票 → 平票，候选人收窄到 1 和 3
+        // 3 号 2 票、1 号 2 票 → 平票，候选人(即 PK 台)收窄到 1 和 3
         mode = mode.castVotes(mapOf(1 to 3, 2 to 3, 3 to 1, 4 to 1, 6 to 4))
         assertEquals(Phase.DAY_VOTE, mode.phase)
         assertEquals(2, mode.voteRound)
         assertEquals(listOf(1, 3), mode.voteCandidates)
 
-        // 加投阶段投候选人之外必须被拒
+        // PK 轮：台上(1、3)不投，只有台外的 2、4、6 能投
+        assertEquals(listOf(2, 4, 6), mode.exileVoters)
         assertThrows(IllegalArgumentException::class.java) {
-            mode.castVotes(mapOf(1 to 3, 2 to 4, 3 to 1, 4 to 1, 6 to 4))
+            // 1、3 在台上却提交选票，应被「所有有票者都要投」的校验拒掉
+            mode.castVotes(mapOf(1 to 3, 2 to 3, 3 to 1, 4 to 1, 6 to 4))
+        }
+        // 加投阶段投候选人之外也必须被拒
+        assertThrows(IllegalArgumentException::class.java) {
+            mode.castVotes(mapOf(2 to 4, 4 to 1, 6 to 2))
         }
 
-        // 再次平票，额度用尽 → 无人出局
-        mode = mode.castVotes(mapOf(1 to 3, 2 to null, 3 to 1, 4 to null, 6 to null))
+        // 再次平票（2→3、4→1、6 弃票，各 1 票），额度用尽 → 无人出局
+        mode = mode.castVotes(mapOf(2 to 3, 4 to 1, 6 to null))
         assertTrue(mode.history.any { it is GameEvent.NoExile })
         assertEquals(2, mode.day)
         assertEquals("平票无人出局后翻下一夜，从商议开始", Phase.NIGHT_WOLF_CHAT, mode.phase)
@@ -460,7 +466,7 @@ private fun WerewolfGame.atWolfVote(): WerewolfGame =
     @Test
     fun `加投时牌桌票数只算这一轮，不叠加已作废的上一轮`() {
         // 牌桌的票数角标读的是 game.ballots，复盘页读的是 game.voteRounds 的最后一轮。
-        // 两处必须说同一件事：第二轮 5 个人投票就该是 5 张票，不是 10 张
+        // 两处必须说同一件事：加投轮只有台外 3 人能投，就该是 3 张票。
         val config = WerewolfConfig(
             composition = sixWithWitch.groupingBy { it }.eachCount(),
             maxVoteRounds = 3,
@@ -473,11 +479,12 @@ private fun WerewolfGame.atWolfVote(): WerewolfGame =
         assertEquals("平票当场就把轮次推到下一轮", 2, mode.voteRound)
         assertEquals(5, mode.ballots.size)
 
-        mode = mode.castVotes(mapOf(1 to 3, 2 to 3, 3 to 1, 4 to 1, 6 to null))
+        // PK 轮台上 1、3 不投，只有 2、4、6 三张票
+        mode = mode.castVotes(mapOf(2 to 3, 4 to 1, 6 to null))
         assertEquals("又平票，进第三轮", 3, mode.voteRound)
-        assertEquals("只装第三轮开始前的这一轮票", 5, mode.ballots.size)
+        assertEquals("加投轮只装台外 3 人的票", 3, mode.ballots.size)
         // 逐轮历史仍然是完整的，复盘要靠它
-        assertEquals(listOf(5, 5), mode.voteRounds.map { it.ballots.size })
+        assertEquals(listOf(5, 3), mode.voteRounds.map { it.ballots.size })
     }
 
     @Test

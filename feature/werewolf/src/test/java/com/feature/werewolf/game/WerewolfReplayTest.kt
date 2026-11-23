@@ -127,13 +127,15 @@ private fun WerewolfGame.atWolfVote(): WerewolfGame =
         assertEquals("平票还没出局人", null, tie.voteRounds.single().exiledSeat)
         assertEquals(5, tie.voteRounds.single().ballots.size)
 
-        // 加投：只能投 1/2 号，2 号拿 3 票出局
-        val second = tie.castVotes(mapOf(1 to 2, 2 to 1, 3 to 2, 4 to 1, 5 to 2))
+        // 加投：PK 台上的 1/2 不投，只有台外的 3/4/5 投，仍只能投 1/2。
+        // 3→2、4→1、5→2 → 2 号 2 票出局
+        assertEquals("台上 1/2 没有票", listOf(3, 4, 5), tie.exileVoters)
+        val second = tie.castVotes(mapOf(3 to 2, 4 to 1, 5 to 2))
         assertEquals(listOf(1, 2), second.voteRounds.map { it.round })
         assertEquals(VoteOutcome.EXILED, second.voteRounds[1].outcome)
         assertEquals(2, second.voteRounds[1].exiledSeat)
-        assertEquals(3.0, second.voteRounds[1].exileVotes, 0.0)
-        assertEquals("第二轮不能把第一轮的票抄进来", 5, second.voteRounds[1].ballots.size)
+        assertEquals(2.0, second.voteRounds[1].exileVotes, 0.0)
+        assertEquals("加投轮只有台外 3 人的票", 3, second.voteRounds[1].ballots.size)
     }
 
     @Test

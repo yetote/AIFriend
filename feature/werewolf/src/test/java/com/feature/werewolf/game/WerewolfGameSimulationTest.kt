@@ -167,7 +167,7 @@ class WerewolfGameSimulationTest {
         Phase.DAY_DISCUSSION -> game.atDiscussion().beginVote()
 
         Phase.DAY_VOTE -> {
-            val voters = game.votingSeats
+            val voters = game.exileVoters
             val candidates = game.voteCandidates ?: voters
             game.castVotes(
                 voters.associateWith { if (rng.nextInt(6) == 0) null else candidates.random(rng) },
@@ -184,7 +184,7 @@ class WerewolfGameSimulationTest {
         Phase.DAY_SHERIFF_VOTE -> {
             val candidates = game.sheriffCandidates
             game.castSheriffVotes(
-                game.sheriffVoters.associateWith {
+                game.sheriffVoteVoters.associateWith {
                     if (candidates.isEmpty() || rng.nextInt(6) == 0) null else candidates.random(rng)
                 },
             )

@@ -227,10 +227,17 @@ object WerewolfDecisions {
     /** 警长投票：只能投上警的那几个人，且不能投自己（自己上警了本来也投不了）。 */
     fun sheriffVote(game: WerewolfGame, candidates: List<Int>): StructuredSpec<VoteChoice> {
         val valid = candidates.sorted()
+        // 首轮只有警下能投；PK 轮台上的人不投、其余存活都能投（含上过警没进 PK 的）。
+        // 这句话不能写死「你是警下的人」——PK 轮会问到上过警的人，自相矛盾。
+        val who = if (game.sheriffRound <= 1) {
+            "你是警下的人，这一票决定警徽归谁。"
+        } else {
+            "现在是平票 PK：台上的人不能投，你在台外，这一票决定警徽归谁。"
+        }
         return StructuredSpec(
             instruction = "输出 {\"target\": 座位号或 null, \"reason\": \"一句话理由\"}。" +
                 "target 是你要选为警长的人，只能从 ${list(valid)} 中选；实在不想选就填 null。" +
-                "你是警下的人，这一票决定警徽归谁。" + INNER_REASON_HINT,
+                who + INNER_REASON_HINT,
             serializer = VoteChoice.serializer(),
             validate = { it.target == null || it.target in valid },
         )

@@ -148,9 +148,10 @@ class WerewolfSheriffTest {
         assertEquals(listOf(1, 4), tie.sheriffCandidates)
         assertTrue(tie.history.any { it is GameEvent.SheriffPk })
 
-        // PK 之后仍然只有警下能投：第一轮被淘汰的人不会因为收窄而拿回选票
+        // PK 轮：台上(1、4)不投，其余存活都能投。这局只有 1、4 上过警，
+        // 所以新口径的 PK 投票人和旧口径的警下名单恰好一样。
         val again = tie.beginSheriffVote()
-        assertEquals(listOf(2, 3, 5, 6, 7, 8, 9), again.sheriffVoters)
+        assertEquals(listOf(2, 3, 5, 6, 7, 8, 9), again.sheriffVoteVoters)
 
         val still = again.castSheriffVotes(
             mapOf(2 to 4, 3 to 4, 5 to 4, 6 to 1, 7 to 1, 8 to 1, 9 to null),
@@ -158,6 +159,32 @@ class WerewolfSheriffTest {
         assertNull(still.sheriffSeat)
         assertEquals(Phase.DAY_DISCUSSION, still.phase)
         assertTrue(still.history.any { it is GameEvent.SheriffVacant })
+    }
+
+    @Test
+    fun `警长PK时台上不投，上过警但没进PK的人拿回投票权`() {
+        // 三人上警(1、4、7)：首轮只有警下 6 人投，1 和 4 各 3 票平票进 PK。
+        // 7 号上过警、没进 PK——按新规则他 PK 轮可以投，旧规则会把他排除。
+        val voting = atSignup().signUpSheriff(setOf(1, 4, 7)).beginSheriffVote()
+        assertEquals("首轮只有警下能投", listOf(2, 3, 5, 6, 8, 9), voting.sheriffVoteVoters)
+
+        val tie = voting.castSheriffVotes(
+            mapOf(2 to 1, 3 to 1, 5 to 4, 6 to 4, 8 to null, 9 to null),
+        )
+        assertEquals(2, tie.sheriffRound)
+        assertEquals(listOf(1, 4), tie.sheriffCandidates)
+
+        val pk = tie.beginSheriffVote()
+        assertEquals(
+            "PK 轮台上(1、4)不投，其余存活全可投，含上过警的 7 号",
+            listOf(2, 3, 5, 6, 7, 8, 9),
+            pk.sheriffVoteVoters,
+        )
+        // 带上 7 号这一票，7 号投给 4 决定警徽归属
+        val elected = pk.castSheriffVotes(
+            mapOf(2 to 1, 3 to 1, 5 to 4, 6 to 4, 7 to 4, 8 to null, 9 to null),
+        )
+        assertEquals("7 号的回归票让 4 号以 3:2 当选", 4, elected.sheriffSeat)
     }
 
     @Test

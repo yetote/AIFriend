@@ -241,6 +241,20 @@ data class WerewolfGame(
             .filter { !(it.role == WerewolfRole.IDIOT && idiotRevealed) }
             .map { it.seat }
 
+    /**
+     * **本轮**放逐投票有票的座位。
+     *
+     * 首轮人人有票；平票进入 PK 后，**PK 台上的人不能投自己那一轮**，
+     * 其余所有存活玩家（含上一轮投过的人）都能投——这是网易狼人杀的 PK 规则。
+     * 台上是 [voteCandidates]，所以排除它；不是把候选和投票人混为一个集合。
+     */
+    val exileVoters: List<Int>
+        get() = if (voteRound <= 1 || voteCandidates == null) {
+            votingSeats
+        } else {
+            votingSeats.filter { it !in voteCandidates }
+        }
+
     // ---------------------------------------------------------------------
     // 警长与发言顺序
     // ---------------------------------------------------------------------
@@ -363,6 +377,20 @@ data class WerewolfGame(
     /** 有资格投警长票的人：活着、且没上过警。 */
     val sheriffVoters: List<Int>
         get() = aliveSeats.filter { it !in sheriffRunners }
+
+    /**
+     * **本轮**警长投票有票的座位。
+     *
+     * 首轮只有警下能投（[sheriffVoters]）；平票 PK 后按网易狼人杀的规则改成
+     * **PK 台上的人不投，其余所有存活玩家都能投**——包括上过警但没进 PK 的人。
+     * 这是用户拍板的新口径，和首轮的「上警就不能投」是两回事，别混用。
+     */
+    val sheriffVoteVoters: List<Int>
+        get() = if (sheriffRound <= 1) {
+            sheriffVoters
+        } else {
+            aliveSeats.filter { it !in sheriffCandidates }
+        }
 
     // ---------------------------------------------------------------------
     // 夜晚
@@ -535,7 +563,7 @@ data class WerewolfGame(
      */
     fun castVotes(votes: Map<Int, Int?>): WerewolfGame {
         require(phase == Phase.DAY_VOTE) { "当前不是投票阶段：$phase" }
-        val living = votingSeats.toSet()
+        val living = exileVoters.toSet()
         require(votes.keys == living) { "所有有投票权的玩家都要投票，弃票传 null。期望 $living，实际 ${votes.keys}" }
 
         val candidates = (voteCandidates ?: votingSeats).toSet()
@@ -708,26 +736,30 @@ data class WerewolfGame(
     }
 
     /**
-     * 警长投票。**只有警下的人投**（上过警的都不投），弃票传 null。
+     * 警长投票，弃票传 null。
      *
-     * 平票进入 PK：平票的那几位再各说一轮，然后由警下重投。第二轮再平票就
-     * 警徽流失——本局没有警长。这是线下最常见的处理，也让「上警」有真实代价：
-     * 争不到警徽，还把自己排除在投票之外。
+     * 首轮**只有警下的人投**（上过警的都不投）——上警有真实代价：争不到警徽，
+     * 首轮还把自己排除在投票之外。
+     *
+     * 平票进入 PK：平票的那几位再各说一轮，然后重投。**PK 轮的投票权按
+     * 网易狼人杀：台上的人不能投，其余所有存活玩家都能投**（含上过警但没进 PK 的人）。
+     * 第二轮再平票就警徽流失——本局没有警长。
      *
      * 注意这里**没有 1.5 票**：警长还没选出来，这个权重只属于「已经当上警长的人」。
      */
     fun castSheriffVotes(votes: Map<Int, Int?>): WerewolfGame {
         require(phase == Phase.DAY_SHERIFF_VOTE) { "当前不是警长投票阶段：$phase" }
-        val voters = sheriffVoters.toSet()
+        val voters = sheriffVoteVoters.toSet()
         if (voters.isEmpty()) {
-            // 全员上警，没人有资格投。这不是异常局面，是「大家都想当警长」的必然结果
+            // 首轮全员上警、或 PK 时台上外无人存活，没人有资格投。
+            // 这不是异常局面，是「大家都想当警长 / 只剩 PK 两人」的必然结果。
             return copy(
                 sheriffElectionDone = true,
-                history = history + GameEvent.SheriffVacant(day, "全员上警，无人可投"),
+                history = history + GameEvent.SheriffVacant(day, "无人可投，警徽流失"),
             ).afterSheriffElection()
         }
         require(votes.keys == voters) {
-            "所有警下玩家都要投票（上警的人不投），期望 $voters，实际 ${votes.keys}"
+            "所有有投票权的玩家都要投票（PK 台上的人不投），期望 $voters，实际 ${votes.keys}"
         }
         val candidates = sheriffCandidates.toSet()
         votes.forEach { (voter, target) ->
@@ -750,7 +782,8 @@ data class WerewolfGame(
             return if (sheriffRound < SHERIFF_MAX_ROUNDS) {
                 copy(
                     sheriffRound = sheriffRound + 1,
-                    // 收窄到平票的人，但 sheriffRunners 保持不变：他们仍然没有投票权
+                    // 收窄到平票的人——他们就是下一轮的 PK 台，台上的人不能投；
+                    // sheriffRunners 保留全部上警记录，供复盘还原「谁上过警」。
                     sheriffCandidates = top,
                     phase = Phase.DAY_SHERIFF_SPEECH,
                     history = history + GameEvent.SheriffPk(day, top),

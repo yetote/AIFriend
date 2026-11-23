@@ -93,7 +93,7 @@ class WerewolfReviewMappingTest {
                 Phase.DAY_SHERIFF_VOTE -> {
                     val candidates = game.sheriffCandidates
                     game.castSheriffVotes(
-                        game.sheriffVoters.associateWith {
+                        game.sheriffVoteVoters.associateWith {
                             if (candidates.isEmpty() || rng.nextInt(5) == 0) null
                             else candidates.random(rng)
                         },
