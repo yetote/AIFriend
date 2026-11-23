@@ -323,8 +323,11 @@ fun UIWerewolfTableScreen(
         if (confirmExplode) {
             UIIosDialog(
                 title = "现在就自爆？",
-                subtitle = "自爆当场出局，白天立刻结束、直接进黑夜。今晚的商议和定刀你还能开口，" +
-                    "明天起不再说话——这一下不能撤销。",
+                // 先写收益再写代价：点这个按钮的人多半是「今天顶不住了」，
+                // 让他看清这一下到底换到了什么，别把自爆当成认输。
+                subtitle = "收益：今天立刻结束，没有人被投出去，队友保住了。\n" +
+                    "代价：你当场出局，这一局少一个狼、夜里少一票。\n" +
+                    "今晚的商议和定刀你还能开口，明天起不再说话——这一下不能撤销。",
                 onDismiss = { confirmExplode = false },
                 actions = {
                     UIDialogButtons(
