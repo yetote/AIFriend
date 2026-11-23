@@ -28,6 +28,13 @@ data class ApiCheck(
      * 会让搜索式直接跳过检查、带着一个不会联网的座位开局。
      */
     val webSearch: Boolean = false,
+    /**
+     * 这次失败是不是「这家没有联网搜索」。
+     *
+     * 和「连不上」分开记，是因为界面给的下一步不一样：连不上让他查 Key，
+     * 没有搜索只能换厂商或者别选搜索式。混在一起，用户会去反复重试一把没问题的 Key。
+     */
+    val searchUnsupported: Boolean = false,
 )
 
 /** 结果多久之后不算数。 */

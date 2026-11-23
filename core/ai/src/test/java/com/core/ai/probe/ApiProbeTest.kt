@@ -154,6 +154,20 @@ class ApiProbeTest {
             "要指名是联网这件事不行：${result.message}",
             result.message.orEmpty().contains("不支持联网搜索"),
         )
+        assertTrue("要单独标记出来，界面才能给对建议", result.searchUnsupported)
+    }
+
+    @Test
+    fun `连不上不算不支持联网`() = runBlocking {
+        // 这两种失败要开不同的药：连不上查 Key，没有搜索换厂商。
+        // 混在一起会让用户反复重试一把完全没问题的 Key。
+        // 这里这家是支持联网的，所以请求真的发出去了，失败原因是链路本身
+        val result = FakeAI(supportsWebSearch = true) {
+            throw IllegalStateException("Connection refused")
+        }.probe("m", webSearch = true)
+
+        assertFalse(result.ok)
+        assertFalse(result.searchUnsupported)
     }
 
     @Test

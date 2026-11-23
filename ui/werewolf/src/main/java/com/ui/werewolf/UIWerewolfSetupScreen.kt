@@ -192,6 +192,8 @@ fun UIWerewolfSetupScreen(
     val selectedCheckable = selectedIds.isNotEmpty() && !checking
     val searchStyle = promptStyle == UIWerewolfPromptStyle.SEARCH
     val okCount = selectedIds.count { apiChecks[it]?.state == UIWerewolfApiState.OK }
+    // 「没有联网搜索能力」的座位单列：它不是 Key 的问题，重试多少次都没用
+    val unsupportedCount = selectedIds.count { apiChecks[it]?.searchUnsupported == true }
     // 第一条失败原因：搜索式下多半就是「这家不支持联网」，
     // 直接摆在自检卡上，比让用户自己去座位列表里找那个红点快
     val firstFailure = selectedIds.firstNotNullOfOrNull { id ->
@@ -445,6 +447,7 @@ fun UIWerewolfSetupScreen(
                         total = selectedIds.size,
                         okCount = okCount,
                         failedCount = failedCount,
+                        unsupportedCount = unsupportedCount,
                         firstFailure = firstFailure,
                         enabled = selectedCheckable,
                         onCheck = onCheckApi,
@@ -599,6 +602,7 @@ fun UIWerewolfSetupScreen(
                 playMode = mode == UIWerewolfMode.PLAY,
                 checking = checking,
                 failedCount = failedCount,
+                unsupportedCount = unsupportedCount,
                 // 第一页只负责搭局，开局必须发生在第二页：打法是开局条件的一部分，
                 // 而连接自检要按打法验——两件事不能分在两道门后面
                 nextStep = setupTab == 0,
@@ -881,6 +885,7 @@ private fun SetupCheckCard(
     total: Int,
     okCount: Int,
     failedCount: Int,
+    unsupportedCount: Int,
     firstFailure: String?,
     enabled: Boolean,
     onCheck: () -> Unit,
@@ -924,6 +929,16 @@ private fun SetupCheckCard(
         if (!firstFailure.isNullOrBlank()) {
             Text(
                 text = "「$firstFailure」",
+                fontSize = 11.5.sp,
+                lineHeight = 16.sp,
+                color = UIFriendBarRed
+            )
+        }
+        if (unsupportedCount > 0) {
+            // 这一句是给「重试」按钮的反面教材：能力不够，重试一万次也还是不行。
+            // 说清楚只能换厂商或者换个打法，用户才不会一直点重试
+            Text(
+                text = "$unsupportedCount 个座位没有联网搜索能力：换厂商，或者改用引导式/自由式",
                 fontSize = 11.5.sp,
                 lineHeight = 16.sp,
                 color = UIFriendBarRed
@@ -1354,6 +1369,8 @@ private fun StartBar(
     playMode: Boolean,
     checking: Boolean,
     failedCount: Int,
+    /** 其中有几个是「没有联网搜索能力」而不是「连不上」。 */
+    unsupportedCount: Int,
     /** 还在第一页：这一下只负责「去配打法」，不开局。 */
     nextStep: Boolean,
     onNext: () -> Unit,
@@ -1377,7 +1394,12 @@ private fun StartBar(
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             if (hasFailure && canStart && !nextStep) {
                 Text(
-                    text = "$failedCount 个座位过不了这一档，开局后第一回合就可能卡住",
+                    text = when {
+                        // 「不会联网」和「连不上」要分开说：前者不会卡住，但会拿记忆当查证结果
+                        unsupportedCount > 0 ->
+                            "$unsupportedCount 个座位不会联网检索，搜索式下它们只能凭记忆答"
+                        else -> "$failedCount 个座位过不了这一档，开局后第一回合就可能卡住"
+                    },
                     modifier = Modifier.padding(horizontal = 6.dp),
                     fontSize = 11.sp,
                     color = UIFriendBarRed

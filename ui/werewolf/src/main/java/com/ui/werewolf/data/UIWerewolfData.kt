@@ -174,4 +174,11 @@ data class UIWerewolfApiCheck(
     /** 失败原因，已经翻成人话，例如「API Key 无效或已过期」。成功时为 null。 */
     val message: String? = null,
     val elapsedMs: Long? = null,
+    /**
+     * 这次失败是不是「这家没有联网搜索」。
+     *
+     * 界面上要分开说：连不上是 Key 的问题，没有搜索是厂商能力的问题——
+     * 后者让用户去重试一把完全没问题的 Key，是白折腾。
+     */
+    val searchUnsupported: Boolean = false,
 )

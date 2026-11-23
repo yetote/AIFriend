@@ -21,6 +21,13 @@ data class ApiProbeResult(
     val elapsedMs: Long,
     /** 失败原因，已经翻成人话。成功时为 null。 */
     val message: String? = null,
+    /**
+     * 这次失败是不是「这家没有联网搜索」。
+     *
+     * 单独标出来是因为它和「连不上」要开完全不同的药：连不上要去查 Key，
+     * 没有联网搜索只能换厂商或换打法。混成一句话，界面上的建议就会指错方向。
+     */
+    val searchUnsupported: Boolean = false,
 )
 
 /**
@@ -94,6 +101,7 @@ suspend fun IAI.probe(
             ok = false,
             elapsedMs = 0,
             message = "「$brandName」的对话接口不支持联网搜索",
+            searchUnsupported = true,
         )
     }
 

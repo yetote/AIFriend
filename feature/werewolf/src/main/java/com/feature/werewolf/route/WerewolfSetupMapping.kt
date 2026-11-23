@@ -67,6 +67,7 @@ internal fun ApiCheck.toUiCheck() = UIWerewolfApiCheck(
     },
     message = message,
     elapsedMs = elapsedMs,
+    searchUnsupported = searchUnsupported,
 )
 
 internal fun buildSeats(

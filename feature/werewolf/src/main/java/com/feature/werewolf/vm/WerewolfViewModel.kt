@@ -1773,6 +1773,7 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
                             // 结论挂上前提：搜索式测出来的绿，不能拿去给普通探活复用，
                             // 反过来也一样
                             webSearch = webSearch,
+                            searchUnsupported = result.searchUnsupported,
                         )
                     }
                 }
