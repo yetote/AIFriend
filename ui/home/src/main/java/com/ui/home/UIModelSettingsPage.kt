@@ -90,14 +90,48 @@ fun UIModelSettingsPage(
     onOpenConsole: (String) -> Unit = {},
     onClearKey: () -> Unit = {},
     onRefreshPrice: () -> Unit = {},
+    onAddCustom: () -> Unit = {},
+    onDeleteCustom: (String) -> Unit = {},
+    onCustomNameChange: (String) -> Unit = {},
+    onRenameCustom: () -> Unit = {},
 ) {
     var keyVisible by remember { mutableStateOf(false) }
+    var pendingDelete by remember { mutableStateOf<UIProviderOption?>(null) }
     // 免责提醒：每次进这个页面都弹，必须点「我已知晓」才关得掉，
     // 不能点外部/返回键划走 —— 这是合规底线，不是可以忽略的普通提示。
     var showKeyDisclaimer by remember { mutableStateOf(true) }
 
     if (showKeyDisclaimer) {
         ApiKeyDisclaimerDialog(onAcknowledge = { showKeyDisclaimer = false })
+    }
+
+    pendingDelete?.let { option ->
+        val customId = option.customId
+        UIIosDialog(
+            title = "删除接口",
+            subtitle = "「${option.name}」",
+            dismissible = true,
+            onDismiss = { pendingDelete = null },
+            actions = {
+                UIDialogButtons(
+                    confirmText = "删除",
+                    confirmColor = UIFriendBarRed,
+                    onConfirm = {
+                        if (customId != null) onDeleteCustom(customId)
+                        pendingDelete = null
+                    },
+                    onCancel = { pendingDelete = null }
+                )
+            }
+        ) {
+            Text(
+                text = "这个接口和它保存的 Key 会被移除。已经用它创建的好友将无法调用，" +
+                    "可以在删除前先把好友换到别的接口。",
+                fontSize = 13.sp,
+                lineHeight = 19.sp,
+                color = UIFriendBarItemSubtitleColor
+            )
+        }
     }
 
     UIGradientBackground(modifier = Modifier.pageInsetsTop()) {
@@ -151,7 +185,15 @@ fun UIModelSettingsPage(
                         Text(
                             text = "一把 Key 调多家模型",
                             fontSize = 11.sp,
-                            color = UIFriendBarItemMetaColor.copy(alpha = 0.7f)
+                            color = UIFriendBarItemMetaColor.copy(alpha = 0.7f),
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            text = "+ 新增接口",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = UIFriendBarCreateButtonText,
+                            modifier = Modifier.clickable { onAddCustom() }
                         )
                     }
                     Spacer(Modifier.height(8.dp))
@@ -159,7 +201,8 @@ fun UIModelSettingsPage(
                         ProviderRow(
                             option = provider,
                             selected = provider.id == state.selectedProviderId,
-                            onClick = { onProviderSelect(provider.id) }
+                            onClick = { onProviderSelect(provider.id) },
+                            onDelete = provider.customId?.let { { pendingDelete = provider } }
                         )
                         Spacer(Modifier.height(8.dp))
                     }
@@ -168,6 +211,36 @@ fun UIModelSettingsPage(
                 Spacer(Modifier.height(6.dp))
                 val provider = state.selectedProvider
                 if (provider != null) {
+                    if (provider.customId != null) {
+                        SectionLabel("接口名称")
+                        Spacer(Modifier.height(8.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(modifier = Modifier.weight(1f)) {
+                                PlainField(
+                                    value = state.customNameInput,
+                                    onValueChange = onCustomNameChange,
+                                    placeholder = "给这个接口起个好认的名字",
+                                    keyboardType = KeyboardType.Text
+                                )
+                            }
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = "重命名",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = UIFriendBarCreateButtonText,
+                                modifier = Modifier.clickable { onRenameCustom() }
+                            )
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = "改名后，已经用这个接口创建的好友仍然可以调用。",
+                            fontSize = 11.sp,
+                            color = UIFriendBarItemMetaColor
+                        )
+                        Spacer(Modifier.height(14.dp))
+                    }
+
                     SectionLabel("API Key")
                     Spacer(Modifier.height(8.dp))
                     KeyField(
@@ -450,7 +523,8 @@ private fun ModelSectionHeader(
 private fun ProviderRow(
     option: UIProviderOption,
     selected: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onDelete: (() -> Unit)? = null
 ) {
     Row(
         modifier = Modifier
@@ -501,6 +575,15 @@ private fun ProviderRow(
             )
         }
         Spacer(Modifier.width(10.dp))
+        if (onDelete != null) {
+            Text(
+                text = "删除",
+                fontSize = 11.sp,
+                color = UIFriendBarRed,
+                modifier = Modifier.clickable { onDelete() }
+            )
+            Spacer(Modifier.width(8.dp))
+        }
         SelectionDot(selected)
     }
 }
@@ -582,7 +665,8 @@ private fun KeyField(
 private fun PlainField(
     value: String,
     onValueChange: (String) -> Unit,
-    placeholder: String
+    placeholder: String,
+    keyboardType: KeyboardType = KeyboardType.Uri
 ) {
     Box(
         modifier = Modifier
@@ -608,7 +692,7 @@ private fun PlainField(
             singleLine = true,
             cursorBrush = SolidColor(UIFriendBarCreateButtonText),
             keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.Uri,
+                keyboardType = keyboardType,
                 imeAction = ImeAction.Done
             )
         )

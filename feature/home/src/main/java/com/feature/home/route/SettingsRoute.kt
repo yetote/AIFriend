@@ -61,6 +61,10 @@ fun SettingsRoute(
             onSave = viewModel::verifyAndSave,
             onClearKey = viewModel::clearKey,
             onRefreshPrice = viewModel::refreshPrice,
+            onAddCustom = viewModel::addCustom,
+            onDeleteCustom = viewModel::deleteCustom,
+            onCustomNameChange = viewModel::setCustomNameInput,
+            onRenameCustom = viewModel::renameCustom,
             onOpenConsole = { providerId ->
                 val url = AIProviderCatalog.byId(providerId)?.consoleUrl.orEmpty()
                 openUrl(context, url)

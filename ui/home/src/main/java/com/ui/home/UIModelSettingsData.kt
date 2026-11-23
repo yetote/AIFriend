@@ -18,7 +18,9 @@ data class UIProviderOption(
     val editableBaseUrl: Boolean = false,
     val baseUrl: String = "",
     /** 聚合平台；页面据此把官方厂商和聚合平台分成两组。 */
-    val isGateway: Boolean = false
+    val isGateway: Boolean = false,
+    /** 非 null 表示这是用户自建的接口，可以改名 / 删除。 */
+    val customId: String? = null
 )
 
 /** 设置页模型列表里的一项：id + 可选价格。 */
@@ -42,6 +44,8 @@ data class UIModelSettingsState(
     val selectedProviderId: String = "",
     val keyInput: String = "",
     val baseUrlInput: String = "",
+    /** 当前选中的自定义接口的名字，可以直接改。 */
+    val customNameInput: String = "",
     val models: List<String> = emptyList(),
     /** 带价格的模型列表，聚合平台才有内容。 */
     val pricedModels: List<UISettingsModel> = emptyList(),

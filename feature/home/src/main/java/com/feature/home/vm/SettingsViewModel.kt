@@ -16,6 +16,7 @@ import com.core.repository.settings.TTSProviderCatalog
 import com.core.repository.settings.validateBaseUrl
 import com.core.repository.storage.AICredential
 import com.core.repository.storage.AIProviderSettings
+import com.core.repository.storage.FriendRepository
 import com.core.repository.storage.TTSCredential
 import com.core.repository.storage.TTSProviderSettings
 import com.core.tts.TTSPreviewPlayer
@@ -45,6 +46,9 @@ import kotlinx.coroutines.withContext
 class SettingsViewModel(application: Application) : BaseViewModel(application) {
 
     private val settings = AIProviderSettings(application)
+
+    /** 自定义接口改名时要同步已建好友的 brand，否则好友会变成「暂不支持的厂商」。 */
+    private val friendRepository = FriendRepository(application)
 
     /** TTS 凭证独立存储，和模型 Key 完全分开。 */
     private val ttsSettings = TTSProviderSettings(application)
@@ -127,14 +131,18 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
         // Key 现在全部由用户自己填，一个都没配时停在目录默认值（硅基流动）——
         // 那是新用户最可能要去的入口；但已经配了 Deepseek 的人
         // 每次进来都看到硅基流动的空 Key 框，会以为 Key 丢了。
-        val provider = AIProviderCatalog.all.firstOrNull { saved[it.id]?.apiKey?.isNotBlank() == true }
-            ?: AIProviderCatalog.default()
+        val provider = AIProviderCatalog.all.firstOrNull { p ->
+            saved[p.id]?.apiKey?.isNotBlank() == true ||
+                // 本地部署的自定义接口可以不填 Key，填了地址就算配过。
+                (AIProviderCatalog.isCustom(p.id) && saved[p.id]?.baseUrl?.isNotBlank() == true)
+        } ?: AIProviderCatalog.default()
         val models = withContext(Dispatchers.IO) { settings.selectedModel(provider.id) }
         // 价格可能刚被刷过，缓存里的明细要按最新的价格重算一遍
         pricedCache[provider.id]?.let { pricedCache[provider.id] = repriced(it, provider.id) }
         _state.value = UIModelSettingsState(
             providers = AIProviderCatalog.all.map { it.toOption() },
             selectedProviderId = provider.id,
+            customNameInput = provider.name.takeIf { AIProviderCatalog.isCustom(provider.id) }.orEmpty(),
             models = modelCache[provider.id].orEmpty(),
             pricedModels = pricedCache[provider.id].orEmpty(),
             selectedModel = models.orEmpty(),
@@ -207,6 +215,7 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
             selectedProviderId = providerId,
             keyInput = "",
             baseUrlInput = credential?.baseUrl.orEmpty().ifBlank { provider.baseUrl },
+            customNameInput = provider.name.takeIf { AIProviderCatalog.isCustom(providerId) }.orEmpty(),
             models = modelCache[providerId].orEmpty(),
             pricedModels = cached,
             selectedModel = modelCache[providerId]?.firstOrNull().orEmpty(),
@@ -226,6 +235,83 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
 
     fun setBaseUrlInput(value: String) {
         _state.value = _state.value.copy(baseUrlInput = value.trim(), verifyResult = null)
+    }
+
+    fun setCustomNameInput(value: String) {
+        _state.value = _state.value.copy(customNameInput = value, error = null)
+    }
+
+    /** 新建一个自定义接口，建好即选中，用户接着填地址和 Key。 */
+    fun addCustom() {
+        viewModelScope.launch {
+            val created = withContext(Dispatchers.IO) { settings.custom.add("自定义 API") }
+            if (created == null) {
+                _state.value = _state.value.copy(error = "新增失败，请重试")
+                return@launch
+            }
+            refreshProviderOptions()
+            selectProvider(created.id)
+        }
+    }
+
+    /**
+     * 给当前自定义接口改名。
+     *
+     * 好友表里存的是品牌名字符串，所以这里把用它建的好友一起改掉。
+     * 老狼人杀存档没法逐条改，靠 [AIProvider.aliases] 继续认得旧名字。
+     */
+    fun renameCustom() {
+        val current = _state.value
+        val id = current.selectedProvider?.customId ?: return
+        val name = current.customNameInput.trim()
+        if (name.isBlank()) {
+            _state.value = current.copy(error = "名称不能为空")
+            return
+        }
+        viewModelScope.launch {
+            val oldName = withContext(Dispatchers.IO) { settings.custom.rename(id, name) }
+            if (oldName == null) {
+                _state.value = _state.value.copy(error = "改名失败：名字已被占用，或保存失败")
+                return@launch
+            }
+            val previousNames = AIProviderCatalog.byId(id)?.aliases.orEmpty() + oldName
+            val friends = withContext(Dispatchers.IO) { friendRepository.load() }
+            friends.filter { it.brand in previousNames }.forEach { friend ->
+                withContext(Dispatchers.IO) {
+                    friendRepository.upsert(
+                        friend.copy(brand = name, company = name)
+                    )
+                }
+            }
+            refreshProviderOptions()
+            selectProvider(id)
+        }
+    }
+
+    /** 删除自定义接口；已保存的 Key 一起清掉。 */
+    fun deleteCustom(id: String) {
+        viewModelScope.launch {
+            val ok = withContext(Dispatchers.IO) { settings.custom.remove(id) }
+            if (!ok) {
+                _state.value = _state.value.copy(error = "删除失败，请重试")
+                return@launch
+            }
+            saved = saved - id
+            modelCache.remove(id)
+            pricedCache.remove(id)
+            if (_state.value.selectedProviderId == id) {
+                val first = AIProviderCatalog.all.firstOrNull()
+                    ?: return@launch
+                selectProvider(first.id)
+            }
+            refreshProviderOptions()
+        }
+    }
+
+    private fun refreshProviderOptions() {
+        _state.value = _state.value.copy(
+            providers = AIProviderCatalog.all.map { it.toOption() }
+        )
     }
 
     fun selectModel(model: String) {
@@ -363,11 +449,16 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
             apiKey = apiKey,
             // 只有自定义服务商的地址是用户填的，其余用目录里的固定地址，
             // 存下来的话用户以后改目录也改不动它。
-            baseUrl = if (provider.id == AIProviderCatalog.Custom.id) baseUrl else ""
+            baseUrl = if (AIProviderCatalog.isCustom(provider.id)) baseUrl else ""
         )
         val stored = withContext(Dispatchers.IO) {
             val ok = settings.save(credential)
             if (ok) {
+                // 自定义接口把这次拉到的模型也存下来：断网时还有兜底列表可选，
+                // 创建页不用等一次成功的 /models 才知道有哪些模型。
+                if (AIProviderCatalog.isCustom(provider.id)) {
+                    settings.custom.saveModels(provider.id, models)
+                }
                 // 默认选一个：优先沿用上次的，否则取列表第一个
                 val previous = settings.selectedModel(provider.id)
                 val chosen = previous?.takeIf { it in models } ?: models.firstOrNull()
@@ -440,9 +531,10 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
         description = description,
         maskedKey = maskKey(saved[id]?.apiKey.orEmpty()),
         hasKey = saved[id]?.apiKey?.isNotBlank() == true,
-        editableBaseUrl = this === AIProviderCatalog.Custom,
+        editableBaseUrl = AIProviderCatalog.isCustom(id),
         baseUrl = saved[id]?.baseUrl.orEmpty(),
-        isGateway = isGateway
+        isGateway = isGateway,
+        customId = id.takeIf { AIProviderCatalog.isCustom(it) }
     )
 
     /** Key 只露头尾各 4 位，够用户认出是哪把，又不至于被旁人瞥去。 */
