@@ -388,6 +388,9 @@ fun UIWerewolfSetupScreen(
                                     // 没选中的人不显示检测结果：一列红点会让人以为整页都在报错，
                                     // 而真正要关心的是「这一局坐上桌的那几个」
                                     check = if (checked) apiChecks[friend.id] else null,
+                                    // 联网能力是静态的，选不选他都得说：这行标记不随检测结果消失，
+                                    // 所以用户不必等自检跑完才知道自家模型搜不了
+                                    showNoSearch = searchStyle && !friend.supportsWebSearch,
                                     onClick = { onToggleFriend(friend.id) }
                                 )
                             }
@@ -1206,6 +1209,8 @@ private fun FriendRow(
     checked: Boolean,
     enabled: Boolean,
     check: UIWerewolfApiCheck?,
+    /** 选搜索式时这家没有内置联网搜索，得当场说清楚。 */
+    showNoSearch: Boolean,
     onClick: () -> Unit,
 ) {
     val active = enabled || checked
@@ -1270,6 +1275,16 @@ private fun FriendRow(
                     overflow = TextOverflow.Ellipsis,
                     // 再淡一档：模型名是排查问题时才看的东西，不该和人设抢注意力
                     color = UIFriendBarItemSubtitleColor.copy(alpha = 0.75f * dim)
+                )
+            }
+            // 「这个模型搜不了」要说在这一行下面，而不是等到自检失败才冒出来：
+            // 这是静态能力，不用花任何一次请求就能知道
+            if (showNoSearch) {
+                Text(
+                    text = "没有联网搜索能力，搜索式下只能凭记忆答",
+                    fontSize = 11.sp,
+                    maxLines = 2,
+                    color = UIFriendBarRed.copy(alpha = 0.9f * dim)
                 )
             }
 

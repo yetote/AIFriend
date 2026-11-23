@@ -204,7 +204,9 @@ fun WerewolfRoute(
         }
     }
 
-    val uiFriends = remember(friends) { friends.map { it.toUiFriend() } }
+    val uiFriends = remember(friends) {
+        friends.map { it.toUiFriend(supportsWebSearch = viewModel.supportsWebSearchFor(it.brand)) }
+    }
     // 续档换人面板：feature 的 WerewolfRecast → ui 展示模型。
     val uiRecast = remember(recast) {
         recast?.let {

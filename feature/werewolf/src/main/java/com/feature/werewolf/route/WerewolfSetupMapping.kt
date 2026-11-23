@@ -51,12 +51,13 @@ internal fun UIWerewolfMode.toMode(): WerewolfMode = when (this) {
     UIWerewolfMode.SPECTATE -> WerewolfMode.SPECTATE
 }
 
-internal fun com.core.ai.model.Friend.toUiFriend() = UIWerewolfFriend(
+internal fun com.core.ai.model.Friend.toUiFriend(supportsWebSearch: Boolean = false) = UIWerewolfFriend(
     id = id,
     name = name,
     avatarPath = avatarPath,
     role = role,
     model = model,
+    supportsWebSearch = supportsWebSearch,
 )
 
 internal fun ApiCheck.toUiCheck() = UIWerewolfApiCheck(

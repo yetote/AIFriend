@@ -1958,6 +1958,14 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    /**
+     * 这个厂商的对话接口有没有内置联网搜索。
+     *
+     * 静态能力，查一下就够，不用发请求——所以能在选人那一步就告诉用户
+     * 「这个模型搜索式用不了」，而不是等自检跑完才看到红字。
+     */
+    fun supportsWebSearchFor(brand: String): Boolean = aiFor(brand)?.supportsWebSearch == true
+
     private fun aiFor(brand: String): IAI? {
         ais[brand]?.let { return it }
         val created = aiFactory.createAI(brand) ?: return null

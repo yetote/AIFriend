@@ -15,6 +15,14 @@ data class UIWerewolfFriend(
     val avatarPath: String?,
     val role: String,
     val model: String,
+    /**
+     * 这个模型背后的对话接口有没有内置联网搜索。
+     *
+     * 这是**静态能力**，不需要发请求就能知道。搜索式下要在选人时就标出来：
+     * 让用户选完人、等自检跑完、看到红字才知道自家模型不会联网，
+     * 等于让人白等一趟。
+     */
+    val supportsWebSearch: Boolean = false,
 )
 
 /**
