@@ -465,9 +465,17 @@ object WerewolfDecisions {
         return VoteChoice(target, "先守住场上最像会被刀的人。")
     }
 
-    /** 投票兜底：随机投一个候选，尽量不投自己。 */
+    /**
+     * 投票兜底：尽量投一个「说得过去」的候选。
+     *
+     * 两条排除：不投自己（真预言家被踩急了会顺势投自己，那等于送），
+     * 狼不投队友。后一条是硬伤修补——随机数不知道谁是狼，一票砸在队友身上
+     * 等于白送一张牌，而且从票型里根本看不出是失误还是叛变，复盘都查不出来。
+     */
     fun fallbackVote(game: WerewolfGame, seat: Int, candidates: List<Int>, random: Random): VoteChoice {
-        val prefer = candidates.filter { it != seat }.ifEmpty { candidates }
+        val selfIsWolf = game.playerAt(seat).role.isWerewolf
+        val prefer = candidates.filter { it != seat && !(selfIsWolf && game.isWerewolf(it)) }
+            .ifEmpty { candidates.filter { it != seat } }
         val target = pick(prefer, random)
         return VoteChoice(target, if (target == null) "这轮我先不投。" else "我跟一下大家的判断。")
     }

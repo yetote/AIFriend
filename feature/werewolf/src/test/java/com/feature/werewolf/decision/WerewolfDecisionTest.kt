@@ -263,6 +263,18 @@ class WerewolfDecisionTest {
     }
 
     @Test
+    fun `狼的投票兜底不会砸在队友身上`() {
+        // 1、2 号是狼：随机数不知道这件事，一票砸在队友身上等于白送一张牌，
+        // 而且从票型里看不出是失误还是叛变。
+        val g = game()
+        val wolf = g.aliveSeats.filter { g.isWerewolf(it) }.toSet()
+        repeat(30) { seed ->
+            val choice = WerewolfDecisions.fallbackVote(g, seat = 1, candidates = g.aliveSeats, random = Random(seed))
+            assertFalse("兜底投了队友 ${choice.target}", choice.target in wolf)
+        }
+    }
+
+    @Test
     fun `候选为空时兜底返回 null 而不是抛异常`() {
         assertNull(WerewolfDecisions.pick(emptyList<Int>(), Random(1)))
         assertEquals(3, WerewolfDecisions.pick(listOf(3), Random(1)))
