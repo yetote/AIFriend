@@ -133,7 +133,12 @@ internal object WolfKit : RoleKit {
             "你是唯一的狼人。"
         } else {
             "你的狼队友：" + mates.joinToString("、") { mate ->
-                "${mate.seat} 号「${mate.name}」" + if (mate.alive) "" else "（已出局）"
+                "${mate.seat} 号「${mate.name}」" + when {
+                    mate.alive -> ""
+                    // 自爆的队友今晚还在场：写成「已出局」会让活着的狼以为不会再听到他。
+                    mate.seat in game.ghostWolves -> "（已自爆，今晚还会跟你们一起商议、定刀，定完就离场）"
+                    else -> "（已出局）"
+                }
             }
         }
         // 这条以前只写了「不要说出队友的名字」，实测挡不住：模型会改成说

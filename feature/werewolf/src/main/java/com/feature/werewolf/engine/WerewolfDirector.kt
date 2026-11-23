@@ -9,6 +9,7 @@ import com.core.ai.structured.StructuredSpec
 import com.core.ai.structured.decide
 import com.feature.werewolf.decision.SeatChoice
 import com.feature.werewolf.decision.DirectionChoice
+import com.feature.werewolf.decision.ExplodeChoice
 import com.feature.werewolf.decision.VoteChoice
 import com.feature.werewolf.decision.WerewolfDecisions
 import com.feature.werewolf.decision.WitchChoice
@@ -215,7 +216,8 @@ class WerewolfDirector(
         var rounds = 0
         while (current.game.phase == Phase.NIGHT_WOLF && rounds < WerewolfGame.MAX_WOLF_VOTE_ROUNDS) {
             val game = current.game
-            val wolves = game.aliveWolves()
+            // 参会名单含自爆未离场的狼：他今晚还能说、还能定刀。
+            val wolves = game.nightWolves()
             if (wolves.isEmpty()) break
 
             val outcomes = windowedAsync(
@@ -300,7 +302,8 @@ class WerewolfDirector(
      */
     private suspend fun talkRound(table: WerewolfTable, note: String?): WerewolfTable {
         val game = table.game
-        val wolves = game.aliveWolves().sortedBy { it.seat }
+        // 含自爆未离场的狼：他今晚还能说一句。
+        val wolves = game.nightWolves().sortedBy { it.seat }
         if (wolves.isEmpty()) return table
 
         // 发言顺序：**头狼先**，其余按座位。头狼是这一夜的指挥，
@@ -478,6 +481,9 @@ class WerewolfDirector(
                 reasoning = text.reasoning,
                 usage = text.usage,
             ).let { it.copy(game = it.game.markSpoken(seat)) }
+            // 这一句如果点了某只狼的名，被点到的可以先插爆——白天就此结束，
+            // 后面的人不该再被叫起来说话（循环开头的阶段检查会兜住）。
+            current = current.watchExplode(seat, text.text)
             // 说完一个就推一次。下一位要看到的上下文里已经有这句（current 已带），
             // 界面拿到的也是同一份，不存在「显示的和模型看到的不是一回事」
             onTranscript(current)
@@ -602,6 +608,8 @@ class WerewolfDirector(
                 reasoning = text.reasoning,
                 usage = text.usage,
             ).let { it.copy(game = it.game.markSpoken(seat)) }
+            // 竞选发言里被点名也一样：可以当场插爆，把这场选举炸掉。
+            current = current.watchExplode(seat, text.text)
             onTranscript(current)
         }
 
@@ -1506,7 +1514,12 @@ class WerewolfDirector(
         append("你的狼队友是 ")
         append(
             mates.joinToString("、") { mate ->
-                "${mate.seat} 号「${mate.name}」" + if (mate.alive) "" else "（已出局）"
+                "${mate.seat} 号「${mate.name}」" + when {
+                    mate.alive -> ""
+                    // 自爆的队友今晚还在：只写「已出局」会让活着的狼以为他没声了。
+                    mate.seat in game.ghostWolves -> "（已自爆，今晚还会跟你们一起商议、定刀，定完就离场）"
+                    else -> "（已出局）"
+                }
             }
         )
         append("。\n")
@@ -1654,6 +1667,78 @@ class WerewolfDirector(
             next = next.copy(game = before.wolfExplode(seat)).syncBroadcasts(before)
         }
         return next
+    }
+
+    /**
+     * 别人说完一句，看看有没有狼想当场插爆。
+     *
+     * 只问**被这句话点名**的活狼（见 [ExplodeWatch]）：全量询问会把一天的调用量翻倍，
+     * 而绝大多数答案都是「不爆」。判断用一小段简报（[WerewolfPrompt.explodeWatchBrief]），
+     * 不复用完整提示词，单次几百 token。
+     *
+     * 爆了就地结束这一天——不产生「发言气泡」以外的额外记录，播报由状态机的
+     * [WerewolfPrompt.describe] 补上；他自己那句「我自爆。」按正常发言记，
+     * 朗读、复盘、存量和普通发言一条路。
+     */
+    private suspend fun WerewolfTable.watchExplode(speaker: Int, speech: String): WerewolfTable {
+        val now = game
+        if (now.phase != Phase.DAY_DISCUSSION && now.phase != Phase.DAY_SHERIFF_SPEECH) return this
+        val candidates = now.aliveWolves()
+            .map { it.seat }
+            .filter { it != speaker && ExplodeWatch.shouldAsk(now, it, speech) }
+        for (seat in candidates) {
+            val decision = askExplodeNow(this, seat, speaker, speech)
+            if (!decision.value.explode) continue
+            var next = append(
+                WerewolfMessage(
+                    day = now.day,
+                    phase = now.phase,
+                    seat = seat,
+                    kind = MessageKind.SPEECH,
+                    text = "我自爆。",
+                    usage = decision.usage,
+                )
+            )
+            val before = next.game
+            next = next.copy(game = before.wolfExplode(seat)).syncBroadcasts(before)
+            return next
+        }
+        return this
+    }
+
+    /**
+     * 问一只狼：现在要不要爆。
+     *
+     * 超时按「不爆」处理，而且**必须和断线分开**：这里等的是「有没有更好的时机」，
+     * 等不到就继续打，不能因为一次判断把整局卡住。所以自己加一个短时限，
+     * 不走全局那套 8 分钟。
+     */
+    private suspend fun askExplodeNow(
+        table: WerewolfTable,
+        seat: Int,
+        speaker: Int,
+        speech: String,
+    ): StructuredOutcome<ExplodeChoice> {
+        val agent = agentOf(seat)
+        val fallback = ExplodeChoice(explode = false, reason = "")
+        return try {
+            withTimeout(WATCH_TIMEOUT_MS) {
+                agent.ai.decide(
+                    messages = listOf(ChatMessage.user("他刚说完，你来得及开口。")),
+                    model = agent.model,
+                    spec = WerewolfDecisions.explodeWatch(),
+                    fallback = { fallback },
+                    systemPrompt = WerewolfPrompt.explodeWatchBrief(table.game, seat, speaker, speech),
+                    // 这一步只判断「要不要」，不需要深度思考，也不值得为它多等几秒。
+                    enableThinking = false,
+                    maxAttempts = 1,
+                )
+            }
+        } catch (cancelled: CancellationException) {
+            // 外层还活着＝这是我们自己的超时；外层已取消＝真的该停。
+            if (!currentCoroutineContext().isActive) throw cancelled
+            StructuredOutcome(fallback, attempts = 1, usedFallback = true, lastError = "自爆判断超时")
+        }
     }
 
     /**
@@ -1863,6 +1948,14 @@ class WerewolfDirector(
 
         /** 流式发言的推送间隔，见 [WerewolfDirector.streamIntervalMs]。 */
         const val STREAM_PUSH_MS = 80L
+
+        /**
+         * 「要不要插爆」的判断时限。
+         *
+         * 比传输层那 8 分钟短两个数量级：等的是「有没有更好的时机」，
+         * 不是等答案本身。超时就当不爆，牌局继续——插爆是锦上添花，不能为此卡住整局。
+         */
+        const val WATCH_TIMEOUT_MS = 8_000L
 
         /**
          * 发言超出时限、又一句话都没接上时的替身发言。

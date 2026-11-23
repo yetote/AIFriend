@@ -41,6 +41,19 @@ data class DirectionChoice(
 )
 
 /**
+ * 别人说完一句之后，「我要不要当场插爆」。
+ *
+ * 做成结构化决策而不是再识别一次文本标记：这里没有「发言」这回事——
+ * 它没轮到自己开口，答案只有爆/不爆两种，没有正文需要解析。
+ * 兜底永远是 false：插爆是锦上添花，判断不出来就当没这回事。
+ */
+@Serializable
+data class ExplodeChoice(
+    val explode: Boolean = false,
+    val reason: String = "",
+)
+
+/**
  * 各个阶段的结构化决策规格。
  *
  * 每个规格都把「合法目标」**明写进 instruction**，并在 `validate` 里再查一遍。
@@ -319,6 +332,21 @@ object WerewolfDecisions {
             validate = { true },
         )
     }
+
+    /**
+     * 别人说完一句之后，要不要当场插爆。
+     *
+     * 只有两个答案，`validate` 恒真；兜底 false（不爆）。
+     * 真正的上下文由调用方压成一小段简报（[WerewolfPrompt.explodeWatchBrief]），
+     * 这里只负责把答案的格式和默认值钉死。
+     */
+    fun explodeWatch(): StructuredSpec<ExplodeChoice> = StructuredSpec(
+        instruction = "输出 {\"explode\": true 或 false, \"reason\": \"一句话理由\"}。" +
+            "explode=true 表示你现在当场自爆；没有明确把握时填 false。" +
+            "reason 是你心里的判断（没人听见，也不会朗读）。",
+        serializer = ExplodeChoice.serializer(),
+        validate = { true },
+    )
 
     // ---------------------------------------------------------------------
     // 兜底

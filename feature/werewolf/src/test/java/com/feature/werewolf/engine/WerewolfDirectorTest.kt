@@ -1442,4 +1442,69 @@ class WerewolfDirectorTest {
         assertEquals("账本里不该留下一条半截记录", emptyMap<Int, SeatTiming>(), pacing.timings.value)
     }
 
+    @Test
+    fun `被点名之后狼能当场插爆，白天立刻结束`() = runBlocking {
+        // 4 号喊「今天要投 1 号」，1 号听到之后当场爆掉：这一天不再有人发言，
+        // 也不投票，直接进夜。5 号以后的人不该被叫起来。
+        val ais: Map<Int, IAI> = (1..9).associateWith { seat ->
+            when (seat) {
+                1 -> ScriptedAI(
+                    listOf(
+                        "我先听听大家怎么说。",
+                        """{"explode": true, "reason": "队友今天要被投了"}""",
+                    )
+                )
+                4 -> ScriptedAI(listOf("我今天要投 1 号。"))
+                else -> AutoAI()
+            } as IAI
+        }
+        val director = WerewolfDirector(ais.mapValues { SeatAgent(it.value, "test-model") })
+
+        val result = director.discussion(WerewolfTable(standard9().copy(phase = Phase.DAY_DISCUSSION)))
+
+        assertFalse("自爆就是出局", result.game.playerAt(1).alive)
+        assertEquals(DeathCause.SELF_EXPLODE, result.game.playerAt(1).deathCause)
+        assertTrue(
+            "要留一句「我自爆」在牌桌上",
+            result.transcript.any { it.seat == 1 && it.text == "我自爆。" },
+        )
+        val speakers = result.transcript.filter { it.kind == MessageKind.SPEECH }.map { it.seat }
+        assertEquals("说完 4 号就该断，后面的人不许再开口", listOf(1, 2, 3, 4, 1), speakers)
+        assertNotEquals("白天已经结束了", Phase.DAY_DISCUSSION, result.game.phase)
+    }
+
+    @Test
+    fun `插爆判断用简报，不复用完整提示词`() = runBlocking {
+        // 这个判断一天要问十几次，套完整 system（规则＋板子＋打法＋局势）会让
+        // 每句发言的附加成本翻十倍。这里锁住「判断请求是小的」。
+        val wolf = ScriptedAI(
+            listOf(
+                "我先听听大家怎么说。",
+                """{"explode": false, "reason": "还不至于"}""",
+            )
+        )
+        val ais: Map<Int, IAI> = (1..9).associateWith { seat ->
+            when (seat) {
+                1 -> wolf
+                4 -> ScriptedAI(listOf("我今天要投 1 号。"))
+                else -> AutoAI()
+            } as IAI
+        }
+        val director = WerewolfDirector(ais.mapValues { SeatAgent(it.value, "test-model") })
+
+        val result = director.discussion(WerewolfTable(standard9().copy(phase = Phase.DAY_DISCUSSION)))
+
+        assertTrue("答不爆就继续打", result.game.playerAt(1).alive)
+        val watchCall = wolf.calls.last()
+        assertTrue("判断请求要是 JSON", watchCall.jsonMode)
+        assertTrue(
+            "简报必须比完整提示词短得多（实测约 500 字，这里给了很宽的上限）",
+            watchCall.systemPrompt.orEmpty().length < 1_500,
+        )
+        assertFalse(
+            "完整提示词里的规则教学不该出现在这里",
+            watchCall.systemPrompt.orEmpty().contains("【规则】"),
+        )
+    }
+
 }

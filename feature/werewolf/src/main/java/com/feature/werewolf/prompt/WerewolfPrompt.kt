@@ -168,6 +168,49 @@ object WerewolfPrompt {
         }
     }
 
+    /**
+     * 「要不要当场插爆」的判断简报。
+     *
+     * 刻意**不复用完整 system 提示词**：这个判断只需要身份、队友、刚那句话和判断标准，
+     * 几百 token 就够。套上完整提示词（规则＋板子＋打法＋局势）会让每句发言的附加成本
+     * 翻十倍，而它一天要问十几次。
+     *
+     * 只喂公开信息：刚说的那段话本来就是全场听见的。刀口、查验这些不进来——
+     * 判断「该不该爆」用不到它们，喂了只是多一条泄露路径。
+     */
+    fun explodeWatchBrief(game: WerewolfGame, seat: Int, speaker: Int, speech: String): String = buildString {
+        val player = game.playerAt(seat)
+        val speakerPlayer = game.playerAt(speaker)
+        val mates = game.wolves().filter { it.seat != seat }.map { it.seat }
+        append("你是 ").append(seat).append(" 号")
+        append(if (player.role == WerewolfRole.WEREWOLF_KING) "狼王" else "狼人")
+        append("，身份只有你自己知道。")
+        if (mates.isEmpty()) {
+            append("这一局你没有队友。\n")
+        } else {
+            append("你的队友是 ").append(mates.joinToString("、") { "$it 号" }).append("。\n")
+        }
+        append("现在是第 ").append(game.day).append(" 天白天，")
+        append(speakerPlayer.seat).append(" 号「").append(speakerPlayer.name).append("」刚说完一段话。\n")
+        // 规则要说全：「自爆还能参加今晚定刀」是本局独有的，不说它会以为爆完就彻底消失。
+        append("自爆＝你当场出局，这一天立刻结束、直接进入黑夜（没有投票，没有人被放逐）。" +
+            "今晚的狼队商议和定刀你仍然参加，定刀结束才离场。\n")
+        append("判断：这段话是否已经让你或队友今天的处境明显变差，值得用一条命换掉这个白天。\n")
+        append("默认**不自爆**。只有这两种情况值得爆：" +
+            "① 队友今天已经确定要被投出去，你爆了才能让他活下来；" +
+            "② 你已经被点破，再聊下去只会暴露更多。\n")
+        append("只是被怀疑、被点名要求解释、被要求表水——都不算，回答就是了。\n")
+        append("刚那段话：「").append(speech.take(WATCH_SPEECH_CHARS)).append("」")
+    }
+
+    /**
+     * 喂给判断的发言长度上限。
+     *
+     * 正常发言 200~400 字，600 字已经能把「谁要投谁」说完；再长的部分多半是
+     * 复述别人的话，对「该不该爆」没有增量信息，只会把每次判断的输入撑大。
+     */
+    private const val WATCH_SPEECH_CHARS = 600
+
     // ---------------------------------------------------------------------
     // 公开局势
     // ---------------------------------------------------------------------
@@ -564,6 +607,12 @@ object WerewolfPrompt {
         }
         if (game.phase == Phase.DAY_LAST_WORDS && seat in game.pendingLastWords) {
             lines += "你已经出局了，现在轮到你说遗言。遗言改不了结局，但会直接影响活着的人怎么投。"
+        }
+        // 自爆狼还留在夜里的这一小段时间，是**本局独有的规则**，
+        // 不明说它会以为自己不能说话了，整夜一言不发。
+        if (seat in game.ghostWolves) {
+            lines += "你白天已经自爆出局，但还没走：今晚的狼队商议和定刀你仍然参加，" +
+                "定刀一结束就立刻离场。天亮之后你不再发言，也不能再投票。"
         }
 
         return buildString {

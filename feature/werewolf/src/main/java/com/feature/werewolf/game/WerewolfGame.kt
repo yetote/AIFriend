@@ -31,6 +31,16 @@ data class WerewolfGame(
     val wolfVoteRound: Int = 1,
     /** 本夜狼人最终决定刀谁。null 表示空刀。 */
     val tonightVictim: Int? = null,
+    /**
+     * 自爆出局、但今晚还没走的狼。
+     *
+     * 规则：自爆当场出局（生存、投票权、胜负判定全都按死算），但当夜狼队的商议和定刀
+     * 仍然参加，**定刀一结束才真正离场**。理由是他爆出来的信息对队友还有用，
+     * 让他把这一夜的战术交代完再走，比「一爆就消失」更像线下。
+     *
+     * 只装「当晚」的人，[WerewolfGame.advanceAfterWolves] 之后清空，不会带到下一夜。
+     */
+    val ghostWolves: Set<Int> = emptySet(),
     /** 本夜守卫守了谁。null 表示空守。 */
     val tonightGuardedSeat: Int? = null,
     /**
@@ -196,6 +206,19 @@ data class WerewolfGame(
     fun wolves(): List<WerewolfPlayer> = players.filter { it.role.isWerewolf }
 
     fun aliveWolves(): List<WerewolfPlayer> = alivePlayers.filter { it.role.isWerewolf }
+
+    /**
+     * 今晚狼队环节的参与座位：活着的狼 + 自爆后还没走的狼（见 [ghostWolves]）。
+     *
+     * 夜间商议、定刀、狼队播报的观众全都走这个名单，而不是 [aliveWolves]：
+     * 自爆狼已经算死，但这一夜还在桌上，不把他算进来就会出现「他说了话却看不见」
+     * 或者「他的票不算数」这种规则和实现打架的情况。
+     */
+    fun nightWolfSeats(): List<Int> =
+        (aliveWolves().map { it.seat } + ghostWolves).distinct().sorted()
+
+    /** [nightWolfSeats] 对应的玩家，含已出局的自爆狼。 */
+    fun nightWolves(): List<WerewolfPlayer> = nightWolfSeats().map { playerAt(it) }
 
     /**
      * 女巫此刻能否使用解药。药还在、并且今晚确实有人被刀，两个条件都满足才行。
@@ -458,9 +481,10 @@ data class WerewolfGame(
      */
     fun wolfVote(votes: Map<Int, Int?>): WerewolfGame {
         require(phase == Phase.NIGHT_WOLF) { "当前不是狼人行动阶段：$phase" }
-        val wolfSeats = aliveWolves().map { it.seat }.toSet()
+        // 口径是「今晚还在桌上的狼」：自爆的那只已经算死，但定刀还没结束，他这一票有效。
+        val wolfSeats = nightWolfSeats().toSet()
         require(votes.keys == wolfSeats) {
-            "需要全部存活狼人投票，期望 $wolfSeats，实际 ${votes.keys}"
+            "需要全部在场狼人投票，期望 $wolfSeats，实际 ${votes.keys}"
         }
         val aliveSet = aliveSeats.toSet()
         votes.forEach { (wolf, target) ->
@@ -878,6 +902,8 @@ data class WerewolfGame(
 
         val wasCampaigning = phase == Phase.DAY_SHERIFF_SPEECH
         var next = applyDeaths(listOf(seat to DeathCause.SELF_EXPLODE))
+        // 出局立刻生效，但当夜狼队还要跟他商量：放进 ghost 名单，定刀结束才清掉。
+        next = next.copy(ghostWolves = next.ghostWolves + seat)
         next = next.copy(history = next.history + GameEvent.WolfExploded(next.day, seat))
 
         if (wasCampaigning) {
@@ -921,7 +947,9 @@ data class WerewolfGame(
     // ---------------------------------------------------------------------
 
     private fun advanceAfterWolves(votes: Map<Int, Int?>, victim: Int?): WerewolfGame {
-        val next = copy(wolfVotes = votes, tonightVictim = victim)
+        // 定刀结束 = 自爆狼离场。清在这里而不是天亮时清：他那句话已经说完了，
+        // 再留一夜会让第二晚的商议名单里冒出一个死人。
+        val next = copy(wolfVotes = votes, tonightVictim = victim, ghostWolves = emptySet())
         return if (next.hasAliveRole(WerewolfRole.SEER)) {
             next.copy(phase = Phase.NIGHT_SEER)
         } else {

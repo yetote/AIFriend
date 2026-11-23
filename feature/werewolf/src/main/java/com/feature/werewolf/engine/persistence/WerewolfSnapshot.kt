@@ -75,8 +75,11 @@ object WerewolfSnapshot {
      *
      * v20：消息多出 `usage`（那一次模型调用消耗的 token，含估算标记）。
      * 带默认值的新增字段，旧档读出来是 0——那些局本来也没记，复盘就不显示。
+     *
+     * v21：对局多出 `ghostWolves`（自爆出局、但当夜还没走的狼）。
+     * 默认空集合，旧档读出来就是「那晚没有自爆狼」，行为不变。
      */
-    const val VERSION = 20
+    const val VERSION = 21
 
     private val json = Json {
         ignoreUnknownKeys = true   // 旧档多出来的字段不该让新版本读不出来
@@ -207,6 +210,13 @@ internal data class TableSnapshot(
     val wolfVotes: Map<Int, Int?> = emptyMap(),
     val wolfVoteRound: Int = 1,
     val tonightVictim: Int? = null,
+    /**
+     * v21 起：自爆出局、但当夜还没走的狼。
+     *
+     * 续档必须带上：他们今晚还要参加商议和定刀，丢了这一项，续档后名单里
+     * 就少一个人，`wolfVote` 的键集合校验会直接失败。
+     */
+    val ghostWolves: List<Int> = emptyList(),
     /** v3 起：本夜守卫守的人，以及上一夜守的人（用于「不能连守」）。 */
     val tonightGuardedSeat: Int? = null,
     val lastGuardedSeat: Int? = null,
@@ -430,6 +440,7 @@ internal fun WerewolfTable.toSnapshot(
         wolfVotes = game.wolfVotes,
         wolfVoteRound = game.wolfVoteRound,
         tonightVictim = game.tonightVictim,
+        ghostWolves = game.ghostWolves.sorted(),
         tonightGuardedSeat = game.tonightGuardedSeat,
         lastGuardedSeat = game.lastGuardedSeat,
         nightHead = game.nightHead,
@@ -562,6 +573,7 @@ internal fun TableSnapshot.toTable(): WerewolfTable = WerewolfTable(
         wolfVotes = wolfVotes,
         wolfVoteRound = wolfVoteRound,
         tonightVictim = tonightVictim,
+        ghostWolves = ghostWolves.toSet(),
         tonightGuardedSeat = tonightGuardedSeat,
         lastGuardedSeat = lastGuardedSeat,
         nightHead = nightHead,

@@ -269,6 +269,18 @@ class WerewolfSnapshotTest {
     }
 
     @Test
+    fun `自爆未离场的狼跟着存档走`() {
+        // 续档后他今晚还要参加商议和定刀。丢了这一项，nightWolfSeats 会少一个人，
+        // wolfVote 的键集合校验直接失败——续档那一刻整局卡死。
+        val original = richTable()
+        val withGhost = original.copy(game = original.game.copy(ghostWolves = setOf(1)))
+        val restored = WerewolfSnapshot.decode(WerewolfSnapshot.encode(withGhost))!!
+
+        assertEquals(setOf(1), restored.game.ghostWolves)
+        assertEquals(withGhost, restored)
+    }
+
+    @Test
     fun `私有可见性跟着存档一起保留`() {
         val restored = WerewolfSnapshot.decode(WerewolfSnapshot.encode(richTable()))!!
 
