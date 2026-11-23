@@ -102,6 +102,7 @@ class WerewolfControllerTest {
             systemPrompt: String?,
             enableThinking: Boolean,
             jsonMode: Boolean,
+            webSearch: Boolean,
         ): String = if (jsonMode) """{"target": 1}""" else "我先听听大家怎么说。"
 
         @Deprecated("测试用不到")
@@ -122,6 +123,7 @@ class WerewolfControllerTest {
             systemPrompt: String?,
             enableThinking: Boolean,
             jsonMode: Boolean,
+            webSearch: Boolean,
         ): String = throw IllegalStateException("网络连接失败")
 
         @Deprecated("测试用不到")

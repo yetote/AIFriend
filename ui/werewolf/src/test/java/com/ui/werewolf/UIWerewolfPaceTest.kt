@@ -52,12 +52,15 @@ class UIWerewolfPaceTest {
     }
 
     @Test
-    fun `提示词风格两档的名称和顺序与引擎一致`() {
-        // route 靠 name 映射，名字对不上会静默回到引导式——用户选了自由式却没生效。
+    fun `提示词风格三档的名称和顺序与引擎一致`() {
+        // route 靠 name 映射，名字对不上会静默回到引导式——用户选了自由式/搜索式却没生效。
         assertEquals(
-            listOf("GUIDED", "FREE"),
+            listOf("GUIDED", "FREE", "SEARCH"),
             UIWerewolfPromptStyle.entries.map { it.name },
         )
         assertTrue("自由式要说清是给强模型的", UIWerewolfPromptStyle.FREE.hint.contains("强推理"))
+        // 搜索式的代价必须写在脸上：慢、且依赖厂商支持，否则用户会以为按钮坏了
+        assertTrue("搜索式要提联网", UIWerewolfPromptStyle.SEARCH.hint.contains("联网"))
+        assertTrue("搜索式要提醒慢", UIWerewolfPromptStyle.SEARCH.hint.contains("慢"))
     }
 }

@@ -56,6 +56,7 @@ class WerewolfProgressTest {
             systemPrompt: String?,
             enableThinking: Boolean,
             jsonMode: Boolean,
+            webSearch: Boolean,
         ): String = if (jsonMode) json else speech
 
         @Deprecated("测试用不到")

@@ -391,12 +391,13 @@ fun UIWerewolfSetupScreen(
                     }
                 }
                 if (setupTab == 1) {
-                    // 提示词风格决定 AI「按什么打」：引导式有内置打法兜底，自由式把它放出去。
+                    // 提示词风格决定 AI「按什么打」：引导式有内置打法兜底，自由式把它放出去，
+                    // 搜索式连规则细节都放出去（模型自己回忆或联网查，只留版型与胜负）。
                     // 放在开局而不是设置页，是因为这是「这一局想看什么」的取舍——
                     // 想看小模型也能像样对局就用引导式，想看强模型自己推理就用自由式。
                     SectionTitle(
                         title = "AI 打法",
-                        subtitle = "引导式内置读人和战术，自由式只给身份和局势、让模型自己判断"
+                        subtitle = "引导式内置读人和战术；自由式只给身份与局势；搜索式连规则都不给，让模型联网自己查"
                     )
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

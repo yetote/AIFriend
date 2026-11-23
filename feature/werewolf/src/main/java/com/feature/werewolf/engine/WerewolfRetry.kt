@@ -98,11 +98,14 @@ class RetryableAI(
         systemPrompt: String?,
         enableThinking: Boolean,
         jsonMode: Boolean,
+        webSearch: Boolean,
     ): String {
         var attempt = 0
         while (true) {
             try {
-                return delegate.chat(messages, model, systemPrompt, enableThinking, jsonMode)
+                return delegate.chat(
+                    messages, model, systemPrompt, enableThinking, jsonMode, webSearch,
+                )
             } catch (t: Throwable) {
                 if (t is CancellationException) throw t
                 if (!t.isRetryableTransport()) throw t
@@ -121,13 +124,16 @@ class RetryableAI(
         systemPrompt: String?,
         enableThinking: Boolean,
         jsonMode: Boolean,
+        webSearch: Boolean,
     ): Flow<ChatDelta> = flow {
         var attempt = 0
         while (true) {
             var emitted = false
             var failure: Throwable? = null
             try {
-                delegate.chatStream(messages, model, systemPrompt, enableThinking, jsonMode)
+                delegate.chatStream(
+                    messages, model, systemPrompt, enableThinking, jsonMode, webSearch,
+                )
                     .collect { delta ->
                         if (delta.content.isNotEmpty() || delta.reasoning.isNotEmpty()) emitted = true
                         emit(delta)

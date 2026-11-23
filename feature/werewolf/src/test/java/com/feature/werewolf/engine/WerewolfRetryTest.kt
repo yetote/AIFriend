@@ -52,6 +52,7 @@ class WerewolfRetryTest {
             systemPrompt: String?,
             enableThinking: Boolean,
             jsonMode: Boolean,
+            webSearch: Boolean,
         ): String {
             seenModels += model
             val r = results.removeAt(0)
@@ -64,6 +65,7 @@ class WerewolfRetryTest {
             systemPrompt: String?,
             enableThinking: Boolean,
             jsonMode: Boolean,
+            webSearch: Boolean,
         ): Flow<ChatDelta> = flow {
             // 直接复用一次性结果，仅用来验证「何时重发、何时抛」的分支
             emit(ChatDelta(content = chat(messages, model, systemPrompt, enableThinking, jsonMode)))
@@ -203,6 +205,7 @@ class WerewolfRetryTest {
                 systemPrompt: String?,
                 enableThinking: Boolean,
                 jsonMode: Boolean,
+                webSearch: Boolean,
             ): Flow<ChatDelta> = flow {
                 emit(ChatDelta(content = "前半句"))
                 throw ServerException(429) as Throwable
@@ -233,6 +236,7 @@ class WerewolfRetryTest {
                 systemPrompt: String?,
                 enableThinking: Boolean,
                 jsonMode: Boolean,
+                webSearch: Boolean,
             ): Flow<ChatDelta> = flow {
                 calls++
                 if (calls == 1) throw ServerException(429)

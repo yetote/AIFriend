@@ -179,3 +179,42 @@ internal fun terminologyBrief(): String = buildString {
     append("说本局身份时用具体名字，不要生造「某种狼」「某某侠」这类不存在的身份。\n")
     append("拿不准某个词是不是通用说法时，直接用大白话说清楚意思，不要硬套术语。")
 }
+
+/**
+ * 「搜索式」用的最小事实集：**版型 + 胜负**，别的什么都不给。
+ *
+ * 这一档赌的是「模型自己知道狼人杀怎么打」——规则细节、身份技能、常见套路
+ * 都由它自己回忆或联网去查。所以这里只留两样它**查不到**的东西：
+ *
+ * 1. **本局的版型**：几狼几神几民。同一个模型在不同人数下的结论不一样，
+ *    而这个构成是本 App 配出来的，网上没有这一局。
+ * 2. **本局的胜负条件**：屠边还是屠城、警长算不算 1.5 票。屠边是本地规则，
+ *    而「警长 1.5 票」直接决定绑票算术——按人头推的话，算出「还剩 4 打 4 没输」
+ *    这种结论，整局的判断都建错了地基。
+ *
+ * 刻意**不写**：平票怎么办、遗言给谁、自爆后算不算出局、退水还有没有票、
+ * 发言顺序怎么定。这些正是搜索式要交给模型自己的部分；也是它与引导式的分界线。
+ * 但要注意：其中几条是本局独有的（双爆吞警徽、自爆当夜仍定刀），
+ * 模型按网上记忆推会错——这是这一档的已知代价，不是遗漏。
+ */
+internal fun boardAndWinBrief(config: WerewolfConfig): String = buildString {
+    val parts = WerewolfRole.entries.mapNotNull { role ->
+        val count = config.composition[role] ?: 0
+        if (count > 0) "${role.displayName} ×$count" else null
+    }
+    append("【版型】本局 ").append(config.playerCount).append(" 人：")
+    append(parts.joinToString("、")).append("。")
+    if (config.hasSheriff) append("本局有警长竞选，**警长的一票算 1.5 票**。")
+    append("\n")
+    append("【胜负】")
+    when (config.winRule) {
+        WinRule.SLAY_SIDE ->
+            append("屠边：狼人杀光**全部神职**或**全部平民**即获胜，好人放逐全部狼人即获胜。")
+
+        WinRule.SLAY_ALL ->
+            append("屠城：狼人票权不少于好人票权时获胜，好人放逐全部狼人即获胜。")
+    }
+    // 绑票按票权算这件事必须写：「警长 1.5 票」和「人数」在这里分叉，
+    // 而分叉点正好是狼队该不该现在收刀、好人还能不能投出人。
+    append("判断输赢一律按**票权**算，不按人头。\n")
+}

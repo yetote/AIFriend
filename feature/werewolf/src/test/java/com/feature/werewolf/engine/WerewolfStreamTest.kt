@@ -88,6 +88,7 @@ class WerewolfStreamTest {
             systemPrompt: String?,
             enableThinking: Boolean,
             jsonMode: Boolean,
+            webSearch: Boolean,
         ): String {
             chatCalls++
             return chatReply
@@ -99,6 +100,7 @@ class WerewolfStreamTest {
             systemPrompt: String?,
             enableThinking: Boolean,
             jsonMode: Boolean,
+            webSearch: Boolean,
         ): Flow<ChatDelta> = flow {
             streamCalls++
             pieces.forEachIndexed { index, piece ->

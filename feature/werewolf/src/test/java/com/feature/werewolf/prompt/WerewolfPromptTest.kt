@@ -1879,4 +1879,83 @@ class WerewolfPromptTest {
         )
         assertTrue("台账要排在局势之后", with.indexOf("【已经发生的事】") < with.indexOf("【公开台账】"))
     }
+
+    // ------------------------------------------------------------------
+    // 搜索式
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `搜索式只给版型和胜负`() {
+        val game = standardGame()
+        val search = WerewolfPrompt.systemPrompt(game, seat = 6, style = WerewolfPromptStyle.SEARCH)
+
+        assertTrue("版型要说清几人几狼", search.contains("【版型】本局 8 人"))
+        assertTrue("狼的数量", search.contains("狼人 ×2"))
+        assertTrue("胜负条件", search.contains("【胜负】"))
+        assertTrue("屠边是本局规则，模型查不到", search.contains("屠边"))
+    }
+
+    @Test
+    fun `搜索式不再给规则细节与打法`() {
+        val game = standardGame()
+        val search = WerewolfPrompt.systemPrompt(
+            game, seat = 6, style = WerewolfPromptStyle.SEARCH, webSearch = true,
+        )
+        val guided = WerewolfPrompt.systemPrompt(game, seat = 6, style = WerewolfPromptStyle.GUIDED)
+
+        // 引导式里有、搜索式里一条都不该留：这些正是「查得到」的部分。
+        listOf(
+            "【遗言】",
+            "【自爆】",
+            "【术语约定】",
+            "怎么从发言读人",
+            "先定站边",
+        ).forEach { marker ->
+            assertTrue("引导式应当有：$marker", guided.contains(marker))
+            assertFalse("搜索式不该再有：$marker", search.contains(marker))
+        }
+        assertTrue("搜索式要比引导式短得多", search.length * 3 < guided.length)
+    }
+
+    @Test
+    fun `搜索式仍然给私有事实与输出要求`() {
+        val game = standardGame()
+        val wolf = WerewolfPrompt.systemPrompt(game, seat = 1, style = WerewolfPromptStyle.SEARCH)
+        // 不知道自己是谁、队友是谁，模型这一局就没法打——这是三档共有的底线
+        assertTrue("身份", wolf.contains("你的身份是狼人"))
+        assertTrue("队友", wolf.contains("你的狼队友"))
+        assertTrue("本轮任务", wolf.contains("【本轮任务】"))
+
+        val seer = WerewolfPrompt.systemPrompt(game, seat = 3, style = WerewolfPromptStyle.SEARCH)
+        assertTrue("预言家要看得到自己的验人底账", seer.contains("预言家"))
+        assertFalse("但不能看到狼的队友信息", seer.contains("你的狼队友"))
+    }
+
+    @Test
+    fun `只有真的能联网时才告诉它可以查`() {
+        val game = standardGame()
+        val canSearch = WerewolfPrompt.systemPrompt(
+            game, seat = 6, style = WerewolfPromptStyle.SEARCH, webSearch = true,
+        )
+        val cannot = WerewolfPrompt.systemPrompt(
+            game, seat = 6, style = WerewolfPromptStyle.SEARCH, webSearch = false,
+        )
+        assertTrue(canSearch.contains("你可以联网检索"))
+        // 厂商不支持时不能这么说：模型会把「我记得」当成「我查过」，编得更理直气壮
+        assertFalse(cannot.contains("你可以联网检索"))
+
+        // 引导式/自由式即使能联网也不提这件事：这两档给的是内置打法，不需要它去查
+        assertFalse(
+            WerewolfPrompt.systemPrompt(game, seat = 6, webSearch = true).contains("你可以联网检索")
+        )
+    }
+
+    @Test
+    fun `自由式仍然保留规则，没有被搜索式带跑`() {
+        val game = standardGame()
+        val free = WerewolfPrompt.systemPrompt(game, seat = 6, style = WerewolfPromptStyle.FREE)
+        assertTrue("自由式给规则", free.contains("【遗言】"))
+        assertTrue("自由式给术语", free.contains("【术语约定】"))
+        assertFalse("但不给读人框架", free.contains("怎么从发言读人"))
+    }
 }

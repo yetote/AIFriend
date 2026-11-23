@@ -54,6 +54,8 @@ class HumanSeatAI : IAI {
         systemPrompt: String?,
         enableThinking: Boolean,
         jsonMode: Boolean,
+        // 人类座位不联网：这里是在等用户打字，没有模型参与
+        webSearch: Boolean,
     ): String {
         val deferred = CompletableDeferred<String>()
         waiter = deferred

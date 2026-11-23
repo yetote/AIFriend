@@ -13,6 +13,7 @@ import com.feature.werewolf.prompt.boards.Boards
 import com.feature.werewolf.prompt.roles.Roles
 import com.feature.werewolf.prompt.rules.darkCardBrief
 import com.feature.werewolf.prompt.rules.mutualProtectionBrief
+import com.feature.werewolf.prompt.rules.boardAndWinBrief
 import com.feature.werewolf.prompt.rules.rulesBrief
 import com.feature.werewolf.prompt.rules.terminologyBrief
 import com.feature.werewolf.prompt.tasks.taskBrief
@@ -84,8 +85,22 @@ object WerewolfPrompt {
          * 每个身份的技能与限制）**照给**——那是事实不是答案，而且本局有几条不是标准局
          * 先验（屠边、警长 1.5 票、守救同归、自爆当晚仍定刀），不给它就会拿网上的记忆
          * 去推，推出来的结论整个是错的。私有信息与保密底线同样照旧。
+         *
+         * [WerewolfPromptStyle.SEARCH] 再砍一层：连规则细节也不给，只留
+         * **版型 + 胜负**（见 [boardAndWinBrief]），其余交给模型自己的知识或联网检索。
+         * 这一档的失效方式很明确——模型记错本局独有的规则（双爆吞警徽、自爆当夜仍定刀），
+         * 所以它是实验档；[webSearch] 为 false 时（厂商不支持联网）也不拦，
+         * 只是少一条「可以查」的许可。
          */
         style: WerewolfPromptStyle = WerewolfPromptStyle.GUIDED,
+        /**
+         * 这一局的请求是否真的带上了联网检索开关（厂商支持且玩家选了搜索式）。
+         *
+         * 只在提示词里决定**要不要告诉模型它可以查**。不能靠 [style] 推：
+         * DeepSeek、Kimi 这类厂商的对话接口没有内置搜索，说了也白说，
+         * 模型反而会把「我记得」当成「我查过」，编得更理直气壮。
+         */
+        webSearch: Boolean = false,
         /**
          * 这一局发言的目标长度（见 [WerewolfSpeechLength]）。默认 null＝不注入，
          * 让不需要的场合（测试、复盘）保持原样。
@@ -140,16 +155,34 @@ object WerewolfPrompt {
             //
             // 规则是**事实**，打法才是答案。自由式要砍的是后者（strategyBrief /
             // playbook / 狼队战术菜单 / 板型结论都不再出现），不该连事实一起砍。
-            append(rulesBrief(game.config)).append("\n\n")
-            append(boardBrief(game.config).trimEnd()).append("\n\n")
+            //
+            // 搜索式是唯一的例外：它把规则也交给模型（自己回忆或联网查），
+            // 只留查不到的**版型与胜负**。这是刻意下的赌注，不是又踩了一次老坑。
+            if (style == WerewolfPromptStyle.SEARCH) {
+                append(boardAndWinBrief(game.config).trimEnd()).append("\n\n")
+            } else {
+                append(rulesBrief(game.config)).append("\n\n")
+                append(boardBrief(game.config).trimEnd()).append("\n\n")
+            }
             // 引导式才给内置打法。自由式的核心就是「不给方法，只给事实和底线」——
             // 读人框架、板型结论、狼队菜单都在 strategyBrief 里，整段不出现。
             if (style == WerewolfPromptStyle.GUIDED) {
                 append(strategyBrief(game.config, player.role.isWerewolf).trimEnd()).append("\n\n")
             }
-            // 术语约定两种风格都给：它是语言约定，不是打法。
-            // 自由式虽然不给内置打法，但没理由让 AI 自造黑话、把词用反。
-            append(terminologyBrief()).append("\n\n")
+            // 术语约定：引导式和自由式都给，它是语言约定，不是打法——
+            // 没理由让 AI 自造黑话、把词用反。搜索式不给：它连规则都自己查，
+            // 术语自然也该用自己的说法，提示词再补一段就失去这一档的意义了。
+            if (style != WerewolfPromptStyle.SEARCH) {
+                append(terminologyBrief()).append("\n\n")
+            }
+            // 搜索式唯一的附加许可。措辞刻意留余地：不要求它每次都搜——
+            // 一次检索动辄几十秒，12 人局每轮都查会把节奏拖垮。
+            if (style == WerewolfPromptStyle.SEARCH && webSearch) {
+                append("本局你可以联网检索。对规则、身份技能或常见打法没把握时可以去查，")
+                append("查清楚了直接用在发言里，别把「我查了一下」说出来——牌桌上没人查资料。\n")
+                append("场上发生了什么以本提示词给的记录为准：网上讲的是通用打法，")
+                append("不适用于这一局的具体局面，别拿别人的模板套这一桌。\n\n")
+            }
             append(publicSituation(game).trimEnd()).append("\n\n")
             // 台账紧跟在局势之后：它和「已经发生的事」是同一类材料（公开、可核对），
             // 挨着放模型才会拿它当推理依据，而不是当成又一段背景资料。

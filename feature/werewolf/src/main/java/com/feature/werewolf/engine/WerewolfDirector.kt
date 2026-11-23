@@ -1244,6 +1244,7 @@ class WerewolfDirector(
             playStyle = agent.playStyle,
             // 原文只喂今天 + 昨天，跨天的「谁跳过预言家、谁话和票对不上」全靠台账。
             ledger = PublicLedger.of(table),
+            webSearch = webSearchFor(agent),
         )
         val thinking = pacing.thinkingAllowed(seat, agent.thinkingEnabled)
         val content = StringBuilder()
@@ -1272,6 +1273,9 @@ class WerewolfDirector(
                 model = agent.model,
                 systemPrompt = system,
                 enableThinking = thinking,
+                // 搜索式的「查」主要发生在发言这一步：检索完再说出口，
+                // 观感上才是「它去查了资料再发言」，而不是「它先瞎说再补证据」。
+                webSearch = webSearchFor(agent),
             ).takeWhile { delta ->
                 if (delta.timeoutDegraded) degradedByTimeout = true
                 if (delta.content.isEmpty() && delta.reasoning.isEmpty()) return@takeWhile true
@@ -1505,9 +1509,11 @@ class WerewolfDirector(
                         limit = pacing.currentLimit, style = promptStyle, speechLength = speechLength,
                         playStyle = agent.playStyle,
                         ledger = PublicLedger.of(table),
+                        webSearch = webSearchFor(agent),
                     ),
                     enableThinking = thinking,
                     onReasoning = pushReasoning,
+                    webSearch = webSearchFor(agent),
                 )
             }
             // 用 withTimeout 而不用 withTimeoutOrNull：`decide` 内部把超时当成
@@ -1559,6 +1565,19 @@ class WerewolfDirector(
 
     private fun agentOf(seat: Int): SeatAgent =
         agents[seat] ?: throw IllegalStateException("$seat 号没有配置模型，无法行动")
+
+    /**
+     * 这一步要不要真的联网检索。
+     *
+     * 两个条件缺一不可：玩家选了**搜索式**，并且这个座位的厂商**支持**在对话接口里搜索。
+     * 第二个条件是硬的——DeepSeek、Kimi 的对话接口没有内置搜索，传上去的开关会被忽略，
+     * 模型却会因为提示词里写着「你可以联网查」而把记忆当成查证结果，比不搜更糟。
+     *
+     * 只给发言和决策，**不给自爆判断**：那一步是几百 token 的是非题，
+     * 加一次检索只换来几十秒延迟，判断标准还是它自己写死的那两条。
+     */
+    private fun webSearchFor(agent: SeatAgent): Boolean =
+        promptStyle == WerewolfPromptStyle.SEARCH && agent.ai.supportsWebSearch
 
     /**
      * 拼本次请求的 user 消息：当天进程 + 交付给模型的任务。

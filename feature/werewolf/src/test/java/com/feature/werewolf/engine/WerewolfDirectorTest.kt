@@ -81,6 +81,7 @@ class WerewolfDirectorTest {
             systemPrompt: String?,
             enableThinking: Boolean,
             jsonMode: Boolean,
+            webSearch: Boolean,
         ): String {
             calls += Call(messages, systemPrompt, jsonMode, enableThinking)
             return replies.getOrNull(calls.lastIndex) ?: replies.last()
@@ -110,6 +111,7 @@ class WerewolfDirectorTest {
             systemPrompt: String?,
             enableThinking: Boolean,
             jsonMode: Boolean,
+            webSearch: Boolean,
         ): String {
             calls += Call(messages, systemPrompt, jsonMode, enableThinking)
             val system = systemPrompt.orEmpty()
@@ -175,6 +177,7 @@ class WerewolfDirectorTest {
             systemPrompt: String?,
             enableThinking: Boolean,
             jsonMode: Boolean,
+            webSearch: Boolean,
         ): String {
             callCount++
             return "我觉得大家都挺可疑的。"
@@ -203,6 +206,7 @@ class WerewolfDirectorTest {
             systemPrompt: String?,
             enableThinking: Boolean,
             jsonMode: Boolean,
+            webSearch: Boolean,
         ): String {
             kotlinx.coroutines.delay(10_000)
             return "{}"
@@ -214,6 +218,7 @@ class WerewolfDirectorTest {
             systemPrompt: String?,
             enableThinking: Boolean,
             jsonMode: Boolean,
+            webSearch: Boolean,
         ): kotlinx.coroutines.flow.Flow<ChatDelta> = kotlinx.coroutines.flow.flow {
             if (sayFirst != null) emit(ChatDelta(content = sayFirst))
             kotlinx.coroutines.delay(10_000)
@@ -611,6 +616,7 @@ class WerewolfDirectorTest {
                 systemPrompt: String?,
                 enableThinking: Boolean,
                 jsonMode: Boolean,
+                webSearch: Boolean,
             ): kotlinx.coroutines.flow.Flow<ChatDelta> = kotlinx.coroutines.flow.flow {
                 emit(ChatDelta(content = "我觉得 3 号这轮"))
                 emitted++
@@ -629,6 +635,7 @@ class WerewolfDirectorTest {
                 systemPrompt: String?,
                 enableThinking: Boolean,
                 jsonMode: Boolean,
+                webSearch: Boolean,
             ): String = fallbackText
             val fallbackText = "我不发表意见。"
         }
@@ -1436,6 +1443,7 @@ class WerewolfDirectorTest {
                 systemPrompt: String?,
                 enableThinking: Boolean,
                 jsonMode: Boolean,
+                webSearch: Boolean,
             ): String {
                 calls++
                 if (calls == 1) throw java.net.SocketTimeoutException("第一次超时")
@@ -1483,6 +1491,7 @@ class WerewolfDirectorTest {
                 systemPrompt: String?,
                 enableThinking: Boolean,
                 jsonMode: Boolean,
+                webSearch: Boolean,
             ): kotlinx.coroutines.flow.Flow<ChatDelta> = kotlinx.coroutines.flow.flow {
                 streamCalls++
                 // 模拟 OpenAICompatibleAI 的降级补发：超时 → 关思考 → 一次性请求出结果
@@ -1498,6 +1507,7 @@ class WerewolfDirectorTest {
                 systemPrompt: String?,
                 enableThinking: Boolean,
                 jsonMode: Boolean,
+                webSearch: Boolean,
             ): String = "我觉得 5 号在藏。"
         }
         val game = standard9()

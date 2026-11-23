@@ -444,7 +444,18 @@ fun WerewolfRoute(
                 }
             },
             promptStyle = promptStyle.toUi(),
-            onPromptStyleChange = { viewModel.setPromptStyle(it.toPromptStyle()) },
+            onPromptStyleChange = { style ->
+                viewModel.setPromptStyle(style.toPromptStyle())
+                // 搜索式要联网，每步可能多等几十秒。时限比「宽松」还紧的话先抬上去——
+                // 否则每一步都会被判超时兜底，而一次超时会把那个座位**整局**的深度思考
+                // 关掉，一局下来全员「变傻」，看起来像搜索式本身不能用。
+                // 只抬不降，用户随时可以自己调回去。
+                if (style == UIWerewolfPromptStyle.SEARCH &&
+                    turnLimit.ordinal < UIWerewolfTurnLimit.RELAXED.ordinal
+                ) {
+                    turnLimit = UIWerewolfTurnLimit.RELAXED
+                }
+            },
             playerStyleOn = playerStyleOn,
             onPlayerStyleOnChange = { viewModel.setPlayerStyleOn(it) },
             styleByFriend = styleByFriend,
