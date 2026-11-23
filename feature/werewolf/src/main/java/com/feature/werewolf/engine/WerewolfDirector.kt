@@ -1315,6 +1315,11 @@ class WerewolfDirector(
      *
      * 和 [askSpeech] 一样，不管成功、失败还是被取消，`finally` 都会把「正在思考」收回；
      * 取消时用 [NonCancellable]，否则牌桌上会永久留着一个飘在半空的思考框。
+     *
+     * @param thinkingOverride 只对**这一次**调用生效的深度思考开关。
+     *   传 null 按座位设置走（角色属性 + 本局被超时关掉的记录）。用在那些
+     *   「答案只有两三个分支、想久了也是白想」的单轮判断上——自爆判断就是如此，
+     *   它连 [ask] 都不走，直接用 `decide(enableThinking = false)`。
      */
     private suspend fun <T> ask(
         table: WerewolfTable,
@@ -1322,12 +1327,14 @@ class WerewolfDirector(
         spec: StructuredSpec<T>,
         fallback: () -> T,
         task: String,
+        thinkingOverride: Boolean? = null,
     ): StructuredOutcome<T> {
         val agent = agentOf(seat)
         val phase = table.game.phase
         // 深度思考是「角色属性 + 本局运行状态」相与：超时被关掉的座位，
-        // 这一局剩下的步骤都按关着走，直到玩家在设置面板里手动打开
-        val thinking = pacing.thinkingAllowed(seat, agent.thinkingEnabled)
+        // 这一局剩下的步骤都按关着走，直到玩家在设置面板里手动打开。
+        // 单轮覆盖排在最前面：它是一次性的，不写回任何状态。
+        val thinking = thinkingOverride ?: pacing.thinkingAllowed(seat, agent.thinkingEnabled)
         var lastPush = 0L
         // 抢到思考框才推：并发阶段好几个人同时在响，见 [thinkingOwner]
         var holdsBubble = false
@@ -1696,10 +1703,27 @@ class WerewolfDirector(
         for (seat in candidates) {
             val decision = askExplodeNow(this, seat, speaker, speech)
             if (!decision.value.explode) continue
-            return recordExplode(seat, usage = decision.usage)
+            // 这笔账要跟着自爆那条记录走：插爆判断关着深度思考，没有思维链可留，
+            // 复盘里那格「思考」正好摊开它当时算的收益。
+            return recordExplode(
+                seat,
+                reasoning = explodeNote(decision.value),
+                usage = decision.usage,
+            )
         }
         return this
     }
+
+    /**
+     * 把自爆这笔账压成一段可以留在复盘里的文字。
+     *
+     * 收益与理由是两件事：收益是「换到什么」，理由是「为什么现在」。分开写，
+     * 复盘时才看得出他是算过账（收益具体）还是凭情绪（收益空、理由全是形容词）。
+     */
+    private fun explodeNote(choice: ExplodeChoice): String = buildList {
+        choice.gain.trim().takeIf { it.isNotEmpty() }?.let { add("自爆收益：$it") }
+        choice.reason.trim().takeIf { it.isNotEmpty() }?.let { add("判断：$it") }
+    }.joinToString("\n")
 
     /**
      * 问一只狼：现在要不要爆。

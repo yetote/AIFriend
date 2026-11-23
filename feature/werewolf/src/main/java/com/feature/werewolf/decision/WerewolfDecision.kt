@@ -46,10 +46,17 @@ data class DirectionChoice(
  * 做成结构化决策而不是再识别一次文本标记：这里没有「发言」这回事——
  * 它没轮到自己开口，答案只有爆/不爆两种，没有正文需要解析。
  * 兜底永远是 false：插爆是锦上添花，判断不出来就当没这回事。
+ *
+ * [gain] 是**这笔账**：爆掉这一天能换到什么（保住哪个队友、断掉哪条信息链）。
+ * 单要一个「爆/不爆」，模型容易凭「现在很难受」就爆；先让它把收益写出来，
+ * 白拿的账（换不到东西、纯粹是被点破后恼羞成怒）会自己显形。
+ * 不落存档，只在自爆那条记录的 reasoning 里留给复盘看。
  */
 @Serializable
 data class ExplodeChoice(
     val explode: Boolean = false,
+    /** 爆了能换到什么。一句话；explode=false 时留空。 */
+    val gain: String = "",
     val reason: String = "",
 )
 
@@ -339,11 +346,17 @@ object WerewolfDecisions {
      * 只有两个答案，`validate` 恒真；兜底 false（不爆）。
      * 真正的上下文由调用方压成一小段简报（[WerewolfPrompt.explodeWatchBrief]），
      * 这里只负责把答案的格式和默认值钉死。
+     *
+     * **先要收益，再要结论**：字段顺序本身就是提示——`gain` 写在 `explode` 前面，
+     * 模型得先把「换到什么」想出来，才轮到决定值不值。
      */
     fun explodeWatch(): StructuredSpec<ExplodeChoice> = StructuredSpec(
-        instruction = "输出 {\"explode\": true 或 false, \"reason\": \"一句话理由\"}。" +
-            "explode=true 表示你现在当场自爆；没有明确把握时填 false。" +
-            "reason 是你心里的判断（没人听见，也不会朗读）。",
+        instruction = "输出 {\"gain\": \"爆了能换到什么，一句话\", \"explode\": true 或 false, " +
+            "\"reason\": \"一句话理由\"}。" +
+            "gain 先算账：爆掉这一天能保住谁、断掉什么信息；换不到东西就写「换不到什么」。" +
+            "代价固定是一条命（这一局少一个狼，夜里少一票）——只有收益明显大于代价才填 explode=true。" +
+            "没有明确把握时填 false，gain 和 reason 照实写。" +
+            "gain 和 reason 都是你心里的判断（没人听见，也不会朗读）。",
         serializer = ExplodeChoice.serializer(),
         validate = { true },
     )

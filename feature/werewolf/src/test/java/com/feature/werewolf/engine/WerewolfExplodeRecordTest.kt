@@ -67,6 +67,20 @@ class WerewolfExplodeRecordTest {
     }
 
     @Test
+    fun `自爆这笔账要留在复盘里`() {
+        // 插爆判断关着深度思考，没有思维链可留。收益和理由走 reasoning 落档，
+        // 复盘点开那条发言的「思考」才能看到「他为什么选在那一刻爆」。
+        val exploded = WerewolfTable(day()).recordExplode(
+            seat = 1,
+            reasoning = "自爆收益：换掉今天的投票\n判断：队友要被冲出去了",
+        )
+
+        val said = exploded.transcript.single { it.seat == 1 }
+        assertTrue("收益要跟着发言走", said.reasoning.contains("自爆收益"))
+        assertTrue("不能只剩一句「我自爆」", said.reasoning.contains("队友要被冲出去了"))
+    }
+
+    @Test
     fun `好人和死人点不动自爆`() {
         // 3 号是预言家，wolfExplode 会拒绝；recordExplode 里没有兜底，
         // 所以调用方（控制器）必须先问 canExplode——这条测的是那个前提

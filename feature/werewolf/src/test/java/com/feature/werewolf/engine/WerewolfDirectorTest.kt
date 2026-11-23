@@ -59,6 +59,8 @@ class WerewolfDirectorTest {
         val messages: List<ChatMessage>,
         val systemPrompt: String?,
         val jsonMode: Boolean,
+        /** 这一次请求到底有没有开深度思考——单轮开关靠它验。 */
+        val enableThinking: Boolean,
     ) {
         val userText: String get() = messages.joinToString("\n") { it.content }
     }
@@ -79,7 +81,7 @@ class WerewolfDirectorTest {
             enableThinking: Boolean,
             jsonMode: Boolean,
         ): String {
-            calls += Call(messages, systemPrompt, jsonMode)
+            calls += Call(messages, systemPrompt, jsonMode, enableThinking)
             return replies.getOrNull(calls.lastIndex) ?: replies.last()
         }
 
@@ -108,7 +110,7 @@ class WerewolfDirectorTest {
             enableThinking: Boolean,
             jsonMode: Boolean,
         ): String {
-            calls += Call(messages, systemPrompt, jsonMode)
+            calls += Call(messages, systemPrompt, jsonMode, enableThinking)
             val system = systemPrompt.orEmpty()
             if (!jsonMode) return "${seatOf(system)} 号觉得应该谨慎。"
 
@@ -1455,14 +1457,15 @@ class WerewolfDirectorTest {
     fun `被点名之后狼能当场插爆，白天立刻结束`() = runBlocking {
         // 4 号喊「今天要投 1 号」，1 号听到之后当场爆掉：这一天不再有人发言，
         // 也不投票，直接进夜。5 号以后的人不该被叫起来。
+        val wolf = ScriptedAI(
+            listOf(
+                "我先听听大家怎么说。",
+                """{"gain": "换掉 3 号的票，他今天会被冲出去", "explode": true, "reason": "队友今天要被投了"}""",
+            )
+        )
         val ais: Map<Int, IAI> = (1..9).associateWith { seat ->
             when (seat) {
-                1 -> ScriptedAI(
-                    listOf(
-                        "我先听听大家怎么说。",
-                        """{"explode": true, "reason": "队友今天要被投了"}""",
-                    )
-                )
+                1 -> wolf
                 4 -> ScriptedAI(listOf("我今天要投 1 号。"))
                 else -> AutoAI()
             } as IAI
@@ -1480,6 +1483,16 @@ class WerewolfDirectorTest {
         val speakers = result.transcript.filter { it.kind == MessageKind.SPEECH }.map { it.seat }
         assertEquals("说完 4 号就该断，后面的人不许再开口", listOf(1, 2, 3, 4, 1), speakers)
         assertNotEquals("白天已经结束了", Phase.DAY_DISCUSSION, result.game.phase)
+
+        // 「问是否自爆」是单轮判断：答案只有两个分支，不该为一句话等一段思维链。
+        assertFalse("这一步必须关掉深度思考", wolf.calls.last().enableThinking)
+        // 这笔账要能复盘：只记一句「队友要被投了」看不出算没算过。
+        val explodedLine = result.transcript.single { it.seat == 1 && it.text == "我自爆。" }
+        assertTrue(
+            "复盘要能看到自爆算的收益",
+            explodedLine.reasoning.contains("自爆收益") &&
+                explodedLine.reasoning.contains("换掉 3 号的票"),
+        )
     }
 
     @Test
@@ -1489,7 +1502,7 @@ class WerewolfDirectorTest {
         val wolf = ScriptedAI(
             listOf(
                 "我先听听大家怎么说。",
-                """{"explode": false, "reason": "还不至于"}""",
+                """{"gain": "换不到什么", "explode": false, "reason": "还不至于"}""",
             )
         )
         val ais: Map<Int, IAI> = (1..9).associateWith { seat ->
@@ -1513,6 +1526,14 @@ class WerewolfDirectorTest {
         assertFalse(
             "完整提示词里的规则教学不该出现在这里",
             watchCall.systemPrompt.orEmpty().contains("【规则】"),
+        )
+        assertFalse(
+            "这个判断只有两个分支，不值得开深度思考多等几秒",
+            watchCall.enableThinking,
+        )
+        assertTrue(
+            "要让它先算收益再决定，而不是凭「现在很难受」就爆",
+            watchCall.systemPrompt.orEmpty().contains("收益"),
         )
     }
 
