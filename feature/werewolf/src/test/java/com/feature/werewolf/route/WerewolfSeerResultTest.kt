@@ -13,6 +13,7 @@ import com.feature.werewolf.game.RosterEntry
 import com.feature.werewolf.game.WerewolfConfig
 import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfRole
+import com.ui.werewolf.data.UIWerewolfVerdict
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -124,10 +125,10 @@ class WerewolfSeerResultTest {
     // 呈现层：结论要以「结论」的样子出现在预言家的记录流里
     // ------------------------------------------------------------------
 
-    private fun tableWithCheck(): WerewolfTable {
+    private fun tableWithCheck(targetSeat: Int = 1): WerewolfTable {
         val base = WerewolfTable(game(Phase.NIGHT_SEER))
         // seerCheck 只在 NIGHT_SEER 阶段允许调用，所以先查再把阶段推回白天
-        val checked = base.game.seerCheck(1).copy(phase = Phase.DAY_DISCUSSION)
+        val checked = base.game.seerCheck(targetSeat).copy(phase = Phase.DAY_DISCUSSION)
         return base.copy(
             game = checked,
             transcript = listOf(
@@ -136,7 +137,7 @@ class WerewolfSeerResultTest {
                     phase = Phase.NIGHT_SEER,
                     seat = 3,
                     kind = MessageKind.NIGHT_ACT,
-                    text = "查验 1 号：狼人。",
+                    text = "查验 $targetSeat 号：狼人。",
                     audience = setOf(3),
                 )
             ),
@@ -227,6 +228,89 @@ class WerewolfSeerResultTest {
         assertTrue(
             "验人本只属于预言家本人，上帝视角走复盘页那一节",
             live.selfChecks.isEmpty(),
+        )
+    }
+
+    // ------------------------------------------------------------------
+    // 座位徽标：结论要长在被验的那个座位下面
+    //
+    // 记录流里那条「查验 3 号：狼人」会被几十条发言埋掉，验人本又是一行小字。
+    // 预言家白天报验人、对账，全靠「3 号头像下面就写着狼人」这一眼。
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `预言家在被验座位下面看得见结论`() {
+        val live = WerewolfUiState(table = tableWithCheck(targetSeat = 1), running = true)
+            .toLive(humanSeat = 3, turn = null, avatars = emptyMap())
+
+        assertEquals(
+            "1 号是狼，结论要挂在 1 号座位上",
+            UIWerewolfVerdict.WOLF,
+            live.seats.first { it.seat == 1 }.seerVerdict,
+        )
+        assertTrue(
+            "没被验的座位不能有结论",
+            live.seats.filter { it.seat != 1 }.all { it.seerVerdict == null },
+        )
+    }
+
+    @Test
+    fun `验出好人时座位上挂的是好人`() {
+        val live = WerewolfUiState(table = tableWithCheck(targetSeat = 4), running = true)
+            .toLive(humanSeat = 3, turn = null, avatars = emptyMap())
+
+        assertEquals(
+            "4 号是好人",
+            UIWerewolfVerdict.GOOD,
+            live.seats.first { it.seat == 4 }.seerVerdict,
+        )
+    }
+
+    @Test
+    fun `好人的座位上没有查验结论`() {
+        val live = WerewolfUiState(table = tableWithCheck(), running = true)
+            .toLive(humanSeat = 4, turn = null, avatars = emptyMap())
+
+        assertTrue(
+            "查验结论是私有情报，好人不能拿到：${live.seats.map { it.seerVerdict }}",
+            live.seats.all { it.seerVerdict == null },
+        )
+    }
+
+    @Test
+    fun `狼人的座位上没有查验结论`() {
+        val live = WerewolfUiState(table = tableWithCheck(), running = true)
+            .toLive(humanSeat = 1, turn = null, avatars = emptyMap())
+
+        assertTrue(
+            "狼人拿到预言家的查验结论，等于开局就知道谁是自己人",
+            live.seats.all { it.seerVerdict == null },
+        )
+    }
+
+    @Test
+    fun `上帝视角不挂查验结论 那一格留给身份名`() {
+        val live = WerewolfUiState(table = tableWithCheck(), running = true)
+            .toLive(humanSeat = null, turn = null, avatars = emptyMap())
+
+        assertTrue(
+            "观战时所有人的身份都摊开着，结论是多余的信息",
+            live.seats.all { it.seerVerdict == null },
+        )
+        assertTrue(
+            "观战时徽标那一格挂的是身份名",
+            live.seats.all { it.roleLabel != null },
+        )
+    }
+
+    @Test
+    fun `已结束的局不挂查验结论`() {
+        val live = WerewolfUiState(table = tableWithCheck(), running = false, finished = true)
+            .toLive(humanSeat = 3, turn = null, avatars = emptyMap())
+
+        assertTrue(
+            "结束后身份全部公开，徽标那一格归身份名",
+            live.seats.all { it.seerVerdict == null },
         )
     }
 }

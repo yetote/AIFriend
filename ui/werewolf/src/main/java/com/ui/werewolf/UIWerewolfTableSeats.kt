@@ -43,6 +43,7 @@ import com.ui.common.UIAvatar
 import com.ui.common.theme.UIFieldFill
 import com.ui.werewolf.data.UIWerewolfLive
 import com.ui.werewolf.data.UIWerewolfSeatLive
+import com.ui.werewolf.data.UIWerewolfVerdict
 import com.ui.werewolf.data.shortModelLabel
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.ui.geometry.Offset
@@ -348,8 +349,21 @@ internal fun SeatTile(
             }
         )
 
-        // 身份只在公开时出现；否则用出局原因占这个位置，两者不会同时出现
-        val badge = seat.fate?.short ?: seat.roleLabel
+        // 这一格是「身份徽标」位：上帝视角/结束时挂身份名，参与局里挂出局原因，
+        // 预言家本人看到的**查验结论**也长在这里——「3 号是狼」必须直接挂在 3 号
+        // 头像下面，白天报验人时才不用回头翻记录流。
+        //
+        // 三种内容互斥（结论只给预言家、身份只给公开视角），优先级：
+        // 查验结论 > 出局原因 > 身份名。
+        // 结论排第一是因为它是预言家唯一的价值所在，且只有他一个人看得见；
+        // 出局原因排第二是因为它对所有人都重要（谁死了、怎么死的）。
+        val verdict = seat.seerVerdict
+        val verdictColor = when (verdict) {
+            UIWerewolfVerdict.WOLF -> FateRed
+            UIWerewolfVerdict.GOOD -> if (night) SeerTealNight else SeerTeal
+            null -> null
+        }
+        val badge = verdict?.label ?: seat.fate?.short ?: seat.roleLabel
         if (badge != null) {
             Text(
                 text = badge,
@@ -358,6 +372,7 @@ internal fun SeatTile(
                     .clip(RoundedCornerShape(50))
                     .background(
                         when {
+                            verdictColor != null -> verdictColor.copy(alpha = if (night) 0.22f else 0.14f)
                             seat.fate != null -> FateRed.copy(alpha = 0.14f)
                             seat.wolf -> Color(0x1FD9534F)
                             else -> Color(0x142B6BFF)
@@ -366,7 +381,7 @@ internal fun SeatTile(
                     .padding(horizontal = 5.dp, vertical = 0.5.dp),
                 fontSize = FsBadge,
                 fontWeight = FontWeight.Medium,
-                color = when {
+                color = verdictColor ?: when {
                     seat.fate != null -> FateRed
                     seat.wolf -> FateRed
                     else -> if (night) NightDim else SelfBlue

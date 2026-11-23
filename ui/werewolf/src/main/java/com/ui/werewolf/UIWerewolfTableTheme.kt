@@ -70,3 +70,11 @@ internal val SheriffGold = Color(0xFFC79A2E)
  * 把气泡颜色当成验人结论本身。
  */
 internal val SeerTeal = Color(0xFF1E8C7F)
+
+/**
+ * 夜里的查验结论色。
+ *
+ * 白天那个青绿压到夜空的深底上就发闷，字要往上提一档才看得清——
+ * 和查验结论气泡的夜间强调色是同一个值（`UIWerewolfBubbleKind.SEER_RESULT`）。
+ */
+internal val SeerTealNight = Color(0xFF5FD9C6)

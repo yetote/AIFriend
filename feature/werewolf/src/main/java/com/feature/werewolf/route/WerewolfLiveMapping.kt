@@ -21,6 +21,7 @@ import com.ui.werewolf.data.UIWerewolfRetry
 import com.ui.werewolf.data.UIWerewolfSeatLive
 import com.ui.werewolf.data.UIWerewolfStreaming
 import com.ui.werewolf.data.UITokenUsage
+import com.ui.werewolf.data.UIWerewolfVerdict
 
 /**
  * 狼人杀的入口。
@@ -137,6 +138,20 @@ internal fun WerewolfUiState.toLive(
         emptySet()
     }
 
+    // 预言家的查验结论长在**被验的那个座位**上：牌桌里「3 号是狼」这件事直接
+    // 长在 3 号头像下面，白天报验人、对账全靠这一眼，不用回头翻记录流。
+    //
+    // 只给参与局里的**预言家本人**：那是他的私有情报，好人和狼人拿到就等于
+    // 把局势直接交出去。上帝视角（观战）和已结束的局都不给——那里所有人的身份
+    // 本来就摊开着，徽标那一格留给身份名就够，「好人 / 狼人」是多余的信息。
+    //
+    // 同一个座位被验过多次时取最后一次（associate 保留后写进去的）。
+    val verdictBySeat = if (me?.role == WerewolfRole.SEER && !reveal) {
+        game?.seerChecks.orEmpty().associate { it.targetSeat to it.isWerewolf }
+    } else {
+        emptyMap()
+    }
+
     val seats = game?.players?.map { player ->
         // 翻过牌的白痴身份是公开的：牌桌上必须给所有人看见，
         // 否则会留下一个「没有身份标记却还活着」的座位，读起来自相矛盾
@@ -160,6 +175,11 @@ internal fun WerewolfUiState.toLive(
                 }
             },
             roleLabel = if (known) player.role.displayName else null,
+            // 查验结论挂在这个被验的座位上。只有参与局里的预言家拿得到（口径见上），
+            // 别的视角这一项恒为 null——私有情报不在客户端留路径。
+            seerVerdict = verdictBySeat[player.seat]?.let { isWolf ->
+                if (isWolf) UIWerewolfVerdict.WOLF else UIWerewolfVerdict.GOOD
+            },
             // 阵营同样要等身份公开才有资格报。参与中的局里把真实的 isWerewolf
             // 原样交给界面，等于把「谁是狼」发到了客户端——今天界面上还没用它画什么，
             // 但只要有人加一个狼人徽标，身份就当场翻了。
