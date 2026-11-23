@@ -465,10 +465,12 @@ class WerewolfPromptTest {
         val day = standardGame().copy(phase = Phase.DAY_DISCUSSION)
         val brief = WerewolfPrompt.explodeWatchBrief(day, seat = 1, speaker = 3, speech = "3 号查杀 1 号。")
 
-        assertTrue("要点名被查杀不算", brief.contains("被查杀、被踩、被点名表水都不算"))
+        assertTrue("要点名被查杀不算", brief.contains("被查杀、被踩、被点名表水都不是理由"))
         assertTrue("要说清指控不是判决", brief.contains("那是一句指控，不是判决"))
         assertTrue("要写出自爆等于替预言家作证", brief.contains("替预言家作证"))
+        assertTrue("自爆条件只留两条", brief.contains("夜里的战术需要吞掉这个白天") && brief.contains("牵出队友"))
         assertFalse("不能再授权「被点破就爆」", brief.contains("你已经被点破"))
+        assertFalse("不再提「把身份说死」这类第二条件", brief.contains("把身份说死了"))
     }
 
     @Test
