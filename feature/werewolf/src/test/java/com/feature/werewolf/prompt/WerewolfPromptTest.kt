@@ -906,6 +906,28 @@ class WerewolfPromptTest {
     }
 
     @Test
+    fun `讨论发言有两段骨架，且按身份换内容`() {
+        // 「AI 不会玩」的另一个来源：一段发言六句，全是「我觉得 3 号有问题」「大家小心」，
+        // 一句能核对的信息都没有。骨架把「结论 → 依据 → 票向」钉死，自由式不享受这份教学。
+        val talk = standardGame().copy(phase = Phase.DAY_DISCUSSION)
+
+        val wolf = WerewolfPrompt.task(talk, seat = 1)
+        assertTrue("第一句给结论", wolf.contains("第一句就给结论"))
+        assertTrue("结尾给票向", wolf.contains("我这一票投 X 号"))
+        assertTrue("狼要能解释得通", wolf.contains("解释得通"))
+
+        val seer = WerewolfPrompt.task(talk, seat = 3)
+        assertTrue("预言家先说验人、再给警徽流", seer.contains("再给警徽流"))
+        assertTrue("对跳要点名", seer.contains("悍跳"))
+
+        val villager = WerewolfPrompt.task(talk, seat = 6)
+        assertTrue("平民不报身份", villager.contains("不要报身份"))
+
+        val free = WerewolfPrompt.task(talk, seat = 1, style = WerewolfPromptStyle.FREE)
+        assertFalse("自由式不给发言骨架", free.contains("第一句就给结论"))
+    }
+
+    @Test
     fun `平票加商时会告诉狼人上一轮的提议`() {
         val game = standardGame().copy(
             phase = Phase.NIGHT_WOLF,
