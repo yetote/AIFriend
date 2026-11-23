@@ -1338,6 +1338,69 @@ class WerewolfPromptTest {
     }
 
     @Test
+    fun `屠边局要点名神职名单并逼狼选边`() {
+        // 原来只写「杀光所有神职，或杀光所有平民」。两个坑：
+        // ① 模型把「神职」理解成预女猎，漏掉守卫/白痴/熊，刀口数按错的算；
+        // ② 「或」被读成「随便」，于是今晚压神边、明晚砍民，最后两边都差一刀。
+        val guardGame = gameWithGuard()
+        val free = WerewolfPrompt.systemPrompt(guardGame, seat = 3, style = WerewolfPromptStyle.FREE)
+
+        assertTrue("要点名本局的神职", free.contains("本局算神的是："))
+        assertTrue("守卫也得算神", free.contains("守卫"))
+        assertTrue("要写明全灭才算屠神", free.contains("全部出局"))
+        assertTrue("白痴翻牌不算出局要写清", free.contains("翻牌不算出局"))
+        assertTrue("狼王不算神", free.contains("狼王）永远不算神"))
+        assertTrue("必须选一条边打穿", free.contains("两条边必须选一条打穿"))
+
+        // 屠城局没有「边」，这套话不该出现
+        val cityGame = WerewolfGame.withRoles(
+            config = WerewolfConfig(
+                composition = mapOf(
+                    WerewolfRole.WEREWOLF to 2,
+                    WerewolfRole.SEER to 1,
+                    WerewolfRole.WITCH to 1,
+                    WerewolfRole.HUNTER to 1,
+                    WerewolfRole.VILLAGER to 3,
+                ),
+                winRule = WinRule.SLAY_ALL,
+                hasSheriff = false,
+            ),
+            roster = roster(8),
+            roles = listOf(
+                WerewolfRole.WEREWOLF,
+                WerewolfRole.WEREWOLF,
+                WerewolfRole.SEER,
+                WerewolfRole.WITCH,
+                WerewolfRole.HUNTER,
+                WerewolfRole.VILLAGER,
+                WerewolfRole.VILLAGER,
+                WerewolfRole.VILLAGER,
+            ),
+        )
+        val city = WerewolfPrompt.systemPrompt(cityGame, seat = 3, style = WerewolfPromptStyle.FREE)
+        assertTrue("屠城局规则是票权", city.contains("屠城局"))
+        assertFalse("屠城局没有选边这回事", city.contains("两条边必须选一条打穿"))
+        assertFalse("屠城局不给屠边进度", city.contains("【屠边进度】"))
+    }
+
+    @Test
+    fun `自由式狼也看得到屠边进度，但看不到该打哪边`() {
+        // 「狼完全不找神」的根之一：自由式连「还剩几张神」都不给，只能凭谁嘴像预言家下刀。
+        // 计数是公开可数的事实（板子开局公布、出局有播报），两种风格都给；
+        // 「哪边更近、怎么打」是打法，仍然只给引导式。
+        val game = gameWithGuard()
+        val free = WerewolfPrompt.systemPrompt(game, seat = 1, style = WerewolfPromptStyle.FREE)
+        assertTrue("自由式狼要知道还剩几张神", free.contains("【屠边进度】"))
+        assertTrue("要给出数字", free.contains("张神牌"))
+        assertFalse("哪边更近是打法，自由式不给", free.contains("【屠边账"))
+        assertFalse("也不给打哪边的结论", free.contains("更近"))
+
+        val guided = WerewolfPrompt.systemPrompt(game, seat = 1, style = WerewolfPromptStyle.GUIDED)
+        assertTrue("引导式照旧给账本", guided.contains("【屠边账"))
+        assertTrue("引导式也会看到进度", guided.contains("【屠边进度】"))
+    }
+
+    @Test
     fun `特殊身份的机制进公共板子说明`() {
         // 白痴、熊、狼王的机制都只在各自 kit 的 rules 里。自由式砍掉 boardBrief 时
         // 它们一起消失，于是场上没人知道「被票翻牌不死、此后没投票权」「熊为什么咆哮」。

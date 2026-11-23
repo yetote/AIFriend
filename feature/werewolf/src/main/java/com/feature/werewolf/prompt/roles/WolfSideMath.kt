@@ -18,6 +18,25 @@ import com.feature.werewolf.game.WinRule
  */
 internal object WolfSideMath {
 
+    /**
+     * 屠边进度：还活着几张神、几个平民。
+     *
+     * **这是事实，不是打法，两种提示词风格都给。** 板子构成开局就公布、谁出局有播报，
+     * 任何一个坐在牌桌上的人都数得出来——不给的后果是狼完全按「谁嘴最像预言家」下刀，
+     * 从来没算过自己离屠边还差几张，一局刀到天亮才发现神边只死了一个。
+     *
+     * 只报数字，不报「该打哪边」——那是 [of] 的事，留给引导式。
+     */
+    fun counts(game: WerewolfGame): String? {
+        if (game.config.winRule != WinRule.SLAY_SIDE) return null
+        val godsAlive = game.alivePlayers.count { it.role.isGod }
+        val villagersAlive = game.alivePlayers.count { it.role == WerewolfRole.VILLAGER }
+        if (godsAlive == 0 && villagersAlive == 0) return null
+        return "【屠边进度】按板子构成和已经播报的出局数，场上大约还有 $godsAlive 张神牌、" +
+            "$villagersAlive 个平民（你不知道谁具体是哪张，只能靠发言去猜）。" +
+            "屠边是杀光其中一边，不是把人头砍够数。"
+    }
+
     /** 屠城局没有「边」可屠，返回空。屠边局才给狼算账。 */
     fun of(game: WerewolfGame): List<String> {
         if (game.config.winRule != WinRule.SLAY_SIDE) return emptyList()
@@ -32,9 +51,8 @@ internal object WolfSideMath {
         if (godsAlive == 0 && villagersAlive == 0) return emptyList()
 
         val lines = mutableListOf<String>()
-        lines += "【屠边账（只对你们有用）】这是屠边局：把神职全杀光、或把平民全杀光，你们就赢，" +
-            "不必追着预言家一个人砍。现在场上大约还有 $godsAlive 张神牌、$villagersAlive 个平民" +
-            "（这是按板子构成和已经播报的出局数出来的，你不知道谁具体是哪个身份）。"
+        // 计数由 [counts] 单独给出（两种风格都给），这里只负责「哪边近、怎么打」。
+        lines += "【屠边账（只对你们有用）】哪边更近就先打穿哪边，不必追着预言家一个人砍。"
 
         when {
             villagersAlive == 0 -> lines += "平民已经清完了——赢的就是这一刻，剩下只要别让好人把狼全投出去。"

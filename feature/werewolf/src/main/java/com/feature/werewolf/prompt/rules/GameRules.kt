@@ -20,9 +20,28 @@ import com.feature.werewolf.game.WinRule
  */
 internal fun rulesBrief(config: WerewolfConfig): String {
     val win = when (config.winRule) {
-        WinRule.SLAY_SIDE ->
-            "【胜负规则】屠边局：狼人杀光所有神职，或杀光所有平民，狼人获胜；好人放逐全部狼人则好人获胜。" +
-                "屠边之前先过绑票这一关。"
+        WinRule.SLAY_SIDE -> buildString {
+            append("【胜负规则】屠边局：狼人杀光所有神职，或杀光所有平民，狼人获胜；")
+            append("好人放逐全部狼人则好人获胜。屠边之前先过绑票这一关。\n")
+            // 「神职」这两个字模型会按网上的记忆理解成「预言家 + 女巫 + 猎人」，
+            // 而本局的神职还包括守卫、白痴、熊。不把名单钉死，狼就会按错的目标数
+            // 算进度（刀完预女猎以为自己屠神了），白天也判不清场上还剩几张神。
+            val gods = WerewolfRole.entries.filter { it.isGod && config.has(it) }
+            if (gods.isEmpty()) {
+                append("本局**没有神职**：屠边只有平民这一条边，杀光所有平民狼人就赢。\n")
+            } else {
+                append("本局算神的是：").append(gods.joinToString("、") { it.displayName })
+                append("——这几张**全部出局**才算屠神。白痴被票翻牌不算出局，翻牌之后再死才算；")
+                append("狼人（含狼王）永远不算神，除神职以外的好人都是平民。\n")
+            }
+            // 「或」在中文里极易被读成「两条都行、随便打」。实测狼会今晚压神边、
+            // 明晚又去砍民，最后一算两边都差一刀，一个屠边都没打成。
+            // 这是胜利条件本身的后果，不是打法偏好，所以写进规则里。
+            if (gods.isNotEmpty() && config.has(WerewolfRole.VILLAGER)) {
+                append("**两条边必须选一条打穿**：神边和民边分着刀，最常见的结局是")
+                append("两边都差最后一刀，谁也没屠成。\n")
+            }
+        }
 
         WinRule.SLAY_ALL ->
             "【胜负规则】屠城局：狼人票权不少于好人票权时狼人获胜（警长一票算 1.5 票）；" +
