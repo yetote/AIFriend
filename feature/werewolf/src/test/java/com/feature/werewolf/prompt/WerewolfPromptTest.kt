@@ -1941,6 +1941,8 @@ class WerewolfPromptTest {
             game, seat = 6, style = WerewolfPromptStyle.SEARCH, webSearch = false,
         )
         assertTrue(canSearch.contains("你可以联网检索"))
+        // 这一档叫「搜索式」，就不是「可以查也可以不查」：留余地的话模型会一律凭记忆答
+        assertTrue("要明确要求它该查就查", canSearch.contains("该查就查"))
         // 厂商不支持时不能这么说：模型会把「我记得」当成「我查过」，编得更理直气壮
         assertFalse(cannot.contains("你可以联网检索"))
 
