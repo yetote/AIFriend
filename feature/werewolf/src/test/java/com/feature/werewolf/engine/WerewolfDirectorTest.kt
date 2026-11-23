@@ -993,6 +993,15 @@ class WerewolfDirectorTest {
             "标记本身不该留在记录里",
             result.transcript.any { it.text.contains("【自爆】") },
         )
+
+        // 自爆的狼当夜还要跟队友交代战术（WerewolfGame.ghostWolves）。
+        // 白天的发言记账不能顺手记进夜间名单：talkRound 用 hasSpoken 过滤，
+        // 一旦被记成「第 2 夜已发言」，他就此静音，等于规则说了不算。
+        val night = director.nightWolfChat(result)
+        assertTrue(
+            "自爆狼当晚仍要参加商议、定刀",
+            night.transcript.any { it.phase == Phase.NIGHT_WOLF_CHAT && it.seat == 1 },
+        )
     }
 
     @Test

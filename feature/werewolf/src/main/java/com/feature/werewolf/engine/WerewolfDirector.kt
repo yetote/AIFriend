@@ -474,13 +474,18 @@ class WerewolfDirector(
                 )
             )
             val text = askSpeech(current, seat)
+            // 记账必须赶在阶段可能变化之前：万一这一句里自爆了，阶段已经翻到夜里，
+            // 此时再 markSpoken 会把座位记进**夜间**的发言名单（key 按天+阶段算），
+            // 夜聊的 hasSpoken 过滤就会把自爆狼当成「已经说过」直接跳过——
+            // 而他当夜本该还能商议、还能定刀（见 WerewolfGame.ghostWolves）。
+            current = current.copy(game = current.game.markSpoken(seat))
             current = current.speakAndMaybeExplode(
                 seat,
                 Phase.DAY_DISCUSSION,
                 text.text,
                 reasoning = text.reasoning,
                 usage = text.usage,
-            ).let { it.copy(game = it.game.markSpoken(seat)) }
+            )
             // 这一句如果点了某只狼的名，被点到的可以先插爆——白天就此结束，
             // 后面的人不该再被叫起来说话（循环开头的阶段检查会兜住）。
             current = current.watchExplode(seat, text.text)
@@ -601,13 +606,15 @@ class WerewolfDirector(
                         "用 2-3 句说清你的判断和当选后的思路，让警下愿意把票投给你。"
                 },
             )
+            // 同上：先记账再发言，自爆翻夜后就不会把座位记进夜间名单。
+            current = current.copy(game = current.game.markSpoken(seat))
             current = current.speakAndMaybeExplode(
                 seat,
                 Phase.DAY_SHERIFF_SPEECH,
                 text.text,
                 reasoning = text.reasoning,
                 usage = text.usage,
-            ).let { it.copy(game = it.game.markSpoken(seat)) }
+            )
             // 竞选发言里被点名也一样：可以当场插爆，把这场选举炸掉。
             current = current.watchExplode(seat, text.text)
             onTranscript(current)
