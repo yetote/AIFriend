@@ -168,6 +168,8 @@ data class UIWerewolfStreaming(
      * 发言一开始也在思考、还没吐字，text 同样是空的。
      */
     val isDecision: Boolean = false,
+    /** 到这一刻为止这次调用消耗的 token（服务端没回时是估算值）。 */
+    val usage: UITokenUsage? = null,
 )
 
 /** 轮到人类时要做的事。UI 按这个决定弹哪种输入面板。 */

@@ -1,5 +1,6 @@
 package com.feature.werewolf.engine.persistence
 
+import com.core.ai.model.TokenUsage
 import com.feature.werewolf.engine.MessageKind
 import com.feature.werewolf.engine.WerewolfMessage
 import com.feature.werewolf.engine.WerewolfTable
@@ -245,6 +246,26 @@ class WerewolfSnapshotTest {
         assertEquals("四张票都在", 4, ballot.ballots.size)
         assertEquals("弃票也留着", null, ballot.ballots.first { it.voterSeat == 4 }.targetSeat)
         assertEquals("警长的半点票不能丢", 4.5, ballot.tally.getValue(2), 0.0)
+    }
+
+    @Test
+    fun `token 用量与估算标记跟着存档走`() {
+        val original = richTable()
+        val withUsage = original.copy(
+            transcript = original.transcript.mapIndexed { index, message ->
+                if (index == 0) {
+                    message.copy(usage = TokenUsage(input = 123, output = 456, estimated = true))
+                } else {
+                    message
+                }
+            }
+        )
+        val restored = WerewolfSnapshot.decode(WerewolfSnapshot.encode(withUsage))!!
+
+        assertEquals(TokenUsage(123, 456, true), restored.transcript.first().usage)
+        // 估算标记必须一起存：不然复盘会把本地估算值当成平台账单数展示
+        assertTrue(restored.transcript.first().usage.estimated)
+        assertEquals(TokenUsage.EMPTY, restored.transcript[1].usage)
     }
 
     @Test

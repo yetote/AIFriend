@@ -26,6 +26,8 @@ import com.ui.werewolf.data.UIWerewolfReview
 import com.ui.werewolf.data.UIWerewolfRevealedSeat
 import com.ui.werewolf.data.UIWerewolfRoleGroup
 import com.ui.werewolf.data.UIWerewolfSpeechLine
+import com.ui.werewolf.data.UITokenSeatTotal
+import com.ui.werewolf.data.UITokenUsage
 
 /**
  * 狼人杀的入口。
@@ -212,6 +214,9 @@ internal fun WerewolfUiState.toReview(
             roleLabel = role?.displayName,
             roleKind = role?.let(::kindOf),
             reasoning = message.reasoning,
+            usage = message.usage.takeIf { it.total > 0 }?.let {
+                UITokenUsage(input = it.input, output = it.output, estimated = it.estimated)
+            },
         )
     }
 
@@ -290,6 +295,27 @@ internal fun WerewolfUiState.toReview(
 
     val deaths = game.players.count { !it.alive }
 
+    // token 汇总只认座位消息：上帝播报没有模型调用，计入只会虚高。
+    // 按人分组再按总量降序，复盘第一眼看到的就是「谁最能烧 token」。
+    val tokenBySeat = table.transcript
+        .filter { it.seat != null && it.usage.total > 0 }
+        .groupBy { it.seat!! }
+        .map { (seat, messages) ->
+            UITokenSeatTotal(
+                seat = seat,
+                name = seatNames[seat].orEmpty(),
+                usage = messages.fold(UITokenUsage()) { acc, message ->
+                    acc + UITokenUsage(
+                        input = message.usage.input,
+                        output = message.usage.output,
+                        estimated = message.usage.estimated,
+                    )
+                },
+            )
+        }
+        .sortedByDescending { it.usage.total }
+    val tokenTotal = tokenBySeat.fold(UITokenUsage()) { acc, row -> acc + row.usage }
+
     return UIWerewolfReview(
         winnerLabel = "${winner.displayName}胜",
         wolfWon = winner == Faction.WEREWOLF,
@@ -304,6 +330,8 @@ internal fun WerewolfUiState.toReview(
         nightDetails = nightDetails,
         dialogues = dialogues,
         checks = game.seerChecks.map { UIWerewolfCheckReport(it.day, it.targetSeat, it.isWerewolf) },
+        tokenBySeat = tokenBySeat,
+        tokenTotal = tokenTotal,
         // 每局至少有一夜，一条夜间记录都没有只可能是旧档
         incomplete = game.nights.isEmpty(),
     )

@@ -287,6 +287,7 @@ fun UIWerewolfTableScreen(
                 // 正文开始进发言列表后这段算发言，时钟换成发言时限（秒表重新起算）。
                 // 决策步全程没有正文，永远停在思考时限上。
                 speechStarted = stream.text.isNotEmpty(),
+                usage = stream.usage,
                 limitSeconds = if (stream.text.isEmpty()) {
                     live.thinkingDecisionSeconds
                 } else {

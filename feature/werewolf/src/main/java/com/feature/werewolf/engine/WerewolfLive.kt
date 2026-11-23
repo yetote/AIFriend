@@ -1,5 +1,6 @@
 package com.feature.werewolf.engine
 
+import com.core.ai.model.TokenUsage
 import com.feature.werewolf.game.Phase
 
 /**
@@ -31,4 +32,11 @@ data class WerewolfLive(
      * 表现就是「气泡时间都过了人还在说」。由引擎显式标注，UI 不再猜。
      */
     val isDecision: Boolean = false,
+    /**
+     * 到现在为止这次调用累计的 token 用量。
+     *
+     * 服务端不回 usage 时由上层按已生成的文本估算，气泡上会标「约」。
+     * 思考阶段正文还没有，这里也能给出输入 + 思维链的近似量级。
+     */
+    val usage: TokenUsage = TokenUsage.EMPTY,
 )

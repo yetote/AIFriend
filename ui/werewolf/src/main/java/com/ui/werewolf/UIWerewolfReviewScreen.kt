@@ -65,6 +65,8 @@ import com.ui.werewolf.data.UIWerewolfRevealedSeat
 import com.ui.werewolf.data.UIWerewolfRoleGroup
 import com.ui.werewolf.data.UIWerewolfSpeechLine
 import com.ui.werewolf.data.bubbleStyle
+import com.ui.werewolf.data.UITokenSeatTotal
+import com.ui.werewolf.data.UITokenUsage
 
 // ---------------------------------------------------------------------------
 // 配色
@@ -152,6 +154,14 @@ fun UIWerewolfReviewScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 item { WinnerBanner(review) }
+
+                // token 汇总：有人关心「这局烧了多少」，但不想为它占一整屏，
+                // 默认折起来只露总量，展开才按人排开。
+                if (review.tokenBySeat.isNotEmpty()) {
+                    item {
+                        TokenSummaryCard(rows = review.tokenBySeat, total = review.tokenTotal)
+                    }
+                }
 
                 review.selfLine?.let { line ->
                     item { SelfStrip(line = line) }
@@ -426,6 +436,74 @@ private fun WinnerBanner(review: UIWerewolfReview) {
             fontSize = 11.sp,
             color = Color.White.copy(alpha = 0.55f)
         )
+    }
+}
+
+/**
+ * token 消耗汇总。
+ *
+ * 默认只露整局总量——复盘的第一屏还是胜负和底牌，账单不是主角。
+ * 展开后按座位降序：谁说得最多、谁把推理写成了小作文，一眼能看出来。
+ * 只要有一段是估算，整行就带「约」并注明不能拿去对账。
+ */
+@Composable
+private fun TokenSummaryCard(rows: List<UITokenSeatTotal>, total: UITokenUsage) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .uiCard(shape = RoundedCornerShape(UIRadiusCard), elevation = 0.dp)
+            .padding(horizontal = 14.dp, vertical = 12.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded },
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Token 消耗",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = ReviewTitle
+            )
+            Spacer(Modifier.weight(1f))
+            Text(text = total.fullLabel, fontSize = 11.sp, color = ReviewDim)
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = if (expanded) "收起" else "展开",
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Medium,
+                color = if (expanded) ReviewDim else GodBlue
+            )
+        }
+        if (expanded) {
+            Spacer(Modifier.height(8.dp))
+            rows.forEach { row ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "${row.seat} 号 ${row.name}".trim(),
+                        fontSize = 11.sp,
+                        color = ReviewBody,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(text = row.usage.fullLabel, fontSize = 10.sp, color = ReviewDim)
+                }
+            }
+            if (total.estimated) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = "部分数字为本地估算，实际消耗以平台账单为准。",
+                    fontSize = 10.sp,
+                    color = ReviewDim
+                )
+            }
+        }
     }
 }
 
@@ -1043,6 +1121,14 @@ private fun DialogueDayCard(day: UIWerewolfDialogueDay, showSecret: Boolean) {
                 fontSize = 10.sp,
                 color = ReviewDim
             )
+            if (day.tokenTotal.total > 0) {
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = day.tokenTotal.shortLabel,
+                    fontSize = 10.sp,
+                    color = ReviewDim
+                )
+            }
             if (day.hasSecret && !showSecret) {
                 Text(
                     text = " · 另有密谈",
@@ -1129,6 +1215,14 @@ private fun DialogueLine(line: UIWerewolfSpeechLine) {
             lineHeight = 17.sp,
             color = ReviewBody
         )
+        if (line.usage != null && line.usage.total > 0) {
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = line.usage.shortLabel,
+                fontSize = 9.sp,
+                color = ReviewDim
+            )
+        }
         if (line.reasoning.isNotBlank()) {
             Spacer(Modifier.height(5.dp))
             ReviewThought(reasoning = line.reasoning)

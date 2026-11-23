@@ -50,6 +50,13 @@ data class UIWerewolfReview(
     /** 预言家查验记录。 */
     val checks: List<UIWerewolfCheckReport> = emptyList(),
     /**
+     * 按座位汇总的 token 消耗。只看有模型调用的消息；上帝播报不计入。
+     * 按消耗从高到低排，复盘第一眼就能看出「谁最能说」。
+     */
+    val tokenBySeat: List<UITokenSeatTotal> = emptyList(),
+    /** 整局 token 总量。 */
+    val tokenTotal: UITokenUsage = UITokenUsage(),
+    /**
      * 数据不全。
      *
      * 只有一种来源：这局是旧版本存档续下来的，那时候还没记夜间行动和票型历史。
@@ -172,6 +179,10 @@ data class UIWerewolfDialogueDay(
 
     /** 这一天有没有当时只有少数人能看的内容（狼人夜聊、查验、用药）。 */
     val hasSecret: Boolean get() = lines.any { it.secret }
+
+    /** 这一天的 token 小计，按日复盘时直接挂在标题上。 */
+    val tokenTotal: UITokenUsage
+        get() = lines.fold(UITokenUsage()) { acc, line -> acc + (line.usage ?: UITokenUsage()) }
 }
 
 /**
@@ -210,6 +221,8 @@ data class UIWerewolfSpeechLine(
      * 最有看头的部分，尤其是发言和推理对不上号的时候。
      */
     val reasoning: String = "",
+    /** 这句话那一次模型调用的 token 用量；上帝播报为 null。 */
+    val usage: UITokenUsage? = null,
 ) {
     /**
      * 气泡类别：决定颜色与样式。

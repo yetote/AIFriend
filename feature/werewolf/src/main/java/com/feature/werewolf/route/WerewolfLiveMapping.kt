@@ -19,6 +19,7 @@ import com.ui.werewolf.data.UIWerewolfLive
 import com.ui.werewolf.data.UIWerewolfRetry
 import com.ui.werewolf.data.UIWerewolfSeatLive
 import com.ui.werewolf.data.UIWerewolfStreaming
+import com.ui.werewolf.data.UITokenUsage
 
 /**
  * 狼人杀的入口。
@@ -219,6 +220,11 @@ internal fun WerewolfUiState.toLive(
                     avatarPath = avatars[speaker.id],
                     text = item.text,
                     isDecision = item.isDecision,
+                    usage = UITokenUsage(
+                        input = item.usage.input,
+                        output = item.usage.output,
+                        estimated = item.usage.estimated,
+                    ),
                     // 思考内容是别人的心里话：观战/结束、或者用户开了开关才给。
                     // 单个座位的覆盖值优先：长按藏掉的座位，全局开着也不给。
                     reasoning = if (bubbleVisible[item.seat] ?: (reveal || showThinking)) {

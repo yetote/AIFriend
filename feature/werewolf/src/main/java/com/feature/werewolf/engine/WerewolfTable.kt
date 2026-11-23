@@ -1,6 +1,7 @@
 package com.feature.werewolf.engine
 
 import com.core.ai.entity.IAI
+import com.core.ai.model.TokenUsage
 import com.feature.werewolf.game.Ballot
 import com.feature.werewolf.game.Phase
 import com.feature.werewolf.game.WerewolfGame
@@ -134,6 +135,13 @@ data class WerewolfMessage(
      * text 里只留一句给人读的摘要，方便存档兼容、日志和没有卡片渲染的场合。
      */
     val ballot: BallotCard? = null,
+    /**
+     * 产生这条消息的模型调用消耗的 token。
+     *
+     * 上帝播报（没有模型调用）留默认值 0；复盘按人/按天汇总就靠它。
+     * 不进任何提示词上下文——AI 不需要知道别人烧了多少 token。
+     */
+    val usage: TokenUsage = TokenUsage.EMPTY,
 ) {
     val isPublic: Boolean get() = audience == null
 

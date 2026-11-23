@@ -42,6 +42,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.input.pointer.pointerInput
+import com.ui.werewolf.data.UITokenUsage
 import kotlinx.coroutines.delay
 
 // ---------------------------------------------------------------------------
@@ -189,6 +190,8 @@ internal fun ThinkingBubble(
     limitSeconds: Int = 0,
     /** 长按气泡时回调：本局隐藏这个座位的思考气泡。null = 不响应长按。 */
     onHide: (() -> Unit)? = null,
+    /** 到现在的 token 用量；没有就留空（不支持统计的旧模型）。 */
+    usage: UITokenUsage? = null,
 ) {
     if (reasoning.isBlank()) return
     // 坐标还没算出来（座位刚布局完）或者算坏了，就先别画：
@@ -327,6 +330,14 @@ internal fun ThinkingBubble(
                         color = if (night) Color(0xFFA894FF) else Color(0xFF6B4BD9)
                     )
                     Spacer(Modifier.weight(1f))
+                    if (usage != null && usage.total > 0) {
+                        Text(
+                            text = usage.shortLabel,
+                            fontSize = 8.sp,
+                            color = if (night) Color(0xFFA894FF) else Color(0x996B4BD9),
+                        )
+                        Spacer(Modifier.width(4.dp))
+                    }
                     Text(
                         text = if (limitSeconds > 0) {
                             "${elapsedSeconds}s / ${limitSeconds}s"

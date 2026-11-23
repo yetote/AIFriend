@@ -1,5 +1,6 @@
 package com.feature.werewolf.engine.persistence
 
+import com.core.ai.model.TokenUsage
 import com.feature.werewolf.engine.BallotCard
 import com.feature.werewolf.engine.MessageKind
 import com.feature.werewolf.engine.WerewolfMessage
@@ -71,8 +72,11 @@ object WerewolfSnapshot {
      *
      * v19：消息多出 `ballot`（白天投票的公开票型卡）。带默认值的新增字段，
      * 旧档读出来是 null——那些局本来也没有唱票卡，复盘照旧显示播报那一句。
+     *
+     * v20：消息多出 `usage`（那一次模型调用消耗的 token，含估算标记）。
+     * 带默认值的新增字段，旧档读出来是 0——那些局本来也没记，复盘就不显示。
      */
-    const val VERSION = 19
+    const val VERSION = 20
 
     private val json = Json {
         ignoreUnknownKeys = true   // 旧档多出来的字段不该让新版本读不出来
@@ -360,7 +364,23 @@ internal data class MessageSnapshot(
     val reasoning: String = "",
     /** v19 起：唱票卡的结构化票型。只有 BALLOT 消息才有，其余为 null。 */
     val ballot: BallotSnapshotCard? = null,
+    /** v20 起：那次模型调用的 token 用量。没有模型调用的消息（上帝播报）为 null。 */
+    val usage: UsageSnapshot? = null,
 )
+
+/** token 用量的存档形态。[estimated] 必须一起存，否则旧估算值会被当成账单数展示。 */
+@Serializable
+internal data class UsageSnapshot(
+    val input: Int = 0,
+    val output: Int = 0,
+    val estimated: Boolean = false,
+) {
+    fun toUsage(): TokenUsage = TokenUsage(input = input, output = output, estimated = estimated)
+}
+
+private fun TokenUsage.toSnapshot(): UsageSnapshot? =
+    if (input == 0 && output == 0) null
+    else UsageSnapshot(input = input, output = output, estimated = estimated)
 
 /** 唱票卡的存档形态。tally 的键（座位号）序列化成字符串，反序列化时转回 Int。 */
 @Serializable
@@ -461,6 +481,7 @@ internal fun WerewolfTable.toSnapshot(
                 text = it.text,
                 audience = it.audience?.sorted(),
                 reasoning = it.reasoning,
+                usage = it.usage.toSnapshot(),
                 ballot = it.ballot?.let { card ->
                     BallotSnapshotCard(
                         ballots = card.ballots.map { b -> BallotSnapshot(b.voterSeat, b.targetSeat) },
@@ -593,6 +614,7 @@ internal fun TableSnapshot.toTable(): WerewolfTable = WerewolfTable(
             text = it.text,
             audience = it.audience?.toSet(),
             reasoning = it.reasoning,
+            usage = it.usage?.toUsage() ?: TokenUsage.EMPTY,
             ballot = it.ballot?.let { card ->
                 BallotCard(
                     ballots = card.ballots.map { b -> Ballot(b.voterSeat, b.targetSeat) },

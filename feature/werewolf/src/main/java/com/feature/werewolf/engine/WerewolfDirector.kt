@@ -2,6 +2,8 @@ package com.feature.werewolf.engine
 
 import com.core.ai.isTimeoutLike
 import com.core.ai.model.ChatMessage
+import com.core.ai.model.TokenCounter
+import com.core.ai.model.TokenUsage
 import com.core.ai.structured.StructuredOutcome
 import com.core.ai.structured.StructuredSpec
 import com.core.ai.structured.decide
@@ -158,6 +160,7 @@ class WerewolfDirector(
                     else "我守 $target 号。" + outcome.value.reason,
                     // 思维链跟着这条记录存：对局里靠开关决定给不给看，复盘里点开就能看
                     reasoning = outcome.reasoning,
+                    usage = outcome.usage,
                     audience = setOf(guard.seat),
                 )
             )
@@ -250,6 +253,7 @@ class WerewolfDirector(
                         seat = firstSeat,
                         kind = MessageKind.WOLF_CHAT,
                         text = killLine("我们", first.value.target) + first.value.reason,
+                        usage = first.usage,
                         audience = wolves.map { it.seat }.toSet(),
                     )
                 )
@@ -262,6 +266,7 @@ class WerewolfDirector(
                             seat = seat,
                             kind = MessageKind.WOLF_CHAT,
                             text = killLine("我", outcome.value.target) + outcome.value.reason,
+                            usage = outcome.usage,
                             audience = wolves.map { it.seat }.toSet(),
                         )
                     )
@@ -345,6 +350,7 @@ class WerewolfDirector(
                     kind = MessageKind.WOLF_CHAT,
                     text = text.text,
                     reasoning = text.reasoning,
+                    usage = text.usage,
                     audience = audience,
                 )
             )
@@ -379,6 +385,7 @@ class WerewolfDirector(
                     kind = MessageKind.NIGHT_ACT,
                     text = "查验 ${outcome.value.target} 号。" + outcome.value.reason,
                     reasoning = outcome.reasoning,
+                    usage = outcome.usage,
                     audience = setOf(seer.seat),
                 )
             )
@@ -415,6 +422,7 @@ class WerewolfDirector(
                     kind = MessageKind.NIGHT_ACT,
                     text = describeWitchChoice(choice.heal, choice.poison) + choice.reason,
                     reasoning = outcome.reasoning,
+                    usage = outcome.usage,
                     audience = setOf(witch.seat),
                 )
             )
@@ -468,6 +476,7 @@ class WerewolfDirector(
                 Phase.DAY_DISCUSSION,
                 text.text,
                 reasoning = text.reasoning,
+                usage = text.usage,
             ).let { it.copy(game = it.game.markSpoken(seat)) }
             // 说完一个就推一次。下一位要看到的上下文里已经有这句（current 已带），
             // 界面拿到的也是同一份，不存在「显示的和模型看到的不是一回事」
@@ -591,6 +600,7 @@ class WerewolfDirector(
                 Phase.DAY_SHERIFF_SPEECH,
                 text.text,
                 reasoning = text.reasoning,
+                usage = text.usage,
             ).let { it.copy(game = it.game.markSpoken(seat)) }
             onTranscript(current)
         }
@@ -661,6 +671,7 @@ class WerewolfDirector(
                         seat = seat,
                         kind = MessageKind.VOTE,
                         text = (if (target == null) "我弃票。" else "我选 $target 号当警长。") + outcome.value.reason,
+                        usage = outcome.usage,
                         // 警长投票是私下的：理由只有投票人自己看得到，不进别人的上下文，
                         // 别人在牌桌上也看不到。这和 INNER_REASON_HINT 里告诉模型的
                         // 「没人听见」终于对上了（放逐投票同理，也只给本人）。
@@ -721,6 +732,7 @@ class WerewolfDirector(
                         seat = seat,
                         kind = MessageKind.SPEECH,
                         text = if (silent) head else head + outcome.value.reason,
+                        usage = outcome.usage,
                     )
                 )
                 val before = current.game
@@ -739,6 +751,7 @@ class WerewolfDirector(
                         kind = MessageKind.SPEECH,
                         text = text.text,
                         reasoning = text.reasoning,
+                        usage = text.usage,
                     )
                 )
             }
@@ -799,6 +812,7 @@ class WerewolfDirector(
                         seat = seat,
                         kind = MessageKind.VOTE,
                         text = voteText(target, outcome.value.reason),
+                        usage = outcome.usage,
                         // 投票理由是内心活动：只有投票人自己看得到。这和
                         // INNER_REASON_HINT 里告诉模型的「没人听见」终于对上了；
                         // 谁投了谁是公开的，但那由 castVotes 后的播报（票数）负责，
@@ -881,6 +895,7 @@ class WerewolfDirector(
                     kind = MessageKind.SPEECH,
                     text = if (target == null) "我不开枪。" + outcome.value.reason
                     else "我开枪带走 $target 号。" + outcome.value.reason,
+                    usage = outcome.usage,
                 )
             )
             .let { it.copy(game = next).syncBroadcasts(game) }
@@ -1098,6 +1113,16 @@ class WerewolfDirector(
         val thinking = pacing.thinkingAllowed(seat, agent.thinkingEnabled)
         val content = StringBuilder()
         val reasoning = StringBuilder()
+        // 输入用量预先算好：system prompt 很长，没必要每 80ms 重算一遍。
+        val estimatedInput = TokenCounter.estimateInput(messages, system)
+        var usage = TokenUsage.EMPTY
+        /** 服务端没回 usage 时给个估算值，气泡上会标「约」。 */
+        fun currentUsage(): TokenUsage = if (usage.total > 0) usage else TokenUsage(
+            input = estimatedInput,
+            output = TokenCounter.estimate(content.toString()) +
+                TokenCounter.estimate(reasoning.toString()),
+            estimated = true,
+        )
         var lastPush = 0L
         var pushed = false
         // 底层超时降级（关思考重试）是正常返回的，外层看不到异常。
@@ -1131,7 +1156,8 @@ class WerewolfDirector(
                 SpeechDegeneration.cutIndex(reasoning)?.let { reasoning.setLength(it) }
                 true
             }.collect { delta ->
-                // 空 delta 只用来带超时降级标志，没内容可推，别刷界面。
+                delta.usage?.let { usage = it }
+                // 空 delta 只用来带超时降级/用量标志，没内容可推，别刷界面。
                 if (delta.content.isEmpty() && delta.reasoning.isEmpty()) return@collect
                 val now = System.currentTimeMillis()
                 if (!pushed || now - lastPush >= streamIntervalMs) {
@@ -1144,6 +1170,7 @@ class WerewolfDirector(
                             text = content.toString(),
                             reasoning = reasoning.toString(),
                             isDecision = false,
+                            usage = currentUsage(),
                         )
                     )
                 }
@@ -1252,11 +1279,17 @@ class WerewolfDirector(
             // 思考过程只留给复盘：对局里不显示，但存进 transcript，
             // 局结束后「他当时是怎么想的」是复盘最有意思的部分之一
             reasoning = reasoning.toString().trim(),
+            usage = currentUsage(),
         )
     }
 
     /** 一句流式发言的成品。思考过程跟正文一起回来，各走各的去处。 */
-    private data class SpeechResult(val text: String, val reasoning: String)
+    private data class SpeechResult(
+        val text: String,
+        val reasoning: String,
+        /** 这次发言的 token 用量；服务端不回 usage 时是带「约」的估算值。 */
+        val usage: TokenUsage,
+    )
 
     /**
      * 一次结构化决策（投票、查验、用药、狼刀……）。
@@ -1291,7 +1324,20 @@ class WerewolfDirector(
                     val now = System.currentTimeMillis()
                     if (lastPush == 0L || now - lastPush >= streamIntervalMs) {
                         lastPush = now
-                        onLive(WerewolfLive(seat = seat, phase = phase, reasoning = reasoning, isDecision = true))
+                        onLive(
+                            WerewolfLive(
+                                seat = seat,
+                                phase = phase,
+                                reasoning = reasoning,
+                                isDecision = true,
+                                // 决策的 usage 要等请求收完才知道，思考中先按已生成的
+                                // 思维链给个估算量级，落地后由 transcript 里的真值覆盖。
+                                usage = TokenUsage(
+                                    output = TokenCounter.estimate(reasoning),
+                                    estimated = true,
+                                ),
+                            )
+                        )
                     }
                 }
             }
@@ -1579,6 +1625,7 @@ class WerewolfDirector(
         phase: Phase,
         raw: String,
         reasoning: String = "",
+        usage: TokenUsage = TokenUsage.EMPTY,
     ): WerewolfTable {
         val trimmed = raw.trimStart()
         val marker = EXPLODE_MARKERS.firstOrNull { trimmed.startsWith(it) }
@@ -1599,6 +1646,7 @@ class WerewolfDirector(
                 kind = MessageKind.SPEECH,
                 text = text,
                 reasoning = reasoning,
+                usage = usage,
             )
         )
         if (exploding) {
