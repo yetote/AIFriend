@@ -600,6 +600,77 @@ class WerewolfPromptTest {
     }
 
     @Test
+    fun `女巫看得到自己的用药履历，别人看不到`() {
+        // 真局事故：提示词只报「解药：已经用完」，不报药用在谁身上。于是女巫第一天
+        // 平安夜时不知道那瓶药救的是谁，整段推理在猜「我是不是自救的」，还推出
+        // 「狼知道我是女巫」；第二天卡在「只写了用完，没写目标」，只能从死讯倒推。
+        val game = standardGame().copy(
+            phase = Phase.DAY_DISCUSSION,
+            nights = listOf(
+                NightRecord(day = 1, wolfTarget = 6, healed = true),
+                NightRecord(day = 2, wolfTarget = 8, poisonTarget = 2),
+            ),
+        )
+        val witch = WerewolfPrompt.systemPrompt(game, seat = 4)
+        assertTrue("要报出救的是谁", witch.contains("第 1 夜用解药救了 6 号"))
+        assertTrue("也要报出毒的是谁", witch.contains("第 2 夜用毒药毒了 2 号"))
+        assertTrue("要提醒救到的不一定是好人", witch.contains("狼会自刀骗解药"))
+
+        listOf(1, 3, 5, 6).forEach { seat ->
+            assertFalse(
+                "$seat 号不该看到女巫的用药记录",
+                WerewolfPrompt.systemPrompt(game, seat).contains("用药记录"),
+            )
+        }
+    }
+
+    @Test
+    fun `守救同归时用药履历要解释人为什么还是死了`() {
+        // 只说「你救了 6 号」，而 6 号最后还是出局，女巫要么以为自己判断错，
+        // 要么怀疑引擎算错了。这局是守卫也守了刀口，必须写成守救同归。
+        val game = standardGame().copy(
+            phase = Phase.DAY_DISCUSSION,
+            nights = listOf(
+                NightRecord(
+                    day = 1,
+                    wolfTarget = 6,
+                    guarded = 6,
+                    healed = true,
+                    mutualProtection = true,
+                    deaths = listOf(6),
+                ),
+            ),
+        )
+        val witch = WerewolfPrompt.systemPrompt(game, seat = 4)
+        assertTrue("要说清是守救同归", witch.contains("守救同归"))
+        assertTrue("点明他照样出局", witch.contains("照样出局"))
+    }
+
+    @Test
+    fun `能否自救要写死，不能让女巫自己猜本局设定`() {
+        // 原来 rules 写「第一夜是否允许自救看本局设定」——女巫自己并不知道设定是什么。
+        val strict = standardGame().let {
+            it.copy(config = it.config.copy(witchCanSelfHealOnFirstNight = false))
+        }
+        assertTrue(
+            "关掉首夜自救就要明写",
+            WerewolfPrompt.systemPrompt(strict, seat = 4).contains("任何时候都不能自救"),
+        )
+        assertTrue(
+            "开着就写明第一夜能自救、之后不能",
+            WerewolfPrompt.systemPrompt(standardGame(), seat = 4)
+                .contains("第一夜你被刀还能自救，之后就不能了"),
+        )
+    }
+
+    @Test
+    fun `毒药无视守护这条要写给女巫`() {
+        // 守卫挡的是刀，不是药。不明写，女巫会以为守过的人毒不死而改刀口。
+        val witch = WerewolfPrompt.systemPrompt(standardGame(), seat = 4)
+        assertTrue(witch.contains("毒药无视守护"))
+    }
+
+    @Test
     fun `白天的狼能看到昨晚头狼的战术，好人看不到`() {
         // 白天的上下文只喂公开消息，夜聊原文在白天是看不见的。
         // 战术安排只存一份给狼本人——不存的话，昨晚商量出来的分工等于没商量。

@@ -14,15 +14,17 @@ internal object WitchKit : RoleKit {
     // 原来这几条只在女巫自己的 notes 里，别人一概不知道——于是「昨夜死了人、女巫没救」
     // 会被当成「场上没有女巫」，或者把「同夜死了两个」解释成见鬼。
     override fun rules(role: WerewolfRole): List<String> = listOf(
-        "女巫有一瓶解药和一瓶毒药，每种只能用一次；同一夜不能同时用两瓶药。" +
-            "解药能救活被狼人刀死的人，但一般不能救自己（第一夜是否允许自救看本局设定），" +
-            "毒药能让一个人当夜死亡。",
+        "女巫有一瓶解药和一瓶毒药，每种只能用一次；同一夜不能同时用两瓶药。",
+        "解药能救活当夜被狼刀的人，救不了自己——只有本局开局允许时，第一夜才能自救" +
+            "（女巫在夜里会被告知今晚到底能不能救自己，不用自己猜）。",
+        "毒药对任何人都有效，守卫守着的人也照样被毒死；被毒死的猎人不能开枪。",
     )
 
     override fun notes(game: WerewolfGame, seat: Int): List<String> {
         val lines = mutableListOf<String>()
         lines += "解药：" + if (game.witch.antidoteAvailable) "还在" else "已经用完"
         lines += "毒药：" + if (game.witch.poisonAvailable) "还在" else "已经用完"
+        usageHistory(game)?.let { lines += it }
         if (game.phase == Phase.NIGHT_WITCH) {
             val victim = game.tonightVictim
             val canSelfHeal = game.witch.antidoteAvailable &&
@@ -66,9 +68,55 @@ internal object WitchKit : RoleKit {
                 }
             }
         }
-        lines += "解药用一次就没了，可以救活被狼刀的人，但不能救自己（第一夜除外）。"
-        lines += "毒药只能用一次，同一夜不能和解药一起用。"
+        // 「不能自救」必须写成确定句。
+        // 原来这里是一句无条件的「不能救自己（第一夜除外）」，而 rules 里又写「看本局设定」——
+        // 女巫自己并不知道本局设定是什么，白天于是要靠猜：实测她会推演「我是不是自救的」，
+        // 再顺着推出「狼知道我是女巫」这种假结论，整段推理全废。
+        lines += if (game.config.witchCanSelfHealOnFirstNight) {
+            "解药只能用一次，能救活当夜被狼刀的人；第一夜你被刀还能自救，之后就不能了。"
+        } else {
+            "解药只能用一次，能救活当夜被狼刀的人；本局**任何时候都不能自救**，包括第一夜。"
+        }
+        lines += "毒药只能用一次，同一夜不能和解药一起用；毒药无视守护，守的人也照毒死。"
         return lines
+    }
+
+    /**
+     * 用药履历：你哪一夜救了谁、毒了谁。
+     *
+     * 原来这里只报「解药：已经用完」，等于告诉女巫药没了，却不告诉她药用在谁身上。
+     * 代价在真局里很清楚：第一夜平安夜，她不知道那瓶药救的是 6 号，于是整段推理都在猜
+     * 「我是不是自救的」，甚至推出「狼知道我是女巫」；第二天又卡在
+     * 「私有信息只写了用完，没写目标」，只能从公开死讯倒推。
+     *
+     * 这是她自己做过的事，没有任何理由不给。它只说「我救/毒了谁」，
+     * 不碰「那个人是什么身份」——狼可以自刀骗药，所以下面要明写这一点。
+     *
+     * 守救同归也必须写明白：救了、人还是死了，不解释的话她要么以为自己判断错，
+     * 要么怀疑引擎算错了。
+     */
+    private fun usageHistory(game: WerewolfGame): String? {
+        val used = game.nights.filter { it.healed || it.poisonTarget != null }
+        if (used.isEmpty()) return null
+        val text = used.joinToString("；") { night ->
+            val acts = buildList {
+                if (night.healed) {
+                    val target = night.wolfTarget
+                    add(
+                        when {
+                            target == null -> "用了解药，但记录里没有刀口"
+                            night.mutualProtection ->
+                                "用解药救了 $target 号，但守卫那一夜守的也是他，守救同归，他照样出局"
+                            else -> "用解药救了 $target 号"
+                        }
+                    )
+                }
+                night.poisonTarget?.let { add("用毒药毒了 $it 号") }
+            }
+            "第 ${night.day} 夜" + acts.joinToString("、")
+        }
+        return "【你的用药记录】$text。" +
+            "你救过的人不一定是好人——狼会自刀骗解药，救到只说明那一夜他是狼刀的目标。"
     }
 
     override fun playbook(role: WerewolfRole, config: WerewolfConfig): List<String> = listOf(
