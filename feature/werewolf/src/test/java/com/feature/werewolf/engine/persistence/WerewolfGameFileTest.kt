@@ -1,6 +1,8 @@
 package com.feature.werewolf.engine.persistence
 
 import com.feature.werewolf.engine.WerewolfTable
+import com.feature.werewolf.game.PendingDawn
+import com.feature.werewolf.game.Phase
 import com.feature.werewolf.game.RosterEntry
 import com.feature.werewolf.game.WerewolfConfig
 import com.feature.werewolf.game.WerewolfGame
@@ -52,6 +54,26 @@ class WerewolfGameFileTest {
         // 列表按开局时间排，id 用来判「这一局是不是已经在列表里了」
         assertEquals("g-1", game.id)
         assertEquals(1_700_000_000_000L, game.createdAt)
+    }
+
+    @Test
+    fun `打到一半也能导出，导回来接着打`() {
+        // 导出不再只给打完的局。进行中的局最难搬的不是 transcript，而是那些
+        // **还没进 history 的临时状态**：首夜死讯压到竞选结束才公布的 pendingDawn，
+        // 就是典型。它丢了，导回来的局会凭空少一个死人，还照样往下打。
+        val mid = WerewolfTable(
+            WerewolfGame.deal(WerewolfConfig(), roster(8)).copy(
+                day = 1,
+                phase = Phase.DAY_SHERIFF_SPEECH,
+                sheriffCandidates = listOf(1, 2),
+                pendingDawn = PendingDawn(day = 1, deaths = listOf(3)),
+            )
+        )
+
+        val game = ok(WerewolfGameFile.read(WerewolfGameFile.encode(mid, "g-mid", 1_000L))).game
+
+        assertEquals("进行中的局面要一字不差地搬回来", mid, game.table)
+        assertEquals("死讯还得压在手里等竞选结束", 1, game.table.game.pendingDawn?.deaths?.size)
     }
 
     @Test

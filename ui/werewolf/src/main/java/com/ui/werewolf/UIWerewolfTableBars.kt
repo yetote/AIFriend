@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.IosShare
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.Tune
@@ -74,6 +75,14 @@ internal fun TableTopBar(
     onToggleThinking: (() -> Unit)?,
     /** 传 null 就不画设置入口（复盘演出、已结束的局改了也没用）。 */
     onOpenSettings: (() -> Unit)? = null,
+    /**
+     * 导出这一局（`.wwg`）。传 null 就不画。
+     *
+     * 不限于打完：打到一半也能导，导出来是一个「还没打完」的存档，
+     * 换台手机导进去可以接着打——所以它必须在对局中就能点，
+     * 而不是等到复盘页（那时候已经是另一个入口了）。
+     */
+    onExportGame: (() -> Unit)? = null,
     /**
      * 传 null 就不画「自爆」。
      *
@@ -167,6 +176,17 @@ internal fun TableTopBar(
                 Icon(
                     imageVector = Icons.Filled.Tune,
                     contentDescription = "对局设置",
+                    tint = textColor,
+                )
+            }
+        }
+        // 导出排在设置右边：齿轮是「调这局怎么跑」，导出是「把这局带走」，
+        // 都是「局」层面的动作，和左边的看/爆分开。
+        if (onExportGame != null) {
+            IconButton(onClick = onExportGame) {
+                Icon(
+                    imageVector = Icons.Filled.IosShare,
+                    contentDescription = "导出这一局",
                     tint = textColor,
                 )
             }

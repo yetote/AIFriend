@@ -98,6 +98,13 @@ fun UIWerewolfTableScreen(
      * 这里再弹一次确认：它是唯一不可撤销的操作。
      */
     onExplode: (() -> Unit)? = null,
+    /**
+     * 导出这一局（`.wwg` 存档）。传 null 就不画。
+     *
+     * 对局中也要能点：打到一半换机器、或者先备份一份再去试别的打法，
+     * 都等不到「打完」那一刻。导出来的是当前进度，导进去可以接着打。
+     */
+    onExportGame: (() -> Unit)? = null,
     /** 长按思考气泡：本局隐藏这个座位的思考气泡。不传就不响应长按。 */
     onHideThinkingBubble: ((seat: Int) -> Unit)? = null,
     /** 复盘演出：播放 / 暂停。 */
@@ -185,6 +192,9 @@ fun UIWerewolfTableScreen(
                 onOpenSettings = onOpenSettings?.takeIf { replay == null && !live.finished },
                 // 自爆：只在能爆的白天发言环节出现，演出和观战一律没有
                 onExplode = explodeAction?.let { { confirmExplode = true } },
+                // 导出：演出页不给（复盘那边本来就有导出），其余随时可点，
+                // 包括打到一半——放开「必须打完才能导」正是这次的改动
+                onExportGame = onExportGame?.takeIf { replay == null },
                 onToggleSpeak = onToggleSpeak,
                 onBack = onExit
             )

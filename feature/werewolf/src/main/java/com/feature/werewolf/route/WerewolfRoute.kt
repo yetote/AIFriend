@@ -567,6 +567,9 @@ fun WerewolfRoute(
                     // 自爆：能不能点由 live.canExplode 决定（牌桌内部再 gate 一次），
                     // 这里只负责把动作交下去
                     onExplode = viewModel::explodeNow,
+                    // 随时可导出：打到一半也要能把这局带走（换机器、留个备份再试别的打法）。
+                    // 导出的是当前进度，导入端认识「还没打完」的存档，导进去能接着打。
+                    onExportGame = { shareGameFile(state.table, state.gameId, state.customPrompt) },
                 )
                 if (showPaceSheet) {
                     UIWerewolfPaceSheet(
