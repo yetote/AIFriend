@@ -159,8 +159,8 @@ internal fun Feed(
 /**
  * 「某人正在说」的一行，逐字长出来。
  *
- * 长得和一条普通发言一模一样（头像 + 名字 + 正文），只多了末尾一个光标、语气淡一点。
- * 刻意不做卡片、不做边框——等这句话说完，它会变成上面那条普通记录，两者长得一样才不会「跳一下」。
+ * 排版和落定后的发言卡**一模一样**（气泡头部的头像 + 名字 + 正文），只多末尾一个光标。
+ * 这样这句话说完变成正式记录时不会「跳一下」——包括头像的位置也得一致。
  */
 @Composable
 internal fun StreamingLine(
@@ -169,52 +169,52 @@ internal fun StreamingLine(
     textColor: Color,
     dimColor: Color,
 ) {
-    Row(modifier = Modifier.fillMaxWidth()) {
-        UIAvatar(
-            name = stream.speaker ?: "?",
-            avatarPath = stream.avatarPath,
-            size = 30.dp,
-            shape = CircleShape
-        )
-        Spacer(Modifier.width(8.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = stream.speaker ?: "未知",
-                    fontSize = FsName,
-                    fontWeight = FontWeight.SemiBold,
-                    color = textColor,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = " ${stream.seat} 号",
-                    fontSize = 12.sp,
-                    color = dimColor,
-                    maxLines = 1
-                )
-            }
-            if (stream.text.isNotBlank()) {
-                // 光标走 trailing 单独追加，不参与 MD 解析——否则半句里的 `**` 会被当标记吃掉
-                UIMarkdownText(
-                    text = stream.text,
-                    trailing = "▌",
-                    modifier = Modifier.padding(top = 2.dp),
-                    baseSize = FsSpeech,
-                    baseLineHeight = FsSpeechLine,
-                    color = textColor.copy(alpha = 0.92f),
-                )
-            } else {
-                // 还在思考、一个字没说：只显示「正在组织语言」，不把思考流放出来——
-                // 对局里看 AI 推理会把「读心」变成主要玩法，思考留给复盘
-                Row(
-                    modifier = Modifier.padding(top = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(text = "正在组织语言", fontSize = FsName, color = dimColor)
-                    Spacer(Modifier.width(6.dp))
-                    ThinkingDot(color = dimColor)
-                }
+    val style = bubbleStyle(UIWerewolfBubbleKind.SPEECH, night)
+    UIWerewolfBubble(style = style, modifier = Modifier.fillMaxWidth()) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            UIAvatar(
+                name = stream.speaker ?: "?",
+                avatarPath = stream.avatarPath,
+                size = 26.dp,
+                shape = CircleShape
+            )
+            Spacer(Modifier.width(7.dp))
+            Text(
+                text = stream.speaker ?: "未知",
+                fontSize = FsName,
+                fontWeight = FontWeight.SemiBold,
+                color = textColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            Text(
+                text = " ${stream.seat} 号",
+                fontSize = 12.sp,
+                color = dimColor,
+                maxLines = 1
+            )
+        }
+        if (stream.text.isNotBlank()) {
+            // 光标走 trailing 单独追加，不参与 MD 解析——否则半句里的 `**` 会被当标记吃掉
+            UIMarkdownText(
+                text = stream.text,
+                trailing = "▌",
+                modifier = Modifier.padding(top = 2.dp),
+                baseSize = FsSpeech,
+                baseLineHeight = FsSpeechLine,
+                color = textColor.copy(alpha = 0.92f),
+            )
+        } else {
+            // 还在思考、一个字没说：只显示「正在组织语言」，不把思考流放出来——
+            // 对局里看 AI 推理会把「读心」变成主要玩法，思考留给复盘
+            Row(
+                modifier = Modifier.padding(top = 2.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(text = "正在组织语言", fontSize = FsName, color = dimColor)
+                Spacer(Modifier.width(6.dp))
+                ThinkingDot(color = dimColor)
             }
         }
     }
@@ -313,43 +313,44 @@ internal fun SpeechRow(
     dimColor: Color,
 ) {
     val style = bubbleStyle(UIWerewolfBubbleKind.SPEECH, night)
-    Row(modifier = Modifier.fillMaxWidth()) {
-        UIAvatar(
-            name = line.speaker ?: "?",
-            avatarPath = line.avatarPath,
-            size = 30.dp,
-            shape = CircleShape
-        )
-        Spacer(Modifier.width(8.dp))
-        UIWerewolfBubble(style = style, modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = line.speaker ?: "未知",
-                    fontSize = FsName,
-                    fontWeight = FontWeight.SemiBold,
-                    color = textColor,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                line.seat?.let {
-                    Text(
-                        text = " $it 号",
-                        fontSize = 12.sp,
-                        color = dimColor,
-                        maxLines = 1
-                    )
-                }
-                Spacer(Modifier.width(6.dp))
-                BubbleTag(text = style.tag, accent = style.accent)
-            }
-            UIMarkdownText(
-                text = line.text,
-                modifier = Modifier.padding(top = 2.dp),
-                baseSize = FsSpeech,
-                baseLineHeight = FsSpeechLine,
-                color = textColor.copy(alpha = 0.92f),
+    // 头像放在气泡头部里，而不是和气泡并排占掉一整列：气泡因此能铺满整行，
+    // 长发言不再被挤成窄条。「谁在说」由头部第一行承担，视觉上更像一条完整的卡片。
+    UIWerewolfBubble(style = style, modifier = Modifier.fillMaxWidth()) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            UIAvatar(
+                name = line.speaker ?: "?",
+                avatarPath = line.avatarPath,
+                size = 26.dp,
+                shape = CircleShape
             )
+            Spacer(Modifier.width(7.dp))
+            Text(
+                text = line.speaker ?: "未知",
+                fontSize = FsName,
+                fontWeight = FontWeight.SemiBold,
+                color = textColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            line.seat?.let {
+                Text(
+                    text = " $it 号",
+                    fontSize = 12.sp,
+                    color = dimColor,
+                    maxLines = 1
+                )
+            }
+            Spacer(Modifier.width(6.dp))
+            BubbleTag(text = style.tag, accent = style.accent)
         }
+        UIMarkdownText(
+            text = line.text,
+            modifier = Modifier.padding(top = 2.dp),
+            baseSize = FsSpeech,
+            baseLineHeight = FsSpeechLine,
+            color = textColor.copy(alpha = 0.92f),
+        )
     }
 }
 

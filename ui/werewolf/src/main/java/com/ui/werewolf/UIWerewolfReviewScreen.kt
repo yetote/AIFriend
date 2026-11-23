@@ -1093,48 +1093,45 @@ private fun DialogueLine(line: UIWerewolfSpeechLine) {
     }
 
     val style = bubbleStyle(kind, night = false)
-    Row(
+    // 头像收进气泡头部，气泡铺满整行；和对局里的发言卡保持同一套排版。
+    UIWerewolfBubble(
+        style = style,
         modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.Top
+        corner = 8.dp,
     ) {
-        UIAvatar(
-            name = line.speaker,
-            avatarPath = line.avatarPath,
-            size = 22.dp,
-            shape = CircleShape
-        )
-        Spacer(Modifier.width(8.dp))
-        UIWerewolfBubble(
-            style = style,
-            modifier = Modifier.weight(1f),
-            corner = 8.dp,
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = line.speaker,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = style.accent,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                line.roleLabel?.let { role ->
-                    RoleTag(text = role, kind = line.roleKind)
-                }
-                Spacer(Modifier.width(5.dp))
-                BubbleTag(text = line.label, accent = style.accent)
-            }
-            Text(
-                text = line.text,
-                modifier = Modifier.padding(top = 2.dp),
-                fontSize = 12.sp,
-                lineHeight = 17.sp,
-                color = ReviewBody
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            UIAvatar(
+                name = line.speaker,
+                avatarPath = line.avatarPath,
+                size = 20.dp,
+                shape = CircleShape
             )
-            if (line.reasoning.isNotBlank()) {
-                Spacer(Modifier.height(5.dp))
-                ReviewThought(reasoning = line.reasoning)
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = line.speaker,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                color = style.accent,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            line.roleLabel?.let { role ->
+                RoleTag(text = role, kind = line.roleKind)
             }
+            Spacer(Modifier.width(5.dp))
+            BubbleTag(text = line.label, accent = style.accent)
+        }
+        Text(
+            text = line.text,
+            modifier = Modifier.padding(top = 2.dp),
+            fontSize = 12.sp,
+            lineHeight = 17.sp,
+            color = ReviewBody
+        )
+        if (line.reasoning.isNotBlank()) {
+            Spacer(Modifier.height(5.dp))
+            ReviewThought(reasoning = line.reasoning)
         }
     }
 }
