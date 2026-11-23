@@ -123,8 +123,30 @@ class WerewolfStreamingMappingTest {
     }
 
     @Test
-    fun `朗读还没念到的时候不抢先打字`() {
-        // 前面还有两句话没念完（闸门停在第 0 条），此时把下一句打出来就是把语音剧透了
+    fun `朗读还没念到的时候不让新面孔抢先开口`() {
+        // 前面还有两句话没念完（闸门停在第 0 条），此时把下一句打出来就是把语音剧透了。
+        // 但只拦「还没吐字」的：一旦他开始说话，就不能再把他抹掉（见下一个用例）。
+        val backlog = listOf(
+            WerewolfMessage(1, Phase.DAY_DISCUSSION, 1, MessageKind.SPEECH, "一"),
+            WerewolfMessage(1, Phase.DAY_DISCUSSION, 2, MessageKind.SPEECH, "二"),
+            WerewolfMessage(1, Phase.DAY_DISCUSSION, 3, MessageKind.SPEECH, "三"),
+        )
+        val ui = live(
+            Phase.DAY_DISCUSSION,
+            seat = 4,
+            humanSeat = 9,
+            transcript = backlog,
+            revealedIndex = 0,
+            text = "",
+        )
+
+        assertNull(ui.streaming)
+    }
+
+    @Test
+    fun `已经开口的那段不因为朗读落后被撤掉`() {
+        // 朗读永远追不上生成速度：闸门会在一条发言的生成过程中反复开关。
+        // 每关一次就把半句话撤掉，用户看到的就是「说到一半突然没了」。
         val backlog = listOf(
             WerewolfMessage(1, Phase.DAY_DISCUSSION, 1, MessageKind.SPEECH, "一"),
             WerewolfMessage(1, Phase.DAY_DISCUSSION, 2, MessageKind.SPEECH, "二"),
@@ -138,7 +160,7 @@ class WerewolfStreamingMappingTest {
             revealedIndex = 0,
         )
 
-        assertNull(ui.streaming)
+        assertNotNull("已经说出口的半句话不能凭空消失", ui.streaming)
     }
 
     @Test
@@ -159,9 +181,31 @@ class WerewolfStreamingMappingTest {
     }
 
     @Test
-    fun `喇叭还在念上一句时不显示下一位的打字`() {
+    fun `喇叭还在念上一句时不让下一位抢先开口`() {
         // 进度已经推到末尾（看起来「追平了」），但那一句还在响。
-        // 这时候把 B 的流式文字打出来，用户看到的就是「B 的对话框冒出来又消失」。
+        // 这时候让**还没吐字**的 B 冒头，用户看到的就是「B 的对话框冒出来又消失」。
+        val backlog = listOf(
+            WerewolfMessage(1, Phase.DAY_DISCUSSION, 1, MessageKind.SPEECH, "一"),
+            WerewolfMessage(1, Phase.DAY_DISCUSSION, 2, MessageKind.SPEECH, "二"),
+        )
+        val ui = live(
+            Phase.DAY_DISCUSSION,
+            seat = 4,
+            humanSeat = 9,
+            transcript = backlog,
+            revealedIndex = backlog.lastIndex,
+            speechBusy = true,
+            text = "",
+        )
+
+        assertNull(ui.streaming)
+        assertEquals("界面也要知道喇叭没闲下来", true, ui.speechBusy)
+    }
+
+    @Test
+    fun `喇叭忙起来不撤回已经说出口的半句`() {
+        // 「冒出来又消失」的根就是这一条：B 已经开口了，A 的入队让 speechBusy 翻转，
+        // 屏幕上的半句话被收走，非要等整段落库才重新出现。
         val backlog = listOf(
             WerewolfMessage(1, Phase.DAY_DISCUSSION, 1, MessageKind.SPEECH, "一"),
             WerewolfMessage(1, Phase.DAY_DISCUSSION, 2, MessageKind.SPEECH, "二"),
@@ -175,8 +219,7 @@ class WerewolfStreamingMappingTest {
             speechBusy = true,
         )
 
-        assertNull(ui.streaming)
-        assertEquals("界面也要知道喇叭没闲下来", true, ui.speechBusy)
+        assertNotNull("已经开口的人不能被喇叭状态掐掉", ui.streaming)
     }
 
     @Test

@@ -201,6 +201,10 @@ internal fun WerewolfUiState.toLive(
     //    看起来追平了，但 A 还在响。这时把 B 的打字打出来，用户看到的就是
     //    「下一个人的对话框冒出来、然后又消失」（等 B 真念到才重新出现）。
     //    所以要等队列真的空下来（speechBusy=false）才允许显示；
+    //    **例外：已经开口的那段**（text 非空）。朗读永远追不上生成速度，闸门
+    //    会在一条发言的生成过程中反复开关；每关一次，屏幕上那半句话就被撤掉，
+    //    等整段落进记录才重新出现——用户看到的就是「说到一半突然没了」。
+    //    抢跑一点（下一句的字先出来）远好过让正在讲话的人凭空消失。
     // 4. **思考过程给不给看**——参与局默认不给（别人推理=作弊），观战/已结束一律给；
     //    参与局里自己打开「思考」开关也就有了，界面上会写清楚那是作弊。
     //    开关只放行「想的内容」，不放行「谁在动」：夜里的思考框照样受第 1 条管，
@@ -208,7 +212,10 @@ internal fun WerewolfUiState.toLive(
     val streaming = live
         ?.takeIf { running && !finished }
         ?.takeIf { item -> actorVisible(item.seat, item.phase) && item.seat != humanSeat }
-        ?.takeIf { !gated || (!speechBusy && revealed >= (table?.transcript?.lastIndex ?: -1)) }
+        ?.takeIf { item ->
+            !gated || item.text.isNotEmpty() ||
+                (!speechBusy && revealed >= (table?.transcript?.lastIndex ?: -1))
+        }
         ?.let { item ->
             val speaker = game?.players?.firstOrNull { it.seat == item.seat }
             if (speaker == null) {

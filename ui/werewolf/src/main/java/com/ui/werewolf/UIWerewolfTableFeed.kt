@@ -24,6 +24,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -74,6 +79,37 @@ internal const val STREAM_SCROLL_CHARS = 60
  * 私有信息是**只有你知道的事**（描边强调）。第三种如果和普通发言长得一样，
  * 玩家会以为别人也听见了——那是这局最致命的一种误读。
  */
+/**
+ * 决定牌桌末尾那一行显示哪段话。
+ *
+ * 正常情况直接信 [allowed]（喇叭空了、视角能看、没轮到自己操作）。
+ * 出问题的是**一段话说到一半时喇叭状态会翻转**：上一句刚念完、这一句才开始吐字，
+ * 朗读队列随即把上一条标成「正在念」，闸门一关，屏幕上的半句话就被撤掉了——
+ * 用户看到的是「说到一半突然没了」，非要等整段生成完、落进记录，才又整块出现。
+ *
+ * 所以这里加一层「粘住」：已经露过面的那段继续显示，不再跟着喇叭状态撤销。
+ * 防剧透的初衷不变——**新面孔**仍然要等喇叭空闲才会冒头，只是不允许把
+ * 已经开口的人中途抹掉。两种糟糕的观感里，「文字抢跑」远好过「话说到一半消失」。
+ *
+ * 三种情况必须收手，否则会出现「上一句的鬼影」：
+ * - 轮到人类操作 / 这一局停了；
+ * - 这段还没吐字（只是思考阶段，交给三个点）；
+ * - 它已经落进记录流（最后一条就是这个座位），该由正式气泡接手。
+ */
+internal fun resolveStreaming(
+    live: UIWerewolfLive,
+    allowed: UIWerewolfStreaming?,
+    pinned: UIWerewolfStreaming?,
+): UIWerewolfStreaming? {
+    if (allowed != null) return allowed
+    val held = pinned ?: return null
+    // 局停了、报错了、轮到人类了：都不是「有人正在说」，不能留着半句话冒充现场
+    if (!live.running || live.finished || live.error != null || live.turn != null) return null
+    if (held.text.isBlank()) return null
+    if (live.lines.lastOrNull()?.seat == held.seat) return null
+    return held
+}
+
 @Composable
 internal fun Feed(
     live: UIWerewolfLive,
@@ -92,7 +128,14 @@ internal fun Feed(
     //
     // 两种「正在发生」都必须等喇叭空下来（!speechBusy）：念 A 的时候引擎已经在生成 B 了，
     // 这时冒出 B 的名字或半句话，就是用户说的「下一个人对话框弹出来又消失」。
-    val streaming = if (live.running && live.turn == null && !live.speechBusy) live.streaming else null
+    //
+    // 但**已经露过面**的那段不能这样撤掉，见 [resolveStreaming]。
+    val allowed = if (live.running && live.turn == null && !live.speechBusy) live.streaming else null
+    // 记住「最后一次真正显示出来的那段话」。按天数+阶段做 key：换阶段就该忘掉，
+    // 否则上一阶段没落库的半句话会飘到新阶段的牌桌上。
+    var pinned by remember(live.day, live.phaseLabel) { mutableStateOf<UIWerewolfStreaming?>(null) }
+    SideEffect { if (allowed != null) pinned = allowed }
+    val streaming = resolveStreaming(live, allowed, pinned)
     val thinkingSeat = if (live.running && live.turn == null && streaming == null && !live.speechBusy) {
         live.seats.firstOrNull { it.active }
     } else {
