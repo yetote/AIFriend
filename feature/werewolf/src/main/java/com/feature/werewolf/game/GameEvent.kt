@@ -103,11 +103,29 @@ sealed interface GameEvent {
         val runners: List<Int>,
     ) : GameEvent
 
-    /** 警长选出来了。[votes] 是得票数（警下每人一票，所以是整数）。 */
+    /**
+     * 竞选发言之后的退水：这些座位放弃了竞选。
+     *
+     * 退水的人**不算候选**，但仍然是「上过警的人」——所以依旧没有警长投票权，
+     * 也不再被投票。这条播报是全场都要知道的：票该投给谁，取决于还剩几个候选。
+     */
+    data class SheriffWithdrawn(
+        override val day: Int,
+        val seats: List<Int>,
+    ) : GameEvent
+
+    /**
+     * 警长选出来了。[votes] 是得票数（警下每人一票，所以是整数）。
+     *
+     * [note] 只在**不投票直接当选**时用：上警就一个人（"只有 X 号上警"），
+     * 或者退水之后只剩一个人（"其余候选人都退水"）。两种情况的播报不一样，
+     * 用一句话区分，免得玩家以为退水那局根本没有人上警。
+     */
     data class SheriffElected(
         override val day: Int,
         val seat: Int,
         val votes: Int,
+        val note: String? = null,
     ) : GameEvent
 
     /**

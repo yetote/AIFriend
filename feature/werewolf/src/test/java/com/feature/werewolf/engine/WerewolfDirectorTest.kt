@@ -125,6 +125,16 @@ class WerewolfDirectorTest {
                     """{"target": null, "reason": "我不上警。"}"""
                 }
             }
+            // 退水：逢 3 的倍数让位，其余不退。总有人退、也总有人不退，
+            // 整局自走时两条路径（退水后投票、全员退水）都能跑到
+            if (system.contains("\"withdraw\"")) {
+                val seat = seatOf(system)
+                return if (seat % 3 == 0) {
+                    """{"withdraw": true, "reason": "我让一下。"}"""
+                } else {
+                    """{"withdraw": false, "reason": "我要争。"}"""
+                }
+            }
             // 警徽移交：一律撕掉。合法且不留后患，适合无脑自走
             if (system.contains("遗言里还要交代警徽")) {
                 return """{"target": null, "reason": "来不及交代了。"}"""
@@ -262,6 +272,37 @@ class WerewolfDirectorTest {
         assertNull("这一次没人当选", result.game.sheriffSeat)
         assertNotEquals("不能停在竞选发言", Phase.DAY_SHERIFF_SPEECH, result.game.phase)
         assertFalse("爆的狼已经出局", result.game.playerAt(1).alive)
+    }
+
+    @Test
+    fun `退水是公开动作，理由只留在心里`() = runBlocking {
+        // 退水真正的原因常常是「我在给队友让位」——那句话要是落进别人的上下文，
+        // 等于把狼队供出去。牌桌上只该出现一句「我退水。」。
+        val leaver = ScriptedAI(listOf("""{"withdraw": true, "reason": "我给队友让位。"}"""))
+        val stayer = ScriptedAI(listOf("""{"withdraw": false, "reason": "这个警徽我要争。"}"""))
+        val director = WerewolfDirector(agentsOf(1 to leaver, 4 to stayer, 7 to stayer))
+        // 三个候选人退掉一个，还剩两个——照常投票，而不是直接当选
+        val game = standard9().copy(phase = Phase.DAY_SHERIFF_SIGNUP)
+            .signUpSheriff(setOf(1, 4, 7))
+            .beginSheriffWithdraw()
+
+        val result = director.sheriffWithdraw(WerewolfTable(game))
+
+        assertEquals(Phase.DAY_SHERIFF_VOTE, result.game.phase)
+        assertEquals("退水的人不再被投票", listOf(4, 7), result.game.sheriffCandidates)
+        assertTrue(
+            "要播报谁退水了",
+            result.transcript.any { it.kind == MessageKind.DIVINE && it.text.contains("退水") },
+        )
+        val lines = result.transcript.filter { it.phase == Phase.DAY_SHERIFF_WITHDRAW }
+        val said = lines.associate { it.seat to it.text }
+        assertEquals("我退水。", said[1])
+        assertEquals("我不退水。", said[4])
+        assertEquals("不退水也要留一句，票数才对得上", "我不退水。", said[7])
+        assertFalse(
+            "理由不能出现在牌桌上",
+            lines.any { it.text.contains("让位") },
+        )
     }
 
     @Test
@@ -965,6 +1006,8 @@ class WerewolfDirectorTest {
                 listOf(
                     """{"target": $seat, "reason": "我上警。"}""",
                     "我竞选警长，我会先推 3 号。",
+                    // 竞选发言之后的退水：两个人都要争，直接进投票
+                    """{"withdraw": false, "reason": "我要争。"}""",
                 )
             } else {
                 listOf(
@@ -996,7 +1039,7 @@ class WerewolfDirectorTest {
         )
 
         val spoken = director.sheriffSpeech(signedUp)
-        assertEquals(Phase.DAY_SHERIFF_VOTE, spoken.game.phase)
+        assertEquals("发言之后先退水", Phase.DAY_SHERIFF_WITHDRAW, spoken.game.phase)
         // 只有竞选发言阶段才轮到候选人说话
         assertEquals(
             "两个候选人都发了言",
@@ -1006,7 +1049,11 @@ class WerewolfDirectorTest {
             },
         )
 
-        val voted = director.sheriffVote(spoken)
+        val afterWithdraw = director.sheriffWithdraw(spoken)
+        assertEquals("没人退水，照常投票", Phase.DAY_SHERIFF_VOTE, afterWithdraw.game.phase)
+        assertEquals(listOf(1, 2), afterWithdraw.game.sheriffCandidates)
+
+        val voted = director.sheriffVote(afterWithdraw)
         assertEquals(1, voted.game.sheriffSeat)
         // 竞选结束、当天没有死者，所以直接进白天讨论
         assertEquals(Phase.DAY_DISCUSSION, voted.game.phase)
@@ -1635,7 +1682,15 @@ class WerewolfDirectorTest {
         }
         val director = WerewolfDirector(ais.mapValues { SeatAgent(it.value, "test-model") })
 
-        val result = director.discussion(WerewolfTable(standard9().copy(phase = Phase.DAY_DISCUSSION)))
+        // 钉死发言顺序：1 号先开口、4 号在后，这样「4 号点 1 号」一定会触发插爆判断。
+        // 没有警长时起点是随机的，靠随机顺序碰巧覆盖到太脆
+        val table = WerewolfTable(
+            standard9()
+                .copy(phase = Phase.DAY_DISCUSSION, sheriffSeat = 9)
+                .setSpeechDirection(SpeechDirection.SHERIFF_LEFT)
+        )
+
+        val result = director.discussion(table)
 
         assertTrue("答不爆就继续打", result.game.playerAt(1).alive)
         val watchCall = wolf.calls.last()

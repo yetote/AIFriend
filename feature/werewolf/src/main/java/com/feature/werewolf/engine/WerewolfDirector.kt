@@ -13,6 +13,7 @@ import com.feature.werewolf.decision.ExplodeChoice
 import com.feature.werewolf.decision.VoteChoice
 import com.feature.werewolf.decision.WerewolfDecisions
 import com.feature.werewolf.decision.WitchChoice
+import com.feature.werewolf.decision.WithdrawChoice
 import com.feature.werewolf.game.Ballot
 import com.feature.werewolf.game.DeathCause
 import com.feature.werewolf.game.Phase
@@ -621,12 +622,77 @@ class WerewolfDirector(
             onTranscript(current)
         }
 
-        // 中途自爆的话阶段已经变了，这里不能再推进投票
+        // 中途自爆的话阶段已经变了，这里不能再往下推进。
+        // 第一轮先进退水，PK 轮直接投票（见 [WerewolfGame.beginSheriffWithdraw]）。
         return if (current.game.phase == Phase.DAY_SHERIFF_SPEECH) {
-            current.copy(game = current.game.beginSheriffVote())
+            current.copy(game = current.game.beginSheriffWithdraw())
         } else {
             current
         }
+    }
+
+    /**
+     * 退水：候选人各自决定要不要放弃竞选，**并发**收集。
+     *
+     * 并发是因为线下就是同时举手：串行的话后面的人能听见「谁已经退了」，
+     * 于是变成从众或赌气，而这恰恰是唯一不该互相影响的一步。
+     *
+     * 牌桌上每人留一句「我退水。」/「我不退水。」：退水是公开动作，
+     * 但真正的理由（常常是「我在给队友让位」）只在 [WerewolfMessage.reasoning] 里，
+     * 不进别人的上下文，也不朗读。token 记在这条消息上，汇总时才不会漏。
+     */
+    suspend fun sheriffWithdraw(table: WerewolfTable): WerewolfTable {
+        var current = table
+        if (current.game.phase != Phase.DAY_SHERIFF_WITHDRAW) return current
+        val game = current.game
+        val candidates = game.sheriffCandidates.sorted()
+        if (candidates.isEmpty()) {
+            // 理论上不会发生：进这个阶段时至少还剩两个候选。真碰上就直接去投票。
+            return current.copy(game = game.copy(phase = Phase.DAY_SHERIFF_VOTE))
+        }
+
+        onProgress(
+            WerewolfProgress(
+                day = game.day,
+                phase = Phase.DAY_SHERIFF_WITHDRAW,
+                step = 0,
+                total = candidates.size,
+            )
+        )
+        val outcomes = windowedAsync(
+            candidates,
+            onTick = { done, total, pending ->
+                onProgress(
+                    WerewolfProgress(
+                        day = game.day,
+                        phase = Phase.DAY_SHERIFF_WITHDRAW,
+                        step = done,
+                        total = total,
+                        seats = pending,
+                    )
+                )
+            },
+        ) { seat -> seat to askSheriffWithdraw(current, seat) }
+        onProgress(WerewolfProgress(game.day, Phase.DAY_SHERIFF_WITHDRAW, candidates.size, candidates.size))
+
+        outcomes.forEach { (seat, outcome) ->
+            val said = if (outcome.value.withdraw) "我退水。" else "我不退水。"
+            current = current.append(
+                WerewolfMessage(
+                    day = game.day,
+                    phase = Phase.DAY_SHERIFF_WITHDRAW,
+                    seat = seat,
+                    kind = MessageKind.SPEECH,
+                    text = said,
+                    reasoning = outcome.reasoning,
+                    usage = outcome.usage,
+                )
+            )
+        }
+        val withdrawn = outcomes.filter { it.second.value.withdraw }.map { it.first }.toSet()
+        return current.copy(game = game.withdrawSheriff(withdrawn))
+            .syncPublicEvents(game)
+            .also { onTranscript(it) }
     }
 
     /**
@@ -977,6 +1043,7 @@ class WerewolfDirector(
                 Phase.NIGHT_WITCH -> nightWitch(current)
                 Phase.DAY_SHERIFF_SIGNUP -> sheriffSignup(current)
                 Phase.DAY_SHERIFF_SPEECH -> sheriffSpeech(current)
+                Phase.DAY_SHERIFF_WITHDRAW -> sheriffWithdraw(current)
                 Phase.DAY_SHERIFF_VOTE -> sheriffVote(current)
                 Phase.DAY_DISCUSSION -> {
                     val discussed = discussion(current)
@@ -1104,6 +1171,21 @@ class WerewolfDirector(
             spec = WerewolfDecisions.sheriffVote(game, candidates),
             fallback = { WerewolfDecisions.fallbackVote(game, seat, candidates, random) },
             task = "请投出你的警长票。",
+        )
+    }
+
+    /** 退水。兜底不退：想不清楚不该被当成让位。 */
+    private suspend fun askSheriffWithdraw(
+        table: WerewolfTable,
+        seat: Int,
+    ): StructuredOutcome<WithdrawChoice> {
+        val game = table.game
+        return ask(
+            table = table,
+            seat = seat,
+            spec = WerewolfDecisions.withdraw(game, seat),
+            fallback = { WithdrawChoice(withdraw = false, reason = "我还想再争一下。") },
+            task = "请决定要不要退水。",
         )
     }
 

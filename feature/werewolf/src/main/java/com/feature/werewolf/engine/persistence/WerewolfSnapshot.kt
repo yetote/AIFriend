@@ -83,8 +83,11 @@ object WerewolfSnapshot {
      * 事件多出 `SHERIFF_POSTPONED`（警徽顺延）。默认 0 / 读不到就是旧行为。
      * 同一版里 `SPEECH_DIRECTION` 的取值从「顺时针 / 逆时针」换成
      * 「警左 / 警右 / 死左 / 死右」——解码走 [SpeechDirection.ofLabel]，旧名字照样认。
+     *
+     * v23：事件多出 `SHERIFF_WITHDRAWN`（竞选发言之后的退水）。没有任何字段变更，
+     * 旧档读出来就是「这一局没人退水」，行为不变。
      */
-    const val VERSION = 22
+    const val VERSION = 23
 
     private val json = Json {
         ignoreUnknownKeys = true   // 旧档多出来的字段不该让新版本读不出来
@@ -540,7 +543,16 @@ private fun GameEvent.toSnapshot(): EventSnapshot = when (this) {
     is GameEvent.SheriffSignup ->
         EventSnapshot(type = "SHERIFF_SIGNUP", day = day, seats = runners)
     is GameEvent.SheriffElected ->
-        EventSnapshot(type = "SHERIFF_ELECTED", day = day, seat = seat, voteCount = votes.toDouble())
+        EventSnapshot(
+            type = "SHERIFF_ELECTED",
+            day = day,
+            seat = seat,
+            voteCount = votes.toDouble(),
+            // 只有「不投票直接当选」时才用：退水之后只剩一个人，要跟「只有一个人上警」分开
+            reason = note,
+        )
+    is GameEvent.SheriffWithdrawn ->
+        EventSnapshot(type = "SHERIFF_WITHDRAWN", day = day, seats = seats)
     is GameEvent.SheriffVacant -> EventSnapshot(type = "SHERIFF_VACANT", day = day, reason = reason)
     is GameEvent.SheriffPostponed ->
         EventSnapshot(type = "SHERIFF_POSTPONED", day = day, seat = seat)
@@ -691,7 +703,9 @@ private fun EventSnapshot.toEvent(): GameEvent = when (type) {
         day = day,
         seat = requireNotNull(seat) { "SHERIFF_ELECTED 缺少 seat" },
         votes = voteCount?.toInt() ?: 0,
+        note = reason,
     )
+    "SHERIFF_WITHDRAWN" -> GameEvent.SheriffWithdrawn(day = day, seats = seats.orEmpty())
     "SHERIFF_VACANT" -> GameEvent.SheriffVacant(
         day = day,
         reason = reason ?: "警徽流失",

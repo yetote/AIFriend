@@ -77,6 +77,7 @@ fun UIWerewolfTableScreen(
     onSeat: (Int) -> Unit = {},
     onWitch: (heal: Boolean, poison: Int?) -> Unit = { _, _ -> },
     onDirection: (UIWerewolfDirection) -> Unit = {},
+    onWithdraw: (Boolean) -> Unit = {},
     onReview: (() -> Unit)? = null,
     /** 传 null 不画顶栏喇叭。正常对局朗读开关在设置面板里；复盘演出保留这个入口。 */
     onToggleSpeak: (() -> Unit)? = null,
@@ -279,6 +280,7 @@ fun UIWerewolfTableScreen(
                     onSeat = onSeat,
                     onWitch = onWitch,
                     onDirection = onDirection,
+                    onWithdraw = onWithdraw,
                     modifier = Modifier.pageInsetsBottom()
                 )
 

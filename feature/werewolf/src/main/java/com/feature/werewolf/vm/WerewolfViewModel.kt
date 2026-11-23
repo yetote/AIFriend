@@ -27,6 +27,7 @@ import com.feature.werewolf.decision.DirectionChoice
 import com.feature.werewolf.decision.SeatChoice
 import com.feature.werewolf.decision.VoteChoice
 import com.feature.werewolf.decision.WitchChoice
+import com.feature.werewolf.decision.WithdrawChoice
 import com.feature.werewolf.engine.EXPLODE_MARKER
 import com.feature.werewolf.engine.HumanSeatAI
 import com.feature.werewolf.engine.HumanTurn
@@ -1782,6 +1783,12 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
     fun submitDirection(direction: SpeechDirection) {
         if (humanTurn.value?.jsonMode != true) return
         human.submit(json.encodeToString(DirectionChoice(direction.displayName)))
+    }
+
+    /** 竞选发言之后的退水：退了就不再被投票，也没有警长票。 */
+    fun submitWithdraw(withdraw: Boolean) {
+        if (humanTurn.value?.jsonMode != true) return
+        human.submit(json.encodeToString(WithdrawChoice(withdraw)))
     }
 
     /**

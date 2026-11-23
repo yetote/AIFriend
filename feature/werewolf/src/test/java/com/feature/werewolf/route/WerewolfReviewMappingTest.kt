@@ -88,7 +88,11 @@ class WerewolfReviewMappingTest {
                 Phase.DAY_SHERIFF_SIGNUP ->
                     game.signUpSheriff(game.aliveSeats.filter { rng.nextBoolean() }.toSet())
 
-                Phase.DAY_SHERIFF_SPEECH -> game.beginSheriffVote()
+                // 发言之后过一遍退水：退水是公开动作，复盘要能摊开谁退了
+                Phase.DAY_SHERIFF_SPEECH -> game.beginSheriffWithdraw()
+
+                Phase.DAY_SHERIFF_WITHDRAW ->
+                    game.withdrawSheriff(game.sheriffCandidates.filter { rng.nextBoolean() }.toSet())
 
                 Phase.DAY_SHERIFF_VOTE -> {
                     val candidates = game.sheriffCandidates

@@ -7,6 +7,7 @@ import com.feature.werewolf.game.WerewolfRole.WEREWOLF
 import com.feature.werewolf.game.WerewolfRole.WITCH
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -198,6 +199,77 @@ class WerewolfSheriffTest {
         val after = mode.beginSheriffVote().castSheriffVotes(emptyMap())
         assertNull(after.sheriffSeat)
         assertTrue(after.history.any { it is GameEvent.SheriffVacant })
+    }
+
+    // ------------------------------------------------------------------
+    // 退水
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `退水的人不再被投票，也没有警长票`() {
+        // 三个人上警，7 号退水：还剩两个人，所以照常投票
+        val stage = atSignup().signUpSheriff(setOf(1, 4, 7)).beginSheriffWithdraw()
+        assertEquals(Phase.DAY_SHERIFF_WITHDRAW, stage.phase)
+
+        val after = stage.withdrawSheriff(setOf(7))
+
+        assertEquals(Phase.DAY_SHERIFF_VOTE, after.phase)
+        assertEquals("7 号退出竞选，不再是候选", listOf(1, 4), after.sheriffCandidates)
+        // 退水不等于把票拿回来：7 号上过警，仍然不投
+        assertEquals(listOf(2, 3, 5, 6, 8, 9), after.sheriffVoteVoters)
+        assertEquals(
+            "退水要记进公开事件",
+            listOf(7),
+            after.history.filterIsInstance<GameEvent.SheriffWithdrawn>().single().seats,
+        )
+
+        // 票投给退水的人要拦下来：他已经不在候选里了
+        assertThrows(IllegalArgumentException::class.java) {
+            after.castSheriffVotes(
+                mapOf(2 to 7, 3 to 1, 5 to 1, 6 to 1, 8 to 4, 9 to 4),
+            )
+        }
+    }
+
+    @Test
+    fun `全员退水就没有警长`() {
+        val after = atSignup().signUpSheriff(setOf(1, 4)).beginSheriffWithdraw()
+            .withdrawSheriff(setOf(1, 4))
+
+        assertNull(after.sheriffSeat)
+        assertTrue(after.sheriffElectionDone)
+        assertEquals(Phase.DAY_DISCUSSION, after.phase)
+        assertTrue(
+            "要写明是因为全员退水",
+            after.history.filterIsInstance<GameEvent.SheriffVacant>().single().reason.contains("退水"),
+        )
+    }
+
+    @Test
+    fun `只剩一个人不退时直接当选，不用投票`() {
+        val after = atSignup().signUpSheriff(setOf(1, 4)).beginSheriffWithdraw()
+            .withdrawSheriff(setOf(1))
+
+        assertEquals(4, after.sheriffSeat)
+        assertEquals(Phase.DAY_DISCUSSION, after.phase)
+        val elected = after.history.filterIsInstance<GameEvent.SheriffElected>().single()
+        assertEquals(0, elected.votes)
+        assertNotNull("要说明是别人退水了，而不是只有他上警", elected.note)
+    }
+
+    @Test
+    fun `只能退自己的警，PK 轮不再退水`() {
+        val stage = atSignup().signUpSheriff(setOf(1, 4)).beginSheriffWithdraw()
+        assertThrows(IllegalArgumentException::class.java) {
+            stage.withdrawSheriff(setOf(7))
+        }
+
+        // PK 轮发言结束后直接投票：那轮的候选人是投票选出来的，再退水等于让票白投
+        val tie = stage.withdrawSheriff(emptySet()).castSheriffVotes(
+            mapOf(2 to 4, 3 to 4, 5 to 4, 6 to 1, 7 to 1, 8 to 1, 9 to null),
+        )
+        assertEquals(Phase.DAY_SHERIFF_SPEECH, tie.phase)
+        assertEquals(Phase.DAY_SHERIFF_VOTE, tie.beginSheriffWithdraw().phase)
     }
 
     // ------------------------------------------------------------------

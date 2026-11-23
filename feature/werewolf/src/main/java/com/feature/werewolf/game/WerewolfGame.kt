@@ -808,10 +808,59 @@ data class WerewolfGame(
         }
     }
 
-    /** 竞选发言结束，开始警下投票。 */
+    /**
+     * 竞选发言结束，进入退水。
+     *
+     * 平票 PK 之后不再退水，直接投票——那一轮的候选人是投票选出来的，
+     * 再给一次退水等于让前面那轮票白投。
+     */
+    fun beginSheriffWithdraw(): WerewolfGame {
+        require(phase == Phase.DAY_SHERIFF_SPEECH) { "当前不是竞选发言阶段：$phase" }
+        return copy(
+            phase = if (sheriffRound <= 1) Phase.DAY_SHERIFF_WITHDRAW else Phase.DAY_SHERIFF_VOTE,
+        )
+    }
+
+    /** 竞选发言结束（PK 轮），直接进入警下投票。 */
     fun beginSheriffVote(): WerewolfGame {
         require(phase == Phase.DAY_SHERIFF_SPEECH) { "当前不是竞选发言阶段：$phase" }
         return copy(phase = Phase.DAY_SHERIFF_VOTE)
+    }
+
+    /**
+     * 退水：候选人在竞选发言之后放弃竞选。
+     *
+     * 退水的人**从候选里摘掉**（不再被投票），但 [sheriffRunners] 不动——
+     * 「上过警的人没有警长票」这条照样管着他，退了也不会把票拿回来。
+     *
+     * 三种结局一次分开，编排层不用自己判断：
+     * - 全员退水 → 本局没有警长（和「无人上警」同一个结局）；
+     * - 只剩一个人 → 直接当选，不必投票；
+     * - 其余 → 进警下投票。
+     */
+    fun withdrawSheriff(withdrawn: Set<Int>): WerewolfGame {
+        require(phase == Phase.DAY_SHERIFF_WITHDRAW) { "当前不是退水阶段：$phase" }
+        require(withdrawn.all { it in sheriffCandidates }) {
+            "退水的人必须还在候选名单里：$withdrawn，候选是 $sheriffCandidates"
+        }
+        val remaining = sheriffCandidates.filterNot { it in withdrawn }
+        var next = copy(sheriffCandidates = remaining)
+        if (withdrawn.isNotEmpty()) {
+            next = next.copy(
+                history = next.history + GameEvent.SheriffWithdrawn(day, withdrawn.sorted()),
+            )
+        }
+        return when (remaining.size) {
+            0 -> next.copy(
+                sheriffElectionDone = true,
+                history = next.history + GameEvent.SheriffVacant(day, "全员退水，无人当选"),
+            ).afterSheriffElection()
+
+            // 一个不退的人直接当选：投也只有他一个，走一遍投票只是拖时间
+            1 -> next.electSheriff(remaining.first(), votes = 0, note = "其余候选人都退水了")
+
+            else -> next.copy(phase = Phase.DAY_SHERIFF_VOTE)
+        }
     }
 
     /**
@@ -1346,12 +1395,12 @@ data class WerewolfGame(
         )
     }
 
-    private fun electSheriff(seat: Int, votes: Int): WerewolfGame = copy(
+    private fun electSheriff(seat: Int, votes: Int, note: String? = null): WerewolfGame = copy(
         sheriffSeat = seat,
         sheriffCandidates = emptyList(),
         sheriffRunners = emptyList(),
         sheriffElectionDone = true,
-        history = history + GameEvent.SheriffElected(day, seat, votes),
+        history = history + GameEvent.SheriffElected(day, seat, votes, note),
     ).afterSheriffElection()
 
     /**

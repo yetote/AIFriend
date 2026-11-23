@@ -115,12 +115,13 @@ object ReplayTimeline {
         Phase.NIGHT_WITCH -> 4
         Phase.DAY_SHERIFF_SIGNUP -> 10
         Phase.DAY_SHERIFF_SPEECH -> 11
-        Phase.DAY_SHERIFF_VOTE -> 12
-        Phase.DAY_DISCUSSION -> 13
-        Phase.DAY_VOTE -> 14
-        Phase.DAY_LAST_WORDS -> 15
-        Phase.HUNTER_SHOOT -> 16
-        Phase.FINISHED -> 17
+        Phase.DAY_SHERIFF_WITHDRAW -> 12
+        Phase.DAY_SHERIFF_VOTE -> 13
+        Phase.DAY_DISCUSSION -> 14
+        Phase.DAY_VOTE -> 15
+        Phase.DAY_LAST_WORDS -> 16
+        Phase.HUNTER_SHOOT -> 17
+        Phase.FINISHED -> 18
     }
 
     /**
@@ -134,13 +135,13 @@ object ReplayTimeline {
         is GameEvent.Dawn, is GameEvent.BearRoar -> 9
         is GameEvent.SheriffSignup -> 10
         is GameEvent.SheriffPk, is GameEvent.SheriffElected, is GameEvent.SheriffVacant,
-        is GameEvent.SheriffPostponed -> 12
-        // 警长定方向发生在讨论发言之前，和讨论同段（13），排在当轮发言记录前面
-        is GameEvent.SpeechDirectionChosen -> 13
+        is GameEvent.SheriffPostponed, is GameEvent.SheriffWithdrawn -> 13
+        // 警长定方向发生在讨论发言之前，和讨论同段（14），排在当轮发言记录前面
+        is GameEvent.SpeechDirectionChosen -> 14
         is GameEvent.WolfExploded, is GameEvent.Exiled,
-        is GameEvent.NoExile, is GameEvent.IdiotRevealed -> 14
-        is GameEvent.SheriffBadgePassed -> 15
-        is GameEvent.HunterShot -> 16
-        is GameEvent.GameOver -> 17
+        is GameEvent.NoExile, is GameEvent.IdiotRevealed -> 15
+        is GameEvent.SheriffBadgePassed -> 16
+        is GameEvent.HunterShot -> 17
+        is GameEvent.GameOver -> 18
     }
 }

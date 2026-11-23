@@ -346,11 +346,14 @@ object WerewolfPrompt {
 
         is GameEvent.SheriffSignup -> "上警的是 ${seatsText(event.runners)}"
 
-        is GameEvent.SheriffElected -> if (event.votes <= 0) {
-            "${event.seat} 号自动当选警长"
-        } else {
-            "${event.seat} 号当选警长（${event.votes} 票）"
+        is GameEvent.SheriffElected -> when {
+            event.votes > 0 -> "${event.seat} 号当选警长（${event.votes} 票）"
+            // 退水之后只剩一个人，和「只有一个人上警」是两件事，摘要里要分开
+            event.note != null -> "${event.seat} 号自动当选警长（${event.note}）"
+            else -> "${event.seat} 号自动当选警长"
         }
+
+        is GameEvent.SheriffWithdrawn -> "${seatsText(event.seats)}退水，退出竞选"
 
         is GameEvent.SheriffVacant -> "没有警长（${event.reason}）"
 
@@ -371,7 +374,7 @@ object WerewolfPrompt {
 
     private val Phase.isSheriffPhase: Boolean
         get() = this == Phase.DAY_SHERIFF_SIGNUP || this == Phase.DAY_SHERIFF_SPEECH ||
-            this == Phase.DAY_SHERIFF_VOTE
+            this == Phase.DAY_SHERIFF_WITHDRAW || this == Phase.DAY_SHERIFF_VOTE
 
     /**
      * 把一条公开事件写成一句话。
@@ -416,11 +419,14 @@ object WerewolfPrompt {
         is GameEvent.SheriffSignup ->
             "第${event.day}天：上警的是 ${seatsText(event.runners)}"
 
-        is GameEvent.SheriffElected -> if (event.votes <= 0) {
-            "第${event.day}天：只有 ${event.seat} 号上警，自动当选警长"
-        } else {
-            "第${event.day}天：${event.seat} 号当选警长（${event.votes} 票）"
+        is GameEvent.SheriffElected -> when {
+            event.votes > 0 -> "第${event.day}天：${event.seat} 号当选警长（${event.votes} 票）"
+            event.note != null -> "第${event.day}天：${event.note}，${event.seat} 号自动当选警长"
+            else -> "第${event.day}天：只有 ${event.seat} 号上警，自动当选警长"
         }
+
+        is GameEvent.SheriffWithdrawn ->
+            "第${event.day}天：${seatsText(event.seats)}退水，退出竞选"
 
         is GameEvent.SheriffVacant ->
             "第${event.day}天：本局没有警长（${event.reason}）"

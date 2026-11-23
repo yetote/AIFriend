@@ -85,6 +85,7 @@ data class WerewolfProgress(
             Phase.NIGHT_WITCH -> "女巫用药"
             Phase.DAY_SHERIFF_SIGNUP -> "上警"
             Phase.DAY_SHERIFF_SPEECH -> "竞选发言"
+            Phase.DAY_SHERIFF_WITHDRAW -> "退水"
             Phase.DAY_SHERIFF_VOTE -> "警长投票"
             Phase.DAY_DISCUSSION -> "发言"
             Phase.DAY_VOTE -> "投票"

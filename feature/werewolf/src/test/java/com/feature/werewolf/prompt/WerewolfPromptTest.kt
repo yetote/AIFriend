@@ -533,6 +533,33 @@ class WerewolfPromptTest {
     }
 
     @Test
+    fun `规则写明竞选发言之后有退水`() {
+        val roles = listOf(
+            WerewolfRole.WEREWOLF, WerewolfRole.WEREWOLF, WerewolfRole.WEREWOLF,
+            WerewolfRole.SEER, WerewolfRole.WITCH, WerewolfRole.HUNTER,
+            WerewolfRole.VILLAGER, WerewolfRole.VILLAGER, WerewolfRole.VILLAGER,
+        )
+        val game = WerewolfGame.withRoles(
+            config = WerewolfConfig(
+                composition = roles.groupingBy { it }.eachCount(),
+                hasSheriff = true,
+                maxVoteRounds = 2,
+            ),
+            roster = roster(9),
+            roles = roles,
+        ).copy(phase = Phase.DAY_SHERIFF_SPEECH)
+
+        // 退水是硬规则：退了不再被投票、也没有票，全员退水就没有警长。
+        // 自由式同样吃这份 rulesBrief
+        val free = WerewolfPrompt.systemPrompt(game, seat = 1, style = WerewolfPromptStyle.FREE)
+
+        assertTrue("要点名退水这一步", free.contains("退水"))
+        assertTrue("退水的人不再被投票", free.contains("退水的人不再被投票"))
+        assertTrue("全员退水就没有警长", free.contains("所有候选人都退水"))
+        assertTrue("只剩一个人不退就直接当选", free.contains("直接当选"))
+    }
+
+    @Test
     fun `自爆提示只写给狼 受理条件是标记本身`() {
         val day = standardGame().copy(phase = Phase.DAY_DISCUSSION)
 

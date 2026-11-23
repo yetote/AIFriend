@@ -601,6 +601,7 @@ fun WerewolfRoute(
                     onDirection = { direction ->
                         viewModel.submitDirection(SpeechDirection.valueOf(direction.name))
                     },
+                    onWithdraw = viewModel::submitWithdraw,
                     onReview = if (review != null) ({ showReview = true }) else null,
                     // 不传 onToggleSpeak：对局的朗读开关收进设置面板（「朗读发言」那一行），
                     // 顶栏不再放喇叭。面板的开关打开时同样会重试绑定引擎，恢复入口没丢。

@@ -63,6 +63,19 @@ data class ExplodeChoice(
 )
 
 /**
+ * 竞选发言之后的退水：要不要放弃竞选。
+ *
+ * 兜底永远是不退水——退了就再也拿不到这个警徽，而「没想清楚」不该被当成让位。
+ * [reason] 只留在复盘里，牌桌上只会出现一句「我退水。」/「我不退水。」：
+ * 真正的原因常常是「我在给队友让位」，说出来等于把狼队供出去。
+ */
+@Serializable
+data class WithdrawChoice(
+    val withdraw: Boolean = false,
+    val reason: String = "",
+)
+
+/**
  * 各个阶段的结构化决策规格。
  *
  * 每个规格都把「合法目标」**明写进 instruction**，并在 `validate` 里再查一遍。
@@ -243,6 +256,35 @@ object WerewolfDecisions {
                 "reason 留空字符串。",
             serializer = VoteChoice.serializer(),
             validate = { it.target == null || it.target == seat },
+        )
+    }
+
+    /**
+     * 退水：竞选发言说完了，要不要放弃竞选。
+     *
+     * 必须把三件事写清楚，模型不会自己推出来：
+     * 退了就**不再被投票**、也**没有警长票**（上过警的人本来就不投）；
+     * 剩下的候选还有谁；如果只剩一个人不退，他直接当选。
+     *
+     * 兜底是不退水（[WithdrawChoice] 的默认值）——
+     * 「想不清楚」不该被当成让位，让位是有成本的。
+     */
+    fun withdraw(game: WerewolfGame, seat: Int): StructuredSpec<WithdrawChoice> {
+        val remaining = game.sheriffCandidates.filter { it != seat }
+        // 「退了会怎样」按警上还剩几个人给：一个人时退水就是白送警徽，得说清楚
+        val stakes = if (remaining.isEmpty()) {
+            "警上只剩你一个，你一退水本局就没有警长。"
+        } else {
+            "现在除了你以外，还在竞选的是 ${list(remaining)}；" +
+                "他们如果全都退水，你直接当选。"
+        }
+        return StructuredSpec(
+            instruction = "输出 {\"withdraw\": true 或 false, \"reason\": \"一句话理由\"}。" +
+                "竞选发言已经说完，现在问你要不要**退水**（放弃竞选）。" +
+                "退水的人不再被投票，也不会有警长票——上过警的人本来就不投票，退了也拿不回来。" +
+                stakes + INNER_REASON_HINT,
+            serializer = WithdrawChoice.serializer(),
+            validate = { true },
         )
     }
 

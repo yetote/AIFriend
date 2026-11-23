@@ -196,6 +196,9 @@ enum class UIWerewolfTurnKind {
 
     /** 警长选发言顺序（警左 / 警右 / 死左 / 死右），四个按钮，没有目标可选。 */
     DIRECTION,
+
+    /** 竞选发言之后的退水：退 / 不退，两个按钮。 */
+    WITHDRAW,
 }
 
 data class UIWerewolfTarget(

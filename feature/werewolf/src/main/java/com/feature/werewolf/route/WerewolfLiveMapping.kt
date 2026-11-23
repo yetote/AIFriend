@@ -105,7 +105,7 @@ internal fun WerewolfUiState.toLive(
         ?.takeIf { onStage }
         ?.takeIf { seat -> actorVisible(seat, progress.phase) }
 
-    // 并发阶段（投票、上警报名）正在请求的是**一批**座位，不是一个。
+    // 并发阶段（投票、上警报名、退水）正在请求的是**一批**座位，不是一个。
     // 白天亮出来是有用的——「他们几个正在投票」一眼就懂；
     // 夜里绝不能亮：夜里谁在动就等于把身份摊给好人看（见上面 actorVisible 的注释）。
     val busySeats = progress?.seats

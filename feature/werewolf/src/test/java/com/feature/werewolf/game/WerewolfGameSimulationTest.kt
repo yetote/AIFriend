@@ -179,7 +179,11 @@ class WerewolfGameSimulationTest {
         Phase.DAY_SHERIFF_SIGNUP ->
             game.signUpSheriff(game.aliveSeats.filter { rng.nextInt(3) == 0 }.toSet())
 
-        Phase.DAY_SHERIFF_SPEECH -> game.beginSheriffVote()
+        // 发言之后必须过退水这一步：随机退掉一部分，剩下的才是候选人
+        Phase.DAY_SHERIFF_SPEECH -> game.beginSheriffWithdraw()
+
+        Phase.DAY_SHERIFF_WITHDRAW ->
+            game.withdrawSheriff(game.sheriffCandidates.filter { rng.nextInt(4) == 0 }.toSet())
 
         Phase.DAY_SHERIFF_VOTE -> {
             val candidates = game.sheriffCandidates

@@ -58,11 +58,20 @@ internal fun buildTurn(
             hint = "警下的人会按这几句投票",
         )
 
+        Phase.DAY_SHERIFF_WITHDRAW -> UIWerewolfTurn(
+            kind = UIWerewolfTurnKind.WITHDRAW,
+            seat = humanSeat,
+            title = "要不要退水",
+            // 退水的两种代价必须写清楚：不再被投票，也没有票。
+            // 只写「放弃竞选」的话，玩家会以为只是不争了、票还在
+            hint = "退了这局就拿不到警徽，也不会有警长票（上过警本来就不投）",
+        )
+
         Phase.DAY_SHERIFF_VOTE -> UIWerewolfTurn(
             kind = UIWerewolfTurnKind.VOTE,
             seat = humanSeat,
             title = "投票选警长",
-            hint = if (game.sheriffRound > 1) "PK 后重投" else "只能投上警的人",
+            hint = if (game.sheriffRound > 1) "PK 后重投" else "只能投还在竞选的人（退水的不算）",
             targets = others.filter { it.seat in game.sheriffCandidates },
             canAbstain = true,
         )

@@ -73,6 +73,7 @@ internal fun TurnPanel(
     onSeat: (Int) -> Unit,
     onWitch: (Boolean, Int?) -> Unit,
     onDirection: (UIWerewolfDirection) -> Unit = {},
+    onWithdraw: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -137,6 +138,11 @@ internal fun TurnPanel(
                 dimColor = dimColor,
                 hasDawnDeath = turn.hasDawnDeath,
                 onPick = onDirection
+            )
+
+            UIWerewolfTurnKind.WITHDRAW -> WithdrawRow(
+                textColor = textColor,
+                onPick = onWithdraw
             )
         }
     }
@@ -241,6 +247,40 @@ internal fun TargetRow(
                     .padding(horizontal = 14.dp, vertical = 8.dp),
                 fontSize = FsAction,
                 color = dimColor
+            )
+        }
+    }
+}
+
+/** 竞选发言之后的退水：两个按钮，没有别的可选项。 */
+@Composable
+internal fun WithdrawRow(
+    textColor: Color,
+    onPick: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        // 不退水放前面、用高亮色：那是默认动作，退水是要付代价的那一个
+        listOf(false to "不退水", true to "退水").forEach { (withdraw, label) ->
+            Text(
+                text = label,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    // background 的 Color / Brush 是两个重载，混在一个 if 里会挑不出来
+                    .background(
+                        if (withdraw) {
+                            Brush.linearGradient(listOf(UIFieldFill, UIFieldFill))
+                        } else {
+                            UIActionBrush
+                        }
+                    )
+                    .clickable { onPick(withdraw) }
+                    .padding(horizontal = 16.dp, vertical = 9.dp),
+                fontSize = FsAction,
+                fontWeight = if (!withdraw) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (!withdraw) Color.White else textColor
             )
         }
     }

@@ -47,6 +47,14 @@ enum class Phase(val displayName: String) {
     /** 候选人依次发表竞选发言。平票 PK 时也回到这个阶段，只是候选人收窄了。 */
     DAY_SHERIFF_SPEECH("竞选发言"),
 
+    /**
+     * 退水：竞选发言说完之后，候选人可以放弃竞选。
+     *
+     * 只在第一轮出现。平票 PK 之后再退水等于让投票白投，规则上不这么做——
+     * 那一轮 [DAY_SHERIFF_SPEECH] 结束直接进投票。
+     */
+    DAY_SHERIFF_WITHDRAW("退水"),
+
     /** 警下投票选警长。上警的人不投票。 */
     DAY_SHERIFF_VOTE("警长投票"),
 
