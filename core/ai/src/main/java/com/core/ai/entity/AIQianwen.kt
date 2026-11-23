@@ -37,4 +37,12 @@ class AIQianwen : OfficialAI(
         enableThinking: Boolean
     ): ChatCompletionRequest =
         if (enableThinking) this else copy(enableThinking = false)
+
+    /** 千问只认 `enable_search`；`web_search_options` 在它这里是「不支持，请改用 enable_search」。 */
+    override val supportsWebSearch: Boolean get() = true
+
+    override fun ChatCompletionRequest.applyWebSearch(
+        webSearch: Boolean
+    ): ChatCompletionRequest =
+        if (webSearch) copy(enableSearch = true) else this
 }

@@ -57,6 +57,7 @@ class StructuredChatTest {
             systemPrompt: String?,
             enableThinking: Boolean,
             jsonMode: Boolean,
+            webSearch: Boolean,
         ): String {
             calls += Call(messages, systemPrompt, jsonMode)
             return replies.getOrNull(calls.lastIndex)
@@ -92,6 +93,7 @@ class StructuredChatTest {
             systemPrompt: String?,
             enableThinking: Boolean,
             jsonMode: Boolean,
+            webSearch: Boolean,
         ): String {
             chatCalls++
             return content
@@ -103,6 +105,7 @@ class StructuredChatTest {
             systemPrompt: String?,
             enableThinking: Boolean,
             jsonMode: Boolean,
+            webSearch: Boolean,
         ): Flow<ChatDelta> = flow {
             streamCalls++
             reasoningPieces.forEach { emit(ChatDelta(content = "", reasoning = it)) }
@@ -176,6 +179,7 @@ class StructuredChatTest {
             systemPrompt: String?,
             enableThinking: Boolean,
             jsonMode: Boolean,
+            webSearch: Boolean,
         ): String {
             calls++
             thinkingFlags += enableThinking
@@ -223,6 +227,7 @@ class StructuredChatTest {
                 systemPrompt: String?,
                 enableThinking: Boolean,
                 jsonMode: Boolean,
+                webSearch: Boolean,
             ): String {
                 calls++
                 if (calls == 1) throw java.net.SocketTimeoutException("第一次超时")
@@ -270,6 +275,7 @@ class StructuredChatTest {
                 systemPrompt: String?,
                 enableThinking: Boolean,
                 jsonMode: Boolean,
+                webSearch: Boolean,
             ): String = throw IllegalStateException("Key 无效")
 
             @Deprecated("测试用不到")
@@ -429,5 +435,66 @@ class StructuredChatTest {
         assertThrows(IllegalArgumentException::class.java) {
             runBlocking { ai.decide(userMessage, "m", spec, fallback = { VoteDecision(1) }, maxAttempts = 0) }
         }
+    }
+
+    // ------------------------------------------------------------------
+    // 联网
+    // ------------------------------------------------------------------
+
+    /**
+     * 声称支持联网、但一开搜索就 400 的假厂商。
+     *
+     * 真实场景：联网 + `response_format=json_object` 在部分厂商那里互斥——
+     * 服务端要先跑一轮搜索工具，JSON 约束在那一轮不保证生效，干脆报错。
+     */
+    private class SearchBreakingAI(
+        override val supportsWebSearch: Boolean = true,
+    ) : IAI {
+        val searchFlags = mutableListOf<Boolean>()
+
+        override suspend fun requestModel() = Unit
+        override var modelSet: MutableSet<String> = mutableSetOf()
+        override var brandName: String = "测试厂商"
+        override var company: String = "测试"
+
+        override suspend fun chat(
+            messages: List<ChatMessage>,
+            model: String,
+            systemPrompt: String?,
+            enableThinking: Boolean,
+            jsonMode: Boolean,
+            webSearch: Boolean,
+        ): String {
+            searchFlags += webSearch
+            if (webSearch) throw IllegalStateException("web_search_options 与 response_format 不能同时使用")
+            return """{"target":5}"""
+        }
+
+        @Deprecated("测试用不到")
+        override suspend fun chat(message: String, model: String): String =
+            chat(listOf(ChatMessage.user(message)), model)
+    }
+
+    @Test
+    fun `搜索把请求弄挂时摘掉搜索再问一次`() = runBlocking {
+        val ai = SearchBreakingAI()
+
+        val outcome = ai.decide(userMessage, "m", spec, fallback = { VoteDecision(1) }, webSearch = true)
+
+        assertEquals("第二次拿到了答案", 5, outcome.value.target)
+        assertFalse("不该落到兜底", outcome.usedFallback)
+        assertEquals("第一次带搜索、第二次摘掉", listOf(true, false), ai.searchFlags)
+    }
+
+    @Test
+    fun `厂商不支持联网时一次都不会带搜索`() = runBlocking {
+        val ai = SearchBreakingAI(supportsWebSearch = false)
+
+        val outcome = ai.decide(userMessage, "m", spec, fallback = { VoteDecision(1) }, webSearch = true)
+
+        assertEquals(5, outcome.value.target)
+        // 关键：不是「试一次失败再降级」，而是**压根不发**——不支持的厂商收到未知字段
+        // 可能 400，也可能是静默忽略，两种都不该发生
+        assertEquals(listOf(false), ai.searchFlags)
     }
 }

@@ -4,6 +4,8 @@ import com.core.ai.model.ChatCompletionRequest
 import com.core.ai.model.ThinkingConfig
 import com.core.ai.model.ZhipuModelResponse
 import com.core.ai.model.toChatModelIds
+import com.core.ai.model.ServerTool
+import com.core.ai.model.ServerToolConfig
 import com.core.common.GlobalErrorHandler.handleCoreError
 import com.core.repository.WebRepository
 
@@ -45,4 +47,28 @@ class AIZhipu : OfficialAI(
             copy(thinking = ThinkingConfig("disabled"))
         }
     }
+
+    /**
+     * 智谱用 `tools[].web_search`，不是开关字段。
+     *
+     * 必须带 `search_result: true`：官方说法是不开它回复里不带引用，
+     * 搜到的东西模型用了却看不出出处，排查「到底搜没搜」时完全没有线索。
+     */
+    override val supportsWebSearch: Boolean get() = true
+
+    override fun ChatCompletionRequest.applyWebSearch(
+        webSearch: Boolean
+    ): ChatCompletionRequest =
+        if (webSearch) {
+            copy(
+                tools = listOf(
+                    ServerTool(
+                        type = "web_search",
+                        webSearch = ServerToolConfig(enable = true, searchResult = true),
+                    )
+                )
+            )
+        } else {
+            this
+        }
 }

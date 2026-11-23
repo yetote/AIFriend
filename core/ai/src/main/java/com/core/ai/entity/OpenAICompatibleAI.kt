@@ -12,6 +12,7 @@ import com.core.ai.model.ResponseFormat
 import com.core.ai.model.StreamOptions
 import com.core.ai.model.TokenCounter
 import com.core.ai.model.TokenUsage
+import com.core.ai.model.WebSearchOptions
 import com.core.repository.ApiConfig
 import com.core.repository.WebRepository
 import kotlinx.coroutines.CancellationException
@@ -40,8 +41,9 @@ abstract class OpenAICompatibleAI(
         model: String,
         systemPrompt: String?,
         enableThinking: Boolean,
-        jsonMode: Boolean
-    ): String = rawChat(messages, model, systemPrompt, enableThinking, jsonMode).let { response ->
+        jsonMode: Boolean,
+        webSearch: Boolean
+    ): String = rawChat(messages, model, systemPrompt, enableThinking, jsonMode, webSearch).let { response ->
         val content = response.choices.firstOrNull()?.message?.content
         content?.takeIf { it.isNotBlank() }
             ?: throw IllegalStateException("模型没有返回内容，请重试")
@@ -52,9 +54,10 @@ abstract class OpenAICompatibleAI(
         model: String,
         systemPrompt: String?,
         enableThinking: Boolean,
-        jsonMode: Boolean
+        jsonMode: Boolean,
+        webSearch: Boolean
     ): ChatReply {
-        val response = rawChat(messages, model, systemPrompt, enableThinking, jsonMode)
+        val response = rawChat(messages, model, systemPrompt, enableThinking, jsonMode, webSearch)
         val text = response.choices.firstOrNull()?.message?.content
             ?.takeIf { it.isNotBlank() }
             ?: throw IllegalStateException("模型没有返回内容，请重试")
@@ -71,9 +74,12 @@ abstract class OpenAICompatibleAI(
         model: String,
         systemPrompt: String?,
         enableThinking: Boolean,
-        jsonMode: Boolean
+        jsonMode: Boolean,
+        webSearch: Boolean
     ): ChatCompletionResponse {
-        val request = buildRequest(messages, model, systemPrompt, enableThinking, jsonMode, stream = false)
+        val request = buildRequest(
+            messages, model, systemPrompt, enableThinking, jsonMode, webSearch, stream = false,
+        )
         return WebRepository.instance
             .chat<ChatCompletionResponse>(config = config, body = request)
             .getOrElse { throw it }
@@ -95,9 +101,12 @@ abstract class OpenAICompatibleAI(
         model: String,
         systemPrompt: String?,
         enableThinking: Boolean,
-        jsonMode: Boolean
+        jsonMode: Boolean,
+        webSearch: Boolean
     ): Flow<ChatDelta> = channelFlow {
-        val request = buildRequest(messages, model, systemPrompt, enableThinking, jsonMode, stream = true)
+        val request = buildRequest(
+            messages, model, systemPrompt, enableThinking, jsonMode, webSearch, stream = true,
+        )
             // 让服务端在最后一帧带 usage；不支持这个字段的服务会 400，
             // 下面的降级分支会改用非流式请求，那时照样能拿到用量。
             .copy(streamOptions = StreamOptions(includeUsage = true))
@@ -140,7 +149,16 @@ abstract class OpenAICompatibleAI(
                 // 于是每个座位都卡在同一个超时上反复浪费时间。
                 val degradedByTimeout = failure.isTimeoutLike()
                 val retryThinking = if (degradedByTimeout) false else enableThinking
-                val reply = chatWithUsage(messages, model, systemPrompt, retryThinking, jsonMode)
+                // 流式 + 联网的组合比一次性更脆（有的厂商在服务端搜索期间直接断流或 400）。
+                // 带搜索再失败一次就把搜索摘掉重试：少查一次远好过整段发言失败——
+                // 发言失败会在这张牌上留下一个空回合，用户看到的是「它突然不说话了」。
+                val reply = runCatching {
+                    chatWithUsage(messages, model, systemPrompt, retryThinking, jsonMode, webSearch)
+                }.getOrElse { error ->
+                    if (error is CancellationException) throw error
+                    if (!webSearch) throw error
+                    chatWithUsage(messages, model, systemPrompt, retryThinking, jsonMode, webSearch = false)
+                }
                 send(
                     ChatDelta(
                         content = reply.text,
@@ -157,13 +175,19 @@ abstract class OpenAICompatibleAI(
         if (!hasContent) throw IllegalStateException("模型没有返回内容，请重试")
     }
 
-    /** 一次性请求和流式请求的报文只差 `stream` 一个字段，其余构造逻辑必须一致。 */
-    private fun buildRequest(
+    /**
+     * 一次性请求和流式请求的报文只差 `stream` 一个字段，其余构造逻辑必须一致。
+     *
+     * internal 而不是 private：单测要核对「每家厂商的联网字段有没有写对」——
+     * 这个字段写错既可能 400，也可能静默不搜，靠肉眼核对报文没有别的办法。
+     */
+    internal fun buildRequest(
         messages: List<ChatMessage>,
         model: String,
         systemPrompt: String?,
         enableThinking: Boolean,
         jsonMode: Boolean,
+        webSearch: Boolean,
         stream: Boolean,
     ): ChatCompletionRequest = ChatCompletionRequest(
         model = model,
@@ -173,6 +197,8 @@ abstract class OpenAICompatibleAI(
         .applyThinking(enableThinking)
         // 厂商不支持就当作没开，宁可让模型自由发挥，也不要一个 400 把整轮对话打断
         .applyJsonMode(jsonMode && supportsJsonMode)
+        // 联网同理：不支持的厂商**一个字节都不加**，避免「以为开了其实没搜」
+        .applyWebSearch(webSearch && supportsWebSearch)
 
     /** 请求里真正发出去的消息（含 system），估算输入 token 时也用它。 */
     private fun apiMessages(
@@ -200,12 +226,28 @@ abstract class OpenAICompatibleAI(
     ): ChatCompletionRequest =
         if (jsonMode) copy(responseFormat = ResponseFormat(ResponseFormat.JSON_OBJECT)) else this
 
+    /**
+     * 加上联网搜索开关。默认走豆包那套 `web_search_options: {}`。
+     *
+     * 子类用别的字段就必须覆盖这里——**参数名不能跨厂商复用**：
+     * 千问只认 `enable_search`，混元只认 `enable_web_search`，
+     * 智谱要用 `tools[].web_search`，而豆包文档明确说 `tools` 和
+     * `web_search_options` 同时出现时搜索不生效。传错字段的后果是
+     * 400 或静默不搜，两种都比「开不了」更难排查。
+     */
+    protected open fun ChatCompletionRequest.applyWebSearch(
+        webSearch: Boolean
+    ): ChatCompletionRequest =
+        if (webSearch) copy(webSearchOptions = WebSearchOptions()) else this
+
     @Deprecated("改用 chat(messages, model, systemPrompt, enableThinking)")
     override suspend fun chat(message: String, model: String): String =
         chat(
             messages = listOf(ChatMessage.user(message)),
             model = model,
             systemPrompt = null,
-            enableThinking = true
+            enableThinking = true,
+            jsonMode = false,
+            webSearch = false,
         )
 }

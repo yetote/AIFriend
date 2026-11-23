@@ -37,6 +37,60 @@ data class ChatCompletionRequest(
      */
     @SerialName("stream_options")
     val streamOptions: StreamOptions? = null,
+    /**
+     * 联网搜索开关。**各家字段名不一样，这里按厂商分了四个口子**，
+     * 由 [com.core.ai.entity.OpenAICompatibleAI.applyWebSearch] 按 provider 选一个填。
+     *
+     * 之所以不统一：OpenAI 兼容的只是报文**形状**，不是参数语义。
+     * 把千问的 `enable_search` 发给混元会当场 400，把豆包的 `web_search_options`
+     * 发给千问则一个字都不生效——两种失败方式都很难从报错里看出来。
+     *
+     * - 豆包（方舟）：`web_search_options: {}`，空对象即开启，服务端自己判断搜不搜；
+     * - 千问（百炼）：`enable_search: true`；
+     * - 混元（TokenHub）：`enable_web_search: true`；
+     * - 智谱：`tools: [{"type":"web_search","web_search":{"enable":true}}]`。
+     */
+    @SerialName("web_search_options")
+    val webSearchOptions: WebSearchOptions? = null,
+    @SerialName("enable_search")
+    val enableSearch: Boolean? = null,
+    @SerialName("enable_web_search")
+    val enableWebSearch: Boolean? = null,
+    /**
+     * 服务端内置工具。目前唯一用途是智谱的 `web_search`。
+     *
+     * 注意豆包的文档明确写了「tools 与 web_search_options 同时出现时，联网搜索不生效」，
+     * 所以这两条路径**永远只走一条**，不能合并成一个开关。
+     */
+    val tools: List<ServerTool>? = null,
+)
+
+/**
+ * 豆包的联网配置。
+ *
+ * 传 `{}` 就是开启，具体搜不搜由模型自己判断；`search_context_size` 之类的子字段
+ * 官方标注为「暂不生效」，所以这里一个都不填——填了是给未来挖坑。
+ */
+@Serializable
+data class WebSearchOptions(
+    /** 混元之外没人用这个字段；留给「只想显式打开/关闭」的场合。 */
+    val enable: Boolean? = null,
+)
+
+/** 服务端工具声明，形状按智谱的 `web_search` 写。 */
+@Serializable
+data class ServerTool(
+    val type: String,
+    @SerialName("web_search")
+    val webSearch: ServerToolConfig? = null,
+)
+
+@Serializable
+data class ServerToolConfig(
+    val enable: Boolean? = null,
+    /** 智谱只有开了它才在回复里带引用链接，否则搜了也看不出来。 */
+    @SerialName("search_result")
+    val searchResult: Boolean? = null,
 )
 
 @Serializable

@@ -51,6 +51,15 @@ suspend fun <T> IAI.decide(
     enableThinking: Boolean = false,
     maxAttempts: Int = DEFAULT_STRUCTURED_ATTEMPTS,
     onReasoning: (suspend (String) -> Unit)? = null,
+    /**
+     * 允许服务端联网检索。
+     *
+     * 只对 [supportsWebSearch] 的厂商生效，其余厂商这一个标志等于没写。
+     * 注意联网和 `json_object` 的组合各家支持程度不一：有的厂商会先跑一轮工具
+     * 再输出正文，JSON 约束在那时可能失效——所以这里不额外做兼容，
+     * 靠 [parseReply] 的括号扫描兜住，真拿不到 JSON 还有一次重试。
+     */
+    webSearch: Boolean = false,
 ): StructuredOutcome<T> {
     require(maxAttempts >= 1) { "至少要有一次尝试" }
 
@@ -65,6 +74,9 @@ suspend fun <T> IAI.decide(
     // 这个标志往外传，让调用方（狼人杀）关掉该座位本局的深度思考：
     // 超时多半就是思考吃满了额度，下一轮再开只会再撞一次。
     var timedOut = false
+    // 联网 + `json_object` 是最容易互相打架的一对：服务端搜索要先跑一轮工具，
+    // JSON 模式在那一轮不保证生效，个别厂商直接 400。真撞上就把搜索摘掉重来。
+    var search = webSearch && supportsWebSearch
     // 重试和超时那一次也烧 token，全都累计；只报成功那次会明显少算。
     var totalUsage = TokenUsage.EMPTY
 
@@ -77,6 +89,7 @@ suspend fun <T> IAI.decide(
                 thinking = thinking,
                 jsonMode = supportsJsonMode,
                 onReasoning = onReasoning,
+                webSearch = search,
             )
         } catch (error: Throwable) {
             // 超时值得再试一次：模型排队、网抖、客户端长连接被回收都可能，
@@ -108,6 +121,13 @@ suspend fun <T> IAI.decide(
                     timedOut = true,
                     usage = totalUsage,
                 )
+            }
+            // 搜索把这一次请求弄挂了：去掉搜索再问一次。宁可这一步没查，
+            // 也别让整个决策失败——决策失败会把这个座位的一步直接推成兜底动作。
+            // 只摘一次；摘掉之后再失败就是真的失败，异常照常往上抛。
+            if (search && attempt < maxAttempts) {
+                search = false
+                continue
             }
             throw error
         }
@@ -158,6 +178,7 @@ private suspend fun IAI.askOnce(
     thinking: Boolean,
     jsonMode: Boolean,
     onReasoning: (suspend (String) -> Unit)?,
+    webSearch: Boolean,
 ): Reply {
     if (onReasoning == null) {
         val reply = chatWithUsage(
@@ -166,6 +187,7 @@ private suspend fun IAI.askOnce(
             systemPrompt = system,
             enableThinking = thinking,
             jsonMode = jsonMode,
+            webSearch = webSearch,
         )
         return Reply(content = reply.text, reasoning = "", usage = reply.usage)
     }
@@ -179,6 +201,7 @@ private suspend fun IAI.askOnce(
         systemPrompt = system,
         enableThinking = thinking,
         jsonMode = jsonMode,
+        webSearch = webSearch,
     ).collect { delta ->
         content.append(delta.content)
         if (delta.reasoning.isNotEmpty()) {

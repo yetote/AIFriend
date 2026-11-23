@@ -38,4 +38,13 @@ class AIDoubao : OfficialAI(
         enableThinking: Boolean
     ): ChatCompletionRequest =
         if (enableThinking) this else copy(thinking = ThinkingConfig("disabled"))
+
+    /**
+     * 豆包开启联网只要一个**空对象** `web_search_options: {}`，
+     * 搜不搜由模型自己判断，代码里没有「强制搜索」这一档。
+     *
+     * 不要顺手加 `tools`：方舟文档写明两者同时出现时以自定义工具为准，
+     * 联网搜索会被静默关掉——看起来把开关都打开了，实际一次都没搜。
+     */
+    override val supportsWebSearch: Boolean get() = true
 }

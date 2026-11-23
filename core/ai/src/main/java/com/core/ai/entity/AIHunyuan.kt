@@ -90,4 +90,19 @@ class AIHunyuan : OfficialAI(
         /** 在 TokenHub 上无法关闭深度思考的第三方模型。 */
         val THINKING_LOCKED = listOf("glm", "kimi", "minimax")
     }
+
+    /**
+     * 混元的开关叫 `enable_web_search`。
+     *
+     * 这里要特别小心：它的兼容层收到千问那套 `enable_search` 会直接 400，
+     * 所以不能靠基类默认字段糊过去。另外 TokenHub 上代理的 DeepSeek / GLM / Kimi
+     * 未必认这个字段，但它们各自有别的写法，这里只对混元自己的模型负责——
+     * 代理模型打不开搜索时就等于没开，不会把请求打挂。
+     */
+    override val supportsWebSearch: Boolean get() = true
+
+    override fun ChatCompletionRequest.applyWebSearch(
+        webSearch: Boolean
+    ): ChatCompletionRequest =
+        if (webSearch) copy(enableWebSearch = true) else this
 }

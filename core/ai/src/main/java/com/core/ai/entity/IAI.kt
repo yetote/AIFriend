@@ -55,9 +55,26 @@ interface IAI {
         get() = true
 
     /**
+     * 该厂商能不能在对话接口里直接联网搜索。
+     *
+     * 默认 false：**没验证过的厂商一律当不支持**。这一条比 [supportsJsonMode] 更严格，
+     * 因为联网参数的失败方式很隐蔽——有的厂商直接 400，有的静默忽略，
+     * 还有的（豆包）在 `tools` 与 `web_search_options` 同时出现时静默关掉搜索。
+     * 猜错的代价是「搜索式看起来开了，其实一个字都没查」，用户完全看不出。
+     *
+     * 目前确认支持的：豆包（`web_search_options`）、千问（`enable_search`）、
+     * 混元（`enable_web_search`）、智谱（`tools[].web_search`）。
+     * DeepSeek 的对话接口没有内置搜索（只有独立的 `/tools/search`，需要自己编排工具循环）；
+     * Kimi 的 `$web_search` 已于 2026-10 下线，改成独立 REST 接口，同样要自己编排。
+     */
+    val supportsWebSearch: Boolean
+        get() = false
+
+    /**
      * 多轮对话：传入完整历史（不含 system），由实现方按厂商协议补 system 并转换为请求体。
      * [enableThinking] 为 false 时尽量关闭深度思考（部分厂商只能降档或忽略）。
      * [jsonMode] 为 true 时要求模型输出 JSON 对象，仅在 [supportsJsonMode] 为 true 时生效。
+     * [webSearch] 为 true 时请求服务端联网检索，仅在 [supportsWebSearch] 为 true 时生效。
      * 未接入的厂商默认抛出异常，避免静默返回错误内容。
      */
     suspend fun chat(
@@ -65,7 +82,8 @@ interface IAI {
         model: String,
         systemPrompt: String? = null,
         enableThinking: Boolean = true,
-        jsonMode: Boolean = false
+        jsonMode: Boolean = false,
+        webSearch: Boolean = false,
     ): String = throw UnsupportedOperationException("「$brandName」暂未接入对话")
 
     /**
@@ -79,9 +97,10 @@ interface IAI {
         model: String,
         systemPrompt: String? = null,
         enableThinking: Boolean = true,
-        jsonMode: Boolean = false
+        jsonMode: Boolean = false,
+        webSearch: Boolean = false,
     ): ChatReply {
-        val text = chat(messages, model, systemPrompt, enableThinking, jsonMode)
+        val text = chat(messages, model, systemPrompt, enableThinking, jsonMode, webSearch)
         return ChatReply(
             text = text,
             usage = TokenUsage(
@@ -107,7 +126,8 @@ interface IAI {
         model: String,
         systemPrompt: String? = null,
         enableThinking: Boolean = true,
-        jsonMode: Boolean = false
+        jsonMode: Boolean = false,
+        webSearch: Boolean = false,
     ): Flow<ChatDelta> = flow {
         emit(
             ChatDelta(
@@ -116,7 +136,8 @@ interface IAI {
                     model = model,
                     systemPrompt = systemPrompt,
                     enableThinking = enableThinking,
-                    jsonMode = jsonMode
+                    jsonMode = jsonMode,
+                    webSearch = webSearch,
                 )
             )
         )

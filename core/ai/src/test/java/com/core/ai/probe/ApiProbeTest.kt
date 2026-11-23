@@ -43,6 +43,7 @@ class ApiProbeTest {
             systemPrompt: String?,
             enableThinking: Boolean,
             jsonMode: Boolean,
+            webSearch: Boolean,
         ): String {
             chatCalls++
             return respond()
