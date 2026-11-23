@@ -45,7 +45,7 @@ enum class UIWerewolfSpeechLength(val label: String, val hint: String) {
  */
 enum class UIWerewolfPromptStyle(val label: String, val hint: String) {
     GUIDED("引导式", "内置读人框架、身份打法和狼队战术。小模型靠它才不会说废话"),
-    FREE("自由式", "只给身份、局势和底线，打法全交给模型自己想。适合强推理模型"),
+    FREE("自由式", "规则与身份技能照给，打法全交给模型自己想。适合强推理模型"),
     ;
 }
 
