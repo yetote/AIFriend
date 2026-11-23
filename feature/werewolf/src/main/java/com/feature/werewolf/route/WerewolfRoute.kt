@@ -217,6 +217,7 @@ fun WerewolfRoute(
                         seat = failed.seat,
                         oldName = failed.oldName,
                         oldModel = failed.oldModel,
+                        gone = failed.gone,
                         candidates = (it.candidatesBySeat[failed.seat].orEmpty()).map { c ->
                             UIWerewolfRecastCandidate(
                                 id = c.id, name = c.name, model = c.model, reachable = c.reachable,

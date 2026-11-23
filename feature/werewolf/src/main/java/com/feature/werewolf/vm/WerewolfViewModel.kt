@@ -154,6 +154,13 @@ data class WerewolfRecast(
         val seat: Int,
         val oldName: String,
         val oldModel: String,
+        /**
+         * 这个座位的好友**已经不在了**（被删了 / 换设备没同步）。
+         *
+         * 和「连不上」分开：不在了只能换人；连不上也许换个 Key 就能开打，
+         * 用户会想先试后者，界面不能把两件事说成一件。
+         */
+        val gone: Boolean = false,
     )
 
     data class RecastCandidate(
@@ -1009,20 +1016,36 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
                 controller.applyPromptStyle(_promptStyle.value)
 
                 // 续档也要检：这一局可能是昨天开的，Key 过期、模型下线都在这中间发生过
+                //
+                // 两种坏座位都要收进换人面板，不能只检「连不上」：
+                // - 连不上：好友还在，但 Key 过期 / 模型下线；
+                // - 好友不在了：这个 id 在好友列表里查无此人（被删了、换设备没同步）。
+                //   后者连探活都做不了——没有资料就没有模型可测。以前这里是
+                //   mapNotNull 悄悄丢掉，最后在建座位时炸成「找不到小咪的资料」，
+                //   用户只看到一句没出口的错误，想换人都没地方换。
+                val friendsById = friends.associateBy { it.id }
+                val missing = missingFriendSeats(table.game.players, friendsById, humanSeat)
                 val participants = table.game.players
                     .filter { it.seat != humanSeat }
-                    .mapNotNull { player -> friends.firstOrNull { it.id == player.id } }
+                    .mapNotNull { player -> friendsById[player.id] }
                 val failed = verifyReachable(participants)
-                if (failed.isNotEmpty()) {
-                    _error.value = reachabilityError(failed, "。点下方换人后继续这一局")
-                    _recast.value = buildRecast(id, table, failed, friends, humanSeat)
+                if (failed.isNotEmpty() || missing.isNotEmpty()) {
+                    val reason = recastReason(
+                        missing = missing,
+                        failedNames = failed.map { it.name },
+                        failedDetail = _apiChecks.value[failed.firstOrNull()?.id]?.message.orEmpty(),
+                        searchStyle = probeRequiresSearch(),
+                    )
+                    // 原因可能很长，但「点下方换人」这句提示必须留着——
+                    // 它是用户知道这块有个「换人」按钮的唯一指引
+                    _error.value = (reason.take(170) + "。点下方换人后继续这一局").take(200)
+                    _recast.value = buildRecast(id, table, failed, missing, friends, humanSeat, reason)
                     return@launch
                 }
                 _recast.value = null
 
                 // 先备好座位再让控制器接手：座位表没建好就 resume，
                 // 一旦 play() 起来会立刻撞上「X 号没有模型」
-                val friendsById = friends.associateBy { it.id }
                 agents = buildAgents(table.game.players, friendsById, humanSeat)
                 _seatThinking.value = agents.mapValues { it.value.thinkingEnabled }
                 seatVoiceIds = buildSeatVoiceIds(table.game.players, friendsById, humanSeat)
@@ -1048,7 +1071,12 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
     }
 
     /**
-     * 续档探活失败后，算出「哪几个座位要换、每个能换成谁」。
+     * 续档要换人的那几席，连同每个座位能换成谁。
+     *
+     * 两类坏座位都收进来：
+     * - **连不上**：好友还在，但探活失败（Key 过期、模型下线）；
+     * - **好友不在了**：存档里的 id 在好友列表里查无此人（被删了 / 没同步）。
+     *   这类座位连探活都做不了，只能直接换人。
      *
      * 失败好友通过 id 反查座位——存档的 player.id 就是好友 id，这是唯一的连接点。
      * 人类座位（SELF_PLAYER_ID）不参与：他不是模型，换不了。
@@ -1057,22 +1085,27 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
         gameId: String,
         table: com.feature.werewolf.engine.WerewolfTable,
         failed: List<Friend>,
+        missing: List<com.feature.werewolf.game.WerewolfPlayer>,
         friends: List<Friend>,
         humanSeat: Int?,
+        reason: String,
     ): WerewolfRecast {
         val failedIds = failed.map { it.id }.toSet()
+        val missingIds = missing.map { it.id }.toSet()
         val failedSeats = table.game.players
-            .filter { it.id in failedIds && it.seat != humanSeat }
+            .filter { it.seat != humanSeat }
+            .filter { it.id in failedIds || it.id in missingIds }
             .map { player ->
                 WerewolfRecast.FailedSeat(
                     seat = player.seat,
                     oldName = player.name,
                     oldModel = player.model,
+                    // 「已经不在了」和「连不上」要分开说：前者只能换人，
+                    // 后者换个 Key 可能就好，用户会想先试后者
+                    gone = player.id in missingIds,
                 )
             }
-        // 失败好友里若有人类座位（理论上不会），reason 仍要把他说出来，
-        // 否则用户只看到「有人连不上」却不知道是谁——错误文案已包含，这里只留一句
-        val reason = _apiChecks.value[failed.firstOrNull()?.id]?.message.orEmpty()
+            .sortedBy { it.seat }
         return WerewolfRecast(
             gameId = gameId,
             failed = failedSeats,

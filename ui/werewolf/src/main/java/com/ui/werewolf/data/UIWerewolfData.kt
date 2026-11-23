@@ -35,6 +35,14 @@ data class UIWerewolfRecastSeat(
     val seat: Int,
     val oldName: String,
     val oldModel: String,
+    /**
+     * 这个座位的好友**已经不在了**（被删了 / 换设备没同步）。
+     *
+     * 和「连不上」是两种坏法，界面得说不一样：
+     * - 不在了：只能换人，换 Key 也没用；
+     * - 连不上：Key 过期、模型下线，用户可能想先换个 Key 再试。
+     */
+    val gone: Boolean = false,
     val candidates: List<UIWerewolfRecastCandidate>,
 )
 

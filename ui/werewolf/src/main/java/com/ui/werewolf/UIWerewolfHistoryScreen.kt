@@ -655,9 +655,13 @@ private fun NewGameBar(onClick: () -> Unit) {
 }
 
 /**
- * 续档连不上时的换人面板。
+ * 续档有人用不了时的换人面板。
  *
- * 每个连不上的座位一张卡，从候选好友里挑一个顶上；探活是绿的标「推荐」。
+ * 两种坏法都在这个面板里解决：
+ * - **好友已经不在了**（被删了 / 换设备没同步）：这个座位连探活都做不了，只能换；
+ * - **连不上**（Key 过期、模型下线）：换上去一样能继续。
+ *
+ * 每个坏座位一张卡，从候选好友里挑一个顶上；探活是绿的标「推荐」。
  * 全部座位都选了才能提交——漏一个就等于那一局还是打不下去，
  * 与其让他点完才发现卡住，不如把按钮先按住。
  */
@@ -676,9 +680,9 @@ private fun RecastDialog(
     UIIosDialog(
         title = "换人继续这一局",
         subtitle = if (data.reason.isNotBlank()) {
-            "原座位连不上：${data.reason}。换人后身份、历史、进度都保留。"
+            "${data.reason}。换人后身份、历史、进度都保留。"
         } else {
-            "原座位连不上。换人后身份、历史、进度都保留。"
+            "原座位有人用不了了。换人后身份、历史、进度都保留。"
         },
         onDismiss = onDismiss,
         actions = {
@@ -731,7 +735,11 @@ private fun RecastSeatCard(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
-            text = "${seat.seat} 号 · 原 ${seat.oldName}（${seat.oldModel}）连不上",
+            text = if (seat.gone) {
+                "${seat.seat} 号 · 原 ${seat.oldName}（${seat.oldModel}）已经不在了"
+            } else {
+                "${seat.seat} 号 · 原 ${seat.oldName}（${seat.oldModel}）连不上"
+            },
             fontSize = 13.sp,
             fontWeight = FontWeight.SemiBold,
             color = UIFriendBarTitleColor,

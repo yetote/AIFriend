@@ -116,4 +116,94 @@ class WerewolfRecastTest {
         assertEquals("a", result.first { it.seat == 1 }.id)
         assertEquals("x", result.first { it.seat == 2 }.id)
     }
+
+    // ------------------------------------------------------------------
+    // 缺人检测：存档引用了已经不在的好友
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `好友列表里查无此人的座位要挑出来`() {
+        // 3 号的小咪被删了：存档里还指着它，但好友列表里已经没有这个人了
+        val players = listOf(player(1, "a"), player(2, "b"), player(3, "gone"))
+        val friendsById = mapOf("a" to friend("a"), "b" to friend("b"))
+
+        val missing = missingFriendSeats(players, friendsById, humanSeat = null)
+
+        assertEquals(listOf(3), missing.map { it.seat })
+    }
+
+    @Test
+    fun `人类座位不算缺人`() {
+        // 人类本来就不在好友列表里，他不是「被删了的好友」
+        val players = listOf(player(1, "__self__"), player(2, "a"))
+        val friendsById = mapOf("a" to friend("a"))
+
+        val missing = missingFriendSeats(players, friendsById, humanSeat = 1)
+
+        assertTrue("人类座位不能被当成缺人", missing.isEmpty())
+    }
+
+    @Test
+    fun `好友都在时没有缺人`() {
+        val players = listOf(player(1, "a"), player(2, "b"))
+        val friendsById = mapOf("a" to friend("a"), "b" to friend("b"))
+
+        assertTrue(missingFriendSeats(players, friendsById, humanSeat = null).isEmpty())
+    }
+
+    // ------------------------------------------------------------------
+    // 原因文案：两种坏法必须分开说
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `好友不在了要说已经不在了`() {
+        val reason = recastReason(
+            missing = listOf(player(3, "gone", "小咪")),
+            failedNames = emptyList(),
+            failedDetail = "",
+            searchStyle = false,
+        )
+
+        assertTrue("要说清楚是好友没了：$reason", reason.contains("已经不在了"))
+        assertTrue("要点名是几号：$reason", reason.contains("3 号小咪"))
+    }
+
+    @Test
+    fun `连不上和不在了分成两句话`() {
+        val reason = recastReason(
+            missing = listOf(player(3, "gone", "小咪")),
+            failedNames = listOf("阿明"),
+            failedDetail = "Key 无效",
+            searchStyle = false,
+        )
+
+        assertTrue("两种坏法都要说：$reason", reason.contains("已经不在了"))
+        assertTrue("连不上的也要说：$reason", reason.contains("连不上"))
+        assertTrue("探活原因要带上：$reason", reason.contains("Key 无效"))
+    }
+
+    @Test
+    fun `搜索式下说成做不到联网而不是连不上`() {
+        val reason = recastReason(
+            missing = emptyList(),
+            failedNames = listOf("阿明"),
+            failedDetail = "不会联网",
+            searchStyle = true,
+        )
+
+        assertTrue("搜索式的说法要分开：$reason", reason.contains("联网检索"))
+        assertFalse("搜索式下不说连不上：$reason", reason.contains("连不上"))
+    }
+
+    @Test
+    fun `两种都没问题时不该拼出空话`() {
+        val reason = recastReason(
+            missing = emptyList(),
+            failedNames = emptyList(),
+            failedDetail = "",
+            searchStyle = false,
+        )
+
+        assertEquals("", reason)
+    }
 }

@@ -55,6 +55,59 @@ internal fun recastCandidates(
 }
 
 /**
+ * 存档里引用了、但好友列表里已经查无此人的座位。
+ *
+ * 存档的座位表存的是**好友 id**。好友被删了、换了账号、或者换设备没同步，
+ * 那个 id 就查无此人——这个座位没有模型、没有音色，连探活都做不了。
+ *
+ * 以前续档时是 `mapNotNull` 悄悄把它们丢掉的，于是流程一路走到建座位才炸：
+ * 「找不到小咪（abc）的资料」。那句话没有出口——用户想换人都没地方换，
+ * 这一局就成了打不开的死档。
+ *
+ * 人类座位不参与：他本来就不在好友列表里（他的 id 是 human 标记），
+ * 但他也不是能换的对象，所以按座位号排除。
+ */
+internal fun missingFriendSeats(
+    players: List<WerewolfPlayer>,
+    friendsById: Map<String, Friend>,
+    humanSeat: Int?,
+): List<WerewolfPlayer> =
+    players.filter { it.seat != humanSeat && it.id !in friendsById }
+
+/**
+ * 「为什么让你换人」的一句话。
+ *
+ * 两种失败必须分开说：
+ *
+ * - **好友已经不在了**（被删了 / 没同步）：只能换人，换 Key 也没用；
+ * - **连不上**（Key 过期、模型下线）：换个 Key 可能就好，但换人也能立刻开打。
+ *
+ * 混成一句「席位有问题」的话，用户会先去折腾 Key，折腾完发现还是不行。
+ */
+internal fun recastReason(
+    missing: List<WerewolfPlayer>,
+    failedNames: List<String>,
+    failedDetail: String,
+    searchStyle: Boolean,
+): String {
+    val parts = mutableListOf<String>()
+    if (missing.isNotEmpty()) {
+        parts += "${missing.size} 个座位的好友已经不在了：" +
+            missing.joinToString("、") { "${it.seat} 号${it.name}" }
+    }
+    if (failedNames.isNotEmpty()) {
+        val names = failedNames.joinToString("、")
+        val head = if (searchStyle) {
+            "搜索式要求真的联网检索，${failedNames.size} 个座位做不到：$names"
+        } else {
+            "${failedNames.size} 个座位连不上：$names"
+        }
+        parts += if (failedDetail.isNotBlank()) "$head（$failedDetail）" else head
+    }
+    return parts.joinToString("；")
+}
+
+/**
  * 把换人决定落到座位表上。
  *
  * **只改 id / name / model 三个字段**：座位号、身份、死活、死亡原因、天数都不动。
