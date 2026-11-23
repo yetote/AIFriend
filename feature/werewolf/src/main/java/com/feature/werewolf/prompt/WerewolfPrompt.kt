@@ -99,6 +99,14 @@ object WerewolfPrompt {
          * 引导式和自由式都注入。null 或关掉风格画像时不注入，老行为不变。
          */
         playStyle: PlayerStyle? = null,
+        /**
+         * 跨天累积的公开台账（见 [com.feature.werewolf.engine.PublicLedger]）。
+         *
+         * 和 [publicSituation] 分工：那边是「发生了什么」，这边是「**谁说过什么能核对的话**」。
+         * 发言原文只喂今天 + 昨天，所以第 3 天起「谁跳的预言家、谁说了投 A 却投了 B」
+         * 靠这段才留得住。默认空＝不注入，测试与复盘不受影响。
+         */
+        ledger: String? = null,
     ): String {
         val player = game.playerAt(seat)
         return buildString {
@@ -143,6 +151,11 @@ object WerewolfPrompt {
             // 自由式虽然不给内置打法，但没理由让 AI 自造黑话、把词用反。
             append(terminologyBrief()).append("\n\n")
             append(publicSituation(game).trimEnd()).append("\n\n")
+            // 台账紧跟在局势之后：它和「已经发生的事」是同一类材料（公开、可核对），
+            // 挨着放模型才会拿它当推理依据，而不是当成又一段背景资料。
+            if (!ledger.isNullOrBlank()) {
+                append(ledger.trimEnd()).append("\n\n")
+            }
             append(privateBriefing(game, seat, style)).append("\n\n")
             // 残局挡刀是打法，自由式不给——能不能靠穿神衣服晃狼，让它自己判断。
             if (style == WerewolfPromptStyle.GUIDED) {

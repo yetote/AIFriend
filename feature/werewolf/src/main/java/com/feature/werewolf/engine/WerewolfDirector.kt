@@ -1242,6 +1242,8 @@ class WerewolfDirector(
             game, seat, agent.persona, customPrompt,
             limit = pacing.currentLimit, style = promptStyle, speechLength = speechLength,
             playStyle = agent.playStyle,
+            // 原文只喂今天 + 昨天，跨天的「谁跳过预言家、谁话和票对不上」全靠台账。
+            ledger = PublicLedger.of(table),
         )
         val thinking = pacing.thinkingAllowed(seat, agent.thinkingEnabled)
         val content = StringBuilder()
@@ -1502,6 +1504,7 @@ class WerewolfDirector(
                         table.game, seat, agent.persona, customPrompt,
                         limit = pacing.currentLimit, style = promptStyle, speechLength = speechLength,
                         playStyle = agent.playStyle,
+                        ledger = PublicLedger.of(table),
                     ),
                     enableThinking = thinking,
                     onReasoning = pushReasoning,

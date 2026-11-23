@@ -1861,4 +1861,22 @@ class WerewolfPromptTest {
             assertTrue("$style 要禁止自造身份", prompt.contains("不要生造"))
         }
     }
+
+    @Test
+    fun `公开台账拼在局势之后、私有信息之前`() {
+        val game = standardGame()
+        val ledger = "【公开台账】\n· 声称身份：1 号自称预言家（第 1 天）\n"
+        val with = WerewolfPrompt.systemPrompt(game, seat = 6, ledger = ledger)
+        val without = WerewolfPrompt.systemPrompt(game, seat = 6)
+
+        assertTrue("传了就要出现", with.contains("1 号自称预言家"))
+        assertFalse("不传时不能凭空多一段", without.contains("【公开台账】"))
+        // 位置很重要：台账是公开材料，必须挨着「已经发生的事」，
+        // 落到私有简报之后就会被读成「只有我知道的情报」。
+        assertTrue(
+            "台账要排在私有信息之前",
+            with.indexOf("【公开台账】") < with.indexOf("【只有你知道的事】"),
+        )
+        assertTrue("台账要排在局势之后", with.indexOf("【已经发生的事】") < with.indexOf("【公开台账】"))
+    }
 }
