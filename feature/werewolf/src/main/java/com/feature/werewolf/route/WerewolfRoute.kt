@@ -564,6 +564,9 @@ fun WerewolfRoute(
                     onHideThinkingBubble = viewModel::hideThinkingBubble,
                     onRetry = viewModel::retryFailedStep,
                     onGiveUpStep = viewModel::giveUpFailedStep,
+                    // 自爆：能不能点由 live.canExplode 决定（牌桌内部再 gate 一次），
+                    // 这里只负责把动作交下去
+                    onExplode = viewModel::explodeNow,
                 )
                 if (showPaceSheet) {
                     UIWerewolfPaceSheet(

@@ -264,6 +264,40 @@ class WerewolfController(
     }
 
     /**
+     * 人类座位在牌桌上点「自爆」。
+     *
+     * 这是唯一一条**不经过导演**的推进：人可以在别人说话中途爆，而那时导演正挂在
+     * 那个人的请求上，没法从外面叫它「先停一下，插一句自爆」。所以上层
+     * （ViewModel）的用法是：取消正在跑的这一局 → 调这里落一步 → 重新 [play] 接着打。
+     *
+     * 落档粒度仍是阶段，但这一步特殊：自爆本身就是**阶段终点**，不存在
+     * 「一个阶段说了一半」的问题，所以立刻存一次是安全的。
+     *
+     * 返回 false 表示这一步不合法（不在白天发言环节、已出局、不是狼），
+     * 或者手里根本没有局——上层据此决定要不要重启对局。
+     */
+    suspend fun explodeNow(seat: Int): Boolean {
+        val id = gameId ?: return false
+        val table = _state.value.table ?: return false
+        if (!table.game.canExplode(seat)) return false
+        val next = table.recordExplode(seat)
+        _state.update {
+            it.copy(
+                table = next,
+                finished = next.game.isFinished,
+                live = null,
+                progress = null,
+                error = null,
+            )
+        }
+        store.save(
+            id, next, createdAt, customPrompt,
+            pacing.currentLimit, pacing.thinkingOff.value, speechLength,
+        )
+        return true
+    }
+
+    /**
      * 续档探活失败后换人：用新的座位表替换当前局面并立刻落档。
      *
      * 必须在 [resume] 之后调——gameId 和 createdAt 由 resume 从存档恢复，

@@ -33,6 +33,8 @@ import com.ui.common.pageInsetsTop
 import com.ui.common.theme.UIFriendBarItemSubtitleColor
 import com.ui.common.theme.UIFriendBarRed
 import com.ui.common.theme.UIFriendBarTitleColor
+import com.ui.common.theme.UIDialogButtons
+import com.ui.common.theme.UIIosDialog
 import com.ui.common.theme.UIRadiusControl
 import com.ui.werewolf.data.UIWerewolfLive
 import com.ui.werewolf.data.UIWerewolfRetry
@@ -89,6 +91,13 @@ fun UIWerewolfTableScreen(
     onRetry: () -> Unit = {},
     /** 错误条上「放弃这一步」：让原来的错误照常停下整局。 */
     onGiveUpStep: () -> Unit = {},
+    /**
+     * 自爆。传 null 就不画那个按钮。
+     *
+     * 能不能点由 [UIWerewolfLive.canExplode] 决定（白天发言环节 + 活着 + 是狼），
+     * 这里再弹一次确认：它是唯一不可撤销的操作。
+     */
+    onExplode: (() -> Unit)? = null,
     /** 长按思考气泡：本局隐藏这个座位的思考气泡。不传就不响应长按。 */
     onHideThinkingBubble: ((seat: Int) -> Unit)? = null,
     /** 复盘演出：播放 / 暂停。 */
@@ -130,6 +139,10 @@ fun UIWerewolfTableScreen(
     // 座位头像在窗口里的位置。思考气泡要挂在头像头顶，得知道它在哪。
     val seatAnchors = remember { mutableStateMapOf<Int, Offset>() }
 
+    // 自爆确认。不可撤销，点一下不直接执行。
+    val explodeAction = onExplode?.takeIf { live.canExplode }
+    var confirmExplode by remember { mutableStateOf(false) }
+
     Box(modifier = Modifier.fillMaxSize()) {
         // 背景铺满整屏（含状态栏后面），内容再按安全区往里缩
         TableBackdrop(dayness = dayness)
@@ -170,6 +183,8 @@ fun UIWerewolfTableScreen(
                 // 观战也允许调时限：等多久是所有人的事，和看不看思考无关。
                 // 但演出和已结束的局不给：改一个不会再跑的档位只会让人以为能重打
                 onOpenSettings = onOpenSettings?.takeIf { replay == null && !live.finished },
+                // 自爆：只在能爆的白天发言环节出现，演出和观战一律没有
+                onExplode = explodeAction?.let { { confirmExplode = true } },
                 onToggleSpeak = onToggleSpeak,
                 onBack = onExit
             )
@@ -303,6 +318,27 @@ fun UIWerewolfTableScreen(
             night = live.night,
             finished = live.finished
         )
+
+        // 自爆确认画在过场之上：万一正好在天黑转场那 1.4 秒里点了，也不能被盖掉
+        if (confirmExplode) {
+            UIIosDialog(
+                title = "现在就自爆？",
+                subtitle = "自爆当场出局，白天立刻结束、直接进黑夜。今晚的商议和定刀你还能开口，" +
+                    "明天起不再说话——这一下不能撤销。",
+                onDismiss = { confirmExplode = false },
+                actions = {
+                    UIDialogButtons(
+                        confirmText = "自爆",
+                        confirmColor = UIFriendBarRed,
+                        onConfirm = {
+                            confirmExplode = false
+                            explodeAction?.invoke()
+                        },
+                        onCancel = { confirmExplode = false },
+                    )
+                },
+            )
+        }
     }
 }
 

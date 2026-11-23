@@ -257,6 +257,10 @@ internal fun WerewolfUiState.toLive(
         selfFactionLabel = me?.role?.faction?.displayName,
         spectating = humanSeat == null,
         turn = if (game != null) buildTurn(game, humanSeat, me, turn) else null,
+        // 自爆按钮比 turn 宽一档：别人说话时就能点。状态机是唯一判据
+        // （白天发言环节 + 活着 + 是狼），阶段性关掉的局、已结束的局都不会亮
+        canExplode = game != null && humanSeat != null && running && !finished &&
+            game.canExplode(humanSeat),
         error = error,
         // 局已经结束/回列表时，把迟到的重试提示丢掉——那一步的协程早被取消了
         retry = retry?.takeIf { running && !finished },

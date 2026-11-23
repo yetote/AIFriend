@@ -27,6 +27,7 @@ import com.feature.werewolf.decision.DirectionChoice
 import com.feature.werewolf.decision.SeatChoice
 import com.feature.werewolf.decision.VoteChoice
 import com.feature.werewolf.decision.WitchChoice
+import com.feature.werewolf.engine.EXPLODE_MARKER
 import com.feature.werewolf.engine.HumanSeatAI
 import com.feature.werewolf.engine.HumanTurn
 import com.feature.werewolf.engine.SeatAgent
@@ -1759,6 +1760,50 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
     fun submitDirection(clockwise: Boolean) {
         if (humanTurn.value?.jsonMode != true) return
         human.submit(json.encodeToString(DirectionChoice(clockwise)))
+    }
+
+    /**
+     * 人类点牌桌上的「自爆」。
+     *
+     * 两条路，取决于此刻引擎在等谁：
+     * - **正轮到自己自由发言**（`turn` 在等、而且不要 JSON）：把标记交回去就行。
+     *   这和 AI 在发言开头写【自爆】是同一条受理路径，不打断、不重启，
+     *   气泡里那句「我自爆。」也照样落库。
+     * - **别人正在说话**（或者正等自己做一次结构化选择）：导演挂在那个请求上，
+     *   从外面叫不停它。只能取消这一局，落一次自爆，然后重新开跑。
+     *   取消是安全的：牌桌上已经说的话都在 state 里，自爆本身又是阶段终点，
+     *   续上之后不会出现「话说到一半」。
+     *
+     * 能不能爆由状态机说了算（[com.feature.werewolf.game.WerewolfGame.canExplode]：
+     * 白天发言环节、活着、是狼）。按钮只在能爆的时候画出来，这里再兜一次底。
+     */
+    fun explodeNow() {
+        val seat = _humanSeat.value ?: return
+        val table = controller.state.value.table ?: return
+        if (!table.game.canExplode(seat)) return
+
+        val turn = humanTurn.value
+        if (turn != null && !turn.jsonMode) {
+            human.submit(EXPLODE_MARKER)
+            return
+        }
+
+        val previous = playJob
+        playJob = viewModelScope.launch {
+            // 先停引擎、再停朗读。反过来（先 stopSpeech）会让 awaitStage 里的
+            // 「等喇叭念完」当场满足，引擎可能抢在取消之前又往前走一步
+            previous?.cancelAndJoin()
+            // 这一步万一正挂着「请求失败、等你重发」，也一起放走：
+            // 自爆之后那一步已经没有意义，留着它只会在重启后立刻又弹出来
+            retryCoordinator.cancelAll()
+            stopSpeech(clearQueue = true)
+            if (!controller.explodeNow(seat)) return@launch
+            // 自爆那句已经落库，从新末尾开始念：历史不补念，也不再把
+            // 自己那句念一遍（人类座位通常没有音色，但配置过就该按配置走）
+            resetSpeech(fromIndex = controller.state.value.table?.transcript?.size ?: 0)
+            controller.play(awaitStage = { awaitSpeechCaughtUp() })
+            refresh()
+        }
     }
 
     // ---------------------------------------------------------------------

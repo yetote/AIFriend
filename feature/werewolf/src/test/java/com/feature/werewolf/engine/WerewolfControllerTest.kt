@@ -314,4 +314,49 @@ class WerewolfControllerTest {
         assertEquals("1 号只该有一句，不该重说", 1, seat1Count)
         assertEquals("2 号只该有一句，不该重说", 1, seat2Count)
     }
+
+    // ------------------------------------------------------------------
+    // 人类自爆
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `人类点自爆：当场落档，局面直接进黑夜`() = runBlocking {
+        val store = FakeStore()
+        val dealt = WerewolfGame.deal(WerewolfConfig(), roster(8))
+        val wolf = dealt.wolves().first().seat
+        val c = controller(store)
+        c.start("g1", dealt.copy(day = 1, phase = Phase.DAY_DISCUSSION))
+
+        assertTrue(c.explodeNow(wolf))
+
+        val table = c.state.value.table!!
+        assertFalse("自爆者已经出局", table.game.playerAt(wolf).alive)
+        assertEquals("白天就此结束", Phase.NIGHT_WOLF_CHAT, table.game.phase)
+        assertTrue(
+            "牌桌上要有他自己那一句，不能是空气泡",
+            table.transcript.any { it.seat == wolf && it.kind == MessageKind.SPEECH && it.text == I_EXPLODED },
+        )
+        assertTrue(
+            "自爆的公开播报也要补上",
+            table.transcript.any { it.kind == MessageKind.DIVINE && it.text.contains("自爆") },
+        )
+        // 这一下不能撤销，必须立刻落档：用户按完就杀进程也不该回到自爆前
+        assertEquals("start 一档 + 自爆一档", 2, store.saves.size)
+        assertEquals(Phase.NIGHT_WOLF_CHAT, store.saves.last().table.game.phase)
+    }
+
+    @Test
+    fun `不该自爆的时候叫它，局面和存档一个字都不动`() = runBlocking {
+        val store = FakeStore()
+        val dealt = WerewolfGame.deal(WerewolfConfig(), roster(8))
+        val wolf = dealt.wolves().first().seat
+        val good = dealt.players.first { !it.role.isWerewolf }.seat
+        val c = controller(store)
+        // 开局是夜里：夜里没有「打断白天」这回事
+        c.start("g1", dealt)
+
+        assertFalse("夜里不能自爆", c.explodeNow(wolf))
+        assertFalse("好人也不能自爆", c.explodeNow(good))
+        assertEquals("没落档，说明局面没被改过", 1, store.saves.size)
+    }
 }

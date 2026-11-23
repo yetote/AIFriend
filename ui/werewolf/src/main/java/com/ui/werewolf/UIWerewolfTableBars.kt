@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ui.common.theme.UIActionBrush
 import com.ui.common.theme.UIFieldFill
+import com.ui.common.theme.UIFriendBarRed
 import com.ui.common.theme.UIRadiusControl
 import com.ui.werewolf.data.UIWerewolfLive
 import com.ui.werewolf.data.UIWerewolfReplay
@@ -73,6 +74,14 @@ internal fun TableTopBar(
     onToggleThinking: (() -> Unit)?,
     /** 传 null 就不画设置入口（复盘演出、已结束的局改了也没用）。 */
     onOpenSettings: (() -> Unit)? = null,
+    /**
+     * 传 null 就不画「自爆」。
+     *
+     * 只有「白天发言环节 + 活着 + 是狼」才传得进来（判定在状态机里），
+     * 所以它出现就代表此刻真能爆。用红字而不是图标：这一步不可撤销，
+     * 得让人在按下之前就先看到「这是危险动作」。
+     */
+    onExplode: (() -> Unit)? = null,
     /**
      * 传 null 就不画喇叭。
      * 正常对局不画——朗读开关在对局设置面板里，顶栏再放一个是重复入口；
@@ -114,6 +123,22 @@ internal fun TableTopBar(
         if (spectating) {
             Tag(text = "上帝视角", night = night, color = dimColor)
             Spacer(Modifier.width(12.dp))
+        }
+        // 自爆：白天发言环节才出现，一旦出现就是真能爆。放在「思考」左边，
+        // 因为它是这一屏唯一不可撤销的动作，不该和开关们混在一起看。
+        if (onExplode != null) {
+            Text(
+                text = "自爆",
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(UIFriendBarRed.copy(alpha = if (night) 0.30f else 0.12f))
+                    .clickable(onClick = onExplode)
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
+                fontSize = FsMeta,
+                fontWeight = FontWeight.SemiBold,
+                color = UIFriendBarRed,
+            )
+            Spacer(Modifier.width(4.dp))
         }
         // 思考开关：参与局默认关着，开了就等于读心。做成一个词而不是图标：
         // 「思考」两个字自己会解释，一个气泡图标得点一次才知道是什么。

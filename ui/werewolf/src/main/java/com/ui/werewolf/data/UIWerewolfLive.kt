@@ -280,6 +280,13 @@ data class UIWerewolfLive(
     val spectating: Boolean = false,
     /** 轮到你时的操作面板。null 表示现在不归你。 */
     val turn: UIWerewolfTurn? = null,
+    /**
+     * 此刻你能不能自爆：白天发言环节、自己还活着、身份是狼。
+     *
+     * 和 [turn] 无关。自爆最有用的时候恰恰是「别人正在说话、话快说到自己头上」，
+     * 那时 [turn] 是 null；只有轮到自己发言才给爆，等于把最该用的时机封掉了。
+     */
+    val canExplode: Boolean = false,
     /** 出错信息（多为网络或 Key 问题），局面不会因此丢失。 */
     val error: String? = null,
     /**
