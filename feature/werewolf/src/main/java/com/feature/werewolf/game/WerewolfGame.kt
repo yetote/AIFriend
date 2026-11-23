@@ -995,6 +995,8 @@ data class WerewolfGame(
      *   警徽顺延到下一个白天重新竞选（[GameEvent.SheriffPostponed]）；连第二次也被自爆
      *   打断（双爆）才按「无人上警」那样清掉竞选名单、补 [GameEvent.SheriffVacant]、
      *   置 [sheriffElectionDone]。**只有后者**才能让 `dayOpening()` 不再把游戏拽回上警。
+     *   计数不看断在哪一段：**竞选发言和 PK 发言都算一次**（都是 `DAY_SHERIFF_SPEECH`），
+     *   退水之后的阶段不能自爆，所以退水本身不参与计数。
      * - **别人的遗言还在排队**：首夜死者（或警长）可能正在等遗言。自爆不能覆盖
      *   那个队列，只能把自己的座位并进去——并完还要走完遗言再入夜。
      */

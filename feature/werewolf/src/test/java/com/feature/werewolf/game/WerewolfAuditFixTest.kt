@@ -208,4 +208,58 @@ class WerewolfAuditFixTest {
         assertTrue("要播报警徽流失", after.history.any { it is GameEvent.SheriffVacant })
         assertNull(after.sheriffSeat)
     }
+
+    @Test
+    fun `PK 发言时自爆也算一次打断，警徽照样顺延`() {
+        // 口径（用户拍板）：只要在警上流程里自爆，不论竞选发言还是 PK 发言，都计一次；
+        // 累计两次就吞警徽。这里先验单次：PK 被爆只顺延，不作废。
+        val roles = listOf(WEREWOLF, WEREWOLF, WEREWOLF, SEER, WITCH, HUNTER, VILLAGER, VILLAGER, VILLAGER)
+        var mode = WerewolfGame.withRoles(configOf(roles), roster(9), roles).beginWolfVote()
+        mode = mode.wolfVote(mapOf(1 to 7, 2 to 7, 3 to 7)).seerCheck(1).witchAct(heal = false)
+
+        val voting = mode.signUpSheriff(setOf(1, 4)).beginSheriffVote()
+        // 警下 3:3 平票，1 号和 4 号进 PK
+        val pk = voting.castSheriffVotes(
+            mapOf(2 to 1, 3 to 1, 5 to 1, 6 to 4, 8 to 4, 9 to 4),
+        )
+        assertEquals(2, pk.sheriffRound)
+        assertEquals(listOf(1, 4), pk.sheriffCandidates)
+
+        val after = pk.wolfExplode(1)
+        assertEquals("PK 被爆同样计数", 1, after.sheriffElectionVoids)
+        assertFalse("单次只顺延，警徽还挂着", after.sheriffElectionDone)
+        assertTrue(after.history.any { it is GameEvent.SheriffPostponed })
+        assertTrue("PK 台要清空", after.sheriffCandidates.isEmpty())
+        assertEquals("下一轮选举办到天亮再重开", 1, after.sheriffRound)
+    }
+
+    @Test
+    fun `竞选爆一次加 PK 爆一次，双爆吞警徽`() {
+        // 两次打断跨了两个阶段：第 1 天竞选发言爆一次（顺延），第 2 天走到 PK 再爆一次。
+        // 「连续两次竞选被打断」不看断在哪一步——警上自爆就算。
+        val roles = listOf(WEREWOLF, WEREWOLF, WEREWOLF, SEER, WITCH, HUNTER, VILLAGER, VILLAGER, VILLAGER)
+        var mode = WerewolfGame.withRoles(configOf(roles), roster(9), roles).beginWolfVote()
+        mode = mode.wolfVote(mapOf(1 to 7, 2 to 7, 3 to 7)).seerCheck(1).witchAct(heal = false)
+        mode = mode.signUpSheriff(setOf(1, 2)).wolfExplode(1).finishLastWords().beginWolfVote()
+
+        // 第二夜：自爆狼 1 号仍在狼队，8 号被杀
+        mode = mode.wolfVote(mapOf(1 to 8, 2 to 8, 3 to 8)).seerCheck(2).witchAct(heal = false)
+        assertEquals(Phase.DAY_SHERIFF_SIGNUP, mode.phase)
+
+        // 第二天重新上警，2 号和 4 号平票进 PK，2 号（狼）在 PK 发言里爆
+        val voting = mode.signUpSheriff(setOf(2, 4)).beginSheriffVote()
+        val pk = voting.castSheriffVotes(
+            mapOf(3 to 2, 5 to 2, 6 to 4, 9 to 4),
+        )
+        assertEquals(2, pk.sheriffRound)
+
+        val after = pk.wolfExplode(2)
+        assertEquals("警上两次自爆，累计两次", 2, after.sheriffElectionVoids)
+        assertTrue("双爆之后不再竞选", after.sheriffElectionDone)
+        assertNull(after.sheriffSeat)
+        assertTrue(
+            "要播报警徽流失",
+            after.history.any { it is GameEvent.SheriffVacant && it.reason.contains("连续两次") },
+        )
+    }
 }

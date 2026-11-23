@@ -529,6 +529,7 @@ class WerewolfPromptTest {
 
         assertTrue("单爆只是顺延", free.contains("顺延到下一个白天重新竞选"))
         assertTrue("双爆才吞警徽", free.contains("双爆"))
+        assertTrue("PK 发言被爆同样计数", free.contains("PK 发言都算"))
         assertFalse("不能再写「一次自爆就没有警长」", free.contains("本局按「无人上警」处理"))
     }
 
