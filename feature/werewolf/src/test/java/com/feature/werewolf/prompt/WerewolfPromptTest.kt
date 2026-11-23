@@ -1694,7 +1694,7 @@ class WerewolfPromptTest {
         val signup = standardGame().copy(phase = Phase.DAY_SHERIFF_SIGNUP)
         val freeSignup = WerewolfPrompt.task(signup, seat = 6, style = WerewolfPromptStyle.FREE)
         assertFalse("自由式不代打风险评估", freeSignup.contains("被狼人优先盯上"))
-        assertTrue("报名机制保留", freeSignup.contains("上过警的人不能投警长票"))
+        assertTrue("报名机制保留", freeSignup.contains("上过警的人首轮不能投警长票"))
     }
 
     @Test

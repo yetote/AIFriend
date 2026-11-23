@@ -45,7 +45,7 @@ internal fun buildTurn(
             kind = UIWerewolfTurnKind.VOTE,
             seat = humanSeat,
             title = "要不要竞选警长",
-            hint = "只是举手报名，理由留到竞选发言；上警的人不能投警长票",
+            hint = "只是举手报名，理由留到竞选发言；上过警的人首轮不能投警长票",
             targets = listOf(UIWerewolfTarget(seat = humanSeat, name = "上警")),
             canAbstain = true,
             abstainLabel = "不上警",

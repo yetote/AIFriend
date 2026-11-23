@@ -55,7 +55,7 @@ enum class Phase(val displayName: String) {
      */
     DAY_SHERIFF_WITHDRAW("退水"),
 
-    /** 警下投票选警长。上警的人不投票。 */
+    /** 警下投票选警长。上过警的人首轮不投票；平票 PK 那轮台上不投、台外都能投。 */
     DAY_SHERIFF_VOTE("警长投票"),
 
     /** 白天讨论。规则上不做任何判定，由编排层按发言顺序驱动发言。 */

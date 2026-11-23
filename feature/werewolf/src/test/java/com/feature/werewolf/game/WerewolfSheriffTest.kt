@@ -206,7 +206,7 @@ class WerewolfSheriffTest {
     // ------------------------------------------------------------------
 
     @Test
-    fun `退水的人不再被投票，也没有警长票`() {
+    fun `退水的人不再被投票，首轮也没有警长票`() {
         // 三个人上警，7 号退水：还剩两个人，所以照常投票
         val stage = atSignup().signUpSheriff(setOf(1, 4, 7)).beginSheriffWithdraw()
         assertEquals(Phase.DAY_SHERIFF_WITHDRAW, stage.phase)
@@ -215,7 +215,7 @@ class WerewolfSheriffTest {
 
         assertEquals(Phase.DAY_SHERIFF_VOTE, after.phase)
         assertEquals("7 号退出竞选，不再是候选", listOf(1, 4), after.sheriffCandidates)
-        // 退水不等于把票拿回来：7 号上过警，仍然不投
+        // 退水不等于把票拿回来：7 号上过警，首轮仍然不投
         assertEquals(listOf(2, 3, 5, 6, 8, 9), after.sheriffVoteVoters)
         assertEquals(
             "退水要记进公开事件",
@@ -229,6 +229,32 @@ class WerewolfSheriffTest {
                 mapOf(2 to 7, 3 to 1, 5 to 1, 6 to 1, 8 to 4, 9 to 4),
             )
         }
+    }
+
+    @Test
+    fun `退水的人首轮不投，平票PK后拿回投票权`() {
+        // 三人上警(1、4、7)：7 号退水，首轮只剩警下 6 人投，1 和 4 各 3 票平票。
+        // 首轮 7 号没票（上过警），但 PK 是「台上不投、台外都能投」——他在台外，有票。
+        val after = atSignup().signUpSheriff(setOf(1, 4, 7)).beginSheriffWithdraw()
+            .withdrawSheriff(setOf(7))
+        assertEquals("退水后首轮仍没有票", listOf(2, 3, 5, 6, 8, 9), after.sheriffVoteVoters)
+
+        val tie = after.castSheriffVotes(
+            mapOf(2 to 1, 3 to 1, 5 to 1, 6 to 4, 8 to 4, 9 to 4),
+        )
+        assertEquals(2, tie.sheriffRound)
+        assertEquals(listOf(1, 4), tie.sheriffCandidates)
+
+        val pk = tie.beginSheriffVote()
+        assertEquals(
+            "PK 轮台上(1、4)不投，退水的 7 号在台外，这一轮有票",
+            listOf(2, 3, 5, 6, 7, 8, 9),
+            pk.sheriffVoteVoters,
+        )
+        val elected = pk.castSheriffVotes(
+            mapOf(2 to 1, 3 to 1, 5 to 1, 6 to 4, 7 to 4, 8 to 4, 9 to 4),
+        )
+        assertEquals("7 号这一票让 4 号以 4:3 当选", 4, elected.sheriffSeat)
     }
 
     @Test

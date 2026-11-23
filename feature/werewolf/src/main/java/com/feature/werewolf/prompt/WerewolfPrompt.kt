@@ -611,9 +611,9 @@ object WerewolfPrompt {
         }
         if (seat in game.sheriffRunners && game.phase.isSheriffPhase) {
             lines +=
-                // 「争到底」是打法指令；上过警不能投警长票才是规则。
-                if (style == WerewolfPromptStyle.GUIDED) "你在竞选警长。上过警的人不能投警长票，所以既然报了名就要争到底。"
-                else "你在竞选警长。上过警的人不能投警长票。"
+                // 「争到底」是打法指令；上过警首轮不能投警长票才是规则。
+                if (style == WerewolfPromptStyle.GUIDED) "你在竞选警长。上过警的人首轮不能投警长票，所以既然报了名就要争到底。"
+                else "你在竞选警长。上过警的人首轮不能投警长票。"
         }
         if (game.phase == Phase.DAY_LAST_WORDS && seat in game.pendingLastWords) {
             lines += "你已经出局了，现在轮到你说遗言。遗言改不了结局，但会直接影响活着的人怎么投。"

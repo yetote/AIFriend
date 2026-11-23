@@ -263,7 +263,8 @@ object WerewolfDecisions {
      * 退水：竞选发言说完了，要不要放弃竞选。
      *
      * 必须把三件事写清楚，模型不会自己推出来：
-     * 退了就**不再被投票**、也**没有警长票**（上过警的人本来就不投）；
+     * 退了就**不再被投票**、首轮也**没有警长票**（上过警的人首轮不投）——
+     * 但平票 PK 时台外的人都能投，退水的人这一轮有票，别把他写成永远的哑巴；
      * 剩下的候选还有谁；如果只剩一个人不退，他直接当选。
      *
      * 兜底是不退水（[WithdrawChoice] 的默认值）——
@@ -281,7 +282,8 @@ object WerewolfDecisions {
         return StructuredSpec(
             instruction = "输出 {\"withdraw\": true 或 false, \"reason\": \"一句话理由\"}。" +
                 "竞选发言已经说完，现在问你要不要**退水**（放弃竞选）。" +
-                "退水的人不再被投票，也不会有警长票——上过警的人本来就不投票，退了也拿不回来。" +
+                "退水的人不再被投票；首轮你也没有警长票（上过警的人首轮不投），" +
+                "但只要出现平票 PK，台上之外的人都能投，你这一轮照样有票。" +
                 stakes + INNER_REASON_HINT,
             serializer = WithdrawChoice.serializer(),
             validate = { true },

@@ -1785,7 +1785,7 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
         human.submit(json.encodeToString(DirectionChoice(direction.displayName)))
     }
 
-    /** 竞选发言之后的退水：退了就不再被投票，也没有警长票。 */
+    /** 竞选发言之后的退水：退了就不再被投票，首轮也没有警长票（PK 轮才有）。 */
     fun submitWithdraw(withdraw: Boolean) {
         if (humanTurn.value?.jsonMode != true) return
         human.submit(json.encodeToString(WithdrawChoice(withdraw)))
