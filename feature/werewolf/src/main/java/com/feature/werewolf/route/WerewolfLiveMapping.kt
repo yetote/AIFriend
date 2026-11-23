@@ -99,7 +99,11 @@ internal fun WerewolfUiState.toLive(
     // 三处必须同源——分开写迟早会有一处漏判，而漏判的后果是把狼人身份亮在桌上。
     val actorVisible: (Int, Phase) -> Boolean = { seat, phase ->
         reveal || !phase.hidesActor || seat == humanSeat ||
-            (me?.role?.isWerewolf == true && phase == Phase.NIGHT_WOLF_CHAT)
+            // 狼人密谈对狼队是公开的：他们本来就要一起商量。
+            // 但只对**狼**开放——这一档本来就不该有非狼的座位冒出来，
+            // 多这一道判断是防以后有人往这个阶段塞别的东西。
+            (phase == Phase.NIGHT_WOLF_CHAT && me?.role?.isWerewolf == true &&
+                game?.players?.firstOrNull { it.seat == seat }?.role?.isWerewolf == true)
     }
     val actorSeat = progress?.seat
         ?.takeIf { onStage }
@@ -155,7 +159,11 @@ internal fun WerewolfUiState.toLive(
                 }
             },
             roleLabel = if (known) player.role.displayName else null,
-            wolf = player.role.isWerewolf,
+            // 阵营同样要等身份公开才有资格报。参与中的局里把真实的 isWerewolf
+            // 原样交给界面，等于把「谁是狼」发到了客户端——今天界面上还没用它画什么，
+            // 但只要有人加一个狼人徽标，身份就当场翻了。
+            // 「公开」的口径跟 roleLabel 保持一致：观战/结束，或者翻过牌的白痴。
+            wolf = known && player.role.isWerewolf,
             active = player.seat in litSeats,
             votes = voteCounts[player.seat],
             // 警长是公开身份，牌桌上必须一直挂着——它是「谁的一票值 1.5」的唯一提示
@@ -385,10 +393,17 @@ internal fun litSeats(
  * 这个阶段「谁在行动」是不是隐私。
  *
  * 白天发言、投票、猎人开枪都是公开的；夜里那些阶段一次只有一个座位能动，
- * 亮出来就等于把身份说穿。狼人下刀本来就是并发的，没有「当前是谁」，单独排除。
+ * 亮出来就等于把身份说穿。
+ *
+ * **狼人下刀也算在内**。它是并发阶段、没有唯一的「当前是谁」，但正在下刀的那几个人
+ * 就是全部狼人——**并发不等于不隐私**。
+ *
+ * 之前把 [Phase.NIGHT_WOLF] 单独特豁免，是把「没有当前」当成了「不隐私」：
+ * 高亮那一路本来就用 [Phase.isNightPhase] 单独挡过（并发阶段一律不亮），
+ * 豁免在这里只漏掉了另一路——流式气泡。谁在下刀，气泡一冒出来，狼就全亮了。
  */
 internal val Phase.hidesActor: Boolean
-    get() = isNightPhase() && this != Phase.NIGHT_WOLF
+    get() = isNightPhase()
 
 internal fun Phase.isNightPhase(): Boolean =
     this == Phase.NIGHT_GUARD || this == Phase.NIGHT_WOLF_CHAT ||
