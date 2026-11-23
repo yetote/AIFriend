@@ -66,11 +66,16 @@ class AIProviderSettings(context: Context) {
 
     private val store = context.applicationContext.appPreferences
 
+    /** 自定义接口单独存一份列表；内置服务商仍按 id 一条条存。 */
+    val custom = CustomProviderSettings(context)
+
     /** 从磁盘读一次，刷新内存快照。 */
     suspend fun load(): List<AICredential> {
         val prefs = runCatching { store.data.first() }.getOrNull() ?: return emptyList()
         val migrated = mutableListOf<Pair<String, String>>()
-        val credentials = AIProviderCatalog.all.mapNotNull { provider ->
+        // 只读内置项：自定义接口的 Key 在 CustomProviderSettings 自己的列表里，
+        // 跟着 all 再读一次会拿到空值，把真 Key 覆盖掉。
+        val credentials = AIProviderCatalog.builtin.mapNotNull { provider ->
             val raw = prefs[keyName(provider.id)].orEmpty()
             // 历史版本直接存明文，这里透明地升级成密文。
             // 解不开（换机 / 清了 keystore）就当没配过，避免让用户看到一串乱码。
@@ -89,7 +94,8 @@ class AIProviderSettings(context: Context) {
                 AICredential(providerId = provider.id, apiKey = key, baseUrl = baseUrl)
             }
         }
-        AICredentials.replaceAll(credentials)
+        val customCredentials = custom.load()
+        AICredentials.replaceAll(credentials + customCredentials)
         // 顺手把明文改写成密文；失败也不影响这次使用，下次启动再试。
         if (migrated.isNotEmpty()) {
             runCatching {
@@ -100,7 +106,7 @@ class AIProviderSettings(context: Context) {
                 }
             }
         }
-        return credentials
+        return credentials + customCredentials
     }
 
     /**
@@ -108,6 +114,9 @@ class AIProviderSettings(context: Context) {
      * 加密失败说明系统密钥库不可用，此时宁可不保存也不写明文。
      */
     suspend fun save(credential: AICredential): Boolean {
+        if (AIProviderCatalog.isCustom(credential.providerId)) {
+            return custom.saveCredential(credential)
+        }
         val encrypted = runCatching { SecretCipher.encrypt(credential.apiKey) }.getOrNull()
         if (credential.apiKey.isNotBlank() && encrypted == null) return false
         AICredentials.put(credential)
@@ -125,22 +134,32 @@ class AIProviderSettings(context: Context) {
     }
 
     suspend fun clear(providerId: String) {
+        if (AIProviderCatalog.isCustom(providerId)) {
+            custom.clearCredential(providerId)
+            return
+        }
         AICredentials.remove(providerId)
         runCatching {
             store.edit { prefs ->
                 prefs.remove(keyName(providerId))
                 prefs.remove(baseUrlName(providerId))
+                prefs.remove(modelName(providerId))
             }
         }
     }
 
     /** 当前生效的模型：按服务商记，换回来时还是上次那个。 */
     suspend fun selectedModel(providerId: String): String? {
+        if (AIProviderCatalog.isCustom(providerId)) return custom.byId(providerId)?.selectedModel
         val prefs = runCatching { store.data.first() }.getOrNull() ?: return null
         return prefs[modelName(providerId)]?.takeIf { it.isNotBlank() }
     }
 
     suspend fun saveSelectedModel(providerId: String, model: String) {
+        if (AIProviderCatalog.isCustom(providerId)) {
+            custom.saveSelectedModel(providerId, model)
+            return
+        }
         runCatching {
             store.edit { prefs -> prefs[modelName(providerId)] = model }
         }

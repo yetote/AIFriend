@@ -1,6 +1,9 @@
 package com.core.ai.factory
 
+import com.core.ai.entity.AIGateway
+import com.core.repository.settings.AIProvider
 import com.core.repository.settings.AIProviderCatalog
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -45,6 +48,35 @@ class AIFactoryRegistryTest {
 
         assertEquals("服务商 id 有重复：$ids", ids.size, ids.distinct().size)
         assertEquals("服务商品牌名有重复：$names", names.size, names.distinct().size)
+    }
+
+    @After
+    fun tearDown() {
+        AIProviderCatalog.installCustomGateways(emptyList())
+    }
+
+    @Test
+    fun `运行时注册的自定义接口能按品牌名和旧名字创建`() {
+        val custom = AIProvider(
+            id = "custom_deadbeef",
+            name = "我的中转",
+            description = "自定义接口",
+            baseUrl = "https://example.com/v1",
+            consoleUrl = "",
+            requiresKey = false,
+            isGateway = true,
+            aliases = listOf("旧中转"),
+        )
+        AIProviderCatalog.installCustomGateways(listOf(custom))
+        val factory = AIFactory()
+
+        val current = factory.createAI("我的中转")
+        assertTrue(current is AIGateway)
+        assertEquals("我的中转", current!!.brandName)
+
+        // 老好友/老存档还存着改名前的品牌名，必须也能创建。
+        assertTrue(factory.createAI("旧中转") is AIGateway)
+        assertTrue("旧名字不该混进创建页品牌列表", "旧中转" !in AIFactory.brandNames())
     }
 
     @Test

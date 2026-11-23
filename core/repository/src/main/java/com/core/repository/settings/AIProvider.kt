@@ -72,7 +72,14 @@ data class AIProvider(
      *
      * 星火和 Gemini 的接口不接受关思考的字段，给了开关只会报错，所以关掉。
      */
-    val thinkingSwitchable: Boolean = true
+    val thinkingSwitchable: Boolean = true,
+    /**
+     * 历史展示名。只有用户自建的接口在改名后会有值。
+     *
+     * 老好友、老狼人杀存档里存的是当时的品牌名字符串。改名后靠它继续找到
+     * 同一个服务商，否则那些好友会变成「暂不支持的厂商」。
+     */
+    val aliases: List<String> = emptyList()
 ) {
     /** 拼出 Chat Completions 的完整地址。 */
     val chatUrl: String get() = "$baseUrl/chat/completions"
@@ -274,38 +281,64 @@ object AIProviderCatalog {
         isGateway = true
     )
 
-    val Custom = AIProvider(
-        id = "custom",
-        name = "自定义",
-        description = "任意 OpenAI 兼容服务，自己填 Base URL（本地部署选这个）",
-        baseUrl = "",
-        consoleUrl = "",
-        requiresKey = false,
-        fallbackModels = emptyList(),
-        isGateway = true
-    )
+    /**
+     * 旧版「单个自定义」的兼容 id。
+     *
+     * 现在自定义接口由 [CustomProviderSettings] 在运行时注册，可以有任意多个。
+     * 保留这个常量只是为了让老代码/老配置认得 id="custom" 那一条；
+     * 它本身已经不在目录里，不要再用它判断「是不是自定义」。
+     */
+    const val LEGACY_CUSTOM_ID = "custom"
+
+    fun isCustom(id: String?): Boolean =
+        id == LEGACY_CUSTOM_ID || id?.startsWith("${LEGACY_CUSTOM_ID}_") == true
 
     /** 官方厂商，创建页和设置页里排在聚合平台前面。 */
     val official: List<AIProvider> = listOf(
         Deepseek, Doubao, Zhipu, Kimi, Qianwen, Hunyuan, MiniMax, MiMo, Spark, Gemini
     )
 
-    /** 一把 Key 调多家的平台，自定义放最后。 */
-    val gateways: List<AIProvider> = listOf(SiliconFlow, OpenRouter, Custom)
+    /** 一把 Key 调多家的平台。自定义接口由运行时注册，不在这里。 */
+    private val builtinGateways: List<AIProvider> = listOf(SiliconFlow, OpenRouter)
+
+    /**
+     * 内置服务商：官方厂商 + 两个内置聚合平台。
+     *
+     * 凭证加载只读这一份 —— 自定义接口的 Key 存在自己的配置里，
+     * 跟着 [all] 重复读会把两条数据混在一起。
+     */
+    val builtin: List<AIProvider> = official + builtinGateways
+
+    @Volatile
+    private var customGateways: List<AIProvider> = emptyList()
+
+    /**
+     * 注入用户自建的 OpenAI 兼容接口。
+     *
+     * 由 [CustomProviderSettings] 在读盘后调用；调用方传进来的 [AIProvider]
+     * 已经带着该接口自己的 name / baseUrl / 上次拉到的模型列表。
+     */
+    fun installCustomGateways(providers: List<AIProvider>) {
+        customGateways = providers
+    }
+
+    /** 聚合平台：内置两个 + 用户自建的任意多个。 */
+    val gateways: List<AIProvider> get() = builtinGateways + customGateways
 
     /**
      * 全部服务商。
      *
-     * 注意：这个列表同时被「设置页展示」「凭证加载」「按名字找厂商」三处使用，
-     * 任何一处想改顺序或筛选，都应该用下面的 [official] / [gateways]，
-     * 而不是在这里动手脚 —— 凭证加载依赖它覆盖所有服务商，漏一个就丢一把 Key。
+     * 这个列表同时被「设置页展示」「凭证加载」「按名字找厂商」使用，
+     * 自定义接口必须进来，否则创建页看不到、好友也创建不了。
      */
-    val all: List<AIProvider> = official + gateways
+    val all: List<AIProvider> get() = official + gateways
 
     fun byId(id: String?): AIProvider? = all.firstOrNull { it.id == id }
 
-    /** 按品牌名（好友表里存的那个字符串）找服务商。 */
-    fun byName(name: String?): AIProvider? = all.firstOrNull { it.name == name }
+    /** 按品牌名找服务商，也认改名前的旧名字。 */
+    fun byName(name: String?): AIProvider? = all.firstOrNull {
+        it.name == name || (name != null && name in it.aliases)
+    }
 
     /** 默认选中硅基流动：一把 Key 覆盖最多模型，配置成本最低。 */
     fun default(): AIProvider = SiliconFlow

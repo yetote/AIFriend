@@ -31,7 +31,12 @@ class AIFactory : IFactory {
      */
     fun createAI(brandName: String): IAI? {
         aiMap[brandName]?.let { return createAI(it) }
+        // 自定义接口是运行时注入的，不能像以前那样在 companion 里缓存一张静态表，
+        // 否则用户刚在设置页加的接口要重启 App 才能用。
         gatewayMap[brandName]?.let { return AIGateway(it) }
+        // 改名前的老好友/老存档还存着旧品牌名，靠别名找到同一个接口。
+        AIProviderCatalog.gateways.firstOrNull { brandName in it.aliases }
+            ?.let { return AIGateway(it) }
         return null
     }
 
@@ -50,21 +55,18 @@ class AIFactory : IFactory {
         )
 
         /**
-         * 聚合网关品牌名 → 服务商。
-         *
-         * 用展示名做键，是因为好友表里存的就是品牌名字符串，
-         * 这样用户换厂商不用改数据库结构。
+         * 聚合网关品牌名 → 服务商。动态取值，包含用户自建的接口。
          *
          * 只收 [AIProviderCatalog.gateways]：官方厂商是独立实体类，
          * 混进来会让它们被错误地当成网关。
          */
-        val gatewayMap: Map<String, com.core.repository.settings.AIProvider> =
-            AIProviderCatalog.gateways.associateBy { it.name }
+        val gatewayMap: Map<String, com.core.repository.settings.AIProvider>
+            get() = AIProviderCatalog.gateways.associateBy { it.name }
 
         fun getAIClassByName(name: String): Class<out IAI>? = aiMap[name]
 
         /** 所有可选的品牌名，创建页按这个顺序展示。 */
         fun brandNames(): List<String> =
-            aiMap.keys.toList() + gatewayMap.keys.toList()
+            aiMap.keys.toList() + AIProviderCatalog.gateways.map { it.name }
     }
 }
