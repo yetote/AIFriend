@@ -459,6 +459,19 @@ class WerewolfPromptTest {
     }
 
     @Test
+    fun `插爆判断里被查杀不算被点破`() {
+        // 真局教训：判断简报原来写「你已经被点破，再聊下去只会暴露更多」，
+        // 模型把「被查杀」直接归进去，一天不辩就自爆。指控和判决必须分开写。
+        val day = standardGame().copy(phase = Phase.DAY_DISCUSSION)
+        val brief = WerewolfPrompt.explodeWatchBrief(day, seat = 1, speaker = 3, speech = "3 号查杀 1 号。")
+
+        assertTrue("要点名被查杀不算", brief.contains("被查杀、被踩、被点名表水都不算"))
+        assertTrue("要说清指控不是判决", brief.contains("那是一句指控，不是判决"))
+        assertTrue("要写出自爆等于替预言家作证", brief.contains("替预言家作证"))
+        assertFalse("不能再授权「被点破就爆」", brief.contains("你已经被点破"))
+    }
+
+    @Test
     fun `自爆提示只写给狼 受理条件是标记本身`() {
         val day = standardGame().copy(phase = Phase.DAY_DISCUSSION)
 
@@ -1550,7 +1563,11 @@ class WerewolfPromptTest {
         assertTrue("自由式保留自爆机制说明", freeWolf.contains("【自爆】"))
         assertTrue("受理条件要说明", freeWolf.contains("系统就受理"))
         assertFalse("受理不再要求点名队友", freeWolf.contains("还活着的队友"))
-        assertTrue("引导式自爆教学还在", WerewolfPrompt.task(day, seat = 1).contains("值得爆的情况"))
+        assertTrue("引导式自爆教学还在", WerewolfPrompt.task(day, seat = 1).contains("值得爆的只有两种"))
+        assertTrue(
+            "引导式要点明被查杀不是自爆理由",
+            WerewolfPrompt.task(day, seat = 1).contains("被查杀不是理由")
+        )
         assertTrue("格式要求保留", freeWolf.contains("不要写「某某说：」"))
         assertTrue("反复读提醒保留", freeWolf.contains("复读旧话"))
 

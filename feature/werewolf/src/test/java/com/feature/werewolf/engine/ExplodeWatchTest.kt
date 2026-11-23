@@ -38,6 +38,16 @@ class ExplodeWatchTest {
     }
 
     @Test
+    fun `被查杀只是指控，不触发插爆`() {
+        // 「1 号是狼」「1 号被我查杀」说的是结论，还没到收票那一步。
+        // 这时候问一次，模型很容易答「爆」——等于被点一下就自己把命交出去，
+        // 好人连辩都不用听。真正该掐断的是「今天票 1 号」。
+        assertFalse(ExplodeWatch.shouldAsk(game, 1, "3 号查杀的是 1 号。"))
+        assertFalse(ExplodeWatch.shouldAsk(game, 1, "1 号是狼，我建议大家都注意他。"))
+        assertFalse(ExplodeWatch.shouldAsk(game, 1, "我踩 1 号，他这轮说得太虚。"))
+    }
+
+    @Test
     fun `只被夸一句不打扰`() {
         assertFalse("没有威胁动作", ExplodeWatch.shouldAsk(game, 1, "1 号看起来挺真诚的。"))
     }
