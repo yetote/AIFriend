@@ -46,9 +46,12 @@ class TokenUsageTest {
     }
 
     @Test
-    fun `展示文案区分估算与真实值`() {
-        assertEquals("46 tokens", TokenUsage.format(TokenUsage(input = 12, output = 34)))
-        assertEquals("约 46 tokens", TokenUsage.format(TokenUsage(input = 12, output = 34, estimated = true)))
+    fun `展示文案把输入输出分开`() {
+        assertEquals("入 12 / 出 34", TokenUsage.format(TokenUsage(input = 12, output = 34)))
+        assertEquals("约 入 12 / 出 34", TokenUsage.format(TokenUsage(input = 12, output = 34, estimated = true)))
+        // 千位压缩：入 5200 → 5.2k，出 800 不到千不压缩
+        assertEquals("入 5.2k / 出 800", TokenUsage.format(TokenUsage(input = 5_200, output = 800)))
+        assertEquals("入 123k / 出 1.2M", TokenUsage.format(TokenUsage(input = 123_456, output = 1_234_567)))
     }
 
     @Test

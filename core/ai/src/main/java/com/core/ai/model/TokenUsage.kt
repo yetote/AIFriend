@@ -31,9 +31,23 @@ data class TokenUsage(
     companion object {
         val EMPTY = TokenUsage()
 
-        /** 展示用的一句话，例如「1,234 tokens」/「约 1,234 tokens」。 */
+        /**
+         * 展示用的一句话，例如「入 5.2k / 出 0.8k」。
+         *
+         * 不合并成一个总数：一次请求的大头是重复发送的上下文，把它和「模型这轮写了多少」
+         * 加在一起，用户只会觉得「怎么这么贵」却看不出贵在哪。分开之后，
+         * 入大＝提示词重发，出大＝它话多，一眼能分清。
+         */
         fun format(usage: TokenUsage): String =
-            "${if (usage.estimated) "约 " else ""}${usage.total} tokens"
+            "${if (usage.estimated) "约 " else ""}入 ${compact(usage.input)} / 出 ${compact(usage.output)}"
+
+        /** 千位以上压缩成 5.2k / 12k / 1.2M，完整数字只在账单里有意义。 */
+        private fun compact(value: Int): String = when {
+            value < 1_000 -> value.toString()
+            value < 100_000 -> "${(value / 100) / 10.0}".removeSuffix(".0") + "k"
+            value < 1_000_000 -> "${value / 1_000}k"
+            else -> "${(value / 100_000) / 10.0}".removeSuffix(".0") + "M"
+        }
     }
 }
 

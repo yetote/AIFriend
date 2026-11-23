@@ -19,15 +19,22 @@ data class UITokenUsage(
         estimated = estimated || other.estimated,
     )
 
-    /** 气泡/列表里的一小段标签，例如「约 1.2k tok」。 */
-    val shortLabel: String get() = "${if (estimated) "约" else ""}${compact(total)} tok"
+    /**
+     * 气泡、逐条、每天小计用的一小段：`入5.2k 出0.8k`。
+     *
+     * 分开列而不是给总数：入是这一轮重发的上下文（提示词＋局势），出是它实际写了多少。
+     * 合并成一个数，看到 6k 只会以为「思考真长」，其实大半是提示词。
+     */
+    val shortLabel: String get() = "${if (estimated) "约 " else ""}入${compact(input)} 出${compact(output)}"
 
-    /** 汇总卡里的完整标签。 */
-    val fullLabel: String get() = "${if (estimated) "约 " else ""}${compact(total)} tokens"
+    /** 汇总卡里的完整标签：`入 120k / 出 24k`。 */
+    val fullLabel: String get() = "${if (estimated) "约 " else ""}入 ${compact(input)} / 出 ${compact(output)}"
 
     private fun compact(value: Int): String = when {
-        value >= 1_000 -> "${value / 100 / 10.0}k".removeSuffix(".0")
-        else -> value.toString()
+        value < 1_000 -> value.toString()
+        value < 100_000 -> "${(value / 100) / 10.0}".removeSuffix(".0") + "k"
+        value < 1_000_000 -> "${value / 1_000}k"
+        else -> "${(value / 100_000) / 10.0}".removeSuffix(".0") + "M"
     }
 }
 
