@@ -96,6 +96,21 @@ class ChatStreamParserTest {
     }
 
     @Test
+    fun `usage 帧单独带出用量`() {
+        // 最后一帧 choices 是空的，只有 usage；早先这会被当成心跳丢掉
+        val event = ChatStreamParser.parse(
+            """data: {"choices":[],"usage":{"prompt_tokens":12,"completion_tokens":34,"total_tokens":46}}"""
+        )
+        assertEquals(ChatStreamEvent.Usage(TokenUsage(12, 34, false)), event)
+
+        // Anthropic 风格的字段名也认
+        assertEquals(
+            ChatStreamEvent.Usage(TokenUsage(5, 7, false)),
+            ChatStreamParser.parse("""data: {"choices":[],"usage":{"input_tokens":5,"output_tokens":7}}"""),
+        )
+    }
+
+    @Test
     fun `空增量帧跳过`() {
         assertEquals(
             ChatStreamEvent.Skip,

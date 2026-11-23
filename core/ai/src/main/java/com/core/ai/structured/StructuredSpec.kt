@@ -1,6 +1,7 @@
 package com.core.ai.structured
 
 import kotlinx.serialization.KSerializer
+import com.core.ai.model.TokenUsage
 
 /**
  * 一次「结构化决策」的规格。
@@ -52,4 +53,10 @@ data class StructuredOutcome<T>(
      * 下一轮又把思考打开，模型会一次次撞同一个超时。普通对话不关心它，默认 false。
      */
     val timedOut: Boolean = false,
+    /**
+     * 本次决策累计消耗的 token（含失败重试和超时那一次）。
+     *
+     * 重试也要算钱：第一次解析失败不代表没生成内容，只报成功那次会明显少算。
+     */
+    val usage: TokenUsage = TokenUsage.EMPTY,
 )

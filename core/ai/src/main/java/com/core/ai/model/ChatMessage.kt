@@ -19,7 +19,13 @@ data class ChatMessage(
      * 就算不报错也白白多花 token。
      */
     @Transient
-    val reasoning: String? = null
+    val reasoning: String? = null,
+    /**
+     * 这一条回复消耗的 token。同样标 `@Transient`：它只是展示用的统计，
+     * 既不能回传给模型（会被当成对话内容），也不该混进请求体。
+     */
+    @Transient
+    val usage: TokenUsage? = null
 ) {
     companion object {
         const val SYSTEM = "system"
@@ -28,7 +34,7 @@ data class ChatMessage(
 
         fun system(content: String) = ChatMessage(SYSTEM, content)
         fun user(content: String) = ChatMessage(USER, content)
-        fun assistant(content: String, reasoning: String? = null) =
-            ChatMessage(ASSISTANT, content, reasoning)
+        fun assistant(content: String, reasoning: String? = null, usage: TokenUsage? = null) =
+            ChatMessage(ASSISTANT, content, reasoning, usage)
     }
 }

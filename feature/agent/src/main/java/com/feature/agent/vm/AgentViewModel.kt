@@ -12,6 +12,8 @@ import com.core.ai.model.ModelCosts
 import com.core.ai.model.ModelPrice
 import com.core.ai.model.ModelPriceRefresher
 import com.core.ai.model.ModelPrices
+import com.core.ai.model.TokenCounter
+import com.core.ai.model.TokenUsage
 import com.core.ai.model.VoiceCatalog
 import com.core.ai.model.toFriend
 import com.core.ai.model.toStored
@@ -648,6 +650,15 @@ class AgentViewModel(application: Application) : BaseViewModel(application) {
         val content = StringBuilder()
         val reasoning = StringBuilder()
         var lastPush = 0L
+        val requestMessages = history.trimToBudget()
+        val estimatedInput = TokenCounter.estimateInput(requestMessages, friend.systemPrompt)
+        var usage = TokenUsage.EMPTY
+        fun currentUsage(): TokenUsage = if (usage.total > 0) usage else TokenUsage(
+            input = estimatedInput,
+            output = TokenCounter.estimate(content.toString()) +
+                TokenCounter.estimate(reasoning.toString()),
+            estimated = true,
+        )
         try {
             // 以前 Key 是编译进 App 的，这里不会缺；现在全由用户自己填，
             // 老好友或刚换设备时很可能一把 Key 都没有。直接发请求会拿到
@@ -662,11 +673,12 @@ class AgentViewModel(application: Application) : BaseViewModel(application) {
                 ?: throw IllegalStateException("暂不支持的厂商：${friend.brand}")
 
             ai.chatStream(
-                messages = history.trimToBudget(),
+                messages = requestMessages,
                 model = friend.model,
                 systemPrompt = friend.systemPrompt,
                 enableThinking = friend.thinkingEnabled
             ).collect { delta ->
+                delta.usage?.let { usage = it }
                 content.append(delta.content)
                 reasoning.append(delta.reasoning)
                 // 每帧都推会把主线程的重组排满，长回复反而更卡。
@@ -674,15 +686,15 @@ class AgentViewModel(application: Application) : BaseViewModel(application) {
                 val now = System.currentTimeMillis()
                 if (now - lastPush >= STREAM_PUSH_INTERVAL_MS) {
                     lastPush = now
-                    pushStreaming(friendId, content, reasoning)
+                    pushStreaming(friendId, content, reasoning, currentUsage())
                 }
             }
 
             val full = content.toString()
             if (full.isBlank()) throw IllegalStateException("模型没有返回内容，请重试")
-            commitReply(friendId, full, reasoning.toString())
+            commitReply(friendId, full, reasoning.toString(), currentUsage())
         } catch (cancelled: CancellationException) {
-            commitReply(friendId, content.toString(), reasoning.toString())
+            commitReply(friendId, content.toString(), reasoning.toString(), currentUsage())
             throw cancelled
         } catch (t: MissingKeyException) {
             _uiState.update {
@@ -702,10 +714,21 @@ class AgentViewModel(application: Application) : BaseViewModel(application) {
      * 只推给当前正在看的那个好友：用户切到别人那儿以后，这里的重组没有意义，
      * 但请求本身要继续跑完——切回来还能看到完整结果。
      */
-    private fun pushStreaming(friendId: String, content: StringBuilder, reasoning: StringBuilder) {
+    private fun pushStreaming(
+        friendId: String,
+        content: StringBuilder,
+        reasoning: StringBuilder,
+        usage: TokenUsage = TokenUsage.EMPTY,
+    ) {
         if (_uiState.value.activeFriendId != friendId) return
         _uiState.update {
-            it.copy(streaming = ChatMessage.assistant(content.toString(), reasoning.ifNotBlank()))
+            it.copy(
+                streaming = ChatMessage.assistant(
+                    content.toString(),
+                    reasoning.ifNotBlank(),
+                    usage.takeIf { it.total > 0 },
+                )
+            )
         }
     }
 
@@ -714,11 +737,19 @@ class AgentViewModel(application: Application) : BaseViewModel(application) {
      *
      * 空内容不落：那会留下一个点了没反应的气泡，重试也没法解释它是哪来的。
      */
-    private fun commitReply(friendId: String, content: String, reasoning: String) {
+    private fun commitReply(
+        friendId: String,
+        content: String,
+        reasoning: String,
+        usage: TokenUsage = TokenUsage.EMPTY,
+    ) {
         _uiState.update { it.copy(streaming = null) }
         if (content.isBlank()) return
         if (_uiState.value.friends.none { it.id == friendId }) return
-        appendMessage(friendId, ChatMessage.assistant(content, reasoning.takeIf { it.isNotBlank() }))
+        appendMessage(
+            friendId,
+            ChatMessage.assistant(content, reasoning.takeIf { it.isNotBlank() }, usage.takeIf { it.total > 0 })
+        )
     }
 
     /** 全是空白就当作没有思考过程，别在界面上留一块空的「思考」标题。 */

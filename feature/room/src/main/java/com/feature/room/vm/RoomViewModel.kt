@@ -6,6 +6,8 @@ import com.core.ai.entity.IAI
 import com.core.ai.factory.AIFactory
 import com.core.ai.model.ChatMessage
 import com.core.ai.model.Friend
+import com.core.ai.model.TokenCounter
+import com.core.ai.model.TokenUsage
 import com.core.ai.model.toFriend
 import com.core.ai.model.trimToBudget
 import com.core.common.BaseViewModel
@@ -796,6 +798,18 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
             val content = StringBuilder()
             val reasoning = StringBuilder()
             var lastPush = 0L
+            val estimatedInput = TokenCounter.estimateInput(context, buildRoomSystemPrompt(
+                room.prompt,
+                friend.systemPrompt,
+                autoChat = isBurstTurn
+            ))
+            var usage = TokenUsage.EMPTY
+            fun currentUsage(): TokenUsage = if (usage.total > 0) usage else TokenUsage(
+                input = estimatedInput,
+                output = TokenCounter.estimate(content.toString()) +
+                    TokenCounter.estimate(reasoning.toString()),
+                estimated = true,
+            )
 
             fun clearStreaming() {
                 if (!isRoomActive(roomId)) return
@@ -815,7 +829,8 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
                     // 流式列表本身按插入顺序展示
                     createdAt = System.currentTimeMillis(),
                     seq = 0L,
-                    reasoning = reasoning.toString().takeIf { it.isNotBlank() }
+                    reasoning = reasoning.toString().takeIf { it.isNotBlank() },
+                    usage = currentUsage().takeIf { it.total > 0 }
                 )
                 _uiState.update { state ->
                     state.copy(
@@ -837,6 +852,7 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
                     ),
                     enableThinking = friend.thinkingEnabled
                 ).collect { delta ->
+                    delta.usage?.let { usage = it }
                     content.append(delta.content)
                     reasoning.append(delta.reasoning)
                     // 和 1:1 同一个理由：token 级推送会让长回复掉帧
@@ -863,7 +879,8 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
                             content = reply,
                             createdAt = System.currentTimeMillis(),
                             seq = seqCounter.incrementAndGet(),
-                            reasoning = reasoning.toString().takeIf { it.isNotBlank() }
+                            reasoning = reasoning.toString().takeIf { it.isNotBlank() },
+                            usage = currentUsage().takeIf { it.total > 0 }
                         )
                     )
                 }
@@ -885,7 +902,8 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
                             content = partial,
                             createdAt = System.currentTimeMillis(),
                             seq = seqCounter.incrementAndGet(),
-                            reasoning = reasoning.toString().takeIf { it.isNotBlank() }
+                            reasoning = reasoning.toString().takeIf { it.isNotBlank() },
+                            usage = currentUsage().takeIf { it.total > 0 }
                         )
                     )
                 }

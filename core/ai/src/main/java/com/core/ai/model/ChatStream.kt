@@ -24,6 +24,11 @@ data class ChatDelta(
      * 模型会一次次撞同一个超时。普通对话不关心它，默认 false。
      */
     val timeoutDegraded: Boolean = false,
+    /**
+     * 本次调用的 token 用量。只有服务端回报 usage 的那一帧才有值，
+     * 拿不到的平台全程为 null，由调用方用 [TokenCounter] 估算。
+     */
+    val usage: TokenUsage? = null,
 )
 
 /**
@@ -35,6 +40,8 @@ data class ChatDelta(
  */
 sealed interface ChatStreamEvent {
     data class Delta(val content: String, val reasoning: String) : ChatStreamEvent
+    /** 最后一帧只带 usage、没有 choices，单独分出来免得被当成心跳丢掉。 */
+    data class Usage(val usage: TokenUsage) : ChatStreamEvent
     data object Done : ChatStreamEvent
     data object Skip : ChatStreamEvent
 }
@@ -48,6 +55,7 @@ sealed interface ChatStreamEvent {
 @Serializable
 data class ChatStreamResponse(
     val choices: List<ChatStreamChoice> = emptyList(),
+    val usage: TokenUsageResponse? = null,
 )
 
 @Serializable
@@ -98,6 +106,8 @@ object ChatStreamParser {
 
         val chunk = runCatching { json.decodeFromString<ChatStreamResponse>(payload) }.getOrNull()
             ?: return ChatStreamEvent.Skip
+        // usage 帧的 choices 是空的，必须先看 usage 再看 delta，否则会被 Skip 吞掉。
+        chunk.usage?.toUsage()?.let { return ChatStreamEvent.Usage(it) }
         val delta = chunk.choices.firstOrNull()?.delta ?: return ChatStreamEvent.Skip
 
         val content = delta.content.orEmpty()

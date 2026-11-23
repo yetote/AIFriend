@@ -1,5 +1,7 @@
 package com.feature.room.model
 
+import com.core.ai.model.TokenUsage
+
 /** 单个房间最多容纳的 AI 数量，避免一次提问触发过多请求。 */
 const val MAX_ROOM_MEMBERS = 6
 
@@ -64,5 +66,10 @@ data class RoomMessage(
      */
     val targetIds: Set<String>? = null,
     /** AI 发言的思考过程，可空。用户和系统消息永远没有。 */
-    val reasoning: String? = null
+    val reasoning: String? = null,
+    /**
+     * 这次回复的 token 用量。只用于展示，不落库——群聊没有复盘页，
+     * 历史消息不需要带一份用不上的统计。
+     */
+    val usage: TokenUsage? = null
 )

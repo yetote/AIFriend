@@ -3,6 +3,8 @@ package com.core.ai.structured
 import com.core.ai.entity.IAI
 import com.core.ai.isTimeoutLike
 import com.core.ai.model.ChatMessage
+import com.core.ai.model.TokenCounter
+import com.core.ai.model.TokenUsage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 
@@ -63,6 +65,8 @@ suspend fun <T> IAI.decide(
     // 这个标志往外传，让调用方（狼人杀）关掉该座位本局的深度思考：
     // 超时多半就是思考吃满了额度，下一轮再开只会再撞一次。
     var timedOut = false
+    // 重试和超时那一次也烧 token，全都累计；只报成功那次会明显少算。
+    var totalUsage = TokenUsage.EMPTY
 
     for (attempt in 1..maxAttempts) {
         val reply = try {
@@ -79,6 +83,10 @@ suspend fun <T> IAI.decide(
             // 而 Key 错误、参数错误重试多少次都一样。
             if (error.isTimeoutLike()) {
                 timedOut = true
+                // 超时这一趟大概率也把上下文发出去了；服务端没回 usage，按输入估算记一笔。
+                totalUsage = totalUsage.plus(
+                    TokenUsage(input = TokenCounter.estimateInput(conversation, system), estimated = true)
+                )
                 if (attempt < maxAttempts) {
                     // **重试时关掉深度思考。** 超时的头号原因是思考把等待额度吃光了，
                     // 用一模一样的参数再打一次，只会把等待时间翻倍，然后照样失败——
@@ -98,18 +106,21 @@ suspend fun <T> IAI.decide(
                     usedFallback = true,
                     lastError = "响应超时，已用兜底选择",
                     timedOut = true,
+                    usage = totalUsage,
                 )
             }
             throw error
         }
 
         reasoning = reply.reasoning
+        totalUsage = totalUsage.plus(reply.usage)
         val raw = reply.content
         val parsed = parseReply(raw, spec)
         parsed.fold(
             onSuccess = {
                 return StructuredOutcome(
                     it, attempt, usedFallback = false, reasoning = reasoning, timedOut = timedOut,
+                    usage = totalUsage,
                 )
             },
             onFailure = { error ->
@@ -126,11 +137,12 @@ suspend fun <T> IAI.decide(
         lastError = lastError,
         reasoning = reasoning,
         timedOut = timedOut,
+        usage = totalUsage,
     )
 }
 
-/** 一次请求的完整答复：正文 + 思维链。 */
-private data class Reply(val content: String, val reasoning: String)
+/** 一次请求的完整答复：正文 + 思维链 + token 用量。 */
+private data class Reply(val content: String, val reasoning: String, val usage: TokenUsage)
 
 /**
  * 走一次请求。
@@ -148,20 +160,19 @@ private suspend fun IAI.askOnce(
     onReasoning: (suspend (String) -> Unit)?,
 ): Reply {
     if (onReasoning == null) {
-        return Reply(
-            content = chat(
-                messages = messages,
-                model = model,
-                systemPrompt = system,
-                enableThinking = thinking,
-                jsonMode = jsonMode,
-            ),
-            reasoning = "",
+        val reply = chatWithUsage(
+            messages = messages,
+            model = model,
+            systemPrompt = system,
+            enableThinking = thinking,
+            jsonMode = jsonMode,
         )
+        return Reply(content = reply.text, reasoning = "", usage = reply.usage)
     }
 
     val content = StringBuilder()
     val chain = StringBuilder()
+    var usage: TokenUsage? = null
     chatStream(
         messages = messages,
         model = model,
@@ -176,8 +187,19 @@ private suspend fun IAI.askOnce(
             // 断线重连或重试时也不会拼出重复的半句
             onReasoning(chain.toString())
         }
+        if (delta.usage != null) usage = delta.usage
     }
-    return Reply(content = content.toString(), reasoning = chain.toString())
+    val text = content.toString()
+    val chainText = chain.toString()
+    return Reply(
+        content = text,
+        reasoning = chainText,
+        usage = usage ?: TokenUsage(
+            input = TokenCounter.estimateInput(messages, system),
+            output = TokenCounter.estimate(text) + TokenCounter.estimate(chainText),
+            estimated = true,
+        ),
+    )
 }
 
 /**

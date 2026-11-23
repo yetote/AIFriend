@@ -760,7 +760,8 @@ private fun RoomMessageBubble(
                             reasoning = reasoning,
                             // 只想还没开始说时默认展开，否则气泡里除了折叠条什么都没有
                             expandedByDefault = message.isStreaming && message.content.isBlank(),
-                            thinking = message.isStreaming && message.content.isBlank()
+                            thinking = message.isStreaming && message.content.isBlank(),
+                            tokenLabel = message.tokenLabel,
                         )
                         if (message.content.isNotBlank()) {
                             Spacer(Modifier.height(8.dp))
@@ -799,7 +800,8 @@ private fun RoomMessageBubble(
 private fun RoomReasoningBlock(
     reasoning: String,
     expandedByDefault: Boolean,
-    thinking: Boolean
+    thinking: Boolean,
+    tokenLabel: String? = null,
 ) {
     // 纯展示的临时展开状态，不进 saveable：不然下次进来每条历史都摊着思考过程
     var expanded by remember { mutableStateOf(expandedByDefault) }
@@ -819,11 +821,19 @@ private fun RoomReasoningBlock(
         ) {
             Text(
                 text = if (thinking) "正在思考…" else "思考过程",
-                modifier = Modifier.weight(1f),
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Medium,
                 color = UIFriendBarItemMetaColor
             )
+            Spacer(Modifier.weight(1f))
+            if (!tokenLabel.isNullOrBlank()) {
+                Text(
+                    text = tokenLabel,
+                    fontSize = 10.sp,
+                    color = UIFriendBarTagTextBlue
+                )
+                Spacer(Modifier.width(6.dp))
+            }
             Text(
                 text = if (expanded) "收起" else "展开",
                 fontSize = 10.sp,

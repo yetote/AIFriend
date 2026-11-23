@@ -2,8 +2,11 @@ package com.core.ai.entity
 
 import com.core.ai.model.ChatDelta
 import com.core.ai.model.ChatMessage
+import com.core.ai.model.ChatReply
 import com.core.ai.model.GatewayModel
 import com.core.ai.model.ModelPrice
+import com.core.ai.model.TokenCounter
+import com.core.ai.model.TokenUsage
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 
@@ -64,6 +67,30 @@ interface IAI {
         enableThinking: Boolean = true,
         jsonMode: Boolean = false
     ): String = throw UnsupportedOperationException("「$brandName」暂未接入对话")
+
+    /**
+     * 和 [chat] 一样发起一次性请求，但把 token 用量一起带出来。
+     *
+     * 默认实现用 [TokenCounter] 估算：支持 usage 的服务商会覆盖它给真值，
+     * 不支持的也不会让上层拿到 0——界面照样能显示一个量级并标「约」。
+     */
+    suspend fun chatWithUsage(
+        messages: List<ChatMessage>,
+        model: String,
+        systemPrompt: String? = null,
+        enableThinking: Boolean = true,
+        jsonMode: Boolean = false
+    ): ChatReply {
+        val text = chat(messages, model, systemPrompt, enableThinking, jsonMode)
+        return ChatReply(
+            text = text,
+            usage = TokenUsage(
+                input = TokenCounter.estimateInput(messages, systemPrompt),
+                output = TokenCounter.estimate(text),
+                estimated = true,
+            ),
+        )
+    }
 
     /**
      * 流式对话：以增量片段的形式返回正文与思考过程。

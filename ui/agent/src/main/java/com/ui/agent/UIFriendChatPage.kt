@@ -60,6 +60,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.core.ai.model.ChatMessage
+import com.core.ai.model.TokenUsage
 import com.ui.common.theme.UIActionBrush
 import com.ui.common.theme.UIBlobBlue
 import com.ui.common.theme.UIBubbleUserBrush
@@ -398,7 +399,8 @@ private fun MessageBubble(
                         // 只想了还没开始说的时候默认展开：这时候用户除了思考
                         // 没有别的可看，收起来就只剩一个空气泡
                         expandedByDefault = streaming && message.content.isBlank(),
-                        thinking = streaming && message.content.isBlank()
+                        thinking = streaming && message.content.isBlank(),
+                        usage = message.usage,
                     )
                     if (message.content.isNotBlank()) {
                         Spacer(Modifier.height(8.dp))
@@ -437,7 +439,8 @@ private fun MessageBubble(
 private fun ReasoningBlock(
     reasoning: String,
     expandedByDefault: Boolean,
-    thinking: Boolean
+    thinking: Boolean,
+    usage: TokenUsage? = null,
 ) {
     // 用 remember 而不是 rememberSaveable：这是纯展示的临时展开状态。
     // 存下来的话，下次进来说过的每一句都会带着一块展开的思考过程，历史会长得没法看。
@@ -458,11 +461,19 @@ private fun ReasoningBlock(
         ) {
             Text(
                 text = if (thinking) "正在思考…" else "思考过程",
-                modifier = Modifier.weight(1f),
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Medium,
                 color = UIFriendBarItemMetaColor
             )
+            Spacer(Modifier.weight(1f))
+            if (usage != null && usage.total > 0) {
+                Text(
+                    text = TokenUsage.format(usage),
+                    fontSize = 10.sp,
+                    color = UIFriendBarTagTextBlue
+                )
+                Spacer(Modifier.width(6.dp))
+            }
             Text(
                 text = if (expanded) "收起" else "展开",
                 fontSize = 10.sp,

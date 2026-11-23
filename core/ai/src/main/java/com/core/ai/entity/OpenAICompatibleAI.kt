@@ -5,9 +5,13 @@ import com.core.ai.model.ChatCompletionRequest
 import com.core.ai.model.ChatCompletionResponse
 import com.core.ai.model.ChatDelta
 import com.core.ai.model.ChatMessage
+import com.core.ai.model.ChatReply
 import com.core.ai.model.ChatStreamEvent
 import com.core.ai.model.ChatStreamParser
 import com.core.ai.model.ResponseFormat
+import com.core.ai.model.StreamOptions
+import com.core.ai.model.TokenCounter
+import com.core.ai.model.TokenUsage
 import com.core.repository.ApiConfig
 import com.core.repository.WebRepository
 import kotlinx.coroutines.CancellationException
@@ -37,16 +41,42 @@ abstract class OpenAICompatibleAI(
         systemPrompt: String?,
         enableThinking: Boolean,
         jsonMode: Boolean
-    ): String {
-        val request = buildRequest(messages, model, systemPrompt, enableThinking, jsonMode, stream = false)
+    ): String = rawChat(messages, model, systemPrompt, enableThinking, jsonMode).let { response ->
+        val content = response.choices.firstOrNull()?.message?.content
+        content?.takeIf { it.isNotBlank() }
+            ?: throw IllegalStateException("模型没有返回内容，请重试")
+    }
 
-        val response = WebRepository.instance
+    override suspend fun chatWithUsage(
+        messages: List<ChatMessage>,
+        model: String,
+        systemPrompt: String?,
+        enableThinking: Boolean,
+        jsonMode: Boolean
+    ): ChatReply {
+        val response = rawChat(messages, model, systemPrompt, enableThinking, jsonMode)
+        val text = response.choices.firstOrNull()?.message?.content
+            ?.takeIf { it.isNotBlank() }
+            ?: throw IllegalStateException("模型没有返回内容，请重试")
+        val usage = response.usage?.toUsage() ?: TokenUsage(
+            input = TokenCounter.estimateInput(apiMessages(messages, systemPrompt), null),
+            output = TokenCounter.estimate(text),
+            estimated = true,
+        )
+        return ChatReply(text = text, usage = usage)
+    }
+
+    private suspend fun rawChat(
+        messages: List<ChatMessage>,
+        model: String,
+        systemPrompt: String?,
+        enableThinking: Boolean,
+        jsonMode: Boolean
+    ): ChatCompletionResponse {
+        val request = buildRequest(messages, model, systemPrompt, enableThinking, jsonMode, stream = false)
+        return WebRepository.instance
             .chat<ChatCompletionResponse>(config = config, body = request)
             .getOrElse { throw it }
-
-        val content = response.choices.firstOrNull()?.message?.content
-        return content?.takeIf { it.isNotBlank() }
-            ?: throw IllegalStateException("模型没有返回内容，请重试")
     }
 
     /**
@@ -68,6 +98,9 @@ abstract class OpenAICompatibleAI(
         jsonMode: Boolean
     ): Flow<ChatDelta> = channelFlow {
         val request = buildRequest(messages, model, systemPrompt, enableThinking, jsonMode, stream = true)
+            // 让服务端在最后一帧带 usage；不支持这个字段的服务会 400，
+            // 下面的降级分支会改用非流式请求，那时照样能拿到用量。
+            .copy(streamOptions = StreamOptions(includeUsage = true))
         var hasContent = false
 
         val failure = runCatching {
@@ -76,6 +109,11 @@ abstract class OpenAICompatibleAI(
                     is ChatStreamEvent.Delta -> {
                         if (event.content.isNotEmpty()) hasContent = true
                         send(ChatDelta(content = event.content, reasoning = event.reasoning))
+                    }
+
+                    is ChatStreamEvent.Usage -> {
+                        // 只有服务端真回了 usage 才推这一帧；不回的平台由上层估算。
+                        send(ChatDelta(usage = event.usage))
                     }
 
                     // 大多数厂商发完 [DONE] 就关连接，循环会自然结束；
@@ -102,9 +140,11 @@ abstract class OpenAICompatibleAI(
                 // 于是每个座位都卡在同一个超时上反复浪费时间。
                 val degradedByTimeout = failure.isTimeoutLike()
                 val retryThinking = if (degradedByTimeout) false else enableThinking
+                val reply = chatWithUsage(messages, model, systemPrompt, retryThinking, jsonMode)
                 send(
                     ChatDelta(
-                        content = chat(messages, model, systemPrompt, retryThinking, jsonMode),
+                        content = reply.text,
+                        usage = reply.usage,
                         timeoutDegraded = degradedByTimeout,
                     )
                 )
@@ -125,17 +165,24 @@ abstract class OpenAICompatibleAI(
         enableThinking: Boolean,
         jsonMode: Boolean,
         stream: Boolean,
-    ): ChatCompletionRequest {
-        val apiMessages = buildList {
-            if (!systemPrompt.isNullOrBlank()) {
-                add(ChatMessage.system(systemPrompt))
-            }
-            addAll(messages)
+    ): ChatCompletionRequest = ChatCompletionRequest(
+        model = model,
+        messages = apiMessages(messages, systemPrompt),
+        stream = stream
+    )
+        .applyThinking(enableThinking)
+        // 厂商不支持就当作没开，宁可让模型自由发挥，也不要一个 400 把整轮对话打断
+        .applyJsonMode(jsonMode && supportsJsonMode)
+
+    /** 请求里真正发出去的消息（含 system），估算输入 token 时也用它。 */
+    private fun apiMessages(
+        messages: List<ChatMessage>,
+        systemPrompt: String?,
+    ): List<ChatMessage> = buildList {
+        if (!systemPrompt.isNullOrBlank()) {
+            add(ChatMessage.system(systemPrompt))
         }
-        return ChatCompletionRequest(model = model, messages = apiMessages, stream = stream)
-            .applyThinking(enableThinking)
-            // 厂商不支持就当作没开，宁可让模型自由发挥，也不要一个 400 把整轮对话打断
-            .applyJsonMode(jsonMode && supportsJsonMode)
+        addAll(messages)
     }
 
     /**

@@ -28,7 +28,21 @@ data class ChatCompletionRequest(
      * [com.core.ai.entity.IAI.supportsJsonMode] 挡住，不会发出去被 400。
      */
     @SerialName("response_format")
-    val responseFormat: ResponseFormat? = null
+    val responseFormat: ResponseFormat? = null,
+    /**
+     * 让流式响应在最后一帧带 `usage`。
+     *
+     * null 时不出现在报文里。部分国产兼容层不认这个字段会直接 400，
+     * 由 [com.core.ai.entity.OpenAICompatibleAI] 在流式失败后降级成一次性请求兜底。
+     */
+    @SerialName("stream_options")
+    val streamOptions: StreamOptions? = null,
+)
+
+@Serializable
+data class StreamOptions(
+    @SerialName("include_usage")
+    val includeUsage: Boolean = true
 )
 
 @Serializable
@@ -52,7 +66,9 @@ data class ThinkingConfig(
 data class ChatCompletionResponse(
     val id: String = "",
     val model: String = "",
-    val choices: List<ChatChoice> = emptyList()
+    val choices: List<ChatChoice> = emptyList(),
+    /** 非流式请求的服务端用量；不回的平台留 null，由本地估算兜底。 */
+    val usage: TokenUsageResponse? = null
 )
 
 @Serializable
