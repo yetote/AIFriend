@@ -43,6 +43,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.input.pointer.pointerInput
 import com.ui.werewolf.data.UITokenUsage
+import com.ui.werewolf.data.tablePaperFill
 import kotlinx.coroutines.delay
 
 // ---------------------------------------------------------------------------
@@ -207,8 +208,10 @@ internal fun ThinkingBubble(
     // 既难看又挤地方的问题自然被预算挡住了。
     val lines = remember(reasoning) { ThinkingTail.lines(reasoning) }
 
-    val fill = if (night) Color(0xF0221D2E) else Color(0xF5FFFFFF)
-    val border = if (night) Color(0x59A894FF) else Color(0x336B4BD9)
+    // 底和发言用同一张纸片：牌桌背景有光斑，半透明底会跟着背景变色。
+    // 稿纸和发言分得开，靠的是这圈紫描边、尖角和左上角的标记，不是底色。
+    val fill = tablePaperFill(night)
+    val border = if (night) Color(0x4DA894FF) else Color(0x336B4BD9)
     val textColor = if (night) Color(0xFFE6EAF3) else Color(0xFF3A4152)
 
     // 秒表在界面这侧跑，不跟引擎走：引擎只在有数据到达时推一次，

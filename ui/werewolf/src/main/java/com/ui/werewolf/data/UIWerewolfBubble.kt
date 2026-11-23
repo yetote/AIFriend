@@ -1,6 +1,9 @@
 package com.ui.werewolf.data
 
 import androidx.compose.ui.graphics.Color
+import com.ui.werewolf.DaySurface
+import com.ui.werewolf.NightStroke
+import com.ui.werewolf.NightSurface
 
 /**
  * 一条对话气泡的类别。
@@ -48,6 +51,33 @@ data class UIWerewolfBubbleStyle(
     /** 角标文字。 */
     val tag: String,
 )
+
+/**
+ * 牌桌纸片底。
+ *
+ * 牌桌背景是插画（白天天空 + 远山、夜里星月），半透明气泡会跟着背景一起变色 ——
+ * 同一句发言躺在暖色的地平线上偏黄、躺到山影里偏灰，一列读下来像两种东西。
+ * 牌桌改用牌桌自己的卡片色做不透明纸片底，字永远压在同一块底色上。
+ *
+ * 复盘页不跟着改：静态列表里那种淡底更容易分清主次，而且复盘没有插画背景。
+ */
+fun tablePaperFill(night: Boolean): Color = if (night) NightSurface else DaySurface
+
+/** 纸片底的细描边，只负责把气泡从背景上勾出来。 */
+fun tablePaperStroke(night: Boolean): Color =
+    if (night) NightStroke else Color(0x1A1B2230)
+
+/**
+ * 牌桌气泡样式：[bubbleStyle] 只换底色和描边。
+ *
+ * accent（左侧竖线、角标）和文字色一概不动 —— 类型仍靠它们区分，
+ * 否则所有气泡都成了同一张白纸。
+ */
+fun tableBubbleStyle(kind: UIWerewolfBubbleKind, night: Boolean): UIWerewolfBubbleStyle =
+    bubbleStyle(kind, night).copy(
+        fill = tablePaperFill(night),
+        border = tablePaperStroke(night),
+    )
 
 /**
  * 按类别和明暗取气泡样式。

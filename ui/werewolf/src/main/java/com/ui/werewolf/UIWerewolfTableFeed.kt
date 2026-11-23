@@ -41,6 +41,7 @@ import com.ui.werewolf.data.UIWerewolfLine
 import com.ui.werewolf.data.UIWerewolfBubbleKind
 import com.ui.werewolf.data.UIWerewolfLineKind
 import com.ui.werewolf.data.bubbleStyle
+import com.ui.werewolf.data.tableBubbleStyle
 import com.ui.werewolf.data.UIWerewolfLive
 import com.ui.werewolf.data.UIWerewolfSeatLive
 import com.ui.werewolf.data.UIWerewolfStreaming
@@ -169,7 +170,7 @@ internal fun StreamingLine(
     textColor: Color,
     dimColor: Color,
 ) {
-    val style = bubbleStyle(UIWerewolfBubbleKind.SPEECH, night)
+    val style = tableBubbleStyle(UIWerewolfBubbleKind.SPEECH, night)
     UIWerewolfBubble(style = style, modifier = Modifier.fillMaxWidth()) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             UIAvatar(
@@ -312,7 +313,7 @@ internal fun SpeechRow(
     textColor: Color,
     dimColor: Color,
 ) {
-    val style = bubbleStyle(UIWerewolfBubbleKind.SPEECH, night)
+    val style = tableBubbleStyle(UIWerewolfBubbleKind.SPEECH, night)
     // 头像放在气泡头部里，而不是和气泡并排占掉一整列：气泡因此能铺满整行，
     // 长发言不再被挤成窄条。「谁在说」由头部第一行承担，视觉上更像一条完整的卡片。
     UIWerewolfBubble(style = style, modifier = Modifier.fillMaxWidth()) {
