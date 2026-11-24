@@ -1872,4 +1872,59 @@ class WerewolfDirectorTest {
         )
     }
 
+    // ------------------------------------------------------------------
+    // 夜间三路并发（R3）
+    // ------------------------------------------------------------------
+
+    /** 10 人守卫局：1/2/3 狼、4 预、5 女巫、6 猎人、7 守卫、8/9/10 民。 */
+    private fun guard10() = WerewolfGame.withRoles(
+        config = WerewolfConfig(composition = WerewolfConfig.Guard10),
+        roster = roster(10),
+        roles = listOf(
+            WerewolfRole.WEREWOLF, WerewolfRole.WEREWOLF, WerewolfRole.WEREWOLF,
+            WerewolfRole.SEER, WerewolfRole.WITCH, WerewolfRole.HUNTER, WerewolfRole.GUARD,
+            WerewolfRole.VILLAGER, WerewolfRole.VILLAGER, WerewolfRole.VILLAGER,
+        ),
+    )
+
+    @Test
+    fun `汇聚节点并发跑守卫狼人预言家，三路结果都合并进局面`() = runBlocking {
+        val game = guard10()
+        val agents = game.players.associate { it.seat to SeatAgent(AutoAI(), "test-model") }
+        val director = WerewolfDirector(agents, random = Random(11))
+        val start = WerewolfTable(game)
+
+        val result = director.nightPending(start)
+
+        // 三路都跑了：守卫有守护发言（空守也是合法动作）、刀口、查验都在
+        assertTrue("守卫路跑了", result.transcript.any { it.phase == Phase.NIGHT_GUARD })
+        assertTrue("狼人路跑了", result.transcript.any { it.phase == Phase.NIGHT_WOLF_CHAT || it.phase == Phase.NIGHT_WOLF })
+        assertTrue("预言家查了人", result.game.seerChecks.isNotEmpty())
+        // 消息按守卫 → 狼人 → 预言家固定顺序落，不受并发完成顺序影响
+        val nightPhases = result.transcript.drop(start.transcript.size).map { it.phase }
+        val guardIdx = nightPhases.indexOf(Phase.NIGHT_GUARD)
+        val wolfIdx = nightPhases.indexOfFirst { it == Phase.NIGHT_WOLF_CHAT || it == Phase.NIGHT_WOLF }
+        val seerIdx = nightPhases.indexOf(Phase.NIGHT_SEER)
+        assertTrue("守卫消息在最前", guardIdx >= 0 && guardIdx < wolfIdx)
+        assertTrue("预言家消息在狼人之后", seerIdx > wolfIdx)
+        // 信息隔离：守卫行踪只给守卫本人，狼人只见狼队消息
+        assertTrue("别人看不到守卫守了谁", result.transcriptFor(4).none { it.phase == Phase.NIGHT_GUARD })
+        assertTrue("好人看不到狼人商议", result.transcriptFor(4).none { it.kind == com.feature.werewolf.engine.MessageKind.WOLF_CHAT })
+        // 三路都完成后进女巫（有女巫的局）
+        assertEquals(Phase.NIGHT_WITCH, result.game.phase)
+    }
+
+    @Test
+    fun `续档时已完成的身份不再重跑`() = runBlocking {
+        val game = guard10()
+        val agents = game.players.associate { it.seat to SeatAgent(AutoAI(), "test-model") }
+        val director = WerewolfDirector(agents, random = Random(11))
+
+        // 先跑一次完整汇聚，拿到三路都做完的局面
+        val first = director.nightPending(WerewolfTable(game))
+        // 再跑一次：三路都已完成，不应该产生新消息
+        val again = director.nightPending(first)
+        assertEquals("续档不重跑已完成的身份", first.transcript.size, again.transcript.size)
+    }
+
 }

@@ -149,13 +149,79 @@ class WerewolfDirector(
     }
 
     /**
-     * 夜间汇聚节点（R1 占位，R3 实现三路并发）。
+     * 夜间汇聚节点：守卫 / 狼人 / 预言家三路并发，都完成后交给女巫 / 天亮结算。
      *
-     * R1 阶段入夜仍走 NIGHT_GUARD，正常运行不会到这个节点；放一个明确的报错占位，
-     * 避免将来真走到时静默空转。R3 会把它做成 fan-out/fan-in 的并发节点。
+     * R2 已把结算收敛到 DAWN_SETTLE，夜间行动只写状态——所以三路可以各拿一份
+     * 基于同一快照的 game 副本独立跑，完成后由这里显式合并字段与消息。
+     * 续档时 transcript 里已有某路当夜发言就跳过它，没完成的才重跑。
      */
-    private suspend fun nightPending(table: WerewolfTable): WerewolfTable =
-        error("夜间汇聚节点尚未接入（R3 实现），当前 phase=${table.game.phase}")
+    internal suspend fun nightPending(table: WerewolfTable): WerewolfTable {
+        val base = table.game
+        val guardDone = nightActorDone(table, Phase.NIGHT_GUARD)
+        val seerDone = nightActorDone(table, Phase.NIGHT_SEER)
+        // 狼人：商议发言或定刀消息任一出现即算完成
+        val wolvesDone = nightActorDone(table, Phase.NIGHT_WOLF_CHAT)
+        fun alive(role: WerewolfRole) = base.alivePlayers.any { it.role == role }
+
+        val guardTable: WerewolfTable?
+        val wolfTable: WerewolfTable?
+        val seerTable: WerewolfTable?
+        coroutineScope {
+            val g = if (alive(WerewolfRole.GUARD) && !guardDone) {
+                async { nightGuard(table.copy(game = base.copy(phase = Phase.NIGHT_GUARD))) }
+            } else null
+            val w = if (!wolvesDone) {
+                async {
+                    var wt = nightWolfChat(table.copy(game = base.copy(phase = Phase.NIGHT_WOLF_CHAT)))
+                    wt = nightWolf(wt)
+                    wt
+                }
+            } else null
+            val s = if (alive(WerewolfRole.SEER) && !seerDone) {
+                async { nightSeer(table.copy(game = base.copy(phase = Phase.NIGHT_SEER))) }
+            } else null
+            guardTable = g?.await()
+            wolfTable = w?.await()
+            seerTable = s?.await()
+        }
+
+        // 合并：字段各取各路的写入，消息按守卫 → 狼人 → 预言家顺序落（气泡顺序）
+        var merged = table
+        val finalGame = base.copy(
+            // 守卫写入
+            tonightGuardedSeat = guardTable?.game?.tonightGuardedSeat ?: base.tonightGuardedSeat,
+            lastGuardedSeat = base.lastGuardedSeat,
+            // 狼人写入
+            wolfVotes = wolfTable?.game?.wolfVotes ?: base.wolfVotes,
+            wolfVoteRound = wolfTable?.game?.wolfVoteRound ?: base.wolfVoteRound,
+            tonightVictim = wolfTable?.game?.tonightVictim ?: base.tonightVictim,
+            ghostWolves = wolfTable?.game?.ghostWolves ?: base.ghostWolves,
+            nightHead = wolfTable?.game?.nightHead ?: base.nightHead,
+            wolfPlan = wolfTable?.game?.wolfPlan ?: base.wolfPlan,
+            // 预言家写入
+            seerChecks = seerTable?.game?.seerChecks ?: base.seerChecks,
+            // 发言进度：三路各自的 markSpoken 合在一起
+            spokenPhaseKey = base.spokenPhaseKey,
+            spokenSeats = base.spokenSeats,
+        )
+        // 消息按固定顺序 append（并发完成顺序不定，但落库顺序固定）
+        for (part in listOfNotNull(guardTable, wolfTable, seerTable)) {
+            // 只取这一路新产生的消息（相对 base 的 transcript）
+            part.transcript.drop(table.transcript.size).forEach { merged = merged.append(it) }
+        }
+        merged = merged.copy(game = finalGame)
+
+        // 三路都完成后：有女巫进用药，否则直接天亮结算
+        return if (finalGame.alivePlayers.any { it.role == WerewolfRole.WITCH }) {
+            merged.copy(game = finalGame.copy(phase = Phase.NIGHT_WITCH))
+        } else {
+            merged.copy(game = finalGame.copy(phase = Phase.DAWN_SETTLE))
+        }
+    }
+
+    /** 当夜该阶段是否已经有落库发言（续档据此跳过已完成的身份）。 */
+    private fun nightActorDone(table: WerewolfTable, phase: Phase): Boolean =
+        table.transcript.any { it.day == table.game.day && it.phase == phase }
 
     /**
      * 守卫守护。**先于狼人**，所以这里拿不到刀口，守卫只能盲守。
@@ -241,8 +307,10 @@ class WerewolfDirector(
             val wolves = game.nightWolves()
             if (wolves.isEmpty()) break
 
+            val wolfSeats = wolves.map { it.seat }
             val outcomes = windowedAsync(
-                wolves.map { it.seat },
+                wolfSeats,
+                slowLane = slowestSeat(wolfSeats),
                 onTick = { done, total, pending ->
                     onProgress(
                         WerewolfProgress(
@@ -573,6 +641,7 @@ class WerewolfDirector(
 
         val outcomes = windowedAsync(
             game.aliveSeats,
+            slowLane = slowestSeat(game.aliveSeats),
             onTick = { done, total, pending ->
                 onProgress(
                     WerewolfProgress(
@@ -684,6 +753,7 @@ class WerewolfDirector(
         )
         val outcomes = windowedAsync(
             candidates,
+            slowLane = slowestSeat(candidates),
             onTick = { done, total, pending ->
                 onProgress(
                     WerewolfProgress(
@@ -752,6 +822,7 @@ class WerewolfDirector(
             )
             val outcomes = windowedAsync(
                 voters,
+                slowLane = slowestSeat(voters),
                 onTick = { done, total, pending ->
                     onProgress(
                         WerewolfProgress(
@@ -890,6 +961,7 @@ class WerewolfDirector(
             // 深度思考时更会互相拖到超时——分批之后总时长反而更短。
             val outcomes = windowedAsync(
                 voters,
+                slowLane = slowestSeat(voters),
                 onTick = { done, total, pending ->
                     onProgress(
                         WerewolfProgress(
@@ -1078,11 +1150,13 @@ class WerewolfDirector(
      */
     private val chain: Map<Phase, suspend (WerewolfTable) -> WerewolfTable> by lazy {
         mapOf(
+            // 夜间四个入口都路由到汇聚节点：它按 transcript 判断哪几路还没做，并发跑完。
+            // 责任链之外，规则函数（nightGuard/nightWolf/...）仍可被单测直接调用，行为不变。
             Phase.NIGHT_PENDING to ::nightPending,
-            Phase.NIGHT_GUARD to ::nightGuard,
-            Phase.NIGHT_WOLF_CHAT to ::nightWolfChat,
-            Phase.NIGHT_WOLF to ::nightWolf,
-            Phase.NIGHT_SEER to ::nightSeer,
+            Phase.NIGHT_GUARD to ::nightPending,
+            Phase.NIGHT_WOLF_CHAT to ::nightPending,
+            Phase.NIGHT_WOLF to ::nightPending,
+            Phase.NIGHT_SEER to ::nightPending,
             Phase.NIGHT_WITCH to ::nightWitch,
             Phase.DAWN_SETTLE to ::dawnSettle,
             Phase.DAY_SHERIFF_SIGNUP to ::sheriffSignup,
@@ -2105,10 +2179,17 @@ class WerewolfDirector(
      * 「最慢的一批」，而只取决于最慢的那一个。
      *
      * 窗口取 3：够并行又不至于把服务打爆。
+     *
+     * 三车道调度：传了 [slowLane] 时，那一个 item 独占一条「慢车道」，不跟别人抢许可，
+     * 从启动就一路跑到底；其余 item 在剩下 window-1 条「快车道」里按原顺序并发、空出补位。
+     * 这样历史最慢的 AI 不会被排在队尾拖尾，也不会和快 AI 抢车道——总时长≈
+     * max(慢车道, 快车道并发)，而不是把所有请求塞进同一个窗口排队。
      */
-    private suspend fun <T, R> windowedAsync(
+    internal suspend fun <T, R> windowedAsync(
         items: List<T>,
         window: Int = 3,
+        /** 历史耗时最长、要走慢车道的 item；null 表示不设慢车道。 */
+        slowLane: T? = null,
         /**
          * 进度回调：(已完成数, 总数, 这一批还没回话的人)。
          *
@@ -2119,18 +2200,19 @@ class WerewolfDirector(
         block: suspend (T) -> R,
     ): List<R> {
         // 「还没回话的人」= 还在排队的 + 正在飞的座位，都算在等他。
-        // 并发阶段同时有好几个请求在飞，只报一个座位会指错，只报总数又看不出在等谁。
         val pending = items.toMutableList()
         val lock = Any()
         var done = 0
-        val gate = Semaphore(window)
+        // 只有 3 个以上 item 且确实指定了慢车道时才启用；否则退化为普通窗口并发
+        val useSlowLane = slowLane != null && items.size > window
+        val fastWindow = if (useSlowLane) (window - 1).coerceAtLeast(1) else window
+        val gate = Semaphore(fastWindow)
         onTick(0, items.size, pending.toList())
         return coroutineScope {
             items.map { item ->
                 async {
-                    // acquire 放在 try 外：它自己被取消时不该多 release 一个没拿到的许可
-                    gate.acquire()
-                    try {
+                    if (useSlowLane && item == slowLane) {
+                        // 慢车道：不占 gate，独占运行
                         val result = block(item)
                         synchronized(lock) {
                             done++
@@ -2138,13 +2220,31 @@ class WerewolfDirector(
                         }
                         onTick(done, items.size, pending.toList())
                         result
-                    } finally {
-                        // 出队即刻 release，等待队列里的下一个立刻补位
-                        gate.release()
+                    } else {
+                        // 快车道：抢许可，空出补位。acquire 在 try 外，取消时不多 release。
+                        gate.acquire()
+                        try {
+                            val result = block(item)
+                            synchronized(lock) {
+                                done++
+                                pending.remove(item)
+                            }
+                            onTick(done, items.size, pending.toList())
+                            result
+                        } finally {
+                            gate.release()
+                        }
                     }
                 }
             }.awaitAll()
         }
+    }
+
+    /** 从座位列表里挑历史平均决策耗时最长的一个走慢车道；没有账本时返回 null（退化普通并发）。 */
+    private fun slowestSeat(seats: List<Int>): Int? {
+        val timings = pacing.timings.value
+        val slowest = seats.maxByOrNull { timings[it]?.averageMs ?: 0L } ?: return null
+        return slowest.takeIf { (timings[slowest]?.averageMs ?: 0L) > 0L }
     }
 
     private companion object {

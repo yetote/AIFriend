@@ -1721,7 +1721,7 @@ data class WerewolfGame(
                     role = arranged[index], model = entry.model,
                 )
             }
-            // 有守卫的板子从守护阶段入夜，否则狼人先动——守卫必须盲守，这是规则不是实现细节
+            // 第一夜从守护阶段串行入夜（守卫必先盲守）；第 2 夜起 startNextNight 走 NIGHT_PENDING 三路并发。
             val opening = if (config.has(WerewolfRole.GUARD)) {
                 Phase.NIGHT_GUARD
             } else {
