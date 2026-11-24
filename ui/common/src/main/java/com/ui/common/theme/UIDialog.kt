@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -38,6 +39,8 @@ fun UIIosDialog(
     onDismiss: () -> Unit,
     subtitle: String? = null,
     dismissible: Boolean = true,
+    /** 卡片最大宽度。选座位这类要摊开内容的弹窗可以放宽；默认 340dp 保持全站风格。 */
+    maxWidth: Dp = 340.dp,
     actions: @Composable ColumnScope.() -> Unit,
     content: @Composable ColumnScope.() -> Unit = {}
 ) {
@@ -50,7 +53,7 @@ fun UIIosDialog(
     ) {
         Column(
             modifier = Modifier
-                .widthIn(max = 340.dp)
+                .widthIn(max = maxWidth)
                 .fillMaxWidth()
                 .uiCard(shape = RoundedCornerShape(UIRadiusSheet), elevation = 24.dp)
                 .padding(horizontal = 20.dp, vertical = 20.dp),
