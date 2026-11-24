@@ -22,6 +22,7 @@ import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfPromptStyle
 import com.feature.werewolf.game.WerewolfRole
 import com.feature.werewolf.game.WerewolfSpeechLength
+import com.feature.werewolf.prompt.ReadingTells
 import com.feature.werewolf.prompt.WerewolfPrompt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
@@ -1532,9 +1533,19 @@ class WerewolfDirector(
                         playStyle = agent.playStyle,
                         ledger = PublicLedger.of(table),
                         roundBoard = RoundBoard.of(table.game, seat),
-                        // 夜里的下刀 / 查验 / 用药没有发言可读，「从发言读人」那一大段
-                        // 在决策时用不上，省几千字输入。白天投票仍要带着它判断投谁。
+                        // 按阶段拆包：夜里没有发言可读，整块读人框架都不给；
+                        // 白天投票类决策只需要「投谁/怎么核对」的核心判据，
+                        // 那些「怎么从发言读身份」的细条在发言早已说完时用不上——砍掉省几千字。
                         includeReading = !phase.isNight,
+                        readingScope = if (phase.isNight) {
+                            ReadingTells.Scope.ALL // 夜间 includeReading=false，scope 不影响
+                        } else if (phase == Phase.DAY_VOTE || phase == Phase.DAY_SHERIFF_VOTE ||
+                            phase == Phase.DAY_LAST_WORDS || phase == Phase.HUNTER_SHOOT
+                        ) {
+                            ReadingTells.Scope.VOTE
+                        } else {
+                            ReadingTells.Scope.ALL
+                        },
                         webSearch = webSearchFor(agent),
                     ),
                     enableThinking = thinking,

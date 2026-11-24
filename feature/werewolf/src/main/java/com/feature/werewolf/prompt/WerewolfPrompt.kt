@@ -141,6 +141,12 @@ object WerewolfPrompt {
          * 每次发言和白天投票仍需要它。默认 true 保持老行为，只有决策请求传 false。
          */
         includeReading: Boolean = true,
+        /**
+         * 读人框架的注入范围。[ReadingTells.Scope.VOTE] 只给「投谁/怎么核对」的核心判据，
+         * [ReadingTells.Scope.ALL] 给全套。默认 ALL 保持老行为；
+         * 白天投票类决策传 VOTE，省掉那些发言早已说完时用不上的细条。
+         */
+        readingScope: ReadingTells.Scope = ReadingTells.Scope.ALL,
     ): String {
         val player = game.playerAt(seat)
         return buildString {
@@ -191,6 +197,7 @@ object WerewolfPrompt {
                         game.config,
                         player.role.isWerewolf,
                         includeReading = includeReading,
+                        readingScope = readingScope,
                     ).trimEnd()
                 ).append("\n\n")
             } else {
@@ -617,6 +624,7 @@ object WerewolfPrompt {
          * 决策请求可以传 false 省 token——它自己的 instruction 会把合法目标写清楚。
          */
         includeReading: Boolean = true,
+        readingScope: ReadingTells.Scope = ReadingTells.Scope.ALL,
     ): String = buildString {
         append("【基本打法】以下和你的性格、说话风格无关，冲突时以这里为准：\n")
         append("· 预言家每天开口第一件事，是报出前一晚验了谁、结果是好人还是狼人，然后才谈判断。")
@@ -643,7 +651,7 @@ object WerewolfPrompt {
         // 放在单点判断之后、板型打法之前，先教「怎么读」，再给「这张板子读什么」。
         // 夜里的决策请求用不上它（没有发言可读），传 includeReading=false 省几千字输入。
         if (includeReading) {
-            ReadingTells.lines(config).forEach { append("· ").append(it).append("\n") }
+            ReadingTells.lines(config, readingScope).forEach { append("· ").append(it).append("\n") }
         }
         append("· 神职不要主动报身份。")
         // 只有守卫有这一句：别人守不守人跟好人无关，守卫自己却最容易一开口就交代守人路线。

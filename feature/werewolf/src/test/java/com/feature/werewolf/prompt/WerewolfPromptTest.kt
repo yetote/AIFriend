@@ -2201,4 +2201,45 @@ class WerewolfPromptTest {
         assertTrue("要警惕过度积极站边：$good", good.contains("警惕过度积极站边"))
         assertTrue("要说三步法：$good", good.contains("查验和警徽流合不合理"))
     }
+
+    // ------------------------------------------------------------------
+    // 按阶段拆包：投票只要核心判据，不塞整套读人框架
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `VOTE范围只保留投谁相关的核心判据`() {
+        val game = standardGame()
+        val all = WerewolfPrompt.systemPrompt(game, seat = 6)
+        val vote = WerewolfPrompt.systemPrompt(game, seat = 6, readingScope = ReadingTells.Scope.VOTE)
+
+        // VOTE 保留：票型、轮次、翻牌硬反证
+        assertTrue("VOTE 要有票型判据", vote.contains("票是唯一硬证据"))
+        assertTrue("VOTE 要有放逐轮次", vote.contains("放逐有轮次"))
+        assertTrue("VOTE 要有翻牌硬反证", vote.contains("翻牌／开枪是硬反证"))
+        assertTrue("VOTE 要有警推领先", vote.contains("警推领先"))
+        // VOTE 砍掉：发言读身份的细条（投票时发言早说完了）
+        assertFalse("VOTE 不给验人心路细条", vote.contains("警徽流：好流看"))
+        assertFalse("VOTE 不给金水动机", vote.contains("金水的动机"))
+        assertFalse("VOTE 不给话术工整", vote.contains("话术工整不等于身份真"))
+        assertFalse("VOTE 不给保人", vote.contains("谁在保人"))
+        assertFalse("VOTE 不给警上照妖镜", vote.contains("警上是照妖镜"))
+        // 默认 ALL 行为不变
+        assertTrue("默认仍是全量读人框架", all.contains("警徽流：好流看"))
+        assertTrue("VOTE 明显比 ALL 短", vote.length < all.length - 1000)
+    }
+
+    @Test
+    fun `拆包不影响夜间决策与自由式`() {
+        val game = standardGame()
+        // 夜间决策：includeReading=false 时不注入读人框架，scope 不影响
+        val lean = WerewolfPrompt.systemPrompt(
+            game, seat = 3, includeReading = false, readingScope = ReadingTells.Scope.ALL
+        )
+        assertFalse("夜间仍不带读人框架", lean.contains("怎么从发言读人"))
+        // 自由式：本来就不注入 ReadingTells，scope 不影响，核对事实照给
+        val free = WerewolfPrompt.systemPrompt(game, seat = 3, style = WerewolfPromptStyle.FREE,
+            readingScope = ReadingTells.Scope.VOTE)
+        assertFalse("自由式仍不给读人框架", free.contains("怎么从发言读人"))
+        assertTrue("自由式核对事实照给", free.contains("【核对事实】"))
+    }
 }
