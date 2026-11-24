@@ -202,6 +202,32 @@ cp core/network/key.example.kt core/network/src/main/java/com/core/network/key.k
 - 失败文案统一走 `TTSReadableError.of(t, provider)`，把「Key 错了」「音色没开通」「网络断了」分开说，而不是把原始异常抛给用户
 
 
+## 厂商额度
+
+点开好友详情页有一块「服务商额度」，显示这个好友用的那家厂商还剩多少。
+
+**不用网页登录**：各家开放平台都有 OAuth，但个人开发者申请 OAuth 应用要企业资质、要审核、要配回调域名，周期以周计，App 里还得塞 WebView 和 token 刷新。而余量这件事，八成厂商直接开了 HTTP 接口，用设置页已经填好的那把 Key 就能查。
+
+| 厂商 | 接口 | 鉴权 | 显示 |
+| --- | --- | --- | --- |
+| DeepSeek | `GET api.deepseek.com/user/balance` | Bearer | 总余额 / 赠金 / 充值 |
+| Kimi | `GET api.moonshot.cn/v1/users/me/balance` | Bearer | 可用 / 代金券 / 现金 |
+| MiniMax | `GET api.minimaxi.com/v1/token_plan/remains` | Bearer | 5 小时窗口 / 本周剩余 |
+| 智谱 | `GET open.bigmodel.cn/api/monitor/usage/quota/limit` | 裸 Key | 5 小时 / 本周 / 月度 |
+| 硅基流动 | `GET api.siliconflow.cn/v1/user/info` | Bearer | 余额 / 充值 / 已用 |
+| OpenRouter | `GET openrouter.ai/api/v1/credits` | Bearer | 总额 − 已用 |
+| 火山方舟 | `POST ark.cn-beijing.volcengineapi.com/?Action=ListModelActivations` | **AK/SK 签名** | 模型开通状态 |
+| 阿里百炼 | — | — | 没开放余额接口 |
+
+- **火山方舟是唯一的例外**：它的管控面接口不认聊天用的 API Key，只认 Access Key ID + Secret Access Key，所以设置页给豆包这一栏多两个输入框。查到的还不是钱，是**模型开通状态**——方舟的模型要在控制台单独开通，没开通调用直接 404，而 `GET /models` 会把没开通的也列出来，于是好友建好了、看着也正常，一开口就说不了话
+- **智谱的额度接口不认 `Bearer ` 前缀**，带了就 401，但它别的接口又只认 Bearer。所以鉴权写法配成候选列表依次试，第一个不报 401 的算成功，多发一次请求换掉一次赌博
+- **MiniMax 的 `*_usage_count` 名字骗人**：它返回的是**剩余**次数（已用 = 总量 − 它）；`*_remaining_percent` 已经是剩余百分比，别再减 100
+- **智谱的 `percentage` 是已用比例**不是剩余；`number` 是周期长度（5 小时 / 1 周 / 1 个月）不是额度总量，拿它去除 `remaining` 会算出 10000%
+- **MiniMax 的业务失败照样 HTTP 200**，得看 `base_resp.status_code`；只判状态码会把「套餐没买」显示成「剩余 0%」
+- **SHA-256 / HMAC 是手写的**：Android 单元测试跑在 mockable android.jar 上，那份 jar 里 `javax.crypto.Mac` 是抛异常的桩——用 JDK 实现的话签名逻辑在单元测试里根本跑不起来，只能靠手点一次真机验证。正确性由 FIPS 180-4 与 RFC 4231 的标准向量钉住
+- 「这家没有公开接口」和「这次没查成」在界面上分开说：前者是产品事实（百炼就没开放），后者换个 Key 或重试可能就好了
+
+
 ## AI 狼人杀
 
 一局游戏由 `feature:werewolf` 的规则引擎驱动，AI 只负责「说话」和「做决定」（人类座位由你亲自说、亲自投），规则判定与隐私隔离全在客户端。
