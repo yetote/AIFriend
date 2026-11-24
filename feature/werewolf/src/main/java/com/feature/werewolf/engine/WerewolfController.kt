@@ -145,7 +145,7 @@ class WerewolfController(
         )
         store.save(
             id, table, createdAt, customPrompt,
-            pacing.currentLimit, pacing.thinkingOff.value, speechLength,
+            pacing.currentLimit, pacing.allThinkingOff, speechLength,
         )
     }
 
@@ -232,7 +232,7 @@ class WerewolfController(
                 _state.update { it.copy(table = snapshot) }
                 store.save(
                     id, snapshot, createdAt, customPrompt,
-                    pacing.currentLimit, pacing.thinkingOff.value, speechLength,
+                    pacing.currentLimit, pacing.allThinkingOff, speechLength,
                 )
                 // 落档之后停一下：这一阶段产生的话要先念给人听完，再往下走。
                 // 放在落档之后而不是之前——等的时候进程被杀，存档已经是最新的。
@@ -243,7 +243,7 @@ class WerewolfController(
             }
             store.save(
                 id, result, createdAt, customPrompt,
-                pacing.currentLimit, pacing.thinkingOff.value, speechLength,
+                pacing.currentLimit, pacing.allThinkingOff, speechLength,
             )
         } catch (cancelled: CancellationException) {
             // 用户退出页面：局面已经按阶段存过了，这里只需要收起 running。
@@ -292,7 +292,7 @@ class WerewolfController(
         }
         store.save(
             id, next, createdAt, customPrompt,
-            pacing.currentLimit, pacing.thinkingOff.value, speechLength,
+            pacing.currentLimit, pacing.allThinkingOff, speechLength,
         )
         return true
     }
@@ -318,7 +318,7 @@ class WerewolfController(
         }
         store.save(
             id, table, createdAt, customPrompt,
-            pacing.currentLimit, pacing.thinkingOff.value, speechLength,
+            pacing.currentLimit, pacing.allThinkingOff, speechLength,
         )
     }
 
@@ -334,7 +334,7 @@ class WerewolfController(
         if (table.game.isFinished) return
         store.save(
             id, table, createdAt, customPrompt,
-            pacing.currentLimit, pacing.thinkingOff.value, speechLength,
+            pacing.currentLimit, pacing.allThinkingOff, speechLength,
         )
     }
 

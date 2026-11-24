@@ -4,10 +4,14 @@ package com.feature.werewolf.route
 
 import com.feature.werewolf.engine.HumanTurn
 import com.feature.werewolf.engine.MessageKind
+import com.feature.werewolf.engine.TurnKind
+import com.feature.werewolf.engine.TurnTimeout
 import com.feature.werewolf.engine.WerewolfMessage
+import com.feature.werewolf.engine.WerewolfProgress
 import com.feature.werewolf.engine.WerewolfUiState
 import com.feature.werewolf.game.DeathCause
 import com.feature.werewolf.game.Phase
+import com.feature.werewolf.game.WerewolfPlayer
 import com.feature.werewolf.game.WerewolfRole
 import com.ui.werewolf.data.UIWerewolfBallot
 import com.ui.werewolf.data.UIWerewolfBallotCard
@@ -274,16 +278,30 @@ internal fun WerewolfUiState.toLive(
 
     return UIWerewolfLive(
         day = moment.day,
-        phaseLabel = moment.phase?.displayName ?: "准备中",
+        // 夜里的阶段名要按视角收：参与局里「守卫守护」「女巫用药」是在报这个角色在场，
+        // 「狼人商议 1/3」还顺带把**狼的数量**报给了全场——平民看一眼就知道这局有几匹狼。
+        // 详见 nightStageLabel。
+        phaseLabel = moment.phase?.let { phase ->
+            if (reveal || !phase.isNightPhase()) phase.displayName else nightStageLabel(phase, me)
+        } ?: "准备中",
         night = moment.phase?.let { it.isNightPhase() } ?: false,
         running = running,
         finished = finished,
         winnerLabel = game?.winner?.let { "${it.displayName}胜" },
         // 舞台还停在过去时，「轮到谁、走到第几个」属于未来的阶段，一律不显示。
         // 「谁在忙」并进这一行（「发言 3/8 · 5 号」），天数不重复：顶栏标题已经在报。
-        // 夜里只给不带座位的那版：夜里谁在动就等于把身份摊给好人看。
+        //
+        // 夜里分三档：
+        // - 观战：上帝视角，阶段和进度照给，但仍然不带座位；
+        // - 本人正处在这一阶段：给阶段名和进度（他本来就知道自己是什么角色，
+        //   而且需要知道自己正卡在「下刀」「用药」这样的环节里）；
+        // - 别人：一句中性的「夜间进行中」，阶段名和人数一个字都不给。
         stageLabel = progress?.takeIf { onStage }?.let { p ->
-            if (p.phase.isNightPhase()) p.stageText else p.stageLabel
+            when {
+                !p.phase.isNightPhase() -> p.stageLabel
+                reveal -> p.stageText
+                else -> nightStageLabel(p.phase, me, p)
+            }
         },
         seats = seats,
         lines = lines,
@@ -454,6 +472,80 @@ internal val Phase.hidesActor: Boolean
 internal fun Phase.isNightPhase(): Boolean =
     this == Phase.NIGHT_GUARD || this == Phase.NIGHT_WOLF_CHAT ||
         this == Phase.NIGHT_WOLF || this == Phase.NIGHT_SEER || this == Phase.NIGHT_WITCH
+
+/**
+ * 这个阶段里，**本人**是不是正在行动的那一方。
+ *
+ * 夜里一个阶段至多一个对应角色在动（守卫 / 预言家 / 女巫），狼人则是整队。
+ * 用身份判断就够：阶段会走到，就说明那个角色还在场上。
+ */
+internal fun nightActorIsSelf(phase: Phase, me: WerewolfPlayer?): Boolean = when (phase) {
+    Phase.NIGHT_GUARD -> me?.role == WerewolfRole.GUARD
+    Phase.NIGHT_WOLF_CHAT, Phase.NIGHT_WOLF -> me?.role?.isWerewolf == true
+    Phase.NIGHT_SEER -> me?.role == WerewolfRole.SEER
+    Phase.NIGHT_WITCH -> me?.role == WerewolfRole.WITCH
+    else -> false
+}
+
+/**
+ * 参与局的夜里，顶栏那一行（副标题）该写什么。
+ *
+ * 夜里的「谁在做什么」是秘密，而且泄得比想象中狠：
+ * - 「守卫守护」「女巫用药」＝把这个角色在场报给全场；
+ * - 「狼人商议 1/3」＝把**狼的数量**直接报给全场——平民扫一眼就知道这局有几匹狼，
+ *   等于开局就把最关键的一条信息白送出去。
+ *
+ * 所以参与局的夜里只给两种文案：
+ * - 本人正处在这一阶段 → 阶段名（[progress] 在手就连进度一起给）。
+ *   他本来就知道自己是什么角色，这句不泄露新信息；而且他需要知道自己正卡在
+ *   「下刀」「用药」这样的环节里，不然不知道该做什么。
+ * - 别人 → 一句中性的「夜间进行中」，阶段名和人数一个字都不给。
+ *
+ * 观战和已结束是上帝视角，阶段名照给（调用处直接走原路径，不进这里）。
+ */
+internal fun nightStageLabel(
+    phase: Phase,
+    me: WerewolfPlayer?,
+    /** 引擎此刻的进度。给了就连「第几个 / 共几个」一起报。 */
+    progress: WerewolfProgress? = null,
+): String = when {
+    nightActorIsSelf(phase, me) -> progress?.stageText ?: phase.displayName
+    else -> NIGHT_FILLER
+}
+
+/**
+ * 参与局的夜里，对「不是这一阶段行动者」只能给这一句。
+ */
+internal const val NIGHT_FILLER = "夜间进行中"
+
+/**
+ * 超时提示那句话。
+ *
+ * **夜里的超时不能点名**。夜里的「决定」只有守卫 / 预言家 / 女巫 / 狼人做，
+ * 所以「5 号的决定超出 60 秒」等于当着全场的面报身份：参与者只要盯着这一条，
+ * 就知道刚才那个座位是夜里在动的人。
+ *
+ * 所以：
+ * - 观战（[humanSeat] 为 null）→ 上帝视角，照旧点名；
+ * - 参与局的夜里、超时的不是本人 → 只说一句中性话，不给座位、不给类型；
+ * - 其余（白天、超时的是本人）→ 照旧点名。
+ */
+internal fun timeoutNoticeText(
+    timeout: TurnTimeout,
+    /** 座位号 → 名字。找不到就只报座位号。 */
+    nameOf: (Int) -> String?,
+    /** 玩家自己的座位。null = 观战。 */
+    humanSeat: Int?,
+): String {
+    val nameless = timeout.phase.isNightPhase() && humanSeat != null && timeout.seat != humanSeat
+    if (nameless) {
+        return "刚才有一步超出 ${timeout.limitSeconds} 秒时限，已按兜底继续"
+    }
+    val player = nameOf(timeout.seat)
+    val who = if (player != null) "${timeout.seat} 号 $player" else "${timeout.seat} 号"
+    val what = if (timeout.kind == TurnKind.SPEECH) "发言" else "决定"
+    return "$who 的$what 超出 ${timeout.limitSeconds} 秒时限，已按兜底继续；本局不再给它开深度思考"
+}
 
 internal fun DeathCause.toFate(): UIWerewolfFate = when (this) {
     DeathCause.WOLF_KILL -> UIWerewolfFate.WOLF_KILL

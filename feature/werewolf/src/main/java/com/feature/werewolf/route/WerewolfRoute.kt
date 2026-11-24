@@ -100,6 +100,9 @@ fun WerewolfRoute(
     // 这一局的节奏：档位、关掉思考的座位、每座位耗时账本。都在面板里直接呈现
     val paceLimit by viewModel.pacing.limit.collectAsState()
     val paceThinkingOff by viewModel.pacing.thinkingOff.collectAsState()
+    // 玩家**手动**关思考的座位。参与局里只有这份能露给界面：
+    // 超时自动关的那份是夜间行动的痕迹（见 buildPace 的注释）。
+    val pacePlayerThinkingOff by viewModel.pacing.playerThinkingOff.collectAsState()
     val paceTimings by viewModel.pacing.timings.collectAsState()
     val seatThinking by viewModel.seatThinking.collectAsState()
     // 每个座位的思考气泡覆盖值：缺席 = 跟全局，长按/面板可单独开或关
@@ -180,11 +183,15 @@ fun WerewolfRoute(
 
     // 超时那句话。放在这一层拼：引擎只知道座位号，名字和「他当时在干什么」
     // 只有摆在牌桌前面的这一层知道。
+    //
+    // **夜里的超时不能点名**（口径见 timeoutNoticeText）：夜里的「决定」只有
+    // 守卫 / 预言家 / 女巫 / 狼人做，点名就是当着全场的面报身份。
     val timeoutNotice = state.lastTimeout?.let { timeout ->
-        val player = state.table?.game?.players?.firstOrNull { it.seat == timeout.seat }
-        val who = if (player != null) "${timeout.seat} 号 ${player.name}" else "${timeout.seat} 号"
-        val what = if (timeout.kind == TurnKind.SPEECH) "发言" else "决定"
-        "$who 的$what 超出 ${timeout.limitSeconds} 秒时限，已按兜底继续；本局不再给它开深度思考"
+        timeoutNoticeText(
+            timeout = timeout,
+            nameOf = { seat -> state.table?.game?.players?.firstOrNull { it.seat == seat }?.name },
+            humanSeat = humanSeat,
+        )
     }
 
     // 返回键逐层退：演出 → 补替身页 → 列表翻开的复盘 → 牌桌上的复盘 → 牌桌 → 配置页 → 列表 → 退出
@@ -577,14 +584,15 @@ fun WerewolfRoute(
                 )
             } else {
                 val pace = remember(
-                    state.table, paceLimit, paceThinkingOff, paceTimings, seatThinking, avatars, state.finished,
-                    bubbleVisible, humanSeat, showThinking,
+                    state.table, paceLimit, paceThinkingOff, pacePlayerThinkingOff, paceTimings,
+                    seatThinking, avatars, state.finished, bubbleVisible, humanSeat, showThinking,
                 ) {
                     buildPace(
                         table = state.table,
                         limit = paceLimit,
                         timings = paceTimings,
                         thinkingOff = paceThinkingOff,
+                        playerThinkingOff = pacePlayerThinkingOff,
                         roleThinking = seatThinking,
                         avatars = avatars,
                         // 暂停时也给改：下一步继续时就用新档位。
@@ -593,6 +601,8 @@ fun WerewolfRoute(
                         // 气泡的默认值和牌桌用的是同一套：观战/结束恒开，参与局跟全局开关
                         bubbleDefault = state.finished || humanSeat == null || showThinking,
                         bubbleVisible = bubbleVisible,
+                        // 参与局：按座位的夜间痕迹（超时次数、思考被关、最近耗时）一律不给
+                        participating = humanSeat != null && !state.finished,
                     )
                 }
                 // 面板要压在牌桌上面，必须是同一个 Box 的兄弟节点；
@@ -722,12 +732,19 @@ private val SelectedIdsSaver: Saver<androidx.compose.runtime.MutableState<Set<St
  * 放在 route 而不是 ViewModel：它要同时读局面（谁在几号、谁出局了）、头像、
  * 引擎的耗时账本和角色属性，四样东西分别属于四层。让 VM 去拼，
  * 它就得把头像和座位名一起搬进状态里，而那些本来就在这一层。
+ *
+ * [participating] 是这道闸门：参与局里按座位的耗时、超时次数、
+ * 「思考被系统关了」都不能给——它们全是夜间行动的定位器。
+ * 夜里的超时提示会让参与者知道「刚才有人超时」，面板上再写清楚是谁超时，
+ * 两处一对就把那个夜间角色锁死了。观战和已结束是上帝视角，照实显示。
  */
-private fun buildPace(
+internal fun buildPace(
     table: WerewolfTable?,
     limit: WerewolfTurnLimit,
     timings: Map<Int, SeatTiming>,
     thinkingOff: Set<Int>,
+    /** 玩家**手动**关掉思考的座位。只有这个能露给参与局。 */
+    playerThinkingOff: Set<Int>,
     roleThinking: Map<Int, Boolean>,
     avatars: Map<String, String?>,
     running: Boolean,
@@ -735,6 +752,8 @@ private fun buildPace(
     bubbleDefault: Boolean,
     /** 每个座位的覆盖值；缺席 = 跟全局。 */
     bubbleVisible: Map<Int, Boolean>,
+    /** 参与局（有人在桌上）：按座位的夜间痕迹一律不给。 */
+    participating: Boolean,
 ): UIWerewolfPace {
     val seats = table?.game?.players.orEmpty().map { player ->
         val timing = timings[player.seat]
@@ -744,12 +763,28 @@ private fun buildPace(
             seat = player.seat,
             name = player.name,
             avatarPath = avatars[player.id],
-            thinkingOn = roleOn && player.seat !in thinkingOff,
+            // 「思考被关」有两种来源：玩家手动关，和（夜里的）超时自动关。
+            // 后者在参与局里不能外显——它等于「这个座位刚才在夜里动」。
+            thinkingOn = roleOn && (
+                if (participating) player.seat !in playerThinkingOff
+                else player.seat !in thinkingOff
+                ),
             thinkingAvailable = roleOn,
-            lastLabel = timing?.takeIf { it.turns > 0 }?.let { formatSpent(it.lastMs) },
+            // 参与局只看**白天**那本账：夜里新产生的耗时和超时是夜间行动的痕迹。
+            lastLabel = timing?.let { t ->
+                val ms = if (participating) t.dayLastMs else t.lastMs
+                ms.takeIf { it > 0L }?.let { formatSpent(it) }
+            },
             // 只有一步的时候「平均」和「最近」是同一个数，写出来只是多一列噪声
-            averageLabel = timing?.takeIf { it.turns > 1 }?.let { formatSpent(it.averageMs) },
-            timeoutCount = timing?.timeouts ?: 0,
+            averageLabel = timing?.let { t ->
+                val ms = if (participating) t.dayAverageMs else t.averageMs
+                if (participating) {
+                    ms.takeIf { t.dayTurns > 1 && it > 0L }?.let { formatSpent(it) }
+                } else {
+                    ms.takeIf { t.turns > 1 && it > 0L }?.let { formatSpent(it) }
+                }
+            },
+            timeoutCount = if (participating) (timing?.dayTimeouts ?: 0) else (timing?.timeouts ?: 0),
             eliminated = !player.alive,
             bubbleVisible = bubbleVisible[player.seat] ?: bubbleDefault,
         )

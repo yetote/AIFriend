@@ -1,5 +1,6 @@
 package com.feature.werewolf.engine
 
+import com.feature.werewolf.game.Phase
 import com.feature.werewolf.game.WerewolfTurnLimit
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -20,6 +21,14 @@ enum class TurnKind {
  *
  * [timeouts] 单独记而不是从耗时里反推：超时的那一次也计入了 [totalMs]，
  * 而用户真正想看的恰恰是「这个座位超了几次」——那才是要不要把它换掉/关思考的依据。
+ *
+ * **白天和夜里分开记**，因为这两个数字在参与局里是**身份信号**：
+ * 夜里超时会被顶栏提示一句（脱敏版：「刚才有一步超出时限」），
+ * 面板上如果再按座位显示「谁超时了、谁的思考被系统关了」，
+ * 参与者两处一对，就把那个夜间角色锁死了。
+ *
+ * 所以 [dayTimeouts] / [dayLastMs] 是给参与局看的干净账本，
+ * [nightTimeouts] / [nightLastMs] 只给上帝视角（观战、已结束）看。
  */
 data class SeatTiming(
     val seat: Int,
@@ -27,8 +36,19 @@ data class SeatTiming(
     val totalMs: Long = 0L,
     val turns: Int = 0,
     val timeouts: Int = 0,
+    /** 白天那一步的耗时。 */
+    val dayLastMs: Long = 0L,
+    /** 白天累计耗时。 */
+    val dayTotalMs: Long = 0L,
+    /** 白天走过的步数。 */
+    val dayTurns: Int = 0,
+    /** 白天超时的次数。 */
+    val dayTimeouts: Int = 0,
 ) {
     val averageMs: Long get() = if (turns == 0) 0L else totalMs / turns
+
+    /** 白天的平均耗时。 */
+    val dayAverageMs: Long get() = if (dayTurns == 0) 0L else dayTotalMs / dayTurns
 }
 
 /** 某一步超时了。给界面留一条可以显示的记录，而不是悄悄降级。 */
@@ -39,6 +59,14 @@ data class TurnTimeout(
     val limitMs: Long,
     /** 实际等了多久。比 [limitMs] 略大是正常的：计时和取消不在同一刻。 */
     val elapsedMs: Long,
+    /**
+     * 这一步发生在哪个阶段。
+     *
+     * 界面要靠它判断能不能点名：夜里的超时提示写成「3 号的决定超出 60 秒」，
+     * 等于把「3 号是守卫 / 预言家 / 女巫 / 狼人」念给全场听——夜里的决定
+     * 全是这几个角色做的，点名就是报身份。
+     */
+    val phase: Phase = Phase.FINISHED,
     /**
      * 发生时刻。
      *
@@ -71,10 +99,46 @@ class WerewolfPacing(
     /**
      * 本局被关掉深度思考的座位。
      *
-     * 三种来源：超时自动关（主路径，见导演的 `ask`）、玩家在设置面板手动关、
+     * 三种来源：玩家在设置面板手动关、白天超时自动关（见导演的 `ask`）、
      * 以及存档里带回来的（续档之后不该把已经关掉的那个座位又打开）。
+     *
+     * **夜里超时的不在这里**——它进 [nightThinkingOff]。存档落档时用
+     * [allThinkingOff]（两个集合的并集），所以续档后思考照样是关着的。
      */
     val thinkingOff: StateFlow<Set<Int>> = _thinkingOff.asStateFlow()
+
+    /**
+     * 本局被关掉深度思考的**全部**座位（[thinkingOff] + [nightThinkingOff]）。
+     *
+     * 存档落档用这个：不然续档之后，夜里被超时关掉思考的座位会重新打开，
+     * 那个卡死的模型又开始卡。
+     */
+    val allThinkingOff: Set<Int> get() = _thinkingOff.value + _nightThinkingOff.value
+
+    /**
+     * 玩家**手动**关掉深度思考的座位（以及白天超时自动关的）。
+     *
+     * 和 [nightThinkingOff] 分开记，是因为这两个来源在参与局里性质完全不同：
+     * - 玩家手动关的、白天超时关的 → 白天的事，谁在说话大家都知道，照常显示；
+     * - 夜里超时关的 → 夜里的超时提示会让参与者知道「刚才有人超时」，
+     *   显示出来等于点名那个夜间角色。
+     *
+     * 引擎判断要不要开思考时两个集合都算；界面在参与局里只认这一份。
+     */
+    private val _playerThinkingOff = MutableStateFlow<Set<Int>>(emptySet())
+    val playerThinkingOff: StateFlow<Set<Int>> = _playerThinkingOff.asStateFlow()
+
+    /**
+     * **夜里**超时被自动关掉深度思考的座位。
+     *
+     * 引擎照样要真的关——不然那个卡住的座位会一直卡下去；但参与局的界面上
+     * 不能出现它的痕迹（见 [_playerThinkingOff] 的说明）。
+     *
+     * 构造时带进来的名单来源分不清（玩家手动关的和夜里超时关的混在一起），
+     * 所以一律进这一份不外显的：参与局的界面上不出现它们，就不泄露。
+     */
+    private val _nightThinkingOff = MutableStateFlow<Set<Int>>(thinkingOff)
+    val nightThinkingOff: StateFlow<Set<Int>> = _nightThinkingOff.asStateFlow()
 
     private val _timings = MutableStateFlow<Map<Int, SeatTiming>>(emptyMap())
     val timings: StateFlow<Map<Int, SeatTiming>> = _timings.asStateFlow()
@@ -109,14 +173,27 @@ class WerewolfPacing(
 
     /** 某个座位这一步到底要不要开深度思考。角色本身关着的，这里开不回来。 */
     fun thinkingAllowed(seat: Int, roleDefault: Boolean): Boolean =
-        roleDefault && seat !in _thinkingOff.value
+        roleDefault && seat !in _thinkingOff.value && seat !in _nightThinkingOff.value
 
-    /** 本局给这个座位关掉深度思考。超时降级和玩家手动操作都走这里。 */
-    fun disableThinking(seat: Int) {
+    /**
+     * 给这个座位关掉深度思考（超时降级和玩家手动操作都走这里）。
+     *
+     * [night] 决定进哪个集合：
+     * - 白天 → [thinkingOff]，参与局照常显示（白天谁在说话是公开的）；
+     * - 夜里 → [nightThinkingOff]，参与局**看不到**（夜里超时会把夜间角色点出来）。
+     */
+    fun disableThinking(seat: Int, night: Boolean = false) {
+        if (night) {
+            _nightThinkingOff.update { it + seat }
+        } else {
+            _playerThinkingOff.update { it + seat }
+        }
         _thinkingOff.update { it + seat }
     }
 
     private fun enableThinking(seat: Int) {
+        _playerThinkingOff.update { it - seat }
+        _nightThinkingOff.update { it - seat }
         _thinkingOff.update { it - seat }
     }
 
@@ -130,7 +207,13 @@ class WerewolfPacing(
         if (on) enableThinking(seat) else disableThinking(seat)
     }
 
-    fun record(seat: Int, elapsedMs: Long, kind: TurnKind, timedOut: Boolean) {
+    /**
+     * 记一步的耗时。
+     *
+     * [night] 决定这一笔记到白天还是夜里的账上——参与局的界面在夜里只看白天那本，
+     * 免得「谁刚超时」变成夜间角色的定位器（见 [SeatTiming]）。
+     */
+    fun record(seat: Int, elapsedMs: Long, kind: TurnKind, timedOut: Boolean, night: Boolean = false) {
         val spent = elapsedMs.coerceAtLeast(0L)
         _timings.update { current ->
             val before = current[seat] ?: SeatTiming(seat)
@@ -139,6 +222,10 @@ class WerewolfPacing(
                 totalMs = before.totalMs + spent,
                 turns = before.turns + 1,
                 timeouts = before.timeouts + if (timedOut) 1 else 0,
+                dayLastMs = if (night) before.dayLastMs else spent,
+                dayTotalMs = if (night) before.dayTotalMs else before.dayTotalMs + spent,
+                dayTurns = before.dayTurns + if (night) 0 else 1,
+                dayTimeouts = before.dayTimeouts + if (!night && timedOut) 1 else 0,
             ))
         }
     }
@@ -146,6 +233,10 @@ class WerewolfPacing(
     /** 开新局时清账。续档不清——账本不该跨局，但同一局的续档要保留计时。 */
     fun reset(limit: WerewolfTurnLimit, thinkingOff: Set<Int> = emptySet()) {
         _limit.value = limit
+        // 存档带回来的名单来源分不清（玩家手动关的和夜里超时关的混在一起），
+        // 一律进不外显的那份：参与局的界面上不出现它们，就不泄露。
+        _playerThinkingOff.value = emptySet()
+        _nightThinkingOff.value = thinkingOff
         _thinkingOff.value = thinkingOff
         _timings.value = emptyMap()
     }
@@ -153,6 +244,8 @@ class WerewolfPacing(
     /** 续档时把存档里的档位与关思考名单接回来，账本从零开始（它本来就没落档）。 */
     fun restore(limit: WerewolfTurnLimit, thinkingOff: Set<Int>) {
         _limit.value = limit
+        _playerThinkingOff.value = emptySet()
+        _nightThinkingOff.value = thinkingOff
         _thinkingOff.value = thinkingOff
     }
 }
