@@ -899,7 +899,7 @@ class WerewolfPromptTest {
 
         val voteTask = WerewolfPrompt.task(game.copy(phase = Phase.DAY_VOTE), seat = 6)
         assertTrue(voteTask.contains("投票"))
-        assertTrue("弃票不是随手可用的出口", voteTask.contains("弃票也是一张票"))
+        assertTrue("能判断就投、分不清才弃票", voteTask.contains("完全分不清时宁可弃票"))
 
         val hunterTask = WerewolfPrompt.task(game.copy(phase = Phase.HUNTER_SHOOT), seat = 5)
         assertTrue(hunterTask.contains("可以开枪"))
@@ -1232,6 +1232,23 @@ class WerewolfPromptTest {
     // ------------------------------------------------------------------
 
     @Test
+    fun `读人框架含轮次理论：放逐优先级与警推狼刀领先`() {
+        // 权威教学里最核心、我们之前整块缺失的一层：每天该出谁有既定优先级。
+        // 光会读人不够，读完还得知道「查杀>对跳>行为>发言」和不要分票。
+        val good = WerewolfPrompt.systemPrompt(standardGame(), seat = 3)
+
+        assertTrue("要有放逐轮次一块：$good", good.contains("放逐有轮次"))
+        assertTrue("要说查杀优先于对跳：$good", good.contains("查杀 > 对跳"))
+        assertTrue("要说外置位不替代当天轮次：$good", good.contains("别用外置位替代当天的轮次"))
+        assertTrue("要说分票是狼人行为：$good", good.contains("分票是典型的狼人行为"))
+        assertTrue("要有警推/狼刀领先判断：$good", good.contains("警推领先还是狼刀领先"))
+        assertTrue("要说不到轮次别拍身份：$good", good.contains("不到你的轮次别拍身份"))
+        // 轮次理论属于读人框架，夜间决策 includeReading=false 时不该注入
+        val lean = WerewolfPrompt.systemPrompt(standardGame(), seat = 3, includeReading = false)
+        assertFalse("夜间决策不该带轮次理论", lean.contains("放逐有轮次"))
+    }
+
+    @Test
     fun `好人能从发言读身份，且读法辨证不鼓励乱杀`() {
         // 专栏那局五个人跳预言家，真假的差别在验人心路、警徽流和保人，不在嗓门。
         // 这套框架是公共的：好人和狼都看得到，所以文案里不能出现「你们狼」这种漏视角的话。
@@ -1247,14 +1264,16 @@ class WerewolfPromptTest {
     }
 
     @Test
-    fun `读人框架含硬反证翻案与被查杀者表水`() {
+    fun `读人框架含硬反证翻案与有查杀走查杀`() {
         // 12 人局教训：1 号报 2 号查杀、2 号翻牌猎人开枪带走 1 号——硬反证出现后
         // 3、6 号翻了站边，7 号女巫夜里想通、白天却没翻。框架里必须写明「出现就重盘」。
+        // 另一个教训：旧文案「被查杀者不表水=狼」把真平民 9 号害死了，改成权威的「有查杀走查杀」。
         val good = WerewolfPrompt.systemPrompt(standardGame(), seat = 3)
 
         assertTrue("要有硬反证翻案一条：$good", good.contains("硬反证"))
         assertTrue("要说翻牌/开枪这种可核的证据：$good", good.contains("开枪"))
-        assertTrue("要有被查杀者表水一条：$good", good.contains("被查杀的人怎么回应"))
+        assertTrue("要有查杀走查杀一条：$good", good.contains("有查杀走查杀"))
+        assertTrue("要说表水态度不是第一依据：$good", good.contains("表水态度只作参考"))
     }
 
     @Test
@@ -1795,8 +1814,8 @@ class WerewolfPromptTest {
 
         // 守卫（带守卫的局才有守夜阶段）
         val guardNight = gameWithGuard().copy(phase = Phase.NIGHT_GUARD)
-        assertFalse("自由式不教守人策略", WerewolfPrompt.task(guardNight, seat = 5, style = WerewolfPromptStyle.FREE).contains("空守等于"))
-        assertTrue("引导式照旧", WerewolfPrompt.task(guardNight, seat = 5).contains("空守等于"))
+        assertFalse("自由式不教守人策略", WerewolfPrompt.task(guardNight, seat = 5, style = WerewolfPromptStyle.FREE).contains("首夜空守是常见打法"))
+        assertTrue("引导式教首夜空守（权威主流）", WerewolfPrompt.task(guardNight, seat = 5).contains("首夜空守是常见打法"))
 
         // 狼聊：怂恿语气与盘守卫的打法指令不给，「自刀空刀可选」与「撞守无效」机制保留
         val guardChat = gameWithGuard().copy(phase = Phase.NIGHT_WOLF_CHAT)
@@ -2050,5 +2069,60 @@ class WerewolfPromptTest {
         assertTrue("自由式给规则", free.contains("【遗言】"))
         assertTrue("自由式给术语", free.contains("【术语约定】"))
         assertFalse("但不给读人框架", free.contains("怎么从发言读人"))
+    }
+
+    // ------------------------------------------------------------------
+    // P2：对照权威教学补齐的各身份判据
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `女巫补入报银水带队、毒对跳、首刀上警与捏毒威慑`() {
+        // 权威女巫攻略：用过解药后阳光起跳报银水带队，是常规打法而非只有逃生门。
+        val witch = WerewolfPrompt.systemPrompt(standardGame(), seat = 4)
+
+        assertTrue("要有用解药后报银水带队：$witch", witch.contains("阳光起跳报银水"))
+        assertTrue("要对跳女巫夜里毒：$witch", witch.contains("直接用毒药送走他"))
+        assertTrue("要有捏毒威慑：$witch", witch.contains("捏着毒药本身就是威慑"))
+        assertTrue("要有首夜被刀上警告知：$witch", witch.contains("首夜被刀又不能自救"))
+    }
+
+    @Test
+    fun `猎人补入枪徽流威慑、黑枪与吃毒前跳明`() {
+        // 权威猎人攻略：枪徽流施压、首刀无信息可黑枪、感觉要吃毒主动跳明。
+        val hunter = WerewolfPrompt.systemPrompt(standardGame(), seat = 5)
+
+        assertTrue("要能对跳猎人优先开枪：$hunter", hunter.contains("对跳猎人的"))
+        assertTrue("要有预告枪口施压：$hunter", hunter.contains("预告你的枪口"))
+        assertTrue("要有黑枪选项：$hunter", hunter.contains("不开枪（黑枪）"))
+        assertTrue("要有吃毒前跳明：$hunter", hunter.contains("感觉自己要被女巫毒"))
+    }
+
+    @Test
+    fun `平民补入不认推、找神禁忌与站边`() {
+        // 权威平民守则：绝对不能认推、不要找神点神、划水=扛推位、尽早站边。
+        val villager = WerewolfPrompt.systemPrompt(standardGame(), seat = 6)
+
+        assertTrue("要有绝对不认推：$villager", villager.contains("绝对不要认推"))
+        assertTrue("要有别找神点神：$villager", villager.contains("找神"))
+        assertTrue("要有划水坐低身份：$villager", villager.contains("划水是最容易被抗推的理由"))
+        assertTrue("要有尽早站边：$villager", villager.contains("尽早站边、统一票型"))
+    }
+
+    @Test
+    fun `预言家补入警徽流防自爆与不验已定义牌`() {
+        val seer = WerewolfPrompt.systemPrompt(standardGame(), seat = 3)
+
+        assertTrue("要有防自爆备选：$seer", seer.contains("防自爆的备选"))
+        assertTrue("要别验已定义过的人：$seer", seer.contains("别把已经定义过的人再流进警徽流"))
+    }
+
+    @Test
+    fun `读人框架补入团队票型维度`() {
+        // 权威「找真预言家三步法」的第二步：观团队与票型，我们之前只看发言。
+        val good = WerewolfPrompt.systemPrompt(standardGame(), seat = 3)
+
+        assertTrue("要看谁站在背后：$good", good.contains("看谁站在他背后"))
+        assertTrue("要警惕过度积极站边：$good", good.contains("警惕过度积极站边"))
+        assertTrue("要说三步法：$good", good.contains("查验和警徽流合不合理"))
     }
 }
