@@ -18,16 +18,21 @@ import com.feature.werewolf.game.WerewolfConfig
 object ReadingTells {
 
     /**
-     * 读人框架的注入范围。按场景拆包，不每次全量塞。
+     * 调用方的场景标记：发言阶段（[ALL]）还是投票类决策（[VOTE]）。
      *
-     * [ALL] 发言阶段：整局判断都挂在站边和读人上，给全套。
-     * [VOTE] 投票/警长投票/警徽移交：只需要「投谁」的判据（票型、轮次、硬反证），
-     *   那些「怎么从发言读身份」的细条用不上——投票时发言早已说完，再给只是白烧输入。
+     * [WerewolfPrompt] 按它决定投票类决策改用精简的【核对事实】、
+     * 发言阶段才注入这套完整框架。[VOTE] 不意味着「少给判据」——
+     * 投票要核对的东西一样不能少，只是用更短的形式给。
      */
     enum class Scope { ALL, VOTE }
 
-    fun lines(config: WerewolfConfig, scope: Scope = Scope.ALL): List<String> {
-        val all = buildList {
+    /**
+     * 成套的读人框架，只给发言阶段。
+     *
+     * 投票类决策（[Scope.VOTE]）不走这里——[WerewolfPrompt] 会改用精简的【核对事实】：
+     * 投票时要把场上发言拿来核对，判据一条不能少，只是不需要这套逐条展开的长文。
+     */
+    fun lines(config: WerewolfConfig): List<String> = buildList {
         add("【怎么从发言读人】判断谁像狼，看四样能验证的东西，别凭语气和文采：")
         // 这是整局的骨架，缺了它下面五条全是孤立单点：逐个挑毛病、挑完还是没有结论，
         // 观感就是「一群人在瞎聊」。真人盘局第一步永远是定站边，其余推理都挂在站边上。
@@ -147,14 +152,5 @@ object ReadingTells {
                 "后置位起跳可信度略高（狼少冒这险）。发言五五开时看金水/查杀的发言是否过关——" +
                 "金水听着像狼则发金水者假，查杀听着像狼则发查杀者真。")
         }
-        }
-        if (scope == Scope.ALL) return all
-        // VOTE：投票时发言早已说完，只留「投谁/怎么核对」的判据——
-        // 票型、轮次、警推领先、翻牌硬反证。其余「怎么从发言读身份」的细条全砍。
-        val votePrefixes = listOf(
-            "【怎么从发言读人】", "**票是唯一硬证据**", "**轮次比发言更重要**",
-            "**放逐有轮次", "**认清警推领先", "**翻牌／开枪是硬反证",
-        )
-        return all.filter { line -> votePrefixes.any { line.startsWith(it) } }
     }
 }

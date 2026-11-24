@@ -142,9 +142,9 @@ object WerewolfPrompt {
          */
         includeReading: Boolean = true,
         /**
-         * 读人框架的注入范围。[ReadingTells.Scope.VOTE] 只给「投谁/怎么核对」的核心判据，
-         * [ReadingTells.Scope.ALL] 给全套。默认 ALL 保持老行为；
-         * 白天投票类决策传 VOTE，省掉那些发言早已说完时用不上的细条。
+         * 场景标记：白天投票类决策传 [ReadingTells.Scope.VOTE] 时，
+         * 用精简的【核对事实】替代长篇读人框架——判据一条不少，只是更短。
+         * 发言阶段与夜间用 [ReadingTells.Scope.ALL]（默认）。
          */
         readingScope: ReadingTells.Scope = ReadingTells.Scope.ALL,
     ): String {
@@ -196,10 +196,18 @@ object WerewolfPrompt {
                     strategyBrief(
                         game.config,
                         player.role.isWerewolf,
-                        includeReading = includeReading,
+                        // 投票类决策用下面的【核对事实】替代长篇读人框架：
+                        // 投票时要把场上发言拿来核对，但不能连「怎么判断真假预言家」的
+                        // 判据一起砍掉——那正是 12 人局好人投错的原因。
+                        includeReading = includeReading && readingScope != ReadingTells.Scope.VOTE,
                         readingScope = readingScope,
                     ).trimEnd()
                 ).append("\n\n")
+                // 投票类决策：给一份精简但完整的核对判据（站边/验人/警徽流/票型/轮次/
+                // 翻牌反证/金水），比从长篇读人框架里挑几条更短，判断所需的一点不缺。
+                if (includeReading && readingScope == ReadingTells.Scope.VOTE) {
+                    append(factsBrief().trimEnd()).append("\n\n")
+                }
             } else {
                 // 自由式/搜索式砍掉的是打法倾向，不是「核对事实的能力」。
                 // 没有这一块，模型会把编造的心路当真、忽略翻牌硬反证、不知道先出谁——
@@ -624,6 +632,7 @@ object WerewolfPrompt {
          * 决策请求可以传 false 省 token——它自己的 instruction 会把合法目标写清楚。
          */
         includeReading: Boolean = true,
+        /** 由 [systemPrompt] 透传；VOTE 场景下这里直接不注入读人框架，改用【核对事实】。 */
         readingScope: ReadingTells.Scope = ReadingTells.Scope.ALL,
     ): String = buildString {
         append("【基本打法】以下和你的性格、说话风格无关，冲突时以这里为准：\n")
@@ -651,7 +660,7 @@ object WerewolfPrompt {
         // 放在单点判断之后、板型打法之前，先教「怎么读」，再给「这张板子读什么」。
         // 夜里的决策请求用不上它（没有发言可读），传 includeReading=false 省几千字输入。
         if (includeReading) {
-            ReadingTells.lines(config, readingScope).forEach { append("· ").append(it).append("\n") }
+            ReadingTells.lines(config).forEach { append("· ").append(it).append("\n") }
         }
         append("· 神职不要主动报身份。")
         // 只有守卫有这一句：别人守不守人跟好人无关，守卫自己却最容易一开口就交代守人路线。
