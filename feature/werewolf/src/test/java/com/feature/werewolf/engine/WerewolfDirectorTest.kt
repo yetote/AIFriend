@@ -1888,11 +1888,14 @@ class WerewolfDirectorTest {
     )
 
     @Test
-    fun `汇聚节点并发跑守卫狼人预言家，三路结果都合并进局面`() = runBlocking {
+    fun `第一夜从 NIGHT_GUARD 入口也走三路并发，三路结果都合并进局面`() = runBlocking {
         val game = guard10()
         val agents = game.players.associate { it.seat to SeatAgent(AutoAI(), "test-model") }
         val director = WerewolfDirector(agents, random = Random(11))
         val start = WerewolfTable(game)
+        // withRoles 开局是 NIGHT_GUARD；chain 把它路由到 nightPending，第一夜就并发。
+        // 这里直接调 nightPending 验证三路都跑，等价于 play() 走到这个节点的那一刻。
+        assertEquals("第一夜入口是守卫阶段", Phase.NIGHT_GUARD, game.phase)
 
         val result = director.nightPending(start)
 
