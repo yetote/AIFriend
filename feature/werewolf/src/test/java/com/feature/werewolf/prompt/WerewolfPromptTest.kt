@@ -2117,6 +2117,52 @@ class WerewolfPromptTest {
     }
 
     @Test
+    fun `第二轮贴吧论坛判据：轮次统领、验人改口、投票铁律`() {
+        // 换来源（贴吧大局观帖 + 网杀经验站）后的高价值新点。
+        val good = WerewolfPrompt.systemPrompt(standardGame(), seat = 3)
+
+        assertTrue("要有轮次比发言更重要的统领：$good", good.contains("轮次比发言更重要"))
+        assertTrue("要说轮次是先手权：$good", good.contains("多握一轮就多一分主动权"))
+        assertTrue("要有投票铁律宁放过容错牌：$good", good.contains("宁放过一个容错牌"))
+        assertTrue("要说投错平民=狼多一轮：$good", good.contains("投错一个平民，狼直接多一轮"))
+        assertTrue("要有验人信息改口判据：$good", good.contains("验人信息本身前后改口"))
+        assertTrue("要说真预言家不会记错验人：$good", good.contains("不可能记错自己验了谁"))
+        assertTrue("要说验人力度不是站边理由：$good", good.contains("验人力度"))
+        assertTrue("要说神牌技能为追轮次服务：$good", good.contains("神牌的技能只为追轮次服务"))
+        assertTrue("要说过错好人送轮次：$good", good.contains("毒错一个好人等于白送狼一轮"))
+    }
+
+    @Test
+    fun `第二轮判据：警徽流不判死刑与外置位判断`() {
+        val good = WerewolfPrompt.systemPrompt(standardGame(), seat = 3)
+
+        assertTrue("要说警徽流不能判死刑：$good", good.contains("警徽流不能判死刑"))
+        assertTrue("要说好流不等于真：$good", good.contains("好流不等于真"))
+        assertTrue("要说爆水反而像真预：$good", good.contains("爆水"))
+        assertTrue("要说心路出问题可判假：$good", good.contains("心路历程出问题却可以直接判假"))
+        assertTrue("要用自己视角核外置位：$good", good.contains("用你自己的视角核外置位"))
+        assertTrue("要说关键轮次弃票是狼面：$good", good.contains("关键轮次弃票"))
+    }
+
+    @Test
+    fun `第二轮判据：狼人悍跳别过度编心路`() {
+        // 网杀经验：悍跳按真预言家模板说即可，特意编一大段花哨心路反而越编越漏视角。
+        val wolf = WerewolfPrompt.systemPrompt(standardGame(), seat = 1)
+
+        assertTrue("要说别编花哨心路：$wolf", wolf.contains("别特意编一大段花哨心路"))
+        assertTrue("要说越编越漏视角：$wolf", wolf.contains("编得越多越容易漏视角"))
+    }
+
+    @Test
+    fun `第二轮判据：平民诈身份只报后置位查杀`() {
+        // 百度知道/网杀经验：好人诈身份只给后置位上警的人发查杀，别报金水/警下查杀。
+        val villager = WerewolfPrompt.systemPrompt(standardGame(), seat = 6)
+
+        assertTrue("要说只给后置位上警发查杀：$villager", villager.contains("只给后置位上警的人发查杀"))
+        assertTrue("要说别报金水：$villager", villager.contains("别报金水"))
+    }
+
+    @Test
     fun `读人框架补入团队票型维度`() {
         // 权威「找真预言家三步法」的第二步：观团队与票型，我们之前只看发言。
         val good = WerewolfPrompt.systemPrompt(standardGame(), seat = 3)
