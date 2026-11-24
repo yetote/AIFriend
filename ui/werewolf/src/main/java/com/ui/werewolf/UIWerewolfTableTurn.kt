@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.sp
 import com.ui.common.theme.UIActionBrush
 import com.ui.common.theme.UIFieldFill
 import com.ui.common.theme.UIRadiusControl
+import com.ui.werewolf.data.UIWerewolfSeatLive
 import com.ui.werewolf.data.UIWerewolfTarget
 import com.ui.werewolf.data.UIWerewolfTurn
 import com.ui.werewolf.data.UIWerewolfDirection
@@ -68,6 +69,8 @@ internal fun TurnPanel(
     textColor: Color,
     dimColor: Color,
     surface: Color,
+    /** 牌桌上的全部座位，给选人弹窗用（头像、存活、死因）。 */
+    seats: List<UIWerewolfSeatLive> = emptyList(),
     onSpeech: (String) -> Unit,
     onVote: (Int?) -> Unit,
     onSeat: (Int) -> Unit,
@@ -106,31 +109,36 @@ internal fun TurnPanel(
                 onSubmit = onSpeech
             )
 
-            UIWerewolfTurnKind.VOTE -> TargetRow(
-                targets = turn.targets,
+            UIWerewolfTurnKind.VOTE -> PickTarget(
+                turn = turn,
+                seats = seats,
                 textColor = textColor,
                 dimColor = dimColor,
+                night = night,
                 onPick = onVote,
-                // 上警报名也走这个面板，但它的「不做」是「不上警」不是「弃票」。
-                // 写死「弃票」的话，玩家会以为自己点的是放弃投票
-                extraLabel = if (turn.canAbstain) turn.abstainLabel ?: "弃票" else null,
-                onExtra = { onVote(null) }
+                onAbstain = if (turn.canAbstain) {
+                    // 上警报名的「不做」是「不上警」不是「弃票」，用 abstainLabel 区分
+                    { onVote(null) }
+                } else null,
             )
 
-            UIWerewolfTurnKind.SEAT -> TargetRow(
-                targets = turn.targets,
+            UIWerewolfTurnKind.SEAT -> PickTarget(
+                turn = turn,
+                seats = seats,
                 textColor = textColor,
                 dimColor = dimColor,
+                night = night,
                 onPick = { onSeat(it) },
-                extraLabel = if (turn.canAbstain) turn.abstainLabel ?: "不做" else null,
-                onExtra = { onVote(null) }
+                onAbstain = if (turn.canAbstain) { { onVote(null) } } else null,
             )
 
             UIWerewolfTurnKind.WITCH -> WitchPanel(
                 turn = turn,
+                seats = seats,
                 textColor = textColor,
                 dimColor = dimColor,
-                onWitch = onWitch
+                night = night,
+                onWitch = onWitch,
             )
 
             UIWerewolfTurnKind.DIRECTION -> DirectionRow(
@@ -145,6 +153,57 @@ internal fun TurnPanel(
                 onPick = onWithdraw
             )
         }
+    }
+}
+
+/**
+ * 选一个座位的入口：一个显眼的「从牌桌选」按钮，点开按牌桌分布的 dialog。
+ *
+ * 底部原有的横向 Chip 不再显示——验人、守护这类决定要对着牌桌想一圈，
+ * 一串名字看不出谁坐哪、谁还活着。dialog 里座位和牌桌是同一套视觉（头像、存活、死因）。
+ */
+@Composable
+private fun PickTarget(
+    turn: UIWerewolfTurn,
+    seats: List<UIWerewolfSeatLive>,
+    textColor: Color,
+    dimColor: Color,
+    night: Boolean,
+    onPick: (Int) -> Unit,
+    onAbstain: (() -> Unit)?,
+) {
+    var showPicker by rememberSaveable { mutableStateOf(false) }
+    val pickable = turn.targets.map { it.seat }.toSet()
+    // 提交后这一步就结束了；若引擎已经切到下一回合，残留的 showPicker 会把旧 dialog
+    // 又弹出来（弹的是旧目标，玩家可能误点）。turn 一变就关掉。
+    androidx.compose.runtime.LaunchedEffect(turn.title, turn.kind) { showPicker = false }
+
+    Text(
+        text = "从牌桌选人 →",
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(UIActionBrush)
+            .clickable { showPicker = true }
+            .padding(horizontal = 15.dp, vertical = 9.dp),
+        fontSize = FsAction,
+        fontWeight = FontWeight.SemiBold,
+        color = Color.White,
+    )
+
+    if (showPicker) {
+        TargetPickDialog(
+            title = turn.title,
+            hint = turn.hint,
+            seats = seats,
+            pickable = pickable,
+            textColor = textColor,
+            dimColor = dimColor,
+            night = night,
+            onPick = onPick,
+            abstainLabel = if (onAbstain != null) turn.abstainLabel ?: "不做" else null,
+            onAbstain = onAbstain,
+            onDismiss = { showPicker = false },
+        )
     }
 }
 
@@ -327,20 +386,29 @@ internal fun DirectionRow(
 @Composable
 internal fun WitchPanel(
     turn: UIWerewolfTurn,
+    seats: List<UIWerewolfSeatLive>,
     textColor: Color,
     dimColor: Color,
+    night: Boolean,
     onWitch: (Boolean, Int?) -> Unit,
 ) {
     var poisoning by rememberSaveable { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(turn.title, turn.canPoison, turn.canHeal) { poisoning = false }
 
     if (poisoning) {
-        TargetRow(
-            targets = turn.targets,
+        // 毒目标也走牌桌式 dialog——和验人、守护一致，别在底部糊一串名字
+        TargetPickDialog(
+            title = "毒谁",
+            hint = "毒药无视守护，但只能用一次",
+            seats = seats,
+            pickable = turn.targets.map { it.seat }.toSet(),
             textColor = textColor,
             dimColor = dimColor,
+            night = night,
             onPick = { seat -> onWitch(false, seat) },
-            extraLabel = "算了",
-            onExtra = { poisoning = false }
+            abstainLabel = "算了",
+            onAbstain = null,
+            onDismiss = { poisoning = false },
         )
         return
     }

@@ -284,6 +284,7 @@ fun UIWerewolfTableScreen(
                     textColor = textColor,
                     dimColor = dimColor,
                     surface = surface,
+                    seats = live.seats,
                     onSpeech = onSpeech,
                     onVote = onVote,
                     onSeat = onSeat,
