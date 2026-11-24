@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- AI 朋友：紫渐变底，前景是生成的机器人伙伴（各密度 mipmap-*/ic_launcher_foreground.webp）。
-     没有 monochrome：单色主题图标需要专门的剪影资源，没有就先不提供。 -->
+<!-- AIFriend 暮靛极光自适应图标：黑曜石-暮靛底 + 瓷白灵狐智能体与星芒前景 + Android 13+ 单色剪影。 -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@drawable/ic_launcher_background" />
     <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+    <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
 </adaptive-icon>

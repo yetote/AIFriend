@@ -9,5 +9,5 @@
     <color name="white">#FFFFFFFF</color>
 
     <!-- 与 Compose 侧 UIGradientTop 保持一致，避免冷启动闪白 -->
-    <color name="ui_gradient_top">#FFF8FAFD</color>
+    <color name="ui_gradient_top">#FFF8F9FD</color>
 </resources>
