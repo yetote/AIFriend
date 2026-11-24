@@ -2246,4 +2246,26 @@ class WerewolfPromptTest {
         assertFalse("自由式仍不给读人框架", free.contains("怎么从发言读人"))
         assertTrue("自由式核对事实照给", free.contains("【核对事实】"))
     }
+
+    @Test
+    fun `未翻牌白痴不会拿到已翻牌打法，熊不帮狼引开怀疑，投票任务排除翻牌白痴`() {
+        val foolGame = deal(WerewolfBoards.configOf(WerewolfBoards.FOOL_12))
+        val idiotSeat = foolGame.players.first { it.role == WerewolfRole.IDIOT }.seat
+        val unrevealedIdiotPrompt = WerewolfPrompt.systemPrompt(foolGame, seat = idiotSeat)
+        assertFalse("未翻牌白痴不该被告知已翻牌", unrevealedIdiotPrompt.contains("你已经翻牌了"))
+
+        val voteWithRevealedIdiot = foolGame.copy(phase = Phase.DAY_VOTE, idiotRevealed = true)
+        val voterSeat = foolGame.players.first { it.role == WerewolfRole.VILLAGER }.seat
+        val voteTask = WerewolfPrompt.task(voteWithRevealedIdiot, seat = voterSeat)
+        assertFalse("已翻牌白痴不是合法投票目标", voteTask.contains("${idiotSeat} 号"))
+        assertFalse("投票任务不应包含自己", voteTask.contains("${voterSeat} 号"))
+
+        val bearGame = deal(WerewolfBoards.configOf(WerewolfBoards.BEAR_12))
+        val bearSeat = bearGame.players.first { it.role == WerewolfRole.BEAR }.seat
+        val bearPrompt = WerewolfPrompt.systemPrompt(bearGame, seat = bearSeat)
+        assertFalse("熊是好人神职，不该教它帮狼队把怀疑引开", bearPrompt.contains("帮狼队把怀疑引开"))
+
+        val seerTask = WerewolfPrompt.task(standardGame().copy(phase = Phase.NIGHT_SEER), seat = 3)
+        assertFalse("预言家夜间任务不该以残缺破折号结尾", seerTask.endsWith("——"))
+    }
 }

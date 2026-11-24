@@ -30,11 +30,15 @@ internal object WolfKillBrief {
         // 每条都**不带**「· 」前缀：privateBriefing 会统一加，自己再加一遍会变成「· ·」。
         if (!game.config.has(WerewolfRole.GUARD)) {
             val lines = mutableListOf<String>()
-            lines += "【本局没有守卫】没有任何人能挡住你们的刀。平安夜只可能是女巫用了解药，" +
-                "或者你们自己那一夜空刀。"
-            lines += "如果是女巫救的，那瓶解药已经空了——今晚刀谁都不会再被救第二次。"
-            if (target != null && !killed) {
-                lines += "昨夜刀 $target 号没落地，就是上面这两种情况之一。今晚再刀他，没人挡得住。"
+            if (game.config.has(WerewolfRole.WITCH)) {
+                lines += "【本局没有守卫】没有任何人能挡住你们的刀。平安夜只可能是女巫用了解药，" +
+                    "或者你们自己那一夜空刀。"
+                lines += "如果是女巫救的，那瓶解药已经空了——今晚刀谁都不会再被救第二次。"
+                if (target != null && !killed) {
+                    lines += "昨夜刀 $target 号没落地，就是上面这两种情况之一。今晚再刀他，没人挡得住。"
+                }
+            } else {
+                lines += "【本局没有守卫也没有女巫】没有任何技能能挡住你们的刀，平安夜只可能是你们自己空刀。"
             }
             return lines
         }

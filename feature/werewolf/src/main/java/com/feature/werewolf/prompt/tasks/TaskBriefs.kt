@@ -97,8 +97,8 @@ internal fun taskBrief(
                 if (guided) {
                     append("优先验还没查过的人——你已经掌握的信息比其他人多，别浪费这一验。")
                 }
-                append("理由写你**怀疑他什么**（一句话：他哪句话、哪个动作不对劲），")
-                append("别写「随机选择」这种没有信息的话，也别写你打算怎么用这条验人——")
+                append("理由写你**怀疑他什么**（一句话：他哪句话、哪个动作不对劲；第一夜无信息可写位置考量），")
+                append("别写「随机选择」这种没有信息的话，也别提前写验完后的计划——查验结果还没出来。")
             }
 
             Phase.NIGHT_WITCH -> {
@@ -202,19 +202,30 @@ internal fun taskBrief(
                 }
             }
 
-            Phase.DAY_SHERIFF_VOTE ->
-                append(
-                    "第 ${game.day} 天，警下投票选警长。候选人是 " +
-                        seatsText(game.sheriffCandidates) + "。你可以投其中一个，也可以弃票。"
-                )
+            Phase.DAY_SHERIFF_VOTE -> {
+                if (game.sheriffRound > 1) {
+                    append("第 ${game.day} 天，警长竞选平票 PK 重投（台上候选人不投，台外存活玩家均可投票）。")
+                } else {
+                    append("第 ${game.day} 天，警下投票选警长。")
+                }
+                append("候选人是 ").append(seatsText(game.sheriffCandidates)).append("。你可以投其中一个，也可以弃票。")
+            }
 
             Phase.DAY_LAST_WORDS ->
                 if (game.sheriffSeat == seat) {
-                    append(
-                        "你已经出局了。这是你的遗言，同时还要交代警徽交给谁：" +
-                            "把要带走警徽的人填进 target，想撕掉就填 null。" +
-                            "reason 会被当成你的遗言公开说出来，用 1-2 句交代你的判断。"
-                    )
+                    if (player.deathCause == com.feature.werewolf.game.DeathCause.HUNTER_SHOOT) {
+                        append(
+                            "你被开枪带走了，按规则没有遗言，只需处理警徽归属：" +
+                                "把要移交警徽的存活玩家填进 target，想撕掉就填 null；" +
+                                "reason 只用于记录，不会公开说出来。"
+                        )
+                    } else {
+                        append(
+                            "你已经出局了。这是你的遗言，同时还要交代警徽交给谁：" +
+                                "把要带走警徽的人填进 target，想撕掉就填 null。" +
+                                "reason 会被当成你的遗言公开说出来，用 1-2 句交代你的判断。"
+                        )
+                    }
                 } else {
                     append(
                         "你已经出局了，现在说遗言。用 1-3 句交代你的判断：" +
@@ -317,7 +328,7 @@ internal fun taskBrief(
             }
 
             Phase.DAY_VOTE -> {
-                val candidates = game.voteCandidates ?: game.aliveSeats
+                val candidates = (game.voteCandidates ?: game.votingSeats).filter { it != seat }
                 append("第 ${game.day} 天投票。")
                 if (game.voteRound > 1) {
                     append("上一轮平票，这一轮只能投 ").append(seatsText(candidates)).append("。")
@@ -331,10 +342,10 @@ internal fun taskBrief(
                     "但**完全分不清时宁可弃票，也别无理由乱投**——乱投的人第二天讲不清站边依据，" +
                     "反而会被当成冲票的狼；弃票后大方说出你的疑惑，听别人怎么说再定下一轮。")
                 if (guided) {
-                    append(
-                        "按你今天发言里怀疑的那个人投——发言说 A、投票投 B，等于告诉全场你在打哑谜。" +
-                            "如果警长已经归票，先想清楚为什么不跟，再决定要不要自己带票。"
-                    )
+                    append("按你今天发言里怀疑的那个人投——发言说 A、投票投 B，等于告诉全场你在打哑谜。")
+                    if (game.config.hasSheriff && game.aliveSheriffSeat != null) {
+                        append("如果警长已经归票，先想清楚为什么不跟，再决定要不要自己带票。")
+                    }
                 }
             }
 

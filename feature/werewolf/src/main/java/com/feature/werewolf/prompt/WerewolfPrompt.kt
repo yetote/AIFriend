@@ -362,7 +362,7 @@ object WerewolfPrompt {
             val sheriff = game.aliveSheriffSeat
             append("警长：").append(
                 if (sheriff != null) {
-                    "$sheriff 号（票权 1.5 票，白天最后一个发言）"
+                    "$sheriff 号（票权 1.5 票，决定白天发言顺序）"
                 } else {
                     "暂无（还没选出，或警徽已经流失）"
                 }
@@ -680,9 +680,11 @@ object WerewolfPrompt {
             "投掉一个好人，夜里狼再刀一个就等于绑票——投好人等于帮狼杀人。\n")
         append("· **跟着多数投票本身不是狼的证据**：警长归票之后，很多好人都会跟票。" +
             "狼的特征是**带节奏、有自己的独立目标**，不是站得准。\n")
-        append("· 第 1 天上警的人里如果只有一两个狼，等于白送警徽——" +
-            "**神职该上警就上警**：猎人尤其要上（别人得知道他有枪，才会投他，他才有开枪的机会）；" +
-            "预言家不上警，这一局就没有人能报验人。\n")
+        if (config.hasSheriff) {
+            append("· 第 1 天上警的人里如果只有一两个狼，等于白送警徽——" +
+                "**神职该上警就上警**：预言家必须上警报验人争警徽；" +
+                "其他神职也可上警诈身份或帮好人分担压力（不用在警上暴露真身份，听清局势再决定退水或竞选）。\n")
+        }
 
         // 板型打法：由人数与阵营结构决定，模型自己数不出来，也不该靠猜。
         val board = Boards.text(config)
@@ -761,14 +763,20 @@ object WerewolfPrompt {
                 else "你出局时要决定把警徽交给谁。") +
                 "警徽移交和遗言是两件事：被猎人一枪带走时你说不了话，但警徽照样要处理。"
         }
-        if (seat in game.sheriffRunners && game.phase.isSheriffPhase) {
+        if (seat in game.sheriffCandidates && game.phase.isSheriffPhase) {
             lines +=
                 // 「争到底」是打法指令；上过警首轮不能投警长票才是规则。
                 if (style == WerewolfPromptStyle.GUIDED) "你在竞选警长。上过警的人首轮不能投警长票，所以既然报了名就要争到底。"
                 else "你在竞选警长。上过警的人首轮不能投警长票。"
+        } else if (seat in game.sheriffRunners && game.phase == Phase.DAY_SHERIFF_VOTE && game.sheriffRound > 1) {
+            lines += "你首轮上过警但未进入本轮 PK，现在作为台外玩家拥有本轮 PK 的警长投票权。"
         }
         if (game.phase == Phase.DAY_LAST_WORDS && seat in game.pendingLastWords) {
-            lines += "你已经出局了，现在轮到你说遗言。遗言改不了结局，但会直接影响活着的人怎么投。"
+            lines += if (player.deathCause == com.feature.werewolf.game.DeathCause.HUNTER_SHOOT && game.sheriffSeat == seat) {
+                "你被开枪带走了，按规则没有遗言，但你必须处理警徽（移交给一名存活玩家，或者撕掉）。"
+            } else {
+                "你已经出局了，现在轮到你说遗言。遗言改不了结局，但会直接影响活着的人怎么投。"
+            }
         }
         // 自爆狼还留在夜里的这一小段时间，是**本局独有的规则**，
         // 不明说它会以为自己不能说话了，整夜一言不发。

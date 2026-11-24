@@ -33,7 +33,7 @@ internal object BearKit : RoleKit {
 
     override fun playbook(role: WerewolfRole, config: WerewolfConfig): List<String> = listOf(
         "你不用急着自报身份：让别人先从咆哮里推，你一报，狼人下一夜就刀你。",
-        "你的发言只有一个作用——帮好人排除，或者帮狼队把怀疑引开。",
+        "你的发言重点在于结合咆哮线索帮好人排除怀疑、缩小狼坑，同时掩护自己的熊身份不被狼队锁定。",
     )
 
     override fun conceal(role: WerewolfRole): String =

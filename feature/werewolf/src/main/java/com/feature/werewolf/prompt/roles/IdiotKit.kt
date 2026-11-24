@@ -35,8 +35,8 @@ internal object IdiotKit : RoleKit {
     }
 
     override fun playbook(role: WerewolfRole, config: WerewolfConfig): List<String> = listOf(
-        "你已经翻牌了，现在只有一张嘴可用：继续用发言帮好人指认狼人。",
-        "你不能投票，所以你的判断要说得比别人更具体：指出谁的话有矛盾，别只喊口号。",
+        "未翻牌前你和好人一样正常发言、投票；不要主动自报白痴身份，也别因为「票不死」就乱拉仇恨——翻牌后会立刻失去投票权。",
+        "一旦被票出翻牌，你仍留在场上且有一张嘴可用：此后不能投票，所以你的判断要说得比别人更具体，指出逻辑矛盾帮好人指认狼人。",
     )
 
     override fun conceal(role: WerewolfRole): String =

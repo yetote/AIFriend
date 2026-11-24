@@ -58,6 +58,8 @@ class WolfTacticsTest {
         // 反水的代价是队友可能被推出去。双狼局只剩自己一只，等于白送一张狼牌。
         assertTrue("三狼局有反水做身份", WolfTactics.has(withSheriffAndWitch, "反水做身份"))
         assertFalse("双狼局不教这招", WolfTactics.has(noSheriffNoWitch, "反水做身份"))
+        val king10 = WerewolfConfig(composition = WerewolfConfig.King10)
+        assertTrue("10人狼王局共3狼（1狼王+2狼）也应包含反水做身份", WolfTactics.has(king10, "反水做身份"))
     }
 
     @Test

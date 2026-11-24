@@ -45,7 +45,7 @@ internal object WolfTactics {
             body = "两只狼一起上警跳预言家，互相查杀，把真预言家挤成第三个声音。" +
                 "目的不是让好人信你，是让他们**分不清该信谁**，把警徽拖成平票 PK。" +
                 "代价是两张狼牌同时摆在警上，所以只在狼多（三狼以上）的局里打。",
-            needs = { it.hasSheriff },
+            needs = { it.hasSheriff && wolfCount(it) >= 3 },
         ),
         Tactic(
             title = "倒钩狼",
@@ -83,7 +83,7 @@ internal object WolfTactics {
                 "代价是队友可能被推走——拿一张狼牌换你一张好人皮，只在三狼以上划算。" +
                 "翻车点：质疑完又跟着他投票、或者在别处明显保他，「我和他不是一伙」这层皮当场就破；" +
                 "也别把质疑演成抢归票，太凶会被全场记住。",
-            needs = { (it.composition[WerewolfRole.WEREWOLF] ?: 0) >= 3 },
+            needs = { wolfCount(it) >= 3 },
         ),
         Tactic(
             title = "狼查杀狼",
@@ -138,6 +138,10 @@ internal object WolfTactics {
      */
     fun menu(config: WerewolfConfig): List<String> =
         all.filter { it.needs(config) }.map { "${it.title}：${it.body}" }
+
+    /** 狼阵营总人数（含普通狼与狼王），避免狼王局把 1 狼王 + 2 狼误算成双狼。 */
+    private fun wolfCount(config: WerewolfConfig): Int =
+        config.composition.entries.filter { (role, _) -> role.isWerewolf }.sumOf { it.value }
 
     /** 菜单里有没有这条打法，给测试和「按板子裁」用。 */
     fun has(config: WerewolfConfig, title: String): Boolean =

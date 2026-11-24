@@ -203,9 +203,14 @@ private fun stableHash(s: String): Int {
  */
 internal fun playerStyleBrief(style: PlayerStyle?, config: WerewolfConfig): String? {
     if (style == null) return null
+    val body = if (config.hasSheriff) {
+        style.brief.trim()
+    } else {
+        style.brief.trim().replace("警徽流接不接得上", "验人逻辑接不接得上")
+    }
     return buildString {
         append("【你在牌桌上的性格】\n")
-        append(style.brief.trim())
+        append(body)
         append("\n\n")
         append("这不是你平时的说话人设，而是你打这局牌时的思考方式。" +
             "它决定你**信什么、疑谁、怎么下判断**，优先于上面那段日常性格；" +
