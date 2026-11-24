@@ -1278,22 +1278,38 @@ class WerewolfPromptTest {
         // 说明这条标准本身是软的，不能当硬证据。
         val good = WerewolfPrompt.systemPrompt(standardGame(), seat = 3)
 
-        assertTrue("要明说验发过言的人不是错：$good", good.contains("验发过言的人也不是错"))
+        assertTrue("要明说验发过言的人照样可能有破绽：$good", good.contains("验发过言的人照样可能有破绽"))
     }
 
     @Test
-    fun `警徽流看兑现而非改口次数，白天发言结束前可以改`() {
-        // 12 人局复盘：4 号警徽流 12、6→12、11→11、7、5，被 7、11、1 号数成「改三次、活页账本」。
-        // 但 12、11、5 三次查验全部按序列兑现、验出两个狼——这是最硬的身份证据，不是嫌疑。
-        // 而且白天发言结束前改警徽流本来就合法（听到新发言、新票型随时可调）。
+    fun `警徽流按权威教学：奔着狼留、看兑现、改流合法`() {
+        // 对照狼人杀官方攻略 + 盘逻辑教学补齐判据：
+        // - 好坏看「是不是奔着狼留」，悍跳破绽是「不敢验发言差的人」
+        // - 留法按发言位置分（前置偏拉票/中置结合/后置纯找狼），别搞警上警下各一张的机械标准
+        // - 白天发言结束前改流合法，验过划掉补新目标不算改口，只看有没有兑现
+        // - 别数「改了几次」这种可被话术利用的软指标
         val good = WerewolfPrompt.systemPrompt(standardGame(), seat = 3)
 
-        assertTrue("要说白天发言结束前可以改：$good", good.contains("白天发言结束前改警徽流完全正常"))
-        assertTrue("要说看兑现不看改口次数：$good", good.contains("警徽流看兑现，不看改了几次"))
-        assertTrue("要说验过就补新目标不算改口：$good", good.contains("不算改口"))
-        assertTrue("要给出兑现的正面例子：$good", good.contains("三次查验全按序列兑现"))
-        assertTrue("要说没验就换人才记疑：$good", good.contains("没验就把人换掉"))
-        assertTrue("要说验证不出来才是断裂：$good", good.contains("那才是断裂"))
+        assertTrue("要说好坏看奔着狼留：$good", good.contains("是不是奔着狼留的"))
+        assertTrue("要说悍跳不敢验发言差的人：$good", good.contains("不敢验发言差的人"))
+        assertTrue("要说按发言位置分：$good", good.contains("留法按发言位置分"))
+        assertTrue("要否定机械标准：$good", good.contains("别搞「警上警下必须各一张」的机械标准"))
+        assertTrue("要说白天改流合法：$good", good.contains("白天发言结束前改警徽流完全正常"))
+        assertTrue("要说验过补新目标不算改口：$good", good.contains("都不算改口"))
+        assertTrue("别说「换成反对他最凶的」这种个例判据：$good", !good.contains("反对他最凶"))
+        assertTrue("要说别数改了几次：$good", good.contains("别数「改了几次」这种账"))
+    }
+
+    @Test
+    fun `警上补入诈身份看退水与互验冲锋狼`() {
+        // 官方攻略：诈身份的好人一般退水，悍跳狼绝对不退；第一天真假通常互验对方阵营的冲锋狼。
+        // 这两条只在「警上是照妖镜」条目里，需要有警长的板子才输出。
+        val good = WerewolfPrompt.systemPrompt(gameWithGuard(), seat = 3)
+
+        assertTrue("要说诈身份会退水：$good", good.contains("诈身份的好人一般会退水"))
+        assertTrue("要说悍跳狼不退水：$good", good.contains("悍跳狼绝对不退"))
+        assertTrue("要说互验对方冲锋狼：$good", good.contains("互验对方阵营的冲锋狼"))
+        assertTrue("要说自己阵营找狼的大概率是狼：$good", good.contains("想在自己阵营里找狼"))
     }
 
     @Test
