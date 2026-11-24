@@ -48,6 +48,9 @@ import com.ui.common.theme.UIGlassStroke
 import com.ui.common.theme.UIGlassSurfaceStrong
 import com.ui.common.theme.UIRadiusCard
 import com.ui.common.theme.UIRadiusControl
+import com.ui.common.theme.UIRadiusSheet
+import com.ui.common.theme.UISeparator
+import com.ui.common.theme.UIShadowSoft
 import com.ui.werewolf.data.UIWerewolfPace
 import com.ui.werewolf.data.UIWerewolfSeatPace
 import com.ui.werewolf.data.UIWerewolfTurnLimit
@@ -90,17 +93,18 @@ fun UIWerewolfPaceSheet(
             .background(Color.Black.copy(alpha = 0.42f))
             .clickable(onClick = onDismiss),
     ) {
+        val sheetShape = RoundedCornerShape(topStart = UIRadiusSheet, topEnd = UIRadiusSheet)
         Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .heightIn(max = 640.dp)
-                .clip(RoundedCornerShape(topStart = UIRadiusCard, topEnd = UIRadiusCard))
-                .background(UIGlassSurfaceStrong)
+                .clip(sheetShape)
+                .background(Color(0xFFF6F8FC))
                 .border(
                     width = 1.dp,
                     color = UIGlassStroke,
-                    shape = RoundedCornerShape(topStart = UIRadiusCard, topEnd = UIRadiusCard),
+                    shape = sheetShape,
                 )
                 // 滚动交给整个面板：座位列表不再自己滚，手指落在标题、开关还是座位上，
                 // 都是同一块面板在滑动，不会出现「在列表里滑不动、要挪到空白才滚」的别扭。
@@ -115,8 +119,18 @@ fun UIWerewolfPaceSheet(
                     indication = null,
                     onClick = {},
                 )
-                .padding(horizontal = 18.dp, vertical = 16.dp),
+                .padding(horizontal = 18.dp, vertical = 12.dp),
         ) {
+            // 顶部拖拽指示条
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .padding(bottom = 10.dp)
+                    .size(width = 36.dp, height = 4.dp)
+                    .clip(CircleShape)
+                    .background(Color(0x261B2B45))
+            )
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -124,8 +138,8 @@ fun UIWerewolfPaceSheet(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "对局设置",
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
                         color = UIFriendBarTitleColor,
                     )
                     Text(
@@ -137,118 +151,151 @@ fun UIWerewolfPaceSheet(
                 Text(
                     text = "完成",
                     fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
+                    fontWeight = FontWeight.SemiBold,
                     color = UIFriendBarTagTextBlue,
                     modifier = Modifier
                         .clip(RoundedCornerShape(50))
+                        .background(UIFriendBarTagTextBlue.copy(alpha = 0.10f))
                         .clickable(onClick = onDismiss)
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                        .padding(horizontal = 14.dp, vertical = 6.dp),
+                )
+            }
+
+            Spacer(Modifier.height(14.dp))
+
+            // 全局开关收进同一张白色分组卡，和下面的时限卡、座位账本形成清晰层次
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(UIGlassSurfaceStrong)
+                    .border(0.7.dp, UIGlassStroke, RoundedCornerShape(16.dp))
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+            ) {
+                // 朗读开关放在这里：顶栏不再放喇叭，设置面板是对局里唯一的朗读入口。
+                // 和开局页改的是同一个值（ViewModel 的 autoSpeak，落在 DataStore 里），不会各说各话。
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "朗读发言",
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = UIFriendBarTitleColor,
+                        )
+                        Text(
+                            text = if (speechReady) {
+                                "只念说出口的话，思考和内心活动不念；音色在各座位上配"
+                            } else {
+                                "语音引擎还没就绪，打开时会重试一次绑定"
+                            },
+                            fontSize = 11.5.sp,
+                            lineHeight = 16.sp,
+                            color = UIFriendBarItemSubtitleColor,
+                        )
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Switch(
+                        checked = speechOn,
+                        onCheckedChange = onSpeechChange,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = UIFriendBarTagTextBlue,
+                        ),
+                    )
+                }
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 10.dp)
+                        .height(0.6.dp)
+                        .background(UISeparator)
+                )
+
+                // 思考气泡的全局开关：和顶栏胶囊同一个值，想找「文字开关」的人在这里读得到。
+                // 单个座位的开关在下面的座位行里，长按气泡也能藏掉它。
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "思考气泡",
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = UIFriendBarTitleColor,
+                        )
+                        Text(
+                            text = "显示 AI 的内心活动；参与局里打开等于作弊。" +
+                                "长按某个气泡可以单独藏掉它",
+                            fontSize = 11.5.sp,
+                            lineHeight = 16.sp,
+                            color = UIFriendBarItemSubtitleColor,
+                        )
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Switch(
+                        checked = bubbleOn,
+                        onCheckedChange = onBubbleChange,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            // 和座位的「思考气泡」开关同色：绿色＝显示控制，蓝色＝朗读/深度思考。
+                            checkedTrackColor = UIFriendBarOnlineGreen,
+                        ),
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(14.dp))
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(UIGlassSurfaceStrong)
+                    .border(0.7.dp, UIGlassStroke, RoundedCornerShape(16.dp))
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "思考时限",
+                        fontSize = 13.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = UIFriendBarTitleColor,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    if (pace.totalTimeouts > 0) {
+                        Text(
+                            text = "本局已超时 ${pace.totalTimeouts} 次",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = UIFriendBarRed,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(UIFriendBarRed.copy(alpha = 0.10f))
+                                .padding(horizontal = 8.dp, vertical = 2.dp),
+                        )
+                    }
+                }
+                Spacer(Modifier.height(9.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    UIWerewolfTurnLimit.entries.forEach { limit ->
+                        LimitChip(
+                            limit = limit,
+                            selected = limit == pace.limit,
+                            enabled = pace.running,
+                            modifier = Modifier.weight(1f),
+                            onClick = { onLimitChange(limit) },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = pace.limit.consequence,
+                    fontSize = 11.5.sp,
+                    lineHeight = 16.sp,
+                    color = UIFriendBarItemSubtitleColor,
                 )
             }
 
             Spacer(Modifier.height(16.dp))
-
-            // 朗读开关放在这里：顶栏不再放喇叭，设置面板是对局里唯一的朗读入口。
-            // 和开局页改的是同一个值（ViewModel 的 autoSpeak，落在 DataStore 里），不会各说各话。
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "朗读发言",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = UIFriendBarTitleColor,
-                    )
-                    Text(
-                        text = if (speechReady) {
-                            "只念说出口的话，思考和内心活动不念；音色在各座位上配"
-                        } else {
-                            "语音引擎还没就绪，打开时会重试一次绑定"
-                        },
-                        fontSize = 11.5.sp,
-                        color = UIFriendBarItemSubtitleColor,
-                    )
-                }
-                Spacer(Modifier.width(10.dp))
-                Switch(
-                    checked = speechOn,
-                    onCheckedChange = onSpeechChange,
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.White,
-                        checkedTrackColor = UIFriendBarTagTextBlue,
-                    ),
-                )
-            }
-
-            Spacer(Modifier.height(18.dp))
-
-            // 思考气泡的全局开关：和顶栏胶囊同一个值，想找「文字开关」的人在这里读得到。
-            // 单个座位的开关在下面的座位行里，长按气泡也能藏掉它。
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "思考气泡",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = UIFriendBarTitleColor,
-                    )
-                    Text(
-                        text = "显示 AI 的内心活动；参与局里打开等于作弊。" +
-                            "长按某个气泡可以单独藏掉它",
-                        fontSize = 11.5.sp,
-                        color = UIFriendBarItemSubtitleColor,
-                    )
-                }
-                Spacer(Modifier.width(10.dp))
-                Switch(
-                    checked = bubbleOn,
-                    onCheckedChange = onBubbleChange,
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.White,
-                        // 和座位的「思考气泡」开关同色：绿色＝显示控制，蓝色＝朗读/深度思考。
-                        checkedTrackColor = UIFriendBarOnlineGreen,
-                    ),
-                )
-            }
-
-            Spacer(Modifier.height(18.dp))
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = "思考时限",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = UIFriendBarTitleColor,
-                )
-                Spacer(Modifier.width(8.dp))
-                if (pace.totalTimeouts > 0) {
-                    Text(
-                        text = "本局已超时 ${pace.totalTimeouts} 次",
-                        fontSize = 11.5.sp,
-                        color = UIFriendBarRed,
-                    )
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                UIWerewolfTurnLimit.entries.forEach { limit ->
-                    LimitChip(
-                        limit = limit,
-                        selected = limit == pace.limit,
-                        enabled = pace.running,
-                        modifier = Modifier.weight(1f),
-                        onClick = { onLimitChange(limit) },
-                    )
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = pace.limit.consequence,
-                fontSize = 11.5.sp,
-                lineHeight = 16.sp,
-                color = UIFriendBarItemSubtitleColor,
-            )
-
-            Spacer(Modifier.height(18.dp))
             Text(
                 text = "每个人的用时",
                 fontSize = 13.sp,
@@ -347,11 +394,11 @@ private fun SeatPaceRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            // 每个座位一张独立卡片：淡色底 + 左侧色条，把「这是哪个 AI」隔开。
-            .clip(RoundedCornerShape(10.dp))
-            .background(seatColor.copy(alpha = 0.10f * dim))
-            .border(1.dp, seatColor.copy(alpha = 0.35f * dim), RoundedCornerShape(10.dp))
-            .padding(start = 8.dp, end = 10.dp, top = 8.dp, bottom = 8.dp),
+            // 统一白底卡片 + 左侧座位身份色条：既锚定「这是哪个 AI」，又避免整屏大色块显杂乱
+            .clip(RoundedCornerShape(14.dp))
+            .background(UIGlassSurfaceStrong)
+            .border(0.8.dp, seatColor.copy(alpha = 0.24f * dim), RoundedCornerShape(14.dp))
+            .padding(start = 10.dp, end = 12.dp, top = 9.dp, bottom = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // 左侧竖色条：即使头像有图片、兜底色不可见，这条色也在，锚定这一行属于谁。

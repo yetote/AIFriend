@@ -77,56 +77,56 @@ data class UIWerewolfBubbleStyle(
 fun tableBubbleStyle(kind: UIWerewolfBubbleKind, night: Boolean): UIWerewolfBubbleStyle {
     val base = bubbleStyle(kind, night)
     val fill = when (kind) {
-        // 发言：中性。场上最普通的一类，所有颜色的底子
+        // 发言：白天柔白玻璃底（通透不发灰），夜里深蓝玻璃底，文字清晰可读
         UIWerewolfBubbleKind.SPEECH ->
-            if (night) Color(0x1AFFFFFF) else Color(0x0F1B2230)
+            if (night) Color(0x8C17233B) else Color(0xCCFFFFFF)
 
         // 投票：琥珀。票是唯一会被当场执行的表态
         UIWerewolfBubbleKind.VOTE ->
-            if (night) Color(0x26E0A94A) else Color(0x1AC48A12)
+            if (night) Color(0x33D99B30) else Color(0x22D69A1E)
 
         // 记票：青蓝。它是一张统计结果，不是谁说的话，和投票的琥珀分开
         UIWerewolfBubbleKind.BALLOT ->
-            if (night) Color(0x242FA8FF) else Color(0x172B6BFF)
+            if (night) Color(0x88142540) else Color(0xD4F2F7FF)
 
         // 密谈：紫。紫是唯一只出现在夜里的颜色
         UIWerewolfBubbleKind.SECRET ->
-            if (night) Color(0x247A5AF7) else Color(0x177A5AF7)
+            if (night) Color(0x452A1D54) else Color(0x207A5AF7)
 
         // 内心：冷灰蓝。比发言更淡，色相也偏冷——这些字没人听见，分量最轻
         UIWerewolfBubbleKind.INNER ->
-            if (night) Color(0x1F8C9BB5) else Color(0x157C8CA8)
+            if (night) Color(0x52172133) else Color(0x78EDF2FA)
 
         // 查验结论：青绿。情报色，和记票的青蓝差一个色相（那边偏蓝）
         UIWerewolfBubbleKind.SEER_RESULT ->
-            if (night) Color(0x1F2BB3A3) else Color(0x1520A396)
+            if (night) Color(0x4D133336) else Color(0xCCEAFAF7)
 
         // 思考：靛蓝。和密谈的紫拉开，否则两团紫会混
         UIWerewolfBubbleKind.THOUGHT ->
-            if (night) Color(0x24808CFF) else Color(0x17808CFF)
+            if (night) Color(0x335362CC) else Color(0x1C6A78E8)
 
-        // 播报：中性极淡。它是居中的一行字，不套卡片
+        // 播报：中性玻璃胶囊
         UIWerewolfBubbleKind.BROADCAST ->
-            if (night) Color(0x14FFFFFF) else Color(0x0D000000)
+            if (night) Color(0x52182438) else Color(0xA6FFFFFF)
     }
     val border = when (kind) {
         UIWerewolfBubbleKind.SPEECH ->
-            if (night) Color(0x26FFFFFF) else Color(0x141B2230)
+            if (night) Color(0x2EFFFFFF) else Color(0x1F1B2B45)
         UIWerewolfBubbleKind.VOTE ->
-            if (night) Color(0x4DD8A22E) else Color(0x33B58A00)
+            if (night) Color(0x66E6B046) else Color(0x44C28D18)
         UIWerewolfBubbleKind.BALLOT ->
-            if (night) Color(0x4D6FB6FF) else Color(0x332B6BFF)
+            if (night) Color(0x5973BAFF) else Color(0x3D2B6BFF)
         UIWerewolfBubbleKind.SECRET ->
-            if (night) Color(0x4D9A7CFF) else Color(0x337A5AF7)
+            if (night) Color(0x66A88CFF) else Color(0x407A5AF7)
         UIWerewolfBubbleKind.INNER ->
-            if (night) Color(0x1AFFFFFF) else Color(0x141B2230)
+            if (night) Color(0x1FFFFFFF) else Color(0x181B2B45)
         // 查验结论：描边要比内心重一档——它是结论，不是念头
         UIWerewolfBubbleKind.SEER_RESULT ->
-            if (night) Color(0x4D2FB3A3) else Color(0x3320A396)
+            if (night) Color(0x665FD9C6) else Color(0x4D1E8C7F)
         UIWerewolfBubbleKind.THOUGHT ->
-            if (night) Color(0x4DA0AAFF) else Color(0x33808CFF)
-        // 播报不画框
-        UIWerewolfBubbleKind.BROADCAST -> Color.Transparent
+            if (night) Color(0x59A0AAFF) else Color(0x3D6A78E8)
+        UIWerewolfBubbleKind.BROADCAST ->
+            if (night) Color(0x24FFFFFF) else Color(0x181B2B45)
     }
     return base.copy(fill = fill, border = border)
 }

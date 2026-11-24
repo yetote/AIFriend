@@ -43,7 +43,7 @@ import com.ui.werewolf.data.UIWerewolfBubbleStyle
 fun UIWerewolfBubble(
     style: UIWerewolfBubbleStyle,
     modifier: Modifier = Modifier,
-    corner: Dp = 10.dp,
+    corner: Dp = 14.dp,
     accentBar: Boolean = true,
     dashed: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
@@ -51,43 +51,48 @@ fun UIWerewolfBubble(
     val shape = RoundedCornerShape(corner)
     Row(
         modifier = modifier
+            .padding(vertical = 2.dp)
+            .clip(shape)
+            .background(style.fill)
+            .then(
+                if (dashed) {
+                    Modifier.drawBehind {
+                        drawRoundRect(
+                            color = style.border,
+                            style = Stroke(
+                                width = 1.dp.toPx(),
+                                pathEffect = PathEffect.dashPathEffect(
+                                    floatArrayOf(5.dp.toPx(), 5.dp.toPx())
+                                )
+                            ),
+                            cornerRadius = CornerRadius(corner.toPx()),
+                        )
+                    }
+                } else {
+                    Modifier.border(0.8.dp, style.border, shape)
+                }
+            )
             .height(IntrinsicSize.Min)
-            .padding(vertical = 3.dp)
     ) {
         if (accentBar) {
             Box(
                 modifier = Modifier
+                    .padding(start = 4.dp, top = 8.dp, bottom = 8.dp)
                     .width(3.dp)
                     .fillMaxHeight()
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(style.accent)
+                    .clip(RoundedCornerShape(50))
+                    .background(style.accent.copy(alpha = 0.85f))
             )
-            Spacer(Modifier.width(8.dp))
         }
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(shape)
-                .background(style.fill)
-                .then(
-                    if (dashed) {
-                        Modifier.drawBehind {
-                            drawRoundRect(
-                                color = style.border,
-                                style = Stroke(
-                                    width = 1.dp.toPx(),
-                                    pathEffect = PathEffect.dashPathEffect(
-                                        floatArrayOf(5.dp.toPx(), 5.dp.toPx())
-                                    )
-                                ),
-                                cornerRadius = CornerRadius(corner.toPx()),
-                            )
-                        }
-                    } else {
-                        Modifier.border(1.dp, style.border, shape)
-                    }
+                .padding(
+                    start = if (accentBar) 8.dp else 11.dp,
+                    end = 11.dp,
+                    top = 8.dp,
+                    bottom = 8.dp,
                 )
-                .padding(horizontal = 10.dp, vertical = 7.dp)
         ) {
             content()
         }
@@ -100,11 +105,12 @@ fun BubbleTag(text: String, accent: Color) {
     Text(
         text = text,
         fontSize = 9.sp,
-        fontWeight = FontWeight.Medium,
+        fontWeight = FontWeight.SemiBold,
         color = accent,
         modifier = Modifier
             .clip(RoundedCornerShape(50))
-            .background(accent.copy(alpha = 0.12f))
-            .padding(horizontal = 5.dp, vertical = 1.dp)
+            .background(accent.copy(alpha = 0.13f))
+            .border(0.5.dp, accent.copy(alpha = 0.28f), RoundedCornerShape(50))
+            .padding(horizontal = 6.dp, vertical = 1.dp)
     )
 }

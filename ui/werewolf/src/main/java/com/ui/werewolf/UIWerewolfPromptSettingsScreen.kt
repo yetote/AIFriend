@@ -23,18 +23,23 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ui.common.theme.UIActionBrush
+import com.ui.common.theme.UIFieldFill
 import com.ui.common.theme.UIFriendBarItemMetaColor
 import com.ui.common.theme.UIFriendBarTagTextBlue
 import com.ui.common.theme.UIFriendBarTitleColor
 import com.ui.common.theme.UIGlassSurfaceStrong
 import com.ui.common.theme.UIGradientBackground
+import com.ui.common.theme.UIRadiusCard
 import com.ui.common.theme.UIRadiusControl
 import com.ui.common.theme.UITopBar
-import com.ui.common.theme.UIGlassSurface
+import com.ui.common.theme.uiCard
 import com.ui.common.pageInsets
 import com.ui.werewolf.data.UIWerewolfPromptState
 
@@ -78,12 +83,15 @@ fun UIWerewolfPromptSettingsScreen(
                     modifier = Modifier
                         .padding(end = 12.dp)
                         .clip(RoundedCornerShape(50))
-                        .background(if (dirty) UIFriendBarTagTextBlue else UIGlassSurface)
+                        .background(
+                            if (dirty) UIActionBrush
+                            else Brush.linearGradient(listOf(UIFieldFill, UIFieldFill))
+                        )
                         .clickable(enabled = dirty) { onSave(global, board) }
                         .padding(horizontal = 16.dp, vertical = 7.dp),
                     fontSize = 14.sp,
                     fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
-                    color = androidx.compose.ui.graphics.Color.White,
+                    color = if (dirty) Color.White else UIFriendBarItemMetaColor,
                 )
             }
 
@@ -150,9 +158,8 @@ private fun PromptSection(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(UIRadiusControl))
-                .background(UIGlassSurfaceStrong)
-                .padding(horizontal = 14.dp, vertical = 11.dp)
+                .uiCard(shape = RoundedCornerShape(UIRadiusCard), elevation = 6.dp)
+                .padding(horizontal = 14.dp, vertical = 12.dp)
         ) {
             if (value.isEmpty()) {
                 Text(

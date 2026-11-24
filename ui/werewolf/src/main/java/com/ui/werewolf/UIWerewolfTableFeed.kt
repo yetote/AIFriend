@@ -193,7 +193,7 @@ internal fun Feed(
             }
         } else if (thinkingSeat != null) {
             item(key = "thinking") {
-                ThinkingLine(seat = thinkingSeat, dimColor = dimColor)
+                ThinkingLine(seat = thinkingSeat, night = night, dimColor = dimColor)
             }
         }
     }
@@ -270,19 +270,22 @@ internal fun StreamingLine(
  * 它是记录流的最后一项，用户往下看的时候，视线自然接在那个人身上。
  */
 @Composable
-internal fun ThinkingLine(seat: UIWerewolfSeatLive, dimColor: Color) {
+internal fun ThinkingLine(seat: UIWerewolfSeatLive, night: Boolean, dimColor: Color) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 2.dp),
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (night) Color(0x5C162238) else Color(0xA6FFFFFF))
+            .border(0.7.dp, if (night) NightStroke else DayStroke, RoundedCornerShape(14.dp))
+            .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         UIAvatar(
             name = seat.name,
             avatarPath = seat.avatarPath,
-            size = 26.dp,
+            size = 24.dp,
             shape = CircleShape,
-            modifier = Modifier.alpha(0.7f)
+            modifier = Modifier.alpha(0.85f)
         )
         Spacer(Modifier.width(8.dp))
         Text(
@@ -290,8 +293,8 @@ internal fun ThinkingLine(seat: UIWerewolfSeatLive, dimColor: Color) {
             fontSize = FsName,
             color = dimColor
         )
-        Spacer(Modifier.width(6.dp))
-        ThinkingDot(color = dimColor)
+        Spacer(Modifier.width(7.dp))
+        ThinkingDot(color = if (night) SelfBlueNight else SelfBlue)
     }
 }
 
@@ -309,22 +312,41 @@ internal fun LineRow(
         } ?: Unit
 
         UIWerewolfLineKind.DIVINE -> {
-            // 播报是居中的一行字，不套卡片，但底色也跟着类型走
+            // 播报是居中的系统宣告：两侧极细淡线 + 毛玻璃胶囊底
             val style = tableBubbleStyle(UIWerewolfBubbleKind.BROADCAST, night)
+            val dividerColor = if (night) Color(0x22FFFFFF) else Color(0x181B2B45)
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center
             ) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(0.6.dp)
+                        .background(dividerColor)
+                )
                 Text(
                     text = line.text,
                     modifier = Modifier
+                        .padding(horizontal = 8.dp)
                         .clip(RoundedCornerShape(50))
                         .background(style.fill)
-                        .padding(horizontal = 10.dp, vertical = 4.dp),
-                    fontSize = FsName,
+                        .border(0.6.dp, style.border, RoundedCornerShape(50))
+                        .padding(horizontal = 11.dp, vertical = 4.dp),
+                    fontSize = FsMeta,
+                    fontWeight = FontWeight.Medium,
                     color = dimColor,
-                    lineHeight = 19.sp,
+                    lineHeight = 18.sp,
                     textAlign = TextAlign.Center
+                )
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(0.6.dp)
+                        .background(dividerColor)
                 )
             }
         }
@@ -594,26 +616,33 @@ internal fun BallotCardRow(
 ) {
     // 记票卡走青蓝：和投票的琥珀分开——「我投了谁」和「全场投了谁」是两件事
     val style = tableBubbleStyle(UIWerewolfBubbleKind.BALLOT, night)
+    val shape = RoundedCornerShape(14.dp)
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .padding(vertical = 2.dp)
+            .clip(shape)
             .background(style.fill)
-            .border(1.dp, style.border, RoundedCornerShape(12.dp))
+            .border(0.9.dp, style.border, shape)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        // 标题条：投票类型 + 已投票数。弃票也算投了，所以分母是 totalVotes。
+        // 标题条：角标 + 投票类型 + 已投票数。弃票也算投了，所以分母是 totalVotes。
         Row(verticalAlignment = Alignment.CenterVertically) {
+            BubbleTag(text = style.tag, accent = style.accent)
+            Spacer(Modifier.width(6.dp))
             Text(
                 text = card.title,
                 fontSize = FsName,
                 fontWeight = FontWeight.SemiBold,
                 color = textColor,
+                modifier = Modifier.weight(1f, fill = false),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.width(6.dp))
             Text(
-                text = "· ${card.totalVotes} 人投票",
+                text = "${card.totalVotes} 票",
                 fontSize = FsMeta,
                 color = dimColor,
             )
@@ -624,6 +653,7 @@ internal fun BallotCardRow(
         // 排序：得票多的在前，弃票沉底；同票数按座位号，稳定好读。
         val votesBySeat = card.tally.associate { it.seat to it.votes }
         val groups = card.ballots.groupBy({ it.targetSeat }, { it.voterSeat })
+        val maxVotes = (votesBySeat.values.maxOrNull() ?: 1.0).coerceAtLeast(1.0)
         val orderedTargets = groups.keys.sortedWith(
             compareByDescending<Int?> { votesBySeat[it] ?: 0.0 }
                 .thenBy { it == null } // null = 弃票，排最后
@@ -635,6 +665,8 @@ internal fun BallotCardRow(
                 target = target,
                 voters = voters,
                 votes = votesBySeat[target] ?: voters.size.toDouble(),
+                maxVotes = maxVotes,
+                night = night,
                 textColor = textColor,
                 dimColor = dimColor,
             )
@@ -643,7 +675,7 @@ internal fun BallotCardRow(
 }
 
 /**
- * 一组票：第一行是被投的目标 + 得票数，第二行是投给他的人。
+ * 一组票：第一行是被投的目标 + 票数胶囊 + 比例微条，第二行是投给他的座位号微胶囊。
  * 弃票的目标为空，整组灰掉、票数不显示，只列投票人。
  */
 @Composable
@@ -651,39 +683,74 @@ private fun TargetVotesRow(
     target: Int?,
     voters: List<Int>,
     votes: Double,
+    maxVotes: Double,
+    night: Boolean,
     textColor: Color,
     dimColor: Color,
 ) {
     val abstain = target == null
-    Column(modifier = Modifier.fillMaxWidth()) {
+    val ratio = if (abstain) 0f else (votes / maxVotes).toFloat().coerceIn(0f, 1f)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (night) Color(0x14FFFFFF) else Color(0x88FFFFFF))
+            .padding(horizontal = 9.dp, vertical = 7.dp),
+        verticalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = if (abstain) "弃票" else "$target 号",
                 fontSize = FsName,
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = FontWeight.Bold,
                 color = if (abstain) dimColor else VoteRed,
             )
             if (!abstain) {
-                Spacer(Modifier.width(6.dp))
+                Spacer(Modifier.width(8.dp))
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(4.dp)
+                        .clip(CircleShape)
+                        .background(if (night) Color(0x1FFFFFFF) else Color(0x14E0564F))
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(ratio)
+                            .height(4.dp)
+                            .clip(CircleShape)
+                            .background(VoteRed.copy(alpha = if (night) 0.85f else 0.78f))
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
                 val label = if (votes % 1.0 == 0.0) {
                     votes.toInt().toString()
                 } else {
                     String.format(java.util.Locale.US, "%.1f", votes)
                 }
-                Text(text = "$label 票", fontSize = FsMeta, color = dimColor)
+                Text(
+                    text = "$label 票",
+                    fontSize = FsMeta,
+                    fontWeight = FontWeight.SemiBold,
+                    color = VoteRed,
+                )
             }
         }
-        Spacer(Modifier.height(2.dp))
         FlowRow(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             voters.forEach { voter ->
                 Text(
                     text = "${voter}号",
-                    fontSize = FsMeta,
-                    color = if (abstain) dimColor.copy(alpha = 0.8f) else textColor,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(if (night) Color(0x1EFFFFFF) else Color(0x121B2B45))
+                        .padding(horizontal = 6.dp, vertical = 1.5.dp),
+                    fontSize = 10.5.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = if (abstain) dimColor.copy(alpha = 0.85f) else textColor,
                 )
             }
         }

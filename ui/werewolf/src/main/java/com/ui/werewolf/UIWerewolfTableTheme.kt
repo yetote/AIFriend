@@ -44,16 +44,34 @@ internal val FsModel = 8.sp
 
 internal val NightText = Color(0xFFE9EEF9)
 
-internal val NightDim = Color(0xFF97A3BC)
+internal val NightDim = Color(0xFF9BA8C2)
 
-internal val NightStroke = Color(0x1FFFFFFF)
+internal val NightStroke = Color(0x26FFFFFF)
+
+internal val DayStroke = Color(0x161B2B45)
 
 internal val DaySurface = Color(0xFFFDFDFF)
 
-internal val NightSurface = Color(0xFF1B2437)
+internal val NightSurface = Color(0xFF151E30)
+
+/** 悬浮顶栏 / 底部 Dock 用的半透明玻璃底，让昼夜插画隐约透出但不抢字。 */
+internal val DayGlassSurface = Color(0xEBFFFFFF)
+
+internal val NightGlassSurface = Color(0xE6131C2E)
+
+/** 昼夜输入框与次级按钮填底：夜里用浅白半透明，白天用极淡灰蓝。 */
+internal val DayControlFill = Color(0x0F1B2B45)
+
+internal val NightControlFill = Color(0x1CFFFFFF)
+
+internal val DayControlBorder = Color(0x141B2B45)
+
+internal val NightControlBorder = Color(0x29FFFFFF)
 
 /** 自己：座位环上的描边、身份胶囊。 */
 internal val SelfBlue = Color(0xFF2B6BFF)
+
+internal val SelfBlueNight = Color(0xFF7FA8FF)
 
 /** 出局：一律降饱和，再叠一个原因字。颜色 + 字双编码，色弱也分得清「刀」和「票」。 */
 internal val FateRed = Color(0xFFD9534F)
@@ -61,7 +79,12 @@ internal val FateRed = Color(0xFFD9534F)
 internal val VoteRed = Color(0xFFE0564F)
 
 /** 警徽的金色。和票数的红、自己的蓝都拉开，扫一眼不会认错。 */
-internal val SheriffGold = Color(0xFFC79A2E)
+internal val SheriffGold = Color(0xFFD4A236)
+
+/** 女巫解药（翠绿）与毒药（绛紫）语义色。 */
+internal val HealGreen = Color(0xFF1D9A72)
+
+internal val PoisonPurple = Color(0xFF8C4BE8)
 
 /**
  * 查验结论的青绿。和记票的青蓝（偏蓝）、投票的琥珀、密谈的紫都拉得开。

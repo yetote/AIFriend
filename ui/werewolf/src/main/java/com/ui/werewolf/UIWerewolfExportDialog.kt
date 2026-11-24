@@ -3,23 +3,30 @@ package com.ui.werewolf
 // 导出格式的选择框。复盘页和列表页共用。
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ui.common.theme.UIDialogButtons
 import com.ui.common.theme.UIFieldFill
+import com.ui.common.theme.UIFriendBarTagTextBlue
+import com.ui.common.theme.UIGlassStroke
+import com.ui.common.theme.UIIosDialog
 import com.ui.common.theme.UIRadiusControl
 
 /**
@@ -29,7 +36,7 @@ import com.ui.common.theme.UIRadiusControl
  * 挤成一个按钮上写两个名字，用户只能靠猜；分成两个按钮又太占地方。
  *
  * 复盘页和列表页共用这一个：同一个动作在两处长得不一样，用户会以为是两件事。
- * 颜色沿用复盘页那套灰阶，白底弹窗配深色标题——列表页背景是浅色渐变，压得住。
+ * 使用全站统一的 [UIIosDialog] 皮肤，避免 Material 原生对话框割裂感。
  *
  * @param onMarkdown null 表示这一局没有 Markdown 可导（列表里没打完的局就是这种情况：
  *   复盘要基于「谁赢了」，没有赢家就生不出一份不误导人的文档）。
@@ -41,55 +48,73 @@ internal fun UIWerewolfExportDialog(
     onMarkdown: (() -> Unit)?,
     onGame: (() -> Unit)?,
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "导出这一局",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = ExportTitle,
+    UIIosDialog(
+        title = "导出这一局",
+        subtitle = "选择导出格式，生成后会调起系统分享面板",
+        onDismiss = onDismiss,
+        actions = {
+            UIDialogButtons(
+                confirmText = "取消",
+                confirmColor = Color(0xFF9AA4B2),
+                onConfirm = onDismiss,
+                cancelText = null,
             )
         },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (onMarkdown != null) {
-                    ExportOption(
-                        title = "复盘文档 · Markdown",
-                        subtitle = "一份能直接读、能贴进笔记软件的复盘",
-                        onClick = onMarkdown,
-                    )
-                }
-                if (onGame != null) {
-                    ExportOption(
-                        title = "对局文件 · .wwg",
-                        subtitle = "导回 App 就能重看、重演，换台手机也能带走",
-                        onClick = onGame,
-                    )
-                }
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (onMarkdown != null) {
+                ExportOption(
+                    badge = "MD",
+                    title = "复盘文档 · Markdown",
+                    subtitle = "一份能直接读、能贴进笔记软件的复盘",
+                    onClick = onMarkdown,
+                )
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(text = "取消", color = ExportDim)
+            if (onGame != null) {
+                ExportOption(
+                    badge = "WWG",
+                    title = "对局文件 · .wwg",
+                    subtitle = "导回 App 就能重看、重演，换台手机也能带走",
+                    onClick = onGame,
+                )
             }
-        },
-        containerColor = Color.White,
-    )
+        }
+    }
 }
 
 @Composable
-private fun ExportOption(title: String, subtitle: String, onClick: () -> Unit) {
-    Column(
+private fun ExportOption(
+    badge: String,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+) {
+    val shape = RoundedCornerShape(UIRadiusControl)
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(UIRadiusControl))
+            .clip(shape)
             .background(UIFieldFill)
+            .border(0.7.dp, UIGlassStroke, shape)
             .clickable { onClick() }
-            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .padding(horizontal = 13.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(text = title, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = ExportTitle)
-        Text(text = subtitle, fontSize = 11.sp, color = ExportDim)
+        Text(
+            text = badge,
+            modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .background(UIFriendBarTagTextBlue.copy(alpha = 0.12f))
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            color = UIFriendBarTagTextBlue,
+        )
+        Spacer(Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(text = title, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, color = ExportTitle)
+            Text(text = subtitle, fontSize = 11.5.sp, lineHeight = 16.sp, color = ExportDim)
+        }
     }
 }
 

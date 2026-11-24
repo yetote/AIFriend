@@ -62,29 +62,31 @@ import androidx.compose.ui.graphics.lerp
 // 白天的天色是浅蓝到暖沙，夜里的天色是墨蓝，而**山脊的形状两个时段完全一样**：
 // 玩家白天记住的地形，到夜里还是那个轮廓，「天色变了、地方没变」。
 // 两张互不相干的背景虽然更省事，但会让人觉得每回合换了一个场地。
-internal val DaySkyTop = Color(0xFFE6EFFC)
+internal val DaySkyTop = Color(0xFFDFECFC)
 
-internal val DaySkyMid = Color(0xFFF4F8FE)
+internal val DaySkyMid = Color(0xFFF3F7FE)
 
-internal val DaySkyLow = Color(0xFFFBF6EC)
+internal val DaySkyLow = Color(0xFFFCF4E6)
 
-internal val NightSkyTop = Color(0xFF060A12)
+internal val NightSkyTop = Color(0xFF070C18)
 
-internal val NightSkyLow = Color(0xFF121D31)
+internal val NightSkyMid = Color(0xFF0C1529)
 
-internal val DaySun = Color(0xFFFFCE7A)
+internal val NightSkyLow = Color(0xFF172540)
 
-internal val DayRidgeFar = Color(0xFF7E9484)
+internal val DaySun = Color(0xFFFFCA6A)
 
-internal val DayRidgeNear = Color(0xFF5E7466)
+internal val DayRidgeFar = Color(0xFF7B938A)
 
-internal val NightRidgeFar = Color(0xFF0A1018)
+internal val DayRidgeNear = Color(0xFF5A736A)
 
-internal val NightRidgeNear = Color(0xFF05080E)
+internal val NightRidgeFar = Color(0xFF0C1424)
 
-internal val MoonLight = Color(0xFFCBD6F5)
+internal val NightRidgeNear = Color(0xFF060A13)
 
-internal val WindowGlow = Color(0xFFFFC069)
+internal val MoonLight = Color(0xFFD5E1FF)
+
+internal val WindowGlow = Color(0xFFFFC46B)
 
 internal val SunCore = Color(0xFFFFC94D)
 
@@ -327,7 +329,7 @@ internal fun TableBackdrop(dayness: Float, modifier: Modifier = Modifier) {
         drawRect(
             Brush.verticalGradient(
                 0f to lerp(DaySkyTop, NightSkyTop, nightAmount),
-                0.42f to lerp(DaySkyMid, NightSkyTop, nightAmount),
+                0.45f to lerp(DaySkyMid, NightSkyMid, nightAmount),
                 1f to lerp(DaySkyLow, NightSkyLow, nightAmount),
             )
         )
@@ -339,23 +341,31 @@ internal fun TableBackdrop(dayness: Float, modifier: Modifier = Modifier) {
 
         if (nightAmount > 0.01f) {
             drawNightSky(w, h, nightAmount, phaseState.value)
-            drawPath(far, NightRidgeFar.copy(alpha = 0.92f * nightAmount))
-            drawPath(near, NightRidgeNear)
+            // 天际线淡淡的月色微雾，让远山轮廓从深空里柔和地托出来
+            drawRect(
+                Brush.verticalGradient(
+                    0.58f to Color.Transparent,
+                    0.82f to MoonLight.copy(alpha = 0.06f * nightAmount),
+                    1f to Color.Transparent,
+                )
+            )
+            drawPath(far, NightRidgeFar.copy(alpha = 0.94f * nightAmount))
+            drawPath(near, NightRidgeNear.copy(alpha = 0.98f * nightAmount))
             drawVillage(
                 w = w,
                 h = h,
-                color = NightRidgeNear,
-                windowColor = WindowGlow.copy(alpha = 0.62f * nightAmount)
+                color = NightRidgeNear.copy(alpha = 0.98f * nightAmount),
+                windowColor = WindowGlow.copy(alpha = 0.72f * nightAmount)
             )
         }
 
         if (dayness > 0.01f) {
-            drawPath(far, DayRidgeFar.copy(alpha = 0.15f * dayness))
-            drawPath(near, DayRidgeNear.copy(alpha = 0.11f * dayness))
+            drawPath(far, DayRidgeFar.copy(alpha = 0.14f * dayness))
+            drawPath(near, DayRidgeNear.copy(alpha = 0.10f * dayness))
             drawVillage(
                 w = w,
                 h = h,
-                color = DayRidgeNear.copy(alpha = 0.13f * dayness),
+                color = DayRidgeNear.copy(alpha = 0.12f * dayness),
                 windowColor = null
             )
         }
@@ -364,15 +374,25 @@ internal fun TableBackdrop(dayness: Float, modifier: Modifier = Modifier) {
 
 /** 白天：一团暖光当太阳，再加几条薄云。不画实心太阳——它会变成第二个焦点，抢「第几天」。 */
 internal fun DrawScope.drawDaySky(w: Float, h: Float, a: Float) {
-    val sun = Offset(w * 0.84f, h * 0.09f)
-    val halo = h * 0.36f
+    val sun = Offset(w * 0.84f, h * 0.085f)
+    val outerHalo = h * 0.38f
+    val innerHalo = h * 0.16f
     drawCircle(
         brush = Brush.radialGradient(
-            colors = listOf(DaySun.copy(alpha = 0.30f * a), Color.Transparent),
+            colors = listOf(DaySun.copy(alpha = 0.26f * a), Color.Transparent),
             center = sun,
-            radius = halo
+            radius = outerHalo
         ),
-        radius = halo,
+        radius = outerHalo,
+        center = sun
+    )
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(Color(0xFFFFF5D6).copy(alpha = 0.42f * a), Color.Transparent),
+            center = sun,
+            radius = innerHalo
+        ),
+        radius = innerHalo,
         center = sun
     )
 
@@ -380,11 +400,18 @@ internal fun DrawScope.drawDaySky(w: Float, h: Float, a: Float) {
         val cx = w * fx
         val cy = h * fy
         val r = h * 0.026f * scale
-        val color = Color.White.copy(alpha = 0.62f * a)
+        val cloudBrush = Brush.verticalGradient(
+            colors = listOf(
+                Color.White.copy(alpha = 0.72f * a),
+                Color.White.copy(alpha = 0.28f * a),
+            ),
+            startY = cy - r * 1.3f,
+            endY = cy + r * 0.6f,
+        )
         // 三个扁椭圆叠一朵：单个椭圆看着像块污渍
-        drawOval(color, Offset(cx - r * 2.3f, cy - r * 0.55f), Size(r * 4.6f, r * 1.10f))
-        drawOval(color, Offset(cx - r * 1.30f, cy - r * 1.05f), Size(r * 2.60f, r * 1.25f))
-        drawOval(color, Offset(cx + r * 0.10f, cy - r * 1.30f), Size(r * 2.10f, r * 1.35f))
+        drawOval(cloudBrush, Offset(cx - r * 2.3f, cy - r * 0.55f), Size(r * 4.6f, r * 1.10f))
+        drawOval(cloudBrush, Offset(cx - r * 1.30f, cy - r * 1.05f), Size(r * 2.60f, r * 1.25f))
+        drawOval(cloudBrush, Offset(cx + r * 0.10f, cy - r * 1.30f), Size(r * 2.10f, r * 1.35f))
     }
 }
 
@@ -392,12 +419,34 @@ internal fun DrawScope.drawDaySky(w: Float, h: Float, a: Float) {
 internal fun DrawScope.drawNightSky(w: Float, h: Float, a: Float, phase: Float) {
     NIGHT_STARS.forEachIndexed { i, (fx, fy, r) ->
         // 亮度按相位起伏，各星错开 0.13 个周期，看起来像缓慢的闪烁而不是整片一起呼吸
-        val flicker = 0.45f + 0.35f * sin((phase + i * 0.13f) * 2f * PI).toFloat()
+        val flicker = 0.42f + 0.38f * sin((phase + i * 0.13f) * 2f * PI).toFloat()
+        val starCenter = Offset(w * fx, h * fy)
+        val starRadius = r.dp.toPx()
+        val starColor = if (i % 5 == 0) Color(0xFFD8E6FF) else Color(0xFFFFF5D8)
         drawCircle(
-            color = Color(0xFFFFF6DA).copy(alpha = flicker * a),
-            radius = r.dp.toPx(),
-            center = Offset(w * fx, h * fy)
+            color = starColor.copy(alpha = flicker * a),
+            radius = starRadius,
+            center = starCenter
         )
+        // 最亮的几颗星带极淡的十字星芒，提升夜空细腻度但不刺眼
+        if (r >= 1.85f) {
+            val arm = starRadius * 3.0f
+            val glintAlpha = flicker * 0.34f * a
+            drawLine(
+                color = starColor.copy(alpha = glintAlpha),
+                start = Offset(starCenter.x - arm, starCenter.y),
+                end = Offset(starCenter.x + arm, starCenter.y),
+                strokeWidth = 0.8.dp.toPx(),
+                cap = StrokeCap.Round,
+            )
+            drawLine(
+                color = starColor.copy(alpha = glintAlpha),
+                start = Offset(starCenter.x, starCenter.y - arm),
+                end = Offset(starCenter.x, starCenter.y + arm),
+                strokeWidth = 0.8.dp.toPx(),
+                cap = StrokeCap.Round,
+            )
+        }
     }
 
     // 月亮放在右上角，跟过场里正中升起的那颗避开：过场是「刚升起来」，
@@ -406,11 +455,20 @@ internal fun DrawScope.drawNightSky(w: Float, h: Float, a: Float, phase: Float) 
     val r = h * 0.020f
     drawCircle(
         brush = Brush.radialGradient(
-            colors = listOf(MoonLight.copy(alpha = 0.22f * a), Color.Transparent),
+            colors = listOf(MoonLight.copy(alpha = 0.24f * a), Color.Transparent),
             center = moon,
-            radius = r * 5.0f
+            radius = r * 6.2f
         ),
-        radius = r * 5.0f,
+        radius = r * 6.2f,
+        center = moon
+    )
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(MoonCore.copy(alpha = 0.22f * a), Color.Transparent),
+            center = moon,
+            radius = r * 2.4f
+        ),
+        radius = r * 2.4f,
         center = moon
     )
     // 月牙：整圆减掉偏右上的圆。用路径求差而不是盖一个天色圆，
@@ -420,7 +478,7 @@ internal fun DrawScope.drawNightSky(w: Float, h: Float, a: Float, phase: Float) 
         addOval(Rect(Offset(moon.x + r * 0.55f, moon.y - r * 0.45f), r * 0.96f))
     }
     disc.op(disc, bite, PathOperation.Difference)
-    drawPath(disc, MoonLight.copy(alpha = 0.55f * a))
+    drawPath(disc, MoonCore.copy(alpha = 0.68f * a))
 }
 
 /** 远山。曲线固定，白天黑夜共用同一道轮廓。 */
@@ -465,10 +523,21 @@ internal fun DrawScope.drawVillage(w: Float, h: Float, color: Color, windowColor
         )
 
         if (windowColor != null) {
+            val winCenter = Offset(cx, top + body * 0.45f)
+            val winRadius = minOf(half * 0.30f, body * 0.16f)
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(windowColor.copy(alpha = windowColor.alpha * 0.45f), Color.Transparent),
+                    center = winCenter,
+                    radius = winRadius * 3.8f,
+                ),
+                radius = winRadius * 3.8f,
+                center = winCenter,
+            )
             drawCircle(
                 color = windowColor,
-                radius = minOf(half * 0.30f, body * 0.16f),
-                center = Offset(cx, top + body * 0.45f)
+                radius = winRadius,
+                center = winCenter,
             )
         }
     }

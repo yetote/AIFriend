@@ -33,6 +33,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -45,11 +48,14 @@ import com.ui.common.pageInsetsBottom
 import com.ui.common.pageInsetsTop
 import com.ui.common.theme.UIActionBrush
 import com.ui.common.theme.UIFieldFill
+import com.ui.common.theme.UIGlassBar
+import com.ui.common.theme.UIGlassStroke
 import com.ui.common.theme.UIGlassSurfaceStrong
 import com.ui.common.theme.UIRadiusCard
 import com.ui.common.theme.UIRadiusControl
 import com.ui.common.theme.UISeparator
 import com.ui.common.theme.uiCard
+import com.ui.common.theme.uiHairlineBottom
 import com.ui.werewolf.data.UIWerewolfBallotLine
 import com.ui.werewolf.data.UIWerewolfCheckReport
 import com.ui.werewolf.data.UIWerewolfDayReport
@@ -282,6 +288,8 @@ private fun ReviewTopBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .background(UIGlassBar)
+            .uiHairlineBottom(UIGlassStroke)
             .padding(horizontal = 4.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -349,31 +357,65 @@ private fun ReviewTopBar(
  */
 @Composable
 private fun WinnerBanner(review: UIWerewolfReview) {
+    val bannerShape = RoundedCornerShape(UIRadiusCard)
+    val glowColor = if (review.wolfWon) Color(0x40FF6B6B) else Color(0x406EA8FF)
+    val shadowTint = if (review.wolfWon) Color(0x386E1E29) else Color(0x381D4272)
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(UIRadiusCard))
+            .shadow(
+                elevation = 16.dp,
+                shape = bannerShape,
+                clip = false,
+                ambientColor = shadowTint,
+                spotColor = shadowTint,
+            )
+            .clip(bannerShape)
             .background(Brush.linearGradient(if (review.wolfWon) WolfBanner else GoodBanner))
-            .padding(horizontal = 18.dp, vertical = 16.dp)
+            .drawBehind {
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(glowColor, Color.Transparent),
+                        center = Offset(size.width * 0.88f, size.height * 0.16f),
+                        radius = size.width * 0.55f,
+                    ),
+                    radius = size.width * 0.55f,
+                    center = Offset(size.width * 0.88f, size.height * 0.16f),
+                )
+            }
+            .border(0.8.dp, Color(0x2EFFFFFF), bannerShape)
+            .padding(horizontal = 18.dp, vertical = 18.dp)
     ) {
+        Text(
+            text = if (review.wolfWon) "终局战报 · 狼人阵营" else "终局战报 · 好人阵营",
+            modifier = Modifier
+                .clip(RoundedCornerShape(50))
+                .background(Color(0x24FFFFFF))
+                .padding(horizontal = 9.dp, vertical = 3.dp),
+            fontSize = 10.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = Color.White.copy(alpha = 0.88f),
+        )
+        Spacer(Modifier.height(8.dp))
         Text(
             text = review.winnerLabel,
             fontSize = 26.sp,
             fontWeight = FontWeight.Bold,
+            letterSpacing = 0.4.sp,
             color = Color.White
         )
         Text(
             text = review.reason,
             modifier = Modifier.padding(top = 4.dp),
-            fontSize = 12.sp,
-            lineHeight = 17.sp,
-            color = Color.White.copy(alpha = 0.82f)
+            fontSize = 12.5.sp,
+            lineHeight = 18.sp,
+            color = Color.White.copy(alpha = 0.85f)
         )
         Text(
             text = review.facts,
-            modifier = Modifier.padding(top = 10.dp),
+            modifier = Modifier.padding(top = 12.dp),
             fontSize = 11.sp,
-            color = Color.White.copy(alpha = 0.55f)
+            color = Color.White.copy(alpha = 0.62f)
         )
     }
 }
@@ -391,7 +433,7 @@ private fun TokenSummaryCard(rows: List<UITokenSeatTotal>, total: UITokenUsage) 
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .uiCard(shape = RoundedCornerShape(UIRadiusCard), elevation = 0.dp)
+            .uiCard(shape = RoundedCornerShape(UIRadiusCard), elevation = 6.dp)
             .padding(horizontal = 14.dp, vertical = 12.dp)
     ) {
         Row(
@@ -572,19 +614,19 @@ private fun RoleGroupCard(group: UIWerewolfRoleGroup) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .uiCard(shape = RoundedCornerShape(UIRadiusCard), elevation = 0.dp)
+            .uiCard(shape = RoundedCornerShape(UIRadiusCard), elevation = 6.dp)
             .padding(horizontal = 14.dp, vertical = 12.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier
-                    .size(6.dp)
+                    .size(7.dp)
                     .background(accent, CircleShape)
             )
             Spacer(Modifier.width(7.dp))
             Text(
                 text = group.title,
-                fontSize = 12.sp,
+                fontSize = 12.5.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = accent
             )

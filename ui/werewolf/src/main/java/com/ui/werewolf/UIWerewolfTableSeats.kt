@@ -209,6 +209,7 @@ internal fun SeatTile(
                 },
             contentAlignment = Alignment.Center,
         ) {
+            val activeGlowColor = if (night) Color(0xFF7FA8FF) else Color(0xFF4B84FF)
             if (seat.active) {
                 // 正在发言/正在行动的人要有动静，静止的牌桌看不出轮到谁。
                 // 两层：贴着头像的呼吸光说「是这个人」，往外扩的涟漪说「他正在出声」。
@@ -216,8 +217,8 @@ internal fun SeatTile(
                 // 只有涟漪的话，安静时看不出重心在哪。两个一起才读得出来。
                 val transition = rememberInfiniteTransition(label = "active")
                 val scale by transition.animateFloat(
-                    initialValue = 0.90f,
-                    targetValue = 1.0f,
+                    initialValue = 0.92f,
+                    targetValue = 1.06f,
                     animationSpec = infiniteRepeatable(
                         animation = tween(durationMillis = 800),
                         repeatMode = RepeatMode.Reverse
@@ -237,14 +238,14 @@ internal fun SeatTile(
                     modifier = Modifier
                         .size(38.dp)
                         .graphicsLayer {
-                            // 扩到 1.5 倍（约 57dp），72dp 的列里放得下，不会压到隔壁
-                            val grow = 1f + 0.5f * ripple
+                            // 扩到 1.48 倍（约 56dp），72dp 的列里放得下，不会压到隔壁
+                            val grow = 1f + 0.48f * ripple
                             scaleX = grow
                             scaleY = grow
                             // 扩出去的同时淡掉：一圈硬边扩到底再消失会像故障
-                            alpha = (1f - ripple) * 0.9f
+                            alpha = (1f - ripple) * 0.85f
                         }
-                        .border(1.5.dp, Color(0xFF6C9BFF), CircleShape)
+                        .border(1.5.dp, activeGlowColor, CircleShape)
                 )
                 Box(
                     modifier = Modifier
@@ -253,15 +254,23 @@ internal fun SeatTile(
                             scaleX = scale
                             scaleY = scale
                         }
-                        .background(Color(0x332B6BFF), CircleShape)
+                        .background(activeGlowColor.copy(alpha = if (night) 0.28f else 0.20f), CircleShape)
                 )
             }
 
             val ring = when {
-                seat.isSelf -> SelfBlue
-                seat.active -> Color(0xFF6C9BFF)
+                seat.isSelf -> if (night) SelfBlueNight else SelfBlue
+                seat.active -> activeGlowColor
+                seat.sheriff && seat.alive -> SheriffGold.copy(alpha = 0.85f)
+                seat.alive -> if (night) Color(0x38FFFFFF) else Color(0x22FFFFFF)
                 else -> Color.Transparent
             }
+            val ringWidth = when {
+                seat.isSelf || seat.active -> 2.dp
+                seat.sheriff && seat.alive -> 1.5.dp
+                else -> 1.dp
+            }
+            val badgeRim = if (night) NightSurface else Color.White
             UIAvatar(
                 name = seat.name,
                 avatarPath = seat.avatarPath,
@@ -271,7 +280,7 @@ internal fun SeatTile(
                     .alpha(if (seat.alive) 1f else 0.34f)
                     .then(
                         if (ring != Color.Transparent) {
-                            Modifier.border(2.dp, ring, CircleShape)
+                            Modifier.border(ringWidth, ring, CircleShape)
                         } else {
                             Modifier
                         }
@@ -284,14 +293,15 @@ internal fun SeatTile(
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .size(17.dp)
-                        .background(VoteRed, CircleShape),
+                        .size(18.dp)
+                        .background(VoteRed, CircleShape)
+                        .border(1.2.dp, badgeRim, CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = votes.toString(),
                         fontSize = 9.5.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        fontWeight = FontWeight.Bold,
                         color = Color.White
                     )
                 }
@@ -303,14 +313,15 @@ internal fun SeatTile(
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopStart)
-                        .size(15.dp)
-                        .background(SheriffGold, CircleShape),
+                        .size(16.dp)
+                        .background(SheriffGold, CircleShape)
+                        .border(1.2.dp, badgeRim, CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = "警",
                         fontSize = 8.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        fontWeight = FontWeight.Bold,
                         color = Color.White
                     )
                 }
@@ -322,14 +333,15 @@ internal fun SeatTile(
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .size(15.dp)
-                        .background(FateRed, CircleShape),
+                        .size(16.dp)
+                        .background(FateRed, CircleShape)
+                        .border(1.2.dp, badgeRim, CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = "狼",
                         fontSize = 8.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        fontWeight = FontWeight.Bold,
                         color = Color.White
                     )
                 }
@@ -340,11 +352,12 @@ internal fun SeatTile(
             text = "${seat.seat} ${seat.name}",
             modifier = Modifier.padding(top = 1.dp),
             fontSize = FsSeatName,
+            fontWeight = if (seat.isSelf || seat.active) FontWeight.SemiBold else FontWeight.Medium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             color = when {
-                !seat.alive -> dimColor.copy(alpha = 0.6f)
-                seat.isSelf -> if (night) NightText else SelfBlue
+                !seat.alive -> dimColor.copy(alpha = 0.58f)
+                seat.isSelf -> if (night) SelfBlueNight else SelfBlue
                 else -> textColor
             }
         )
@@ -365,27 +378,22 @@ internal fun SeatTile(
         }
         val badge = verdict?.label ?: seat.fate?.short ?: seat.roleLabel
         if (badge != null) {
+            val badgeAccent = verdictColor ?: when {
+                seat.fate != null -> FateRed
+                seat.wolf -> FateRed
+                else -> if (night) SelfBlueNight else SelfBlue
+            }
             Text(
                 text = badge,
                 modifier = Modifier
                     .padding(top = 1.dp)
                     .clip(RoundedCornerShape(50))
-                    .background(
-                        when {
-                            verdictColor != null -> verdictColor.copy(alpha = if (night) 0.22f else 0.14f)
-                            seat.fate != null -> FateRed.copy(alpha = 0.14f)
-                            seat.wolf -> Color(0x1FD9534F)
-                            else -> Color(0x142B6BFF)
-                        }
-                    )
-                    .padding(horizontal = 5.dp, vertical = 0.5.dp),
+                    .background(badgeAccent.copy(alpha = if (night) 0.22f else 0.13f))
+                    .border(0.6.dp, badgeAccent.copy(alpha = if (night) 0.40f else 0.26f), RoundedCornerShape(50))
+                    .padding(horizontal = 5.5.dp, vertical = 0.5.dp),
                 fontSize = FsBadge,
-                fontWeight = FontWeight.Medium,
-                color = verdictColor ?: when {
-                    seat.fate != null -> FateRed
-                    seat.wolf -> FateRed
-                    else -> if (night) NightDim else SelfBlue
-                }
+                fontWeight = FontWeight.SemiBold,
+                color = badgeAccent,
             )
         }
 
@@ -417,9 +425,11 @@ internal fun Tag(text: String, night: Boolean, color: Color) {
         text = text,
         modifier = Modifier
             .clip(RoundedCornerShape(50))
-            .background(if (night) NightStroke else UIFieldFill)
+            .background(if (night) NightControlFill else DayControlFill)
+            .border(0.6.dp, if (night) NightControlBorder else DayControlBorder, RoundedCornerShape(50))
             .padding(horizontal = 9.dp, vertical = 3.dp),
         fontSize = FsMeta,
+        fontWeight = FontWeight.Medium,
         color = color
     )
 }

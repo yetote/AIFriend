@@ -3,7 +3,9 @@ package com.ui.werewolf
 // 顶栏、自己那一行、状态条、结束条、复盘播放条。
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,7 +15,9 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -29,15 +33,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ui.common.theme.UIActionBrush
+import com.ui.common.theme.UIBlobBlue
 import com.ui.common.theme.UIFieldFill
 import com.ui.common.theme.UIFriendBarRed
+import com.ui.common.theme.UIRadiusCard
 import com.ui.common.theme.UIRadiusControl
+import com.ui.common.theme.UIShadowSoft
+import com.ui.common.theme.uiHairlineBottom
 import com.ui.werewolf.data.UIWerewolfLive
 import com.ui.werewolf.data.UIWerewolfReplay
 
@@ -74,32 +83,58 @@ internal fun SeerCheckBar(
 ) {
     val checks = live.selfChecks
     if (checks.isEmpty()) return
+    val seerAccent = if (night) SeerTealNight else SeerTeal
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 14.dp)
-            .padding(bottom = 6.dp),
+            .padding(bottom = 6.dp)
+            .horizontalScroll(rememberScrollState()),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Tag(text = "验人本", night = night, color = SeerTeal)
+        Text(
+            text = "验人本",
+            modifier = Modifier
+                .clip(RoundedCornerShape(50))
+                .background(seerAccent.copy(alpha = if (night) 0.22f else 0.12f))
+                .border(0.6.dp, seerAccent.copy(alpha = if (night) 0.42f else 0.28f), RoundedCornerShape(50))
+                .padding(horizontal = 9.dp, vertical = 3.dp),
+            fontSize = FsMeta,
+            fontWeight = FontWeight.SemiBold,
+            color = seerAccent,
+        )
         checks.forEach { check ->
-            Text(
-                text = "${check.seat}号",
+            val verdictColor = if (check.isWerewolf) VoteRed else seerAccent
+            Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(50))
-                    .background(if (night) NightStroke else UIFieldFill)
-                    .padding(horizontal = 8.dp, vertical = 2.dp),
-                fontSize = FsMeta,
-                fontWeight = FontWeight.SemiBold,
-                color = if (check.isWerewolf) VoteRed else SeerTeal,
-            )
-            Text(
-                text = if (check.isWerewolf) "狼" else "好人",
-                fontSize = FsMeta,
-                color = dimColor,
-            )
+                    .background(if (night) NightControlFill else Color(0xCCFFFFFF))
+                    .border(0.6.dp, verdictColor.copy(alpha = if (night) 0.45f else 0.30f), RoundedCornerShape(50))
+                    .padding(horizontal = 8.dp, vertical = 3.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(6.dp)
+                        .clip(CircleShape)
+                        .background(verdictColor)
+                )
+                Text(
+                    text = "${check.seat}号",
+                    fontSize = FsMeta,
+                    fontWeight = FontWeight.SemiBold,
+                    color = textColor,
+                )
+                Text(
+                    text = if (check.isWerewolf) "狼" else "好人",
+                    fontSize = FsMeta,
+                    fontWeight = FontWeight.Medium,
+                    color = verdictColor,
+                )
+            }
         }
     }
 }
@@ -142,6 +177,8 @@ internal fun TableTopBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .background(if (night) Color(0x52090F1D) else Color(0x7AFFFFFF))
+            .uiHairlineBottom(if (night) NightStroke else DayStroke)
             .padding(horizontal = 4.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -155,14 +192,15 @@ internal fun TableTopBar(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
-                fontSize = 19.sp,
-                fontWeight = FontWeight.SemiBold,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.2.sp,
                 color = textColor
             )
             if (subtitle != null) {
                 Text(
                     text = subtitle,
-                    fontSize = FsName,
+                    fontSize = FsMeta,
                     color = dimColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -170,41 +208,50 @@ internal fun TableTopBar(
             }
         }
         if (spectating) {
-            Tag(text = "上帝视角", night = night, color = dimColor)
-            Spacer(Modifier.width(12.dp))
+            Tag(text = "上帝视角", night = night, color = if (night) SelfBlueNight else SelfBlue)
+            Spacer(Modifier.width(8.dp))
         }
         // 自爆：白天发言环节才出现，一旦出现就是真能爆。放在「思考」左边，
         // 因为它是这一屏唯一不可撤销的动作，不该和开关们混在一起看。
         if (onExplode != null) {
+            val explodeColor = if (night) Color(0xFFFF8E8A) else UIFriendBarRed
             Text(
                 text = "自爆",
                 modifier = Modifier
                     .clip(RoundedCornerShape(50))
-                    .background(UIFriendBarRed.copy(alpha = if (night) 0.30f else 0.12f))
+                    .background(UIFriendBarRed.copy(alpha = if (night) 0.28f else 0.11f))
+                    .border(0.8.dp, UIFriendBarRed.copy(alpha = if (night) 0.55f else 0.30f), RoundedCornerShape(50))
                     .clickable(onClick = onExplode)
                     .padding(horizontal = 10.dp, vertical = 4.dp),
                 fontSize = FsMeta,
                 fontWeight = FontWeight.SemiBold,
-                color = UIFriendBarRed,
+                color = explodeColor,
             )
-            Spacer(Modifier.width(4.dp))
+            Spacer(Modifier.width(6.dp))
         }
         // 思考开关：参与局默认关着，开了就等于读心。做成一个词而不是图标：
         // 「思考」两个字自己会解释，一个气泡图标得点一次才知道是什么。
         if (onToggleThinking != null) {
+            val thinkingTint = if (night) SelfBlueNight else SelfBlue
             Text(
                 text = "思考",
                 modifier = Modifier
                     .clip(RoundedCornerShape(50))
                     .background(
-                        if (showThinking) SelfBlue.copy(alpha = if (night) 0.34f else 0.16f)
-                        else if (night) NightStroke else UIFieldFill
+                        if (showThinking) SelfBlue.copy(alpha = if (night) 0.32f else 0.15f)
+                        else if (night) NightControlFill else DayControlFill
+                    )
+                    .border(
+                        0.7.dp,
+                        if (showThinking) thinkingTint.copy(alpha = 0.45f)
+                        else if (night) NightControlBorder else DayControlBorder,
+                        RoundedCornerShape(50),
                     )
                     .clickable(onClick = onToggleThinking)
                     .padding(horizontal = 10.dp, vertical = 4.dp),
                 fontSize = FsMeta,
-                fontWeight = if (showThinking) FontWeight.SemiBold else FontWeight.Normal,
-                color = if (showThinking) (if (night) Color(0xFFB9C8FF) else SelfBlue) else dimColor,
+                fontWeight = if (showThinking) FontWeight.SemiBold else FontWeight.Medium,
+                color = if (showThinking) thinkingTint else dimColor,
             )
             Spacer(Modifier.width(4.dp))
         }
@@ -256,16 +303,21 @@ internal fun SelfBar(
     textColor: Color,
     dimColor: Color,
 ) {
+    if (!live.spectating && live.selfSeat == null) return
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 14.dp)
-            .padding(bottom = 6.dp),
+            .padding(horizontal = 14.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (night) Color(0x7016223A) else Color(0xBAFFFFFF))
+            .border(0.7.dp, if (night) NightStroke else DayStroke, RoundedCornerShape(14.dp))
+            .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         if (live.spectating) {
-            Tag(text = "观战", night = night, color = dimColor)
+            Tag(text = "观战", night = night, color = if (night) SelfBlueNight else SelfBlue)
             // 人数按这一局的实际座位报：8 人、9 人、12 人都走这条分支，
             // 写死「八个人」的话 12 人局一开局就在说假话
             Text(
@@ -275,67 +327,95 @@ internal fun SelfBar(
                     "${live.seats.size} 个人各说各话，你只负责看"
                 },
                 fontSize = FsName,
-                color = dimColor
+                color = dimColor,
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
+            if (live.running) ThinkingDot(color = if (night) SelfBlueNight else SelfBlue)
             return@Row
         }
 
-        val seat = live.selfSeat
-        if (seat == null) return@Row
+        val seat = live.selfSeat ?: return@Row
+        val isWolfRole = live.selfFactionLabel?.contains("狼") == true
 
         Text(
             text = "$seat 号",
             modifier = Modifier
                 .clip(RoundedCornerShape(50))
-                .background(SelfBlue)
+                .background(UIActionBrush)
                 .padding(horizontal = 10.dp, vertical = 3.dp),
-            fontSize = 13.sp,
+            fontSize = 12.5.sp,
             fontWeight = FontWeight.SemiBold,
             color = Color.White
         )
         live.selfRoleLabel?.let { role ->
             Text(
                 text = role,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
+                fontSize = 14.5.sp,
+                fontWeight = FontWeight.Bold,
                 color = textColor
             )
         }
         live.selfFactionLabel?.let { faction ->
+            val factionColor = if (isWolfRole) FateRed else if (night) SeerTealNight else SeerTeal
             Text(
                 text = faction,
-                fontSize = FsName,
-                color = dimColor
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(factionColor.copy(alpha = if (night) 0.22f else 0.11f))
+                    .padding(horizontal = 7.dp, vertical = 2.dp),
+                fontSize = FsMeta,
+                fontWeight = FontWeight.Medium,
+                color = factionColor,
             )
         }
         Spacer(Modifier.weight(1f))
-        if (live.running) ThinkingDot(color = if (night) NightText else SelfBlue)
+        if (live.running) ThinkingDot(color = if (night) SelfBlueNight else SelfBlue)
     }
 }
 
 @Composable
 internal fun ReviewBar(
     surface: Color,
+    night: Boolean,
     textColor: Color,
     dimColor: Color,
     onReview: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val dockShape = RoundedCornerShape(topStart = UIRadiusCard, topEnd = UIRadiusCard)
     Column(
         modifier = modifier
             .fillMaxWidth()
+            .shadow(
+                elevation = 14.dp,
+                shape = dockShape,
+                clip = false,
+                ambientColor = UIShadowSoft,
+                spotColor = UIShadowSoft,
+            )
+            .clip(dockShape)
             .background(surface)
-            .padding(horizontal = 14.dp, vertical = 10.dp)
+            .border(0.8.dp, if (night) NightStroke else DayStroke, dockShape)
+            .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
         Text(
             text = "全部身份已公开 · 这一局已经存档",
             fontSize = FsMeta,
             color = dimColor
         )
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(10.dp))
         Box(
             modifier = Modifier
                 .fillMaxWidth()
+                .shadow(
+                    elevation = 8.dp,
+                    shape = RoundedCornerShape(UIRadiusControl),
+                    clip = false,
+                    ambientColor = UIBlobBlue,
+                    spotColor = UIBlobBlue,
+                )
                 .clip(RoundedCornerShape(UIRadiusControl))
                 .background(UIActionBrush)
                 .clickable { onReview() }
@@ -344,7 +424,7 @@ internal fun ReviewBar(
         ) {
             Text(
                 text = "看复盘",
-                fontSize = 16.sp,
+                fontSize = 15.5.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = Color.White
             )
@@ -372,6 +452,7 @@ internal fun ReviewBar(
 internal fun ReplayBar(
     replay: UIWerewolfReplay,
     surface: Color,
+    night: Boolean,
     textColor: Color,
     dimColor: Color,
     onToggle: () -> Unit,
@@ -382,16 +463,31 @@ internal fun ReplayBar(
     onGodView: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val dockShape = RoundedCornerShape(topStart = UIRadiusCard, topEnd = UIRadiusCard)
+    val ctrlFill = if (night) NightControlFill else DayControlFill
+    val ctrlBorder = if (night) NightControlBorder else DayControlBorder
+    val accent = if (night) SelfBlueNight else SelfBlue
+
     Column(
         modifier = modifier
             .fillMaxWidth()
+            .shadow(
+                elevation = 14.dp,
+                shape = dockShape,
+                clip = false,
+                ambientColor = UIShadowSoft,
+                spotColor = UIShadowSoft,
+            )
+            .clip(dockShape)
             .background(surface)
-            .padding(horizontal = 14.dp, vertical = 10.dp)
+            .border(0.8.dp, if (night) NightStroke else DayStroke, dockShape)
+            .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = replay.positionLabel,
                 fontSize = FsMeta,
+                fontWeight = FontWeight.Medium,
                 color = dimColor,
                 modifier = Modifier.weight(1f)
             )
@@ -399,10 +495,15 @@ internal fun ReplayBar(
             // 放播放条上而不是顶栏——退出去才能改视角的入口没人找得到。
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(UIRadiusControl))
+                    .clip(RoundedCornerShape(50))
                     .background(
-                        if (replay.godView) textColor.copy(alpha = 0.14f)
-                        else dimColor.copy(alpha = 0.12f)
+                        if (replay.godView) accent.copy(alpha = if (night) 0.25f else 0.14f)
+                        else ctrlFill
+                    )
+                    .border(
+                        0.7.dp,
+                        if (replay.godView) accent.copy(alpha = 0.45f) else ctrlBorder,
+                        RoundedCornerShape(50),
                     )
                     .clickable { onGodView(!replay.godView) }
                     .padding(horizontal = 10.dp, vertical = 4.dp)
@@ -410,41 +511,45 @@ internal fun ReplayBar(
                 Text(
                     text = if (replay.godView) "上帝视角·开" else "上帝视角·关",
                     fontSize = FsMeta,
-                    color = if (replay.godView) textColor else dimColor
+                    fontWeight = if (replay.godView) FontWeight.SemiBold else FontWeight.Normal,
+                    color = if (replay.godView) accent else dimColor
                 )
             }
             Spacer(Modifier.width(8.dp))
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(UIRadiusControl))
-                    .background(dimColor.copy(alpha = 0.12f))
+                    .clip(RoundedCornerShape(50))
+                    .background(ctrlFill)
+                    .border(0.7.dp, ctrlBorder, RoundedCornerShape(50))
                     .clickable { onSpeed() }
                     .padding(horizontal = 10.dp, vertical = 4.dp)
             ) {
                 Text(
                     text = "${replay.speedLabel} 倍速",
                     fontSize = FsMeta,
+                    fontWeight = FontWeight.Medium,
                     color = textColor
                 )
             }
         }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(10.dp))
         // 进度条：一条能看出「演到哪」的线，比百分比数字更省事
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(3.dp)
+                .height(4.dp)
                 .clip(CircleShape)
-                .background(dimColor.copy(alpha = 0.18f))
+                .background(if (night) Color(0x26FFFFFF) else Color(0x181B2B45))
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth(replay.progress.coerceIn(0f, 1f))
                     .fillMaxHeight()
-                    .background(textColor.copy(alpha = 0.5f))
+                    .clip(CircleShape)
+                    .background(UIActionBrush)
             )
         }
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(12.dp))
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -452,6 +557,7 @@ internal fun ReplayBar(
             ReplayButton(
                 label = "上一条",
                 enabled = replay.canPrev,
+                night = night,
                 textColor = textColor,
                 dimColor = dimColor,
                 onClick = onPrev,
@@ -460,15 +566,17 @@ internal fun ReplayBar(
             ReplayButton(
                 label = if (replay.playing) "暂停" else "播放",
                 enabled = true,
+                night = night,
                 textColor = Color.White,
                 dimColor = dimColor,
                 primary = true,
                 onClick = onToggle,
-                modifier = Modifier.weight(1.2f)
+                modifier = Modifier.weight(1.25f)
             )
             ReplayButton(
                 label = "下一条",
                 enabled = replay.canNext,
+                night = night,
                 textColor = textColor,
                 dimColor = dimColor,
                 onClick = onNext,
@@ -482,20 +590,26 @@ internal fun ReplayBar(
 internal fun ReplayButton(
     label: String,
     enabled: Boolean,
+    night: Boolean,
     textColor: Color,
     dimColor: Color,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     primary: Boolean = false,
 ) {
+    val shape = RoundedCornerShape(UIRadiusControl)
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(UIRadiusControl))
+            .clip(shape)
             .then(
                 if (primary) {
                     Modifier.background(UIActionBrush)
                 } else {
-                    Modifier.background(dimColor.copy(alpha = if (enabled) 0.12f else 0.06f))
+                    val fill = if (night) NightControlFill else DayControlFill
+                    val border = if (night) NightControlBorder else DayControlBorder
+                    Modifier
+                        .background(if (enabled) fill else fill.copy(alpha = fill.alpha * 0.5f))
+                        .border(0.7.dp, border, shape)
                 }
             )
             // 不 disable 点击：禁用态只有「上一条在第一条」这种边界，
@@ -507,7 +621,7 @@ internal fun ReplayButton(
         Text(
             text = label,
             fontSize = 14.sp,
-            fontWeight = if (primary) FontWeight.SemiBold else FontWeight.Normal,
+            fontWeight = if (primary) FontWeight.SemiBold else FontWeight.Medium,
             color = if (primary) Color.White else textColor.copy(alpha = if (enabled) 1f else 0.4f)
         )
     }

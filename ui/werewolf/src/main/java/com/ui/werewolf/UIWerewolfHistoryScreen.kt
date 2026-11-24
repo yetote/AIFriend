@@ -1,5 +1,6 @@
 package com.ui.werewolf
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -23,11 +25,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.IosShare
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -36,8 +36,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathOperation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -47,6 +53,7 @@ import com.ui.common.pageInsetsBottom
 import com.ui.common.pageInsetsTop
 import com.ui.common.theme.UIBlobBlue
 import com.ui.common.theme.UIActionBrush
+import com.ui.common.theme.UIDialogButtons
 import com.ui.common.theme.UIFriendBarItemSubtitleColor
 import com.ui.common.theme.UIFriendBarRed
 import com.ui.common.theme.UIFriendBarSubtitleColor
@@ -58,6 +65,7 @@ import com.ui.common.theme.UIFriendBarItemMetaColor
 import com.ui.common.theme.UIHeroBrush
 import com.ui.common.theme.UIRadiusCard
 import com.ui.common.theme.UIRadiusControl
+import com.ui.common.theme.UISeparator
 import com.ui.common.theme.UITopBar
 import com.ui.common.theme.uiCard
 import com.ui.werewolf.data.UIWerewolfNotice
@@ -234,7 +242,16 @@ fun UIWerewolfHistoryScreen(
                                     .uiCard(shape = RoundedCornerShape(UIRadiusCard))
                                     .padding(vertical = 4.dp)
                             ) {
-                                finished.forEach { record ->
+                                finished.forEachIndexed { index, record ->
+                                    if (index > 0) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 14.dp)
+                                                .height(0.6.dp)
+                                                .background(UISeparator)
+                                        )
+                                    }
                                     FinishedRow(
                                         record = record,
                                         onClick = { onOpenRecord(record.id) },
@@ -282,59 +299,43 @@ fun UIWerewolfHistoryScreen(
     }
 
     pendingDiscard?.let { record ->
-        AlertDialog(
-            onDismissRequest = { pendingDiscard = null },
-            title = { Text("放弃这一局？", fontSize = 16.sp, fontWeight = FontWeight.SemiBold) },
-            text = {
-                Text(
-                    text = "${record.dayLabel} · ${record.phaseLabel}。" +
-                        "删掉之后只能重新开一局，这一局的记录看不回来了。",
-                    fontSize = 13.sp,
-                    lineHeight = 19.sp,
-                    color = UIFriendBarSubtitleColor
+        UIIosDialog(
+            title = "放弃这一局？",
+            subtitle = "${record.dayLabel} · ${record.phaseLabel}。" +
+                "删掉之后只能重新开一局，这一局的记录看不回来了。",
+            onDismiss = { pendingDiscard = null },
+            actions = {
+                UIDialogButtons(
+                    confirmText = "删除这一局",
+                    confirmColor = UIFriendBarRed,
+                    cancelText = "留着",
+                    onConfirm = {
+                        onDiscard(record.id)
+                        pendingDiscard = null
+                    },
+                    onCancel = { pendingDiscard = null },
                 )
             },
-            confirmButton = {
-                TextButton(onClick = {
-                    onDiscard(record.id)
-                    pendingDiscard = null
-                }) {
-                    Text("删除这一局", color = UIFriendBarRed, fontSize = 14.sp)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingDiscard = null }) {
-                    Text("留着", color = UIFriendBarItemSubtitleColor, fontSize = 14.sp)
-                }
-            }
         )
     }
 
     if (confirmClear) {
-        AlertDialog(
-            onDismissRequest = { confirmClear = false },
-            title = { Text("清空已结束的对局？", fontSize = 16.sp, fontWeight = FontWeight.SemiBold) },
-            text = {
-                Text(
-                    text = "${finished.size} 局的记录和复盘都会被删掉，没打完的那几局不受影响。",
-                    fontSize = 13.sp,
-                    lineHeight = 19.sp,
-                    color = UIFriendBarSubtitleColor
+        UIIosDialog(
+            title = "清空已结束的对局？",
+            subtitle = "${finished.size} 局的记录和复盘都会被删掉，没打完的那几局不受影响。",
+            onDismiss = { confirmClear = false },
+            actions = {
+                UIDialogButtons(
+                    confirmText = "清空",
+                    confirmColor = UIFriendBarRed,
+                    cancelText = "算了",
+                    onConfirm = {
+                        onClearFinished()
+                        confirmClear = false
+                    },
+                    onCancel = { confirmClear = false },
                 )
             },
-            confirmButton = {
-                TextButton(onClick = {
-                    onClearFinished()
-                    confirmClear = false
-                }) {
-                    Text("清空", color = UIFriendBarRed, fontSize = 14.sp)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmClear = false }) {
-                    Text("算了", color = UIFriendBarItemSubtitleColor, fontSize = 14.sp)
-                }
-            }
         )
     }
 }
@@ -456,18 +457,32 @@ private fun ResumeCard(
     onExport: () -> Unit,
     onDiscard: () -> Unit,
 ) {
+    val cardShape = RoundedCornerShape(UIRadiusCard)
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .shadow(
-                elevation = 14.dp,
-                shape = RoundedCornerShape(UIRadiusCard),
+                elevation = 16.dp,
+                shape = cardShape,
                 clip = false,
                 ambientColor = UIBlobBlue,
                 spotColor = UIBlobBlue
             )
-            .clip(RoundedCornerShape(UIRadiusCard))
+            .clip(cardShape)
             .background(UIHeroBrush)
+            .drawBehind {
+                // 右上角极淡光斑，模拟月华照在深蓝牌桌上的层次感
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(Color(0x30FFFFFF), Color.Transparent),
+                        center = Offset(size.width * 0.90f, size.height * 0.14f),
+                        radius = size.width * 0.45f,
+                    ),
+                    radius = size.width * 0.45f,
+                    center = Offset(size.width * 0.90f, size.height * 0.14f),
+                )
+            }
+            .border(0.8.dp, Color(0x38FFFFFF), cardShape)
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -476,18 +491,33 @@ private fun ResumeCard(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Text(
-                    text = "${record.dayLabel} · ${record.phaseLabel}",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color.White,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
+                ) {
+                    Text(
+                        text = "进行中",
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(Color(0x2EFFFFFF))
+                            .padding(horizontal = 7.dp, vertical = 1.5.dp),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White,
+                    )
+                    Text(
+                        text = "${record.dayLabel} · ${record.phaseLabel}",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
                 Text(
                     text = "${record.metaLabel} · ${record.timeLabel}",
                     fontSize = 12.sp,
-                    color = Color.White.copy(alpha = 0.78f)
+                    color = Color.White.copy(alpha = 0.80f)
                 )
             }
             // 导出放在右上角：它是「把这一局带走」，和「接着打 / 放弃」不是一类动作，
@@ -496,22 +526,16 @@ private fun ResumeCard(
                 Icon(
                     imageVector = Icons.Filled.IosShare,
                     contentDescription = "导出这一局",
-                    tint = Color.White.copy(alpha = 0.85f),
+                    tint = Color.White.copy(alpha = 0.88f),
                     modifier = Modifier.size(18.dp),
                 )
             }
-            Box(
-                modifier = Modifier
-                    .size(8.dp)
-                    .clip(CircleShape)
-                    .background(Color.White.copy(alpha = 0.9f))
-            )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(50))
-                    .background(Color.White.copy(alpha = if (resuming) 0.7f else 1f))
+                    .background(Color.White.copy(alpha = if (resuming) 0.72f else 1f))
                     // 探活还没回来时禁用：否则连点几次会叠出好几轮探活
                     .clickable(enabled = !resuming) { onResume() }
                     .padding(horizontal = 18.dp, vertical = 8.dp)
@@ -526,14 +550,15 @@ private fun ResumeCard(
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(50))
-                    .border(1.dp, Color.White.copy(alpha = 0.5f), RoundedCornerShape(50))
+                    .background(Color(0x18FFFFFF))
+                    .border(0.9.dp, Color.White.copy(alpha = 0.45f), RoundedCornerShape(50))
                     .clickable(enabled = !resuming) { onDiscard() }
                     .padding(horizontal = 18.dp, vertical = 8.dp)
             ) {
                 Text(
                     text = "放弃这一局",
                     fontSize = 13.sp,
-                    color = Color.White.copy(alpha = 0.9f)
+                    color = Color.White.copy(alpha = 0.92f)
                 )
             }
         }
@@ -547,23 +572,51 @@ private fun FinishedRow(
     onClick: () -> Unit,
     onExport: () -> Unit,
 ) {
+    val winner = record.winnerLabel ?: "已结束"
+    val winnerTint = when {
+        winner.contains("狼") -> FateRed
+        winner.contains("好") -> UIFriendBarTagTextBlue
+        else -> UIFriendBarItemMetaColor
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onClick() }
-            .padding(horizontal = 12.dp, vertical = 11.dp),
+            .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        Box(
+            modifier = Modifier
+                .size(width = 3.5.dp, height = 30.dp)
+                .clip(RoundedCornerShape(50))
+                .background(winnerTint.copy(alpha = 0.8f))
+        )
+        Spacer(Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(
-                text = "${record.dayLabel} · ${record.winnerLabel ?: "已结束"}",
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Medium,
-                color = UIFriendBarTitleColor
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    text = record.dayLabel,
+                    fontSize = 14.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = UIFriendBarTitleColor
+                )
+                Text(
+                    text = winner,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(winnerTint.copy(alpha = 0.11f))
+                        .padding(horizontal = 7.dp, vertical = 1.5.dp),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = winnerTint,
+                )
+            }
             Text(
                 text = "${record.metaLabel} · ${record.timeLabel}",
-                fontSize = 12.5.sp,
+                fontSize = 12.sp,
                 color = UIFriendBarItemSubtitleColor
             )
         }
@@ -576,10 +629,15 @@ private fun FinishedRow(
                 modifier = Modifier.size(18.dp),
             )
         }
+        Spacer(Modifier.width(4.dp))
         Text(
-            text = "看复盘",
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Medium,
+            text = "复盘",
+            modifier = Modifier
+                .clip(RoundedCornerShape(50))
+                .background(UIFriendBarTagTextBlue.copy(alpha = 0.10f))
+                .padding(horizontal = 10.dp, vertical = 4.dp),
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
             color = UIFriendBarTagTextBlue
         )
     }
@@ -600,10 +658,47 @@ private fun EmptyState(modifier: Modifier = Modifier) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        // 极简月夜星辉徽章：点出狼人杀的夜幕氛围
+        Box(
+            modifier = Modifier
+                .size(72.dp)
+                .shadow(
+                    elevation = 14.dp,
+                    shape = CircleShape,
+                    clip = false,
+                    ambientColor = UIBlobBlue,
+                    spotColor = UIBlobBlue,
+                )
+                .clip(CircleShape)
+                .background(UIHeroBrush),
+            contentAlignment = Alignment.Center,
+        ) {
+            Canvas(modifier = Modifier.size(44.dp)) {
+                val center = Offset(size.width * 0.48f, size.height * 0.52f)
+                val r = size.minDimension * 0.34f
+                val disc = Path().apply { addOval(Rect(center, r)) }
+                val bite = Path().apply {
+                    addOval(Rect(Offset(center.x + r * 0.52f, center.y - r * 0.42f), r * 0.92f))
+                }
+                disc.op(disc, bite, PathOperation.Difference)
+                drawPath(disc, color = Color(0xFFFFF3D4))
+                drawCircle(
+                    color = Color(0xCCFFFFFF),
+                    radius = 2.dp.toPx(),
+                    center = Offset(size.width * 0.78f, size.height * 0.28f),
+                )
+                drawCircle(
+                    color = Color(0x99FFFFFF),
+                    radius = 1.4.dp.toPx(),
+                    center = Offset(size.width * 0.24f, size.height * 0.24f),
+                )
+            }
+        }
+        Spacer(Modifier.height(18.dp))
         Text(
             text = "还没有对局",
-            fontSize = 17.sp,
-            fontWeight = FontWeight.SemiBold,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold,
             color = UIFriendBarTitleColor
         )
         Spacer(Modifier.height(8.dp))
@@ -686,27 +781,16 @@ private fun RecastDialog(
         },
         onDismiss = onDismiss,
         actions = {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                TextButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
-                    Text("取消", color = UIFriendBarItemSubtitleColor, fontSize = 14.sp)
-                }
-                TextButton(
-                    onClick = onConfirm,
-                    enabled = canSubmit,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text(
-                        text = when {
-                            !allPicked -> "请为每个座位选人"
-                            !unique -> "别选重复的好友"
-                            else -> "换人并继续"
-                        },
-                        color = if (canSubmit) UIFriendBarTagTextBlue else UIFriendBarItemMetaColor,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
-            }
+            UIDialogButtons(
+                confirmText = when {
+                    !allPicked -> "请先选人"
+                    !unique -> "勿选重复好友"
+                    else -> "换人并继续"
+                },
+                confirmEnabled = canSubmit,
+                onConfirm = onConfirm,
+                onCancel = onDismiss,
+            )
         },
     ) {
         Column(

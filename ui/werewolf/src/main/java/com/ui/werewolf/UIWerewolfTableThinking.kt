@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
@@ -301,13 +303,21 @@ internal fun ThinkingBubble(
             )
         }
 
+        val bubbleShape = RoundedCornerShape(14.dp)
         Box(
             modifier = Modifier
                 .offset { IntOffset(bubbleLeft.toInt(), bubbleTop.toInt()) }
                 .size(BUBBLE_WIDTH, BUBBLE_HEIGHT)
-                .clip(RoundedCornerShape(12.dp))
+                .shadow(
+                    elevation = if (night) 12.dp else 10.dp,
+                    shape = bubbleShape,
+                    clip = false,
+                    ambientColor = if (night) Color(0x66000000) else Color(0x286B4BD9),
+                    spotColor = if (night) Color(0x66000000) else Color(0x286B4BD9),
+                )
+                .clip(bubbleShape)
                 .background(fill)
-                .border(1.dp, border, RoundedCornerShape(12.dp))
+                .border(1.dp, border, bubbleShape)
                 // 长按 = 本局藏掉这个座位的内心戏：看着累、或者不想被剧透，
                 // 不用为一它把全场的思考都关了。对局设置面板里可以再打开。
                 .let { m ->
@@ -322,22 +332,30 @@ internal fun ThinkingBubble(
                 .padding(horizontal = 10.dp, vertical = 7.dp)
         ) {
             Column {
+                val accent = if (night) Color(0xFFA894FF) else Color(0xFF6B4BD9)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    Box(
+                        modifier = Modifier
+                            .size(5.dp)
+                            .clip(CircleShape)
+                            .background(accent)
+                    )
+                    Spacer(Modifier.width(4.dp))
                     Text(
                         text = "思考中",
                         fontSize = 9.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = if (night) Color(0xFFA894FF) else Color(0xFF6B4BD9)
+                        color = accent
                     )
                     Spacer(Modifier.weight(1f))
                     if (usage != null && usage.total > 0) {
                         Text(
                             text = usage.shortLabel,
                             fontSize = 8.sp,
-                            color = if (night) Color(0xFFA894FF) else Color(0x996B4BD9),
+                            color = accent.copy(alpha = 0.72f),
                         )
                         Spacer(Modifier.width(4.dp))
                     }
@@ -348,15 +366,16 @@ internal fun ThinkingBubble(
                             "${elapsedSeconds}s"
                         },
                         fontSize = 9.sp,
+                        fontWeight = if (stressed) FontWeight.SemiBold else FontWeight.Medium,
                         color = spentColor,
                     )
                 }
                 Text(
                     text = lines.joinToString("\n"),
-                    modifier = Modifier.padding(top = 2.dp),
+                    modifier = Modifier.padding(top = 3.dp),
                     fontSize = 11.sp,
                     lineHeight = 15.sp,
-                    color = textColor.copy(alpha = 0.85f),
+                    color = textColor.copy(alpha = 0.88f),
                     // 比预算多留一行：中文混英文时偶尔会多折一行，别让最末尾那句被裁掉
                     maxLines = 5,
                     overflow = TextOverflow.Ellipsis,

@@ -13,8 +13,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
@@ -27,15 +29,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ui.common.theme.UIActionBrush
+import com.ui.common.theme.UIBlobBlue
 import com.ui.common.theme.UIFieldFill
+import com.ui.common.theme.UIRadiusCard
 import com.ui.common.theme.UIRadiusControl
+import com.ui.common.theme.UIShadowSoft
 import com.ui.werewolf.data.UIWerewolfSeatLive
 import com.ui.werewolf.data.UIWerewolfTarget
 import com.ui.werewolf.data.UIWerewolfTurn
@@ -81,24 +88,42 @@ internal fun TurnPanel(
     onExplode: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+    val dockShape = RoundedCornerShape(topStart = UIRadiusCard, topEnd = UIRadiusCard)
+    val accent = if (night) SelfBlueNight else SelfBlue
     Column(
         modifier = modifier
             .fillMaxWidth()
+            .shadow(
+                elevation = 14.dp,
+                shape = dockShape,
+                clip = false,
+                ambientColor = UIShadowSoft,
+                spotColor = UIShadowSoft,
+            )
+            .clip(dockShape)
             .background(surface)
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+            .border(0.8.dp, if (night) NightStroke else DayStroke, dockShape)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(7.dp)
+                    .clip(CircleShape)
+                    .background(accent)
+            )
+            Spacer(Modifier.width(7.dp))
             Text(
                 text = turn.title,
                 fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = FontWeight.Bold,
                 color = textColor
             )
             turn.hint?.let {
                 Text(
-                    text = "  $it",
-                    fontSize = FsName,
+                    text = " · $it",
+                    fontSize = FsMeta,
                     color = dimColor
                 )
             }
@@ -106,6 +131,7 @@ internal fun TurnPanel(
 
         when (turn.kind) {
             UIWerewolfTurnKind.SPEECH -> SpeechInput(
+                night = night,
                 textColor = textColor,
                 dimColor = dimColor,
                 onSubmit = onSpeech
@@ -147,6 +173,7 @@ internal fun TurnPanel(
             )
 
             UIWerewolfTurnKind.DIRECTION -> DirectionRow(
+                night = night,
                 textColor = textColor,
                 dimColor = dimColor,
                 hasDawnDeath = turn.hasDawnDeath,
@@ -154,6 +181,7 @@ internal fun TurnPanel(
             )
 
             UIWerewolfTurnKind.WITHDRAW -> WithdrawRow(
+                night = night,
                 textColor = textColor,
                 onPick = onWithdraw
             )
@@ -189,17 +217,55 @@ private fun PickTarget(
     // 又弹出来（弹的是旧目标，玩家可能误点）。turn 一变就关掉。
     androidx.compose.runtime.LaunchedEffect(day, turn.title, turn.kind, turn.targets) { showPicker = false }
 
-    Text(
-        text = "从牌桌选人 →",
-        modifier = Modifier
-            .clip(RoundedCornerShape(50))
-            .background(UIActionBrush)
-            .clickable { showPicker = true }
-            .padding(horizontal = 15.dp, vertical = 9.dp),
-        fontSize = FsAction,
-        fontWeight = FontWeight.SemiBold,
-        color = Color.White,
-    )
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .shadow(
+                    elevation = 8.dp,
+                    shape = RoundedCornerShape(UIRadiusControl),
+                    clip = false,
+                    ambientColor = UIBlobBlue,
+                    spotColor = UIBlobBlue,
+                )
+                .clip(RoundedCornerShape(UIRadiusControl))
+                .background(UIActionBrush)
+                .clickable { showPicker = true }
+                .padding(vertical = 11.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = "从牌桌选人 →",
+                fontSize = FsAction,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White,
+            )
+        }
+        if (onAbstain != null) {
+            val ctrlFill = if (night) NightControlFill else DayControlFill
+            val ctrlBorder = if (night) NightControlBorder else DayControlBorder
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(UIRadiusControl))
+                    .background(ctrlFill)
+                    .border(0.8.dp, ctrlBorder, RoundedCornerShape(UIRadiusControl))
+                    .clickable { onAbstain() }
+                    .padding(horizontal = 16.dp, vertical = 11.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = turn.abstainLabel ?: "不做",
+                    fontSize = FsAction,
+                    fontWeight = FontWeight.Medium,
+                    color = dimColor,
+                )
+            }
+        }
+    }
 
     if (showPicker) {
         TargetPickDialog(
@@ -220,24 +286,28 @@ private fun PickTarget(
 
 @Composable
 internal fun SpeechInput(
+    night: Boolean,
     textColor: Color,
     dimColor: Color,
     onSubmit: (String) -> Unit,
 ) {
     var text by rememberSaveable { mutableStateOf("") }
+    val fieldFill = if (night) NightControlFill else DayControlFill
+    val fieldBorder = if (night) NightControlBorder else DayControlBorder
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(
             modifier = Modifier
                 .weight(1f)
                 .clip(RoundedCornerShape(UIRadiusControl))
-                .background(UIFieldFill)
+                .background(fieldFill)
+                .border(0.8.dp, fieldBorder, RoundedCornerShape(UIRadiusControl))
                 .padding(horizontal = 13.dp, vertical = 11.dp)
         ) {
             if (text.isEmpty()) {
                 Text(
                     text = "说点什么，其他人会据此投票",
                     fontSize = 13.5.sp,
-                    color = dimColor
+                    color = dimColor.copy(alpha = 0.8f)
                 )
             }
             BasicTextField(
@@ -245,6 +315,7 @@ internal fun SpeechInput(
                 onValueChange = { text = it },
                 modifier = Modifier.fillMaxWidth(),
                 textStyle = TextStyle(fontSize = 15.sp, color = textColor),
+                cursorBrush = SolidColor(if (night) SelfBlueNight else SelfBlue),
                 maxLines = 4
             )
         }
@@ -254,8 +325,12 @@ internal fun SpeechInput(
             modifier = Modifier
                 .clip(RoundedCornerShape(UIRadiusControl))
                 .background(if (enabled) UIActionBrush else Brush.linearGradient(listOf(
-                    UIFieldFill, UIFieldFill
+                    fieldFill, fieldFill
                 )))
+                .then(
+                    if (!enabled) Modifier.border(0.8.dp, fieldBorder, RoundedCornerShape(UIRadiusControl))
+                    else Modifier
+                )
                 .clickable(enabled = enabled) {
                     onSubmit(text.trim())
                     text = ""
@@ -325,33 +400,43 @@ internal fun TargetRow(
 /** 竞选发言之后的退水：两个按钮，没有别的可选项。 */
 @Composable
 internal fun WithdrawRow(
+    night: Boolean,
     textColor: Color,
     onPick: (Boolean) -> Unit,
 ) {
+    val ctrlFill = if (night) NightControlFill else DayControlFill
+    val ctrlBorder = if (night) NightControlBorder else DayControlBorder
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         // 不退水放前面、用高亮色：那是默认动作，退水是要付代价的那一个
         listOf(false to "不退水", true to "退水").forEach { (withdraw, label) ->
-            Text(
-                text = label,
+            val shape = RoundedCornerShape(UIRadiusControl)
+            Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(50))
+                    .weight(1f)
+                    .clip(shape)
                     // background 的 Color / Brush 是两个重载，混在一个 if 里会挑不出来
                     .background(
                         if (withdraw) {
-                            Brush.linearGradient(listOf(UIFieldFill, UIFieldFill))
+                            Brush.linearGradient(listOf(ctrlFill, ctrlFill))
                         } else {
                             UIActionBrush
                         }
                     )
+                    .then(if (withdraw) Modifier.border(0.8.dp, ctrlBorder, shape) else Modifier)
                     .clickable { onPick(withdraw) }
-                    .padding(horizontal = 16.dp, vertical = 9.dp),
-                fontSize = FsAction,
-                fontWeight = if (!withdraw) FontWeight.SemiBold else FontWeight.Normal,
-                color = if (!withdraw) Color.White else textColor
-            )
+                    .padding(vertical = 10.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = label,
+                    fontSize = FsAction,
+                    fontWeight = if (!withdraw) FontWeight.SemiBold else FontWeight.Medium,
+                    color = if (!withdraw) Color.White else textColor
+                )
+            }
         }
     }
 }
@@ -366,32 +451,47 @@ internal fun ExplodeRow(
     textColor: Color,
     onPick: (Boolean) -> Unit,
 ) {
+    val shape = RoundedCornerShape(UIRadiusControl)
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Text(
-            text = "继续听",
+        Box(
             modifier = Modifier
-                .clip(RoundedCornerShape(50))
+                .weight(1f)
+                .clip(shape)
                 .background(UIActionBrush)
                 .clickable { onPick(false) }
-                .padding(horizontal = 16.dp, vertical = 9.dp),
-            fontSize = FsAction,
-            fontWeight = FontWeight.SemiBold,
-            color = Color.White,
-        )
-        Text(
-            text = "现在自爆",
+                .padding(vertical = 10.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = "继续听",
+                fontSize = FsAction,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White,
+            )
+        }
+        Box(
             modifier = Modifier
-                .clip(RoundedCornerShape(50))
-                .background(com.ui.common.theme.UIFriendBarRed)
+                .weight(1f)
+                .clip(shape)
+                .background(
+                    Brush.linearGradient(
+                        listOf(Color(0xFFE84A44), com.ui.common.theme.UIFriendBarRed)
+                    )
+                )
                 .clickable { onPick(true) }
-                .padding(horizontal = 16.dp, vertical = 9.dp),
-            fontSize = FsAction,
-            fontWeight = FontWeight.SemiBold,
-            color = Color.White,
-        )
+                .padding(vertical = 10.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = "现在自爆",
+                fontSize = FsAction,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White,
+            )
+        }
     }
 }
 
@@ -402,27 +502,42 @@ internal fun ExplodeRow(
  */
 @Composable
 internal fun DirectionRow(
+    night: Boolean,
     textColor: Color,
     dimColor: Color,
     hasDawnDeath: Boolean,
     onPick: (UIWerewolfDirection) -> Unit,
 ) {
+    val ctrlFill = if (night) NightControlFill else DayControlFill
+    val ctrlBorder = if (night) NightControlBorder else DayControlBorder
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         UIWerewolfDirection.entries.forEach { direction ->
             val enabled = hasDawnDeath || !direction.anchoredOnDeath
-            Text(
-                text = direction.label,
+            val shape = RoundedCornerShape(UIRadiusControl)
+            Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(50))
-                    .background(if (enabled) UIFieldFill else UIFieldFill.copy(alpha = 0.4f))
+                    .weight(1f)
+                    .clip(shape)
+                    .background(if (enabled) ctrlFill else ctrlFill.copy(alpha = ctrlFill.alpha * 0.45f))
+                    .border(
+                        0.8.dp,
+                        if (enabled) ctrlBorder else ctrlBorder.copy(alpha = ctrlBorder.alpha * 0.4f),
+                        shape,
+                    )
                     .clickable(enabled = enabled) { onPick(direction) }
-                    .padding(horizontal = 16.dp, vertical = 9.dp),
-                fontSize = FsAction,
-                color = if (enabled) textColor else dimColor.copy(alpha = 0.5f)
-            )
+                    .padding(vertical = 10.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = direction.label,
+                    fontSize = FsAction,
+                    fontWeight = if (enabled) FontWeight.Medium else FontWeight.Normal,
+                    color = if (enabled) textColor else dimColor.copy(alpha = 0.45f)
+                )
+            }
         }
     }
 }
@@ -464,6 +579,12 @@ internal fun WitchPanel(
         return
     }
 
+    val ctrlFill = if (night) NightControlFill else DayControlFill
+    val ctrlBorder = if (night) NightControlBorder else DayControlBorder
+    val shape = RoundedCornerShape(UIRadiusControl)
+    val healBrush = Brush.linearGradient(listOf(Color(0xFF28B98D), HealGreen))
+    val poisonAccent = if (night) Color(0xFFB58CFF) else PoisonPurple
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -472,12 +593,12 @@ internal fun WitchPanel(
     ) {
         if (turn.canHeal) {
             Text(
-                text = "用解药救 ${turn.healTarget ?: "他"}",
+                text = "解药救 ${turn.healTarget ?: "他"}",
                 modifier = Modifier
-                    .clip(RoundedCornerShape(50))
-                    .background(UIActionBrush)
+                    .clip(shape)
+                    .background(healBrush)
                     .clickable { onWitch(true, null) }
-                    .padding(horizontal = 15.dp, vertical = 9.dp),
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
                 fontSize = FsAction,
                 fontWeight = FontWeight.SemiBold,
                 color = Color.White
@@ -487,22 +608,26 @@ internal fun WitchPanel(
             Text(
                 text = "用毒药",
                 modifier = Modifier
-                    .clip(RoundedCornerShape(50))
-                    .background(UIFieldFill)
+                    .clip(shape)
+                    .background(PoisonPurple.copy(alpha = if (night) 0.28f else 0.12f))
+                    .border(0.9.dp, poisonAccent.copy(alpha = 0.55f), shape)
                     .clickable { poisoning = true }
-                    .padding(horizontal = 15.dp, vertical = 9.dp),
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
                 fontSize = FsAction,
-                color = textColor
+                fontWeight = FontWeight.SemiBold,
+                color = poisonAccent
             )
         }
         Text(
             text = "这晚不用药",
             modifier = Modifier
-                .clip(RoundedCornerShape(50))
-                .background(UIFieldFill)
+                .clip(shape)
+                .background(ctrlFill)
+                .border(0.8.dp, ctrlBorder, shape)
                 .clickable { onWitch(false, null) }
-                .padding(horizontal = 15.dp, vertical = 9.dp),
+                .padding(horizontal = 16.dp, vertical = 10.dp),
             fontSize = FsAction,
+            fontWeight = FontWeight.Medium,
             color = dimColor
         )
     }

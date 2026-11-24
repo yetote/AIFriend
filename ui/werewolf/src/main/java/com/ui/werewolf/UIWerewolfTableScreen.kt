@@ -5,7 +5,9 @@ package com.ui.werewolf
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -25,7 +27,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ui.common.pageInsetsBottom
@@ -126,7 +130,7 @@ fun UIWerewolfTableScreen(
         label = "dim"
     )
     val surface by animateColorAsState(
-        targetValue = if (night) NightSurface else DaySurface,
+        targetValue = if (night) NightGlassSurface else DayGlassSurface,
         animationSpec = tween(DAY_NIGHT_MS / 2),
         label = "surface"
     )
@@ -260,6 +264,7 @@ fun UIWerewolfTableScreen(
                 replay != null -> ReplayBar(
                     replay = replay,
                     surface = surface,
+                    night = night,
                     textColor = textColor,
                     dimColor = dimColor,
                     onToggle = onReplayToggle,
@@ -274,6 +279,7 @@ fun UIWerewolfTableScreen(
                 // 但空着会让人以为界面坏了——空位必须被「下一步做什么」填上。
                 live.finished && onReview != null -> ReviewBar(
                     surface = surface,
+                    night = night,
                     textColor = textColor,
                     dimColor = dimColor,
                     onReview = onReview,
@@ -369,14 +375,15 @@ fun UIWerewolfTableScreen(
 /** 出错条：局面还在，只是这一步没走通。不要做成弹窗，弹窗会挡住牌桌。 */
 @Composable
 internal fun ErrorStrip(message: String, night: Boolean) {
+    val shape = RoundedCornerShape(UIRadiusControl)
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 14.dp)
-            .background(
-                UIFriendBarRed.copy(alpha = if (night) 0.24f else 0.08f),
-                RoundedCornerShape(UIRadiusControl)
-            )
+            .padding(bottom = 6.dp)
+            .clip(shape)
+            .background(UIFriendBarRed.copy(alpha = if (night) 0.22f else 0.08f))
+            .border(0.8.dp, UIFriendBarRed.copy(alpha = if (night) 0.45f else 0.24f), shape)
             .padding(horizontal = 12.dp, vertical = 9.dp)
     ) {
         Text(
@@ -403,15 +410,16 @@ internal fun RetryStrip(
     onGiveUp: () -> Unit,
 ) {
     val labelColor = if (night) Color(0xFFFFB4B0) else UIFriendBarRed
+    val shape = RoundedCornerShape(UIRadiusControl)
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 14.dp)
-            .background(
-                UIFriendBarRed.copy(alpha = if (night) 0.24f else 0.08f),
-                RoundedCornerShape(UIRadiusControl)
-            )
-            .padding(horizontal = 12.dp, vertical = 9.dp)
+            .padding(bottom = 6.dp)
+            .clip(shape)
+            .background(UIFriendBarRed.copy(alpha = if (night) 0.22f else 0.08f))
+            .border(0.8.dp, UIFriendBarRed.copy(alpha = if (night) 0.48f else 0.26f), shape)
+            .padding(horizontal = 12.dp, vertical = 10.dp)
     ) {
         Column {
             Text(
@@ -424,23 +432,30 @@ internal fun RetryStrip(
                 lineHeight = 19.sp,
                 color = labelColor
             )
-            Spacer(Modifier.height(8.dp))
-            Row {
+            Spacer(Modifier.height(9.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     text = "重新请求",
-                    fontSize = FsName,
-                    color = labelColor,
+                    fontSize = FsMeta,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White,
                     modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(UIFriendBarRed)
                         .clickable(onClick = onRetry)
-                        .padding(end = 14.dp, top = 2.dp, bottom = 2.dp)
+                        .padding(horizontal = 14.dp, vertical = 5.dp)
                 )
                 Text(
                     text = "放弃这一步",
-                    fontSize = 11.sp,
+                    fontSize = FsMeta,
+                    fontWeight = FontWeight.Medium,
                     color = if (night) Color(0xFFFFD8D6) else UIFriendBarItemSubtitleColor,
                     modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(if (night) NightControlFill else Color(0xCCFFFFFF))
+                        .border(0.7.dp, if (night) NightControlBorder else DayControlBorder, RoundedCornerShape(50))
                         .clickable(onClick = onGiveUp)
-                        .padding(start = 14.dp, top = 2.dp, bottom = 2.dp)
+                        .padding(horizontal = 12.dp, vertical = 5.dp)
                 )
             }
         }
@@ -455,20 +470,20 @@ internal fun RetryStrip(
  */
 @Composable
 private fun TimeoutStrip(text: String, night: Boolean) {
+    val shape = RoundedCornerShape(UIRadiusControl)
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 14.dp)
             .padding(bottom = 6.dp)
-            .background(
-                UIFriendBarRed.copy(alpha = if (night) 0.20f else 0.07f),
-                RoundedCornerShape(UIRadiusControl)
-            )
-            .padding(horizontal = 10.dp, vertical = 6.dp)
+            .clip(shape)
+            .background(UIFriendBarRed.copy(alpha = if (night) 0.18f else 0.07f))
+            .border(0.7.dp, UIFriendBarRed.copy(alpha = if (night) 0.36f else 0.20f), shape)
+            .padding(horizontal = 11.dp, vertical = 6.dp)
     ) {
         Text(
             text = text,
-            fontSize = 11.sp,
+            fontSize = 11.5.sp,
             lineHeight = 16.sp,
             color = if (night) Color(0xFFFFB4B0) else UIFriendBarRed
         )
@@ -484,20 +499,20 @@ private fun TimeoutStrip(text: String, night: Boolean) {
  */
 @Composable
 private fun CheatStrip(night: Boolean) {
+    val shape = RoundedCornerShape(UIRadiusControl)
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 14.dp)
             .padding(bottom = 6.dp)
-            .background(
-                SelfBlue.copy(alpha = if (night) 0.22f else 0.08f),
-                RoundedCornerShape(UIRadiusControl)
-            )
-            .padding(horizontal = 10.dp, vertical = 6.dp)
+            .clip(shape)
+            .background(SelfBlue.copy(alpha = if (night) 0.22f else 0.08f))
+            .border(0.7.dp, SelfBlue.copy(alpha = if (night) 0.42f else 0.22f), shape)
+            .padding(horizontal = 11.dp, vertical = 6.dp)
     ) {
         Text(
             text = "思考气泡已打开：桌上浮的是 AI 的心里话，这等于读心，打出来的结果别当真。",
-            fontSize = 11.sp,
+            fontSize = 11.5.sp,
             lineHeight = 16.sp,
             color = if (night) Color(0xFFB9C8FF) else SelfBlue
         )
