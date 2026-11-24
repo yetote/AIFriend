@@ -246,6 +246,14 @@ enum class UIWerewolfTurnKind {
 
     /** 竞选发言之后的退水：退 / 不退，两个按钮。 */
     WITHDRAW,
+
+    /**
+     * 别人发言后的「要不要插爆」即时判断。
+     *
+     * 这不对应任何 Phase——它是白天发言中 triggered 的一次性询问，所以不能靠
+     * game.phase 出面板（那样会被误判成发言方向 / 警徽移交），要靠 HumanTurn 的标记。
+     */
+    EXPLODE,
 }
 
 data class UIWerewolfTarget(

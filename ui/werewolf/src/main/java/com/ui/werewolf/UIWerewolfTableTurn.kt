@@ -65,6 +65,7 @@ import com.ui.werewolf.data.UIWerewolfTurnKind
 @Composable
 internal fun TurnPanel(
     turn: UIWerewolfTurn,
+    day: Int = 0,
     night: Boolean,
     textColor: Color,
     dimColor: Color,
@@ -77,6 +78,7 @@ internal fun TurnPanel(
     onWitch: (Boolean, Int?) -> Unit,
     onDirection: (UIWerewolfDirection) -> Unit = {},
     onWithdraw: (Boolean) -> Unit = {},
+    onExplode: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -111,6 +113,7 @@ internal fun TurnPanel(
 
             UIWerewolfTurnKind.VOTE -> PickTarget(
                 turn = turn,
+                day = day,
                 seats = seats,
                 textColor = textColor,
                 dimColor = dimColor,
@@ -124,6 +127,7 @@ internal fun TurnPanel(
 
             UIWerewolfTurnKind.SEAT -> PickTarget(
                 turn = turn,
+                day = day,
                 seats = seats,
                 textColor = textColor,
                 dimColor = dimColor,
@@ -134,6 +138,7 @@ internal fun TurnPanel(
 
             UIWerewolfTurnKind.WITCH -> WitchPanel(
                 turn = turn,
+                day = day,
                 seats = seats,
                 textColor = textColor,
                 dimColor = dimColor,
@@ -152,6 +157,11 @@ internal fun TurnPanel(
                 textColor = textColor,
                 onPick = onWithdraw
             )
+
+            UIWerewolfTurnKind.EXPLODE -> ExplodeRow(
+                textColor = textColor,
+                onPick = onExplode,
+            )
         }
     }
 }
@@ -165,6 +175,7 @@ internal fun TurnPanel(
 @Composable
 private fun PickTarget(
     turn: UIWerewolfTurn,
+    day: Int,
     seats: List<UIWerewolfSeatLive>,
     textColor: Color,
     dimColor: Color,
@@ -173,10 +184,10 @@ private fun PickTarget(
     onAbstain: (() -> Unit)?,
 ) {
     var showPicker by rememberSaveable { mutableStateOf(false) }
-    val pickable = turn.targets.map { it.seat }.toSet()
+    val pickable = turn.targets.filter { it.selectable }.map { it.seat }.toSet()
     // 提交后这一步就结束了；若引擎已经切到下一回合，残留的 showPicker 会把旧 dialog
     // 又弹出来（弹的是旧目标，玩家可能误点）。turn 一变就关掉。
-    androidx.compose.runtime.LaunchedEffect(turn.title, turn.kind) { showPicker = false }
+    androidx.compose.runtime.LaunchedEffect(day, turn.title, turn.kind, turn.targets) { showPicker = false }
 
     Text(
         text = "从牌桌选人 →",
@@ -346,6 +357,45 @@ internal fun WithdrawRow(
 }
 
 /**
+ * 别人发言后的「要不要现在插爆」。不是阶段，是一次性即时判断。
+ *
+ * 不爆放前面、高亮：那是默认（继续忍着）；自爆是有代价的那一个，用红色。
+ */
+@Composable
+internal fun ExplodeRow(
+    textColor: Color,
+    onPick: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = "继续听",
+            modifier = Modifier
+                .clip(RoundedCornerShape(50))
+                .background(UIActionBrush)
+                .clickable { onPick(false) }
+                .padding(horizontal = 16.dp, vertical = 9.dp),
+            fontSize = FsAction,
+            fontWeight = FontWeight.SemiBold,
+            color = Color.White,
+        )
+        Text(
+            text = "现在自爆",
+            modifier = Modifier
+                .clip(RoundedCornerShape(50))
+                .background(com.ui.common.theme.UIFriendBarRed)
+                .clickable { onPick(true) }
+                .padding(horizontal = 16.dp, vertical = 9.dp),
+            fontSize = FsAction,
+            fontWeight = FontWeight.SemiBold,
+            color = Color.White,
+        )
+    }
+}
+
+/**
  * 警长选发言顺序：警左 / 警右 / 死左 / 死右，四个按钮，没有目标可选。
  *
  * 平安夜没人倒牌时死左 / 死右灰掉——留着可点会让玩家以为引擎会把顺序排错。
@@ -386,6 +436,7 @@ internal fun DirectionRow(
 @Composable
 internal fun WitchPanel(
     turn: UIWerewolfTurn,
+    day: Int,
     seats: List<UIWerewolfSeatLive>,
     textColor: Color,
     dimColor: Color,
@@ -393,7 +444,7 @@ internal fun WitchPanel(
     onWitch: (Boolean, Int?) -> Unit,
 ) {
     var poisoning by rememberSaveable { mutableStateOf(false) }
-    androidx.compose.runtime.LaunchedEffect(turn.title, turn.canPoison, turn.canHeal) { poisoning = false }
+    androidx.compose.runtime.LaunchedEffect(day, turn.title, turn.canPoison, turn.canHeal) { poisoning = false }
 
     if (poisoning) {
         // 毒目标也走牌桌式 dialog——和验人、守护一致，别在底部糊一串名字
@@ -401,7 +452,7 @@ internal fun WitchPanel(
             title = "毒谁",
             hint = "毒药无视守护，但只能用一次",
             seats = seats,
-            pickable = turn.targets.map { it.seat }.toSet(),
+            pickable = turn.targets.filter { it.selectable }.map { it.seat }.toSet(),
             textColor = textColor,
             dimColor = dimColor,
             night = night,

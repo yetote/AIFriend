@@ -78,6 +78,8 @@ fun UIWerewolfTableScreen(
     onWitch: (heal: Boolean, poison: Int?) -> Unit = { _, _ -> },
     onDirection: (UIWerewolfDirection) -> Unit = {},
     onWithdraw: (Boolean) -> Unit = {},
+    /** 别人发言后的插爆判断回答（一次性问询，不是阶段）。 */
+    onExplodeAnswer: (Boolean) -> Unit = {},
     onReview: (() -> Unit)? = null,
     /** 传 null 不画顶栏喇叭。正常对局朗读开关在设置面板里；复盘演出保留这个入口。 */
     onToggleSpeak: (() -> Unit)? = null,
@@ -280,6 +282,7 @@ fun UIWerewolfTableScreen(
 
                 turn != null -> TurnPanel(
                     turn = turn,
+                    day = live.day,
                     night = night,
                     textColor = textColor,
                     dimColor = dimColor,
@@ -291,6 +294,7 @@ fun UIWerewolfTableScreen(
                     onWitch = onWitch,
                     onDirection = onDirection,
                     onWithdraw = onWithdraw,
+                    onExplode = onExplodeAnswer,
                     modifier = Modifier.pageInsetsBottom()
                 )
 

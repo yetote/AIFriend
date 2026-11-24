@@ -67,9 +67,10 @@ internal fun TargetPickDialog(
                     onCancel = onDismiss,
                 )
             } else {
-                // 没有弃权动作的场合（毒目标）只留一个「取消」关掉弹窗
+                // 没有弃权动作的场合（毒目标）只留一个按钮关掉弹窗，
+                // 文案用调用方给的（女巫毒人是「算了」），没给就用「取消」
                 UIDialogButtons(
-                    confirmText = "取消",
+                    confirmText = abstainLabel ?: "取消",
                     confirmColor = Color(0xFF8A94A6),
                     onConfirm = onDismiss,
                     cancelText = null,
@@ -79,11 +80,16 @@ internal fun TargetPickDialog(
     ) {
         val ordered = seats.sortedBy { it.seat }
         val half = (ordered.size + 1) / 2
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        // 和牌桌一致：左右两列，每列自上而下排座位。不是「两行横排」——
+        // 12 人横排每行 6 个会挤到 43dp，头像 36dp 直接溢出、名字全截断。
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             listOf(ordered.take(half), ordered.drop(half)).forEach { column ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     column.forEach { seat ->
                         TargetSeat(
@@ -92,12 +98,10 @@ internal fun TargetPickDialog(
                             textColor = textColor,
                             dimColor = dimColor,
                             night = night,
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.fillMaxWidth(),
                             onClick = { onPick(seat.seat); onDismiss() },
                         )
                     }
-                    // 奇数人数时补一个空位，让两列对齐
-                    if (column.size < half) Box(Modifier.weight(1f))
                 }
             }
         }

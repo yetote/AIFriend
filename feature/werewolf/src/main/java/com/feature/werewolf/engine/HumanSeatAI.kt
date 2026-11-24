@@ -22,6 +22,13 @@ data class HumanTurn(
      * 不依赖 UI 当时看到的 table.phase。
      */
     val phase: String? = null,
+    /**
+     * true 表示这是「别人发言后，你要不要现在插爆」的一次性判断。
+     *
+     * 它不对应任何 Phase（白天发言中被触发），所以不能只靠 phase 让 UI 出面板——
+     * 否则 phase 还停在 DAY_DISCUSSION，会被误判成发言方向面板。
+     */
+    val explodeWatch: Boolean = false,
 )
 
 /**
@@ -54,6 +61,10 @@ class HumanSeatAI : IAI {
     @Volatile
     var currentPhase: String? = null
 
+    /** 本次是不是「插爆判断」——askExplodeNow 提问前置 true，其余提问置 false。 */
+    @Volatile
+    var currentExplodeWatch: Boolean = false
+
     override suspend fun requestModel() = Unit
 
     override var modelSet: MutableSet<String> = mutableSetOf()
@@ -77,6 +88,7 @@ class HumanSeatAI : IAI {
             messages = messages,
             jsonMode = jsonMode,
             phase = currentPhase,
+            explodeWatch = currentExplodeWatch,
         )
         try {
             return deferred.await()

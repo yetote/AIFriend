@@ -24,6 +24,7 @@ import com.core.tts.SpeechFilter
 import com.core.tts.SpeechQueue
 import com.core.tts.SpeechTiming
 import com.feature.werewolf.decision.DirectionChoice
+import com.feature.werewolf.decision.ExplodeChoice
 import com.feature.werewolf.decision.SeatChoice
 import com.feature.werewolf.decision.VoteChoice
 import com.feature.werewolf.decision.WitchChoice
@@ -1871,6 +1872,17 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
     fun submitWithdraw(withdraw: Boolean) {
         if (humanTurn.value?.jsonMode != true) return
         human.submit(json.encodeToString(WithdrawChoice(withdraw)))
+    }
+
+    /**
+     * 别人发言后的「要不要插爆」判断。
+     *
+     * 这是白天发言中触发的一次性询问，不是阶段，所以靠 HumanTurn.explodeWatch 认。
+     * 提交 ExplodeChoice；选 false 就是继续忍着（引擎会等这次判断收完再继续）。
+     */
+    fun submitExplode(explode: Boolean, reason: String = "") {
+        if (humanTurn.value?.explodeWatch != true) return
+        human.submit(json.encodeToString(ExplodeChoice(explode = explode, reason = reason)))
     }
 
     /**

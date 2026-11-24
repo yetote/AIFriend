@@ -33,6 +33,17 @@ internal fun buildTurn(
 ): UIWerewolfTurn? {
     if (humanSeat == null || me == null || waiting == null) return null
 
+    // 插爆判断不是独立 Phase（白天发言中被触发），必须先看标记——
+    // 否则 phase 还停在 DAY_DISCUSSION，会被当成发言方向面板，玩家答不上来。
+    if (waiting.explodeWatch && me.role.isWerewolf) {
+        return UIWerewolfTurn(
+            kind = UIWerewolfTurnKind.EXPLODE,
+            seat = humanSeat,
+            title = "现在就自爆？",
+            hint = "别人刚说完，这是打断他的时机；也可以继续忍着",
+        )
+    }
+
     val others = game.alivePlayers
         .filter { it.seat != humanSeat }
         .map { UIWerewolfTarget(seat = it.seat, name = it.name) }
@@ -79,6 +90,7 @@ internal fun buildTurn(
             hint = if (game.sheriffRound > 1) "PK 后重投" else "只能投还在竞选的人（退水的不算）",
             targets = others.filter { it.seat in game.sheriffCandidates },
             canAbstain = true,
+            abstainLabel = "弃票",
         )
 
         Phase.DAY_LAST_WORDS -> if (game.sheriffSeat == humanSeat) {
@@ -136,6 +148,7 @@ internal fun buildTurn(
                 others.filter { it.seat in game.votingSeats }
             },
             canAbstain = true,
+            abstainLabel = "弃票",
         )
 
         Phase.NIGHT_GUARD -> if (me.role == WerewolfRole.GUARD) {

@@ -142,6 +142,23 @@ class WerewolfTurnMappingTest {
         assertTrue("要出查验面板", turn?.title?.contains("查验") == true)
     }
 
+    @Test
+    fun `插爆判断按标记出面板，不被发言阶段的 phase 误判`() {
+        // 插爆不是 Phase：phase 还在 DAY_DISCUSSION，若只看 phase 会出「选发言顺序」面板。
+        val game = game().copy(phase = Phase.DAY_DISCUSSION)
+        val wolf = game.players.first { it.role == WerewolfRole.WEREWOLF }
+        val turn = buildTurn(
+            game,
+            humanSeat = wolf.seat,
+            me = wolf,
+            waiting = HumanTurn(
+                "", emptyList(), true,
+                phase = Phase.DAY_DISCUSSION.name, explodeWatch = true,
+            ),
+        )
+        assertTrue("要出插爆面板而不是发言方向", turn?.kind == com.ui.werewolf.data.UIWerewolfTurnKind.EXPLODE)
+    }
+
     /** 4 预言家 + 其它平民的局；够建出一个预言家座位。 */
     private fun game(): WerewolfGame = WerewolfGame.withRoles(
         config = WerewolfConfig(composition = mapOf(WerewolfRole.WEREWOLF to 2, WerewolfRole.SEER to 1, WerewolfRole.VILLAGER to 5)),
