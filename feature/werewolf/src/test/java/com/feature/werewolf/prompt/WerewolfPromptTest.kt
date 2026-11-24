@@ -1278,8 +1278,22 @@ class WerewolfPromptTest {
         // 说明这条标准本身是软的，不能当硬证据。
         val good = WerewolfPrompt.systemPrompt(standardGame(), seat = 3)
 
-        assertTrue("要明说验发过言的人不是错：$good", good.contains("验发过言的人不是错"))
-        assertTrue("要说这类标准是软尺子：$good", good.contains("软尺子"))
+        assertTrue("要明说验发过言的人不是错：$good", good.contains("验发过言的人也不是错"))
+    }
+
+    @Test
+    fun `警徽流看兑现而非改口次数，白天发言结束前可以改`() {
+        // 12 人局复盘：4 号警徽流 12、6→12、11→11、7、5，被 7、11、1 号数成「改三次、活页账本」。
+        // 但 12、11、5 三次查验全部按序列兑现、验出两个狼——这是最硬的身份证据，不是嫌疑。
+        // 而且白天发言结束前改警徽流本来就合法（听到新发言、新票型随时可调）。
+        val good = WerewolfPrompt.systemPrompt(standardGame(), seat = 3)
+
+        assertTrue("要说白天发言结束前可以改：$good", good.contains("白天发言结束前改警徽流完全正常"))
+        assertTrue("要说看兑现不看改口次数：$good", good.contains("警徽流看兑现，不看改了几次"))
+        assertTrue("要说验过就补新目标不算改口：$good", good.contains("不算改口"))
+        assertTrue("要给出兑现的正面例子：$good", good.contains("三次查验全按序列兑现"))
+        assertTrue("要说没验就换人才记疑：$good", good.contains("没验就把人换掉"))
+        assertTrue("要说验证不出来才是断裂：$good", good.contains("那才是断裂"))
     }
 
     @Test
