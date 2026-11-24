@@ -471,7 +471,11 @@ internal val Phase.hidesActor: Boolean
 
 internal fun Phase.isNightPhase(): Boolean =
     this == Phase.NIGHT_GUARD || this == Phase.NIGHT_WOLF_CHAT ||
-        this == Phase.NIGHT_WOLF || this == Phase.NIGHT_SEER || this == Phase.NIGHT_WITCH
+        this == Phase.NIGHT_WOLF || this == Phase.NIGHT_SEER || this == Phase.NIGHT_WITCH ||
+        // 与 WerewolfProgress.isNight 保持一致：汇聚 / 结算阶段也是夜间，
+        // 参与局走 nightStageLabel，不给阶段名和座位（DAWN_SETTLE 显示「夜间进行中」而非
+        // 「天亮结算」，免得在死讯播报前先暗示「要死人了」）。
+        this == Phase.NIGHT_PENDING || this == Phase.DAWN_SETTLE
 
 /**
  * 这个阶段里，**本人**是不是正在行动的那一方。

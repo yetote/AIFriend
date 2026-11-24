@@ -163,6 +163,37 @@ class WerewolfDirectorTest {
             chat(listOf(ChatMessage.user(message)), model)
     }
 
+    /** 狼人定刀一律投 4 号（合法候选），其余决策取第一个候选。用来稳定验证续档。 */
+    private class UnanimousWolfAI : IAI {
+        override suspend fun requestModel() = Unit
+        override var modelSet: MutableSet<String> = mutableSetOf()
+        override var brandName: String = "测试"
+        override var company: String = "测试"
+        override suspend fun chat(
+            messages: List<ChatMessage>,
+            model: String,
+            systemPrompt: String?,
+            enableThinking: Boolean,
+            jsonMode: Boolean,
+            webSearch: Boolean,
+        ): String {
+            val system = systemPrompt.orEmpty()
+            if (!jsonMode) return "我跟票。"
+            if (system.contains("今晚要刀的人")) return """{"target": 4, "reason": "刀预言家。"}"""
+            if (system.contains("\"heal\"")) return """{"heal": false, "poison": null, "reason": "不用药。"}"""
+            if (system.contains("想竞选警长")) return """{"target": null, "reason": "不上警。"}"""
+            if (system.contains("\"withdraw\"")) return """{"withdraw": false, "reason": "不退。"}"""
+            if (system.contains("遗言里还要交代警徽")) return """{"target": null, "reason": "撕掉。"}"""
+            val block = Regex("""(?:只能|可以)从 ([^。]+) 中?选""").find(system)?.groupValues?.get(1)
+            val target = block?.let { Regex("""(\d+) 号""").find(it)?.groupValues?.get(1)?.toInt() }
+            return if (target != null) """{"target": $target, "reason": "跟票。"}""" else """{"target": null, "reason": "弃权。"}"""
+        }
+
+        @Deprecated("测试用不到")
+        override suspend fun chat(message: String, model: String): String =
+            chat(listOf(ChatMessage.user(message)), model)
+    }
+
     /** 永远输出垃圾，用来验证兜底。 */
     private class GarbageAI : IAI {
         var callCount = 0
@@ -1888,6 +1919,16 @@ class WerewolfDirectorTest {
     )
 
     @Test
+    fun `责任链覆盖除 FINISHED 外的所有阶段`() {
+        // when → Map 后失去编译期穷举保护，用测试兜底：加阶段必须同时加链节点
+        val director = WerewolfDirector(emptyMap())
+        val missing = com.feature.werewolf.game.Phase.entries
+            .filter { it != com.feature.werewolf.game.Phase.FINISHED }
+            .filterNot { director.chain.containsKey(it) }
+        assertTrue("责任链缺少节点：$missing", missing.isEmpty())
+    }
+
+    @Test
     fun `第一夜从 NIGHT_GUARD 入口也走三路并发，三路结果都合并进局面`() = runBlocking {
         val game = guard10()
         val agents = game.players.associate { it.seat to SeatAgent(AutoAI(), "test-model") }
@@ -1915,6 +1956,42 @@ class WerewolfDirectorTest {
         assertTrue("好人看不到狼人商议", result.transcriptFor(4).none { it.kind == com.feature.werewolf.engine.MessageKind.WOLF_CHAT })
         // 三路都完成后进女巫（有女巫的局）
         assertEquals(Phase.NIGHT_WITCH, result.game.phase)
+    }
+
+    @Test
+    fun `商议到一半落档后续档重跑狼人，刀口不丢`() = runBlocking {
+        val game = guard10()
+        val agents = game.players.associate { it.seat to SeatAgent(UnanimousWolfAI(), "test-model") }
+        val director = WerewolfDirector(agents, random = Random(11))
+
+        // 模拟「狼人商议到一半落档」：有商议消息、phase 停在 NIGHT_WOLF_CHAT，
+        // 但还没定刀（wolfVotes 空、tonightVictim null）。守卫/预言家已完成（有发言）。
+        val halfTalked = WerewolfTable(
+            game.copy(phase = Phase.NIGHT_WOLF_CHAT),
+            transcript = listOf(
+                com.feature.werewolf.engine.WerewolfMessage(
+                    day = game.day, phase = Phase.NIGHT_GUARD, seat = 7,
+                    kind = com.feature.werewolf.engine.MessageKind.NIGHT_ACT,
+                    text = "我守 7 号。", audience = setOf(7),
+                ),
+                com.feature.werewolf.engine.WerewolfMessage(
+                    day = game.day, phase = Phase.NIGHT_SEER, seat = 4,
+                    kind = com.feature.werewolf.engine.MessageKind.NIGHT_ACT,
+                    text = "查验 2 号：好人。", audience = setOf(4),
+                ),
+                com.feature.werewolf.engine.WerewolfMessage(
+                    day = game.day, phase = Phase.NIGHT_WOLF_CHAT, seat = 1,
+                    kind = com.feature.werewolf.engine.MessageKind.WOLF_CHAT,
+                    text = "我提议刀 4 号。", audience = setOf(1, 2, 3),
+                ),
+            ),
+        )
+
+        val result = director.nightPending(halfTalked)
+
+        // 狼人路必须重跑并定出刀口——不能再因为「有商议消息」就误判已完成而跳过
+        assertEquals("续档重跑后定出刀口", 4, result.game.tonightVictim)
+        assertTrue("刀口已落进 wolfVotes", result.game.wolfVotes.values.any { it == 4 })
     }
 
     @Test

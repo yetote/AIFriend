@@ -62,7 +62,11 @@ class WerewolfSnapshotTest {
             players = players,
             day = 3,
             phase = Phase.HUNTER_SHOOT,
-            witch = WitchStock(antidoteAvailable = false, poisonAvailable = true),
+            // 非默认的本夜用药决定也要 round-trip：结算已收敛到天亮，续档必须带上它
+            witch = WitchStock(
+                antidoteAvailable = false, poisonAvailable = true,
+                nightHeal = true, nightPoison = 6,
+            ),
             wolfVotes = mapOf(1 to 6),
             wolfVoteRound = 2,
             tonightVictim = 6,

@@ -634,7 +634,8 @@ data class WerewolfGame(
     }
 
     /**
-     * 女巫行动。返回时天已亮，死亡已结算。
+     * 女巫行动。只写用药决定与药品库存，**不在这里结算**——返回时 phase 是 [Phase.DAWN_SETTLE]，
+     * 死亡 / 胜负 / 天亮播报由该节点的 [settlePendingNight] 统一算（三路并发的前提）。
      *
      * 规则：解药毒药各限一次，**同一夜不能同时使用**；解药不能救自己（第一夜按配置可例外）；
      * 不能毒自己。守卫守中的人即使被刀也不会死，解药对他其实是浪费——但引擎不拦，
@@ -1721,7 +1722,9 @@ data class WerewolfGame(
                     role = arranged[index], model = entry.model,
                 )
             }
-            // 第一夜从守护阶段串行入夜（守卫必先盲守）；第 2 夜起 startNextNight 走 NIGHT_PENDING 三路并发。
+            // 开局入口标记（守卫局的 NIGHT_GUARD、无守卫局的 NIGHT_WOLF_CHAT）。
+            // 责任链把这四个夜间入口都路由到 NIGHT_PENDING，第一夜就三路并发；
+            // 守卫「盲守」靠的是 prompt 里没有刀口，不靠串行调度。
             val opening = if (config.has(WerewolfRole.GUARD)) {
                 Phase.NIGHT_GUARD
             } else {

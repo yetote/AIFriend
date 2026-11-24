@@ -159,8 +159,15 @@ class WerewolfDirector(
         val base = table.game
         val guardDone = nightActorDone(table, Phase.NIGHT_GUARD)
         val seerDone = nightActorDone(table, Phase.NIGHT_SEER)
-        // 狼人：商议发言或定刀消息任一出现即算完成
-        val wolvesDone = nightActorDone(table, Phase.NIGHT_WOLF_CHAT)
+        // 狼人「完成」不能只看有没有商议发言：商议说一半、或平票定刀中落档时，
+        // 商议消息已经出现但刀口还没定，续档若跳过狼人就会按空刀结算。
+        // 狼人路跑完必然把 phase 推过 NIGHT_WOLF（有预言家→NIGHT_SEER，没有→DAWN_SETTLE）；
+        // 平票加商时 phase 会退回 NIGHT_WOLF_CHAT，仍判未完成，正好重跑。
+        // 所以「phase 已越过狼人阶段」是唯一可靠的完成判据。
+        val wolvesDone = when (base.phase) {
+            Phase.NIGHT_SEER, Phase.NIGHT_WITCH, Phase.DAWN_SETTLE -> true
+            else -> false
+        }
         fun alive(role: WerewolfRole) = base.alivePlayers.any { it.role == role }
 
         val guardTable: WerewolfTable?
@@ -187,22 +194,28 @@ class WerewolfDirector(
 
         // 合并：字段各取各路的写入，消息按守卫 → 狼人 → 预言家顺序落（气泡顺序）
         var merged = table
+        // 写 null / 空集也是合法结果（空守、空刀、首夜无昨守）。只要这一路跑了，
+        // 就用它的值，不用 `?:` 回退 base——否则异常存档下会把上一夜的刀口/守护带进本夜。
+        val guardGame = guardTable?.game
+        val wolfGame = wolfTable?.game
+        val seerGame = seerTable?.game
         val finalGame = base.copy(
             // 守卫写入
-            tonightGuardedSeat = guardTable?.game?.tonightGuardedSeat ?: base.tonightGuardedSeat,
+            tonightGuardedSeat = if (guardGame != null) guardGame.tonightGuardedSeat else base.tonightGuardedSeat,
             lastGuardedSeat = base.lastGuardedSeat,
             // 狼人写入
-            wolfVotes = wolfTable?.game?.wolfVotes ?: base.wolfVotes,
-            wolfVoteRound = wolfTable?.game?.wolfVoteRound ?: base.wolfVoteRound,
-            tonightVictim = wolfTable?.game?.tonightVictim ?: base.tonightVictim,
-            ghostWolves = wolfTable?.game?.ghostWolves ?: base.ghostWolves,
-            nightHead = wolfTable?.game?.nightHead ?: base.nightHead,
-            wolfPlan = wolfTable?.game?.wolfPlan ?: base.wolfPlan,
+            wolfVotes = if (wolfGame != null) wolfGame.wolfVotes else base.wolfVotes,
+            wolfVoteRound = if (wolfGame != null) wolfGame.wolfVoteRound else base.wolfVoteRound,
+            tonightVictim = if (wolfGame != null) wolfGame.tonightVictim else base.tonightVictim,
+            ghostWolves = if (wolfGame != null) wolfGame.ghostWolves else base.ghostWolves,
+            nightHead = if (wolfGame != null) wolfGame.nightHead else base.nightHead,
+            wolfPlan = if (wolfGame != null) wolfGame.wolfPlan else base.wolfPlan,
             // 预言家写入
-            seerChecks = seerTable?.game?.seerChecks ?: base.seerChecks,
-            // 发言进度：三路各自的 markSpoken 合在一起
-            spokenPhaseKey = base.spokenPhaseKey,
-            spokenSeats = base.spokenSeats,
+            seerChecks = if (seerGame != null) seerGame.seerChecks else base.seerChecks,
+            // 发言进度：狼人路 talkRound 的 markSpoken 要保留——续档靠它跳过已发言的狼。
+            // 守卫 / 预言家是单次决策不走 markSpoken，所以取狼人路的值即可。
+            spokenPhaseKey = if (wolfGame != null) wolfGame.spokenPhaseKey else base.spokenPhaseKey,
+            spokenSeats = if (wolfGame != null) wolfGame.spokenSeats else base.spokenSeats,
         )
         // 消息按固定顺序 append（并发完成顺序不定，但落库顺序固定）
         for (part in listOfNotNull(guardTable, wolfTable, seerTable)) {
@@ -488,7 +501,8 @@ class WerewolfDirector(
     }
 
     /**
-     * 女巫用药。行动结束后天已经亮了，[WerewolfTable.game] 回来时是白天阶段。
+     * 女巫用药。只写决定 + 落消息，回来时 phase 是 [Phase.DAWN_SETTLE]（天亮结算节点），
+     * 不是白天——天亮与结算由责任链的 dawnSettle 节点完成。
      *
      * 女巫说了什么、救没救、毒了谁，全都是秘密，所以这条消息只给女巫本人。
      */
@@ -1148,7 +1162,7 @@ class WerewolfDirector(
      * play() 每轮重读 phase 再查表，形成一条自治链。DAY_DISCUSSION 的「自爆后不开投票」
      * 和 NIGHT_PENDING 的三路并发都封在各自节点里，不污染分发逻辑。
      */
-    private val chain: Map<Phase, suspend (WerewolfTable) -> WerewolfTable> by lazy {
+    internal val chain: Map<Phase, suspend (WerewolfTable) -> WerewolfTable> by lazy {
         mapOf(
             // 夜间四个入口都路由到汇聚节点：它按 transcript 判断哪几路还没做，并发跑完。
             // 责任链之外，规则函数（nightGuard/nightWolf/...）仍可被单测直接调用，行为不变。
