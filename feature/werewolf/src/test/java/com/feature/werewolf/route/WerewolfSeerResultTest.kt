@@ -313,4 +313,22 @@ class WerewolfSeerResultTest {
             live.seats.all { it.seerVerdict == null },
         )
     }
+
+    @Test
+    fun `验人结论经过存档往返后徽标还在`() {
+        // 续档重进是「验人结果突然没了」的高发路径：查验写进 game.seerChecks，
+        // 存档 round-trip 后必须还在，徽标才能继续挂在被验座位下方。
+        val original = tableWithCheck(targetSeat = 1)
+        val restored = com.feature.werewolf.engine.persistence.WerewolfSnapshot.decode(
+            com.feature.werewolf.engine.persistence.WerewolfSnapshot.encode(original),
+        )!!
+        val live = WerewolfUiState(table = restored, running = true)
+            .toLive(humanSeat = 3, turn = null, avatars = emptyMap())
+
+        assertEquals(
+            "续档后 1 号座位的验人徽标不能丢",
+            UIWerewolfVerdict.WOLF,
+            live.seats.first { it.seat == 1 }.seerVerdict,
+        )
+    }
 }

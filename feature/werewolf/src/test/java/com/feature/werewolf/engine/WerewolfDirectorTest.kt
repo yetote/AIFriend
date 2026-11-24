@@ -12,6 +12,8 @@ import com.feature.werewolf.game.WerewolfConfig
 import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfRole
 import com.feature.werewolf.game.WerewolfTurnLimit
+import com.feature.werewolf.route.toLive
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -2035,6 +2037,36 @@ class WerewolfDirectorTest {
         assertTrue("提交应被接受", human.submit("""{"target": 2, "reason": "查一下"}"""))
         delay(50)
         job.cancelAndJoin()
+    }
+
+    @Test
+    fun `真人预言家查验后合并结果里 seerChecks 不丢，映射到座位上能看到结论`() = runBlocking {
+        val game = guard10()
+        val human = HumanSeatAI()
+        val agents = game.players.associate { p ->
+            p.seat to if (p.seat == 4) SeatAgent(human, "human") else SeatAgent(AutoAI(), "test-model")
+        }
+        val director = WerewolfDirector(agents, random = Random(11))
+
+        // 起一个 nightPending 协程；人类预言家会挂起
+        val deferred = async { director.nightPending(WerewolfTable(game)) }
+        repeat(50) { if (human.turn.value == null) delay(10) }
+        assertTrue("预言家回合应出现", human.turn.value != null)
+        // 查 2 号
+        human.submit("""{"target": 2, "reason": "查一下"}""")
+        val result = deferred.await()
+
+        assertTrue("查验结果必须写进合并后的 game，否则座位徽标无从显示",
+            result.game.seerChecks.any { it.day == game.day && it.targetSeat == 2 })
+
+        // 映射层：人类预言家（4号）应在被验的 2 号座位上拿到结论
+        val live = com.feature.werewolf.engine.WerewolfUiState(table = result, running = true)
+            .toLive(humanSeat = 4, turn = null, avatars = emptyMap())
+        assertEquals(
+            "2 号座位下要挂验人结论",
+            com.ui.werewolf.data.UIWerewolfVerdict.WOLF,
+            live.seats.first { it.seat == 2 }.seerVerdict,
+        )
     }
 
 }
