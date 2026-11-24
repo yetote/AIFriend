@@ -84,6 +84,8 @@ fun UIModelSettingsPage(
     onBack: () -> Unit,
     onProviderSelect: (String) -> Unit,
     onKeyChange: (String) -> Unit,
+    onAccessKeyIdChange: (String) -> Unit = { },
+    onAccessKeySecretChange: (String) -> Unit = { },
     onBaseUrlChange: (String) -> Unit,
     onModelSelect: (String) -> Unit,
     onSave: () -> Unit,
@@ -96,6 +98,10 @@ fun UIModelSettingsPage(
     onRenameCustom: () -> Unit = {},
 ) {
     var keyVisible by remember { mutableStateOf(false) }
+    // 第二对凭证各自一份显示开关：Secret 露出来比 API Key 更敏感，
+    // 共用一个开关的话，看 AK ID 时会顺手把 Secret 也露出来。
+    var accessKeyIdVisible by remember { mutableStateOf(false) }
+    var accessKeySecretVisible by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<UIProviderOption?>(null) }
     // 免责提醒：每次进这个页面都弹，必须点「我已知晓」才关得掉，
     // 不能点外部/返回键划走 —— 这是合规底线，不是可以忽略的普通提示。
@@ -254,6 +260,48 @@ fun UIModelSettingsPage(
                             "粘贴你的 API Key"
                         }
                     )
+
+                    /*
+                     * 第二对凭证，目前只有火山方舟要。
+                     *
+                     * 方舟的管控面接口（查模型开通状态、查推理限额）不认聊天用的
+                     * API Key，只认 Access Key ID + Secret Access Key。
+                     * 这一对是查「模型有没有开通」的必需品——方舟的模型要在控制台
+                     * 单独开通，没开通调用直接 404，而 /models 会把没开通的也列出来，
+                     * 于是好友建好了、看着也正常，一开口就说不了话。
+                     */
+                    if (provider.accessKeyLabel != null) {
+                        Spacer(Modifier.height(14.dp))
+                        SectionLabel(provider.accessKeyLabel)
+                        Spacer(Modifier.height(8.dp))
+                        KeyField(
+                            value = state.accessKeyIdInput,
+                            onValueChange = onAccessKeyIdChange,
+                            visible = accessKeyIdVisible,
+                            onToggleVisible = { accessKeyIdVisible = !accessKeyIdVisible },
+                            placeholder = if (provider.hasAccessKey) {
+                                "已保存，留空则保持不变"
+                            } else {
+                                "在火山引擎「访问控制」里创建"
+                            }
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        KeyField(
+                            value = state.accessKeySecretInput,
+                            onValueChange = onAccessKeySecretChange,
+                            visible = accessKeySecretVisible,
+                            onToggleVisible = { accessKeySecretVisible = !accessKeySecretVisible },
+                            placeholder = "Secret Access Key"
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = "这一对与上面的 API Key 不是一回事：上面的用来聊天，" +
+                                "这一对用来查方舟的模型开通状态和额度。",
+                            fontSize = 11.sp,
+                            lineHeight = 16.sp,
+                            color = UIFriendBarItemMetaColor
+                        )
+                    }
 
                     if (provider.editableBaseUrl) {
                         Spacer(Modifier.height(12.dp))

@@ -214,6 +214,8 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
         _state.value = _state.value.copy(
             selectedProviderId = providerId,
             keyInput = "",
+            accessKeyIdInput = "",
+            accessKeySecretInput = "",
             baseUrlInput = credential?.baseUrl.orEmpty().ifBlank { provider.baseUrl },
             customNameInput = provider.name.takeIf { AIProviderCatalog.isCustom(providerId) }.orEmpty(),
             models = modelCache[providerId].orEmpty(),
@@ -231,6 +233,15 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
 
     fun setKeyInput(value: String) {
         _state.value = _state.value.copy(keyInput = value.trim(), verifyResult = null, error = null)
+    }
+
+    /** 第二对凭证（目前只有火山方舟要）。 */
+    fun setAccessKeyIdInput(value: String) {
+        _state.value = _state.value.copy(accessKeyIdInput = value.trim(), error = null)
+    }
+
+    fun setAccessKeySecretInput(value: String) {
+        _state.value = _state.value.copy(accessKeySecretInput = value.trim(), error = null)
     }
 
     fun setBaseUrlInput(value: String) {
@@ -328,6 +339,8 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
             _state.value = _state.value.copy(
                 providers = AIProviderCatalog.all.map { it.toOption() },
                 keyInput = "",
+                accessKeyIdInput = "",
+                accessKeySecretInput = "",
                 models = emptyList(),
                 pricedModels = emptyList(),
                 selectedModel = "",
@@ -350,6 +363,17 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
         val apiKey = snapshot.keyInput.ifBlank { saved[provider.id]?.apiKey.orEmpty() }
         if (provider.requiresKey && apiKey.isBlank()) {
             _state.value = snapshot.copy(error = "请先填写 API Key")
+            return
+        }
+        // 第二对凭证：留空即沿用已保存的值。两项要一起在（只有火山用得到）。
+        val accessKeyId = snapshot.accessKeyIdInput.ifBlank { saved[provider.id]?.accessKeyId.orEmpty() }
+        val accessKeySecret = snapshot.accessKeySecretInput.ifBlank {
+            saved[provider.id]?.accessKeySecret.orEmpty()
+        }
+        if (provider.accessKeyLabel != null && accessKeyId.isNotBlank() != accessKeySecret.isNotBlank()) {
+            _state.value = snapshot.copy(
+                error = "${provider.accessKeyLabel} 和 Secret 要一起填，缺一个都用不了"
+            )
             return
         }
 
@@ -390,7 +414,11 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
             // 没有 /models 的厂商（目前是星火）验证不了 Key，只能直接存下来：
             // 模型名走目录里的兜底列表，等真聊一次才知道 Key 对不对。
             if (!provider.hasModelList) {
-                saveCredential(provider, apiKey, baseUrl, provider.fallbackModels)
+                saveCredential(
+                    provider, apiKey, baseUrl, provider.fallbackModels,
+                    accessKeyId = accessKeyId,
+                    accessKeySecret = accessKeySecret,
+                )
                 return@launch
             }
 
@@ -425,7 +453,11 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
                     return@launch
                 }
 
-                saveCredential(provider, apiKey, baseUrl, models, priced)
+                saveCredential(
+                    provider, apiKey, baseUrl, models, priced,
+                    accessKeyId = accessKeyId,
+                    accessKeySecret = accessKeySecret,
+                )
             }.onFailure { error ->
                 _state.value = _state.value.copy(
                     isVerifying = false,
@@ -442,14 +474,18 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
         apiKey: String,
         baseUrl: String,
         models: List<String>,
-        priced: List<UISettingsModel> = emptyList()
+        priced: List<UISettingsModel> = emptyList(),
+        accessKeyId: String = "",
+        accessKeySecret: String = "",
     ) {
         val credential = AICredential(
             providerId = provider.id,
             apiKey = apiKey,
             // 只有自定义服务商的地址是用户填的，其余用目录里的固定地址，
             // 存下来的话用户以后改目录也改不动它。
-            baseUrl = if (AIProviderCatalog.isCustom(provider.id)) baseUrl else ""
+            baseUrl = if (AIProviderCatalog.isCustom(provider.id)) baseUrl else "",
+            accessKeyId = accessKeyId,
+            accessKeySecret = accessKeySecret,
         )
         val stored = withContext(Dispatchers.IO) {
             val ok = settings.save(credential)
@@ -489,6 +525,8 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
             isVerifying = false,
             isLoadingModels = false,
             keyInput = "",
+            accessKeyIdInput = "",
+            accessKeySecretInput = "",
             models = if (visible) models else current.models,
             pricedModels = if (visible) priced else current.pricedModels,
             selectedModel = if (visible) {
@@ -534,7 +572,9 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
         editableBaseUrl = AIProviderCatalog.isCustom(id),
         baseUrl = saved[id]?.baseUrl.orEmpty(),
         isGateway = isGateway,
-        customId = id.takeIf { AIProviderCatalog.isCustom(it) }
+        customId = id.takeIf { AIProviderCatalog.isCustom(it) },
+        accessKeyLabel = accessKeyLabel,
+        hasAccessKey = saved[id]?.accessKeyId?.isNotBlank() == true,
     )
 
     /** Key 只露头尾各 4 位，够用户认出是哪把，又不至于被旁人瞥去。 */

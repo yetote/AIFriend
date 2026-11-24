@@ -225,6 +225,34 @@ class KtorClient {
      */
     suspend fun getText(url: String): String = client.get(url).bodyAsText()
 
+    /**
+     * 带请求头取原始文本。
+     *
+     * 余额查询要用这个：各家返回的字段名和层级都不一样（有的把金额写成字符串，
+     * 有的塞在数组里，有的同名但语义相反），按固定结构反序列化会变成「改一家、崩两家」。
+     * 拿原始文本自己按路径取值，一家一套解析，互不影响。
+     */
+    suspend fun getTextWithHeaders(url: String, headers: Map<String, String>): String =
+        client.get(url) {
+            headers.forEach { (key, value) -> header(key, value) }
+        }.bodyAsText()
+
+    /**
+     * POST 一个 JSON 字符串，取回原始文本。
+     *
+     * 火山方舟的管控面接口要自己算签名（请求头得一个不差地凑齐），
+     * 所以请求体直接用字符串，不经过 [setBody] 的序列化。
+     */
+    suspend fun postText(
+        url: String,
+        body: String,
+        headers: Map<String, String>,
+    ): String = client.post(url) {
+        contentType(ContentType.Application.Json)
+        setBody(body)
+        headers.forEach { (key, value) -> header(key, value) }
+    }.bodyAsText()
+
 }
 
 private const val LOG_TAG = "KtorNetwork"

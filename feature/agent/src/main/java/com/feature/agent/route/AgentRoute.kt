@@ -164,6 +164,11 @@ fun AgentRoute(
                 // 好友被删了，退回聊天（聊天那条分支会再检测并退出）
                 LaunchedEffect(Unit) { screen = AgentScreen.Chat(current.friendId) }
             } else {
+                // 进详情页就查一次额度：余额见底、套餐窗口用光、方舟上的模型没开通，
+                // 这些只有在这一页才看得见，而它们直接决定「这个好友还能不能聊」。
+                LaunchedEffect(friend.id) {
+                    viewModel.loadBalance(friend.brand, friend.model)
+                }
                 UIFriendInfoScreen(
                     friendName = friend.name,
                     role = friend.role,
@@ -174,8 +179,10 @@ fun AgentRoute(
                     thinkingEnabled = friend.thinkingEnabled,
                     messageCount = friend.messages.size,
                     avatarPath = friend.avatarPath,
+                    balance = state.balance,
                     onBack = { screen = AgentScreen.Chat(friend.id) },
                     onChangeAvatar = { bytes -> viewModel.setFriendAvatar(friend.id, bytes) },
+                    onRefreshBalance = { viewModel.loadBalance(friend.brand, friend.model) },
                     onEdit = { screen = AgentScreen.Edit(friend.id) }
                 )
             }

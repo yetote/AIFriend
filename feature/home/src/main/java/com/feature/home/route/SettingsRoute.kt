@@ -56,6 +56,8 @@ fun SettingsRoute(
             onBack = { page = SettingsPage.Home },
             onProviderSelect = viewModel::selectProvider,
             onKeyChange = viewModel::setKeyInput,
+            onAccessKeyIdChange = viewModel::setAccessKeyIdInput,
+            onAccessKeySecretChange = viewModel::setAccessKeySecretInput,
             onBaseUrlChange = viewModel::setBaseUrlInput,
             onModelSelect = viewModel::selectModel,
             onSave = viewModel::verifyAndSave,

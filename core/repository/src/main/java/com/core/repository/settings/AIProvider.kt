@@ -10,6 +10,9 @@ import com.core.network.URL_MIMO
 import com.core.network.URL_QIANWEN
 import com.core.network.URL_SPARK
 import com.core.network.URL_ZHIPU
+import com.core.repository.balance.BalanceParserKind
+import com.core.repository.balance.BalanceMethod
+import com.core.repository.balance.ProviderBalanceSpec
 /**
  * 一个模型服务商，可以是官方厂商，也可以是聚合平台。
  *
@@ -79,7 +82,21 @@ data class AIProvider(
      * 老好友、老狼人杀存档里存的是当时的品牌名字符串。改名后靠它继续找到
      * 同一个服务商，否则那些好友会变成「暂不支持的厂商」。
      */
-    val aliases: List<String> = emptyList()
+    val aliases: List<String> = emptyList(),
+    /**
+     * 这个服务商的余量查询方式；null 表示这家不提供。
+     *
+     * 八成厂商直接开了 HTTP 接口，用用户已经填在设置页的那把 Key 就能查余额，
+     * 不用真的做网页登录（OAuth 要企业资质、要审核，个人开发者走不通）。
+     */
+    val balance: ProviderBalanceSpec? = null,
+    /**
+     * 第二对凭证的标签；null 表示这家不需要。
+     *
+     * 目前只有火山方舟要：它的管控面接口（查模型开通状态、查推理限额）
+     * 不认聊天用的 API Key，只认 Access Key ID + Secret Access Key。
+     */
+    val accessKeyLabel: String? = null,
 ) {
     /** 拼出 Chat Completions 的完整地址。 */
     val chatUrl: String get() = "$baseUrl/chat/completions"
@@ -141,6 +158,10 @@ object AIProviderCatalog {
         fallbackModels = listOf("deepseek-flash", "deepseek-v4-pro"),
         company = "深度求索",
         ownModelPrefixes = listOf("deepseek"),
+        balance = ProviderBalanceSpec(
+            url = "https://api.deepseek.com/user/balance",
+            parser = BalanceParserKind.DEEPSEEK,
+        ),
     )
 
     val Doubao = AIProvider(
@@ -152,6 +173,16 @@ object AIProviderCatalog {
         fallbackModels = listOf("doubao-seed-evolving", "doubao-seed-2-1-pro-260915"),
         company = "字节跳动",
         ownModelPrefixes = listOf("doubao"),
+        // 方舟的额度接口要 Access Key 签名，聊天用的 API Key 查不了。
+        // 这里查的是「模型开通状态」——方舟的模型要在控制台单独开通，
+        // 没开通调用直接 404，而 /models 会把没开通的也列出来。
+        balance = ProviderBalanceSpec(
+            url = "https://ark.cn-beijing.volcengineapi.com/",
+            method = BalanceMethod.SIGNED_POST,
+            parser = BalanceParserKind.VOLCENGINE,
+            action = "ListModelActivations",
+        ),
+        accessKeyLabel = "Access Key ID",
     )
 
     val Zhipu = AIProvider(
@@ -165,6 +196,13 @@ object AIProviderCatalog {
         fallbackModels = listOf("glm-5.3-flash", "glm-5.3", "glm-5.2", "glm-4.7-flash"),
         company = "北京智谱华章",
         ownModelPrefixes = listOf("glm"),
+        // 智谱的额度接口认两种写法：官方文档说 Bearer，实测直接传原始 Key 也行，
+        // 加了 Bearer 反而会鉴权失败。两种都试一遍，别赌。
+        balance = ProviderBalanceSpec(
+            url = "https://open.bigmodel.cn/api/monitor/usage/quota/limit",
+            parser = BalanceParserKind.ZHIPU,
+            authHeaderValues = listOf("{key}", "Bearer {key}"),
+        ),
     )
 
     val Kimi = AIProvider(
@@ -176,6 +214,10 @@ object AIProviderCatalog {
         fallbackModels = listOf("kimi-k3.1-pro", "kimi-k3", "kimi-k2.6"),
         company = "月之暗面",
         ownModelPrefixes = listOf("kimi", "moonshot"),
+        balance = ProviderBalanceSpec(
+            url = "https://api.moonshot.cn/v1/users/me/balance",
+            parser = BalanceParserKind.MOONSHOT,
+        ),
     )
 
     val Qianwen = AIProvider(
@@ -187,6 +229,8 @@ object AIProviderCatalog {
         fallbackModels = listOf("qwen3.8-flash", "qwen3.8-max", "qwen-plus"),
         company = "阿里巴巴",
         ownModelPrefixes = listOf("qwen", "qwq"),
+        // 故意不配 balance：百炼没有公开的「剩余余额」接口，只有用量/账单查询。
+        // 配一个半真半假的地址过去，查出来是 404，比明说「没这个接口」更让人困惑。
     )
 
     val Hunyuan = AIProvider(
@@ -213,6 +257,12 @@ object AIProviderCatalog {
         // M3.1-Flash 恒定思考，发 thinking:disabled 会被 400 拒掉，所以不给开关
         thinkingSwitchable = false,
         ownModelPrefixes = listOf("minimax", "m2"),
+        // Token Plan 的额度接口。这家没公开文档，路径是从控制台产物里摸出来的，
+        // 随时可能变，所以解析层对字段名做了多候选。
+        balance = ProviderBalanceSpec(
+            url = "https://api.minimaxi.com/v1/token_plan/remains",
+            parser = BalanceParserKind.MINIMAX,
+        ),
     )
 
     val MiMo = AIProvider(
@@ -225,7 +275,6 @@ object AIProviderCatalog {
         company = "小米",
         ownModelPrefixes = listOf("mimo"),
     )
-
     val Spark = AIProvider(
         id = "spark",
         name = "星火",
@@ -265,7 +314,11 @@ object AIProviderCatalog {
             "Qwen/Qwen2.5-72B-Instruct",
             "THUDM/glm-4-9b-chat"
         ),
-        isGateway = true
+        isGateway = true,
+        balance = ProviderBalanceSpec(
+            url = "https://api.siliconflow.cn/v1/user/info",
+            parser = BalanceParserKind.SILICONFLOW,
+        ),
     )
 
     val OpenRouter = AIProvider(
@@ -278,7 +331,11 @@ object AIProviderCatalog {
             "openai/gpt-4o-mini",
             "google/gemini-flash-1.5"
         ),
-        isGateway = true
+        isGateway = true,
+        balance = ProviderBalanceSpec(
+            url = "https://openrouter.ai/api/v1/credits",
+            parser = BalanceParserKind.OPENROUTER,
+        ),
     )
 
     /**

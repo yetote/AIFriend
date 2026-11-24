@@ -6,6 +6,7 @@ import com.core.ai.model.GatewayModel
 import com.core.ai.model.ModelPrice
 import com.core.repository.settings.AIProviderCatalog
 import com.feature.agent.model.Provider
+import com.ui.agent.data.UIBalanceState
 import com.ui.agent.data.UIReadyTts
 
 /**
@@ -96,7 +97,15 @@ data class AgentUiState(
      * 只放「能用的」：没配 Key 的服务一旦参与随机，建出来的角色朗读全报错，
      * 而用户建的时候看不出来——设置页配没配，创建页没必要让人再记一遍。
      */
-    val readyTts: List<UIReadyTts> = emptyList()
+    val readyTts: List<UIReadyTts> = emptyList(),
+
+    /**
+     * 好友详情页里的「服务商额度」。
+     *
+     * 只在这一页有意义：它回答的是「这个好友还能不能聊」——
+     * 余额见底、套餐窗口用光、方舟上的模型没开通，这些在设置页的厂商列表里看不出来。
+     */
+    val balance: UIBalanceState? = null
 ) {
     val selectedProvider: Provider?
         get() = providers.firstOrNull { it.brand == selectedBrand }

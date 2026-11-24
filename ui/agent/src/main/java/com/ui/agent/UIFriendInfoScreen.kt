@@ -34,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -42,6 +43,9 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.core.common.theme.AIFriendTheme
+import com.ui.agent.data.UIBalanceState
+import com.ui.agent.data.UIBalanceStatus
+import com.ui.agent.data.UIBalanceTone
 import com.ui.common.UIAvatar
 import com.ui.common.UIAvatarCropDialog
 import com.ui.common.pageInsets
@@ -51,6 +55,7 @@ import com.ui.common.theme.UIFriendBarCreateButtonText
 import com.ui.common.theme.UIFriendBarItemMetaColor
 import com.ui.common.theme.UIFriendBarItemSubtitleColor
 import com.ui.common.theme.UIFriendBarItemTitleColor
+import com.ui.common.theme.UIFriendBarRed
 import com.ui.common.theme.UIFriendBarTagBgBlue
 import com.ui.common.theme.UIFriendBarTagTextBlue
 import com.ui.common.theme.UIFriendBarTitleColor
@@ -60,6 +65,9 @@ import com.ui.common.theme.UIGradientBackground
 import com.ui.common.theme.UIRadiusCard
 import com.ui.common.theme.UITopBar
 import com.ui.common.theme.uiCard
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * 智能体信息页。
@@ -82,8 +90,11 @@ fun UIFriendInfoScreen(
     thinkingEnabled: Boolean,
     messageCount: Int,
     avatarPath: String?,
+    /** 服务商余额；null 表示还没开始查。 */
+    balance: UIBalanceState? = null,
     onBack: () -> Unit,
     onChangeAvatar: (ByteArray) -> Unit,
+    onRefreshBalance: () -> Unit = {},
     onEdit: () -> Unit
 ) {
     // 相册 → 裁剪 → 回传字节，这套流程从聊天页搬到这里：
@@ -143,6 +154,18 @@ fun UIFriendInfoScreen(
                         label = "深度思考",
                         value = if (thinkingEnabled) "已开启" else "已关闭"
                     )
+                }
+
+                /*
+                 * 服务商额度。
+                 *
+                 * 放在详情页而不是设置页，是因为这一页回答的是「这个好友还能不能聊」：
+                 * 余额见底了、套餐窗口用光了、方舟上的模型压根没开通——
+                 * 这些在设置页的厂商列表里看不出来，在「这个好友用哪家、余额多少」这里
+                 * 一眼就知道。
+                 */
+                SectionCard(title = "服务商额度") {
+                    BalanceBlock(state = balance, onRefresh = onRefreshBalance)
                 }
 
                 SectionCard(title = "对话") {
@@ -304,6 +327,109 @@ private fun InfoRow(label: String, value: String, mono: Boolean = false) {
         )
     }
 }
+
+/**
+ * 额度区块。
+ *
+ * 三种「拿不到数」要分开说，因为处置方式完全不同：
+ * - 还没查 → 点一下刷新；
+ * - 这家压根没开放这个接口 → 是产品事实，不是出错了；
+ * - 查失败 → 可能 Key 过期或者网络不通，该去查凭证。
+ *
+ * 混成一句「查询失败」，用户会去刷新十次，然后发现根本刷新不出来。
+ */
+@Composable
+private fun BalanceBlock(state: UIBalanceState?, onRefresh: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.Top,
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            when {
+                state == null || state.status == UIBalanceStatus.Idle ->
+                    Text(
+                        text = "还没查过这个服务商的额度",
+                        fontSize = 12.sp,
+                        color = UIFriendBarItemSubtitleColor
+                    )
+
+                state.status == UIBalanceStatus.Loading ->
+                    Text(
+                        text = "查询中…",
+                        fontSize = 12.sp,
+                        color = UIFriendBarItemSubtitleColor
+                    )
+
+                state.status == UIBalanceStatus.Unsupported ->
+                    Text(
+                        text = state.message ?: "这家没有公开的额度查询接口",
+                        fontSize = 12.sp,
+                        lineHeight = 18.sp,
+                        color = UIFriendBarItemMetaColor
+                    )
+
+                state.status == UIBalanceStatus.Failed ->
+                    Text(
+                        text = state.message ?: "查询失败",
+                        fontSize = 12.sp,
+                        lineHeight = 18.sp,
+                        color = UIFriendBarRed
+                    )
+
+                else -> {
+                    Text(
+                        text = state.headline,
+                        fontSize = 21.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = balanceToneColor(state.tone)
+                    )
+                    state.details.forEach { line ->
+                        Text(
+                            text = line,
+                            fontSize = 12.sp,
+                            lineHeight = 18.sp,
+                            color = UIFriendBarItemSubtitleColor
+                        )
+                    }
+                    if (state.fetchedAt > 0L) {
+                        Text(
+                            text = "更新于 ${formatBalanceTime(state.fetchedAt)}",
+                            fontSize = 11.sp,
+                            color = UIFriendBarItemMetaColor
+                        )
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = "刷新",
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            color = UIFriendBarCreateButtonText,
+            modifier = Modifier
+                .clip(RoundedCornerShape(50))
+                .clickable { onRefresh() }
+                .padding(horizontal = 10.dp, vertical = 4.dp)
+        )
+    }
+}
+
+/** 余额主数字的颜色：快见底和见底要一眼看出来。 */
+@Composable
+private fun balanceToneColor(tone: UIBalanceTone): Color = when (tone) {
+    UIBalanceTone.Normal -> UIFriendBarTitleColor
+    UIBalanceTone.Low -> Color(0xFFD9822B)
+    UIBalanceTone.Empty -> UIFriendBarRed
+    UIBalanceTone.Unlimited -> Color(0xFF1E8C7F)
+}
+
+private fun formatBalanceTime(millis: Long): String =
+    SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(millis))
 
 @Preview
 @Composable

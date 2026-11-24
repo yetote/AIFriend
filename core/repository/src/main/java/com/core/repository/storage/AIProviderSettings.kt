@@ -13,11 +13,19 @@ import kotlinx.coroutines.flow.first
  * [baseUrl] 只在「自定义」服务商下由用户填写；其余服务商用目录里写好的地址。
  * [apiKey] 由用户自己申请并填写，不随 APK 分发 —— 这样既能随便换模型，
  * 也不会有内置 Key 被反编译盗刷的问题。
+ *
+ * [accessKeyId] / [accessKeySecret] 是**第二对凭证**，目前只有火山方舟要：
+ * 它的管控面接口（查模型开通状态、查推理限额）不认聊天用的 API Key，
+ * 只认 Access Key ID + Secret Access Key。
  */
 data class AICredential(
     val providerId: String,
     val apiKey: String = "",
-    val baseUrl: String = ""
+    val baseUrl: String = "",
+    /** 火山的 Access Key ID。 */
+    val accessKeyId: String = "",
+    /** 火山的 Secret Access Key。 */
+    val accessKeySecret: String = "",
 ) {
     /** 实际请求用的 baseUrl：自定义优先用户填写，其余回落到目录。 */
     fun resolvedBaseUrl(provider: AIProvider): String =
@@ -72,26 +80,39 @@ class AIProviderSettings(context: Context) {
     /** 从磁盘读一次，刷新内存快照。 */
     suspend fun load(): List<AICredential> {
         val prefs = runCatching { store.data.first() }.getOrNull() ?: return emptyList()
+        // 明文待升级的项：键名 -> 明文。历史版本直接存明文，这里透明地升级成密文。
         val migrated = mutableListOf<Pair<String, String>>()
+
+        /**
+         * 读一个可能加密的值。
+         *
+         * 解不开（换机 / 清了 keystore）就当没配过，避免让用户看到一串乱码。
+         */
+        fun readSecret(key: androidx.datastore.preferences.core.Preferences.Key<String>): String {
+            val raw = prefs[key].orEmpty()
+            if (raw.isBlank()) return ""
+            if (SecretCipher.isEncrypted(raw)) return SecretCipher.decrypt(raw).orEmpty()
+            migrated += key.name to raw
+            return raw
+        }
+
         // 只读内置项：自定义接口的 Key 在 CustomProviderSettings 自己的列表里，
         // 跟着 all 再读一次会拿到空值，把真 Key 覆盖掉。
         val credentials = AIProviderCatalog.builtin.mapNotNull { provider ->
-            val raw = prefs[keyName(provider.id)].orEmpty()
-            // 历史版本直接存明文，这里透明地升级成密文。
-            // 解不开（换机 / 清了 keystore）就当没配过，避免让用户看到一串乱码。
-            val key = when {
-                raw.isBlank() -> ""
-                SecretCipher.isEncrypted(raw) -> SecretCipher.decrypt(raw).orEmpty()
-                else -> {
-                    migrated += provider.id to raw
-                    raw
-                }
-            }
+            val key = readSecret(keyName(provider.id))
             val baseUrl = prefs[baseUrlName(provider.id)].orEmpty()
-            if (key.isBlank() && baseUrl.isBlank()) {
+            val accessKeyId = readSecret(accessKeyIdName(provider.id))
+            val accessKeySecret = readSecret(accessKeySecretName(provider.id))
+            if (key.isBlank() && baseUrl.isBlank() && accessKeyId.isBlank() && accessKeySecret.isBlank()) {
                 null
             } else {
-                AICredential(providerId = provider.id, apiKey = key, baseUrl = baseUrl)
+                AICredential(
+                    providerId = provider.id,
+                    apiKey = key,
+                    baseUrl = baseUrl,
+                    accessKeyId = accessKeyId,
+                    accessKeySecret = accessKeySecret,
+                )
             }
         }
         val customCredentials = custom.load()
@@ -100,8 +121,8 @@ class AIProviderSettings(context: Context) {
         if (migrated.isNotEmpty()) {
             runCatching {
                 store.edit { prefs ->
-                    migrated.forEach { (providerId, plain) ->
-                        prefs[keyName(providerId)] = SecretCipher.encrypt(plain)
+                    migrated.forEach { (name, plain) ->
+                        prefs[stringPreferencesKey(name)] = SecretCipher.encrypt(plain)
                     }
                 }
             }
@@ -119,6 +140,10 @@ class AIProviderSettings(context: Context) {
         }
         val encrypted = runCatching { SecretCipher.encrypt(credential.apiKey) }.getOrNull()
         if (credential.apiKey.isNotBlank() && encrypted == null) return false
+        val encryptedId = runCatching { SecretCipher.encrypt(credential.accessKeyId) }.getOrNull()
+        if (credential.accessKeyId.isNotBlank() && encryptedId == null) return false
+        val encryptedSecret = runCatching { SecretCipher.encrypt(credential.accessKeySecret) }.getOrNull()
+        if (credential.accessKeySecret.isNotBlank() && encryptedSecret == null) return false
         AICredentials.put(credential)
         return runCatching {
             store.edit { prefs ->
@@ -126,6 +151,16 @@ class AIProviderSettings(context: Context) {
                     prefs[keyName(credential.providerId)] = encrypted
                 } else {
                     prefs.remove(keyName(credential.providerId))
+                }
+                if (encryptedId != null) {
+                    prefs[accessKeyIdName(credential.providerId)] = encryptedId
+                } else {
+                    prefs.remove(accessKeyIdName(credential.providerId))
+                }
+                if (encryptedSecret != null) {
+                    prefs[accessKeySecretName(credential.providerId)] = encryptedSecret
+                } else {
+                    prefs.remove(accessKeySecretName(credential.providerId))
                 }
                 prefs[baseUrlName(credential.providerId)] = credential.baseUrl
             }
@@ -144,6 +179,8 @@ class AIProviderSettings(context: Context) {
                 prefs.remove(keyName(providerId))
                 prefs.remove(baseUrlName(providerId))
                 prefs.remove(modelName(providerId))
+                prefs.remove(accessKeyIdName(providerId))
+                prefs.remove(accessKeySecretName(providerId))
             }
         }
     }
@@ -168,4 +205,11 @@ class AIProviderSettings(context: Context) {
     private fun keyName(providerId: String) = stringPreferencesKey("ai_key_$providerId")
     private fun baseUrlName(providerId: String) = stringPreferencesKey("ai_base_url_$providerId")
     private fun modelName(providerId: String) = stringPreferencesKey("ai_model_$providerId")
+
+    /** 火山 Access Key ID。 */
+    private fun accessKeyIdName(providerId: String) = stringPreferencesKey("ai_ak_id_$providerId")
+
+    /** 火山 Secret Access Key。 */
+    private fun accessKeySecretName(providerId: String) =
+        stringPreferencesKey("ai_ak_secret_$providerId")
 }

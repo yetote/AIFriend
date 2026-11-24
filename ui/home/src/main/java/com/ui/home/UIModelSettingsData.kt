@@ -20,7 +20,16 @@ data class UIProviderOption(
     /** 聚合平台；页面据此把官方厂商和聚合平台分成两组。 */
     val isGateway: Boolean = false,
     /** 非 null 表示这是用户自建的接口，可以改名 / 删除。 */
-    val customId: String? = null
+    val customId: String? = null,
+    /**
+     * 第二对凭证的标签；null 表示这家不需要。
+     *
+     * 目前只有火山方舟要：它的管控面接口不认聊天用的 API Key，
+     * 只认 Access Key ID + Secret Access Key。
+     */
+    val accessKeyLabel: String? = null,
+    /** 已经填过第二对凭证。 */
+    val hasAccessKey: Boolean = false
 )
 
 /** 设置页模型列表里的一项：id + 可选价格。 */
@@ -43,6 +52,10 @@ data class UIModelSettingsState(
     val providers: List<UIProviderOption> = emptyList(),
     val selectedProviderId: String = "",
     val keyInput: String = "",
+    /** 第二对凭证（目前只有火山方舟要）：Access Key ID。 */
+    val accessKeyIdInput: String = "",
+    /** 第二对凭证：Secret Access Key。 */
+    val accessKeySecretInput: String = "",
     val baseUrlInput: String = "",
     /** 当前选中的自定义接口的名字，可以直接改。 */
     val customNameInput: String = "",

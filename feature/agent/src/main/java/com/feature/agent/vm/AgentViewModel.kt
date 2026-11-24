@@ -23,6 +23,7 @@ import com.core.common.GlobalUiEvent
 import com.core.common.GlobalUiEventManager
 import com.core.network.withModelHint
 import com.core.persona.Persona
+import com.core.repository.balance.BalanceQuery
 import com.core.repository.storage.AICredentials
 import com.core.repository.storage.AIProviderSettings
 import com.core.repository.storage.AvatarStore
@@ -39,7 +40,10 @@ import com.core.tts.TTSReadableError
 import com.feature.agent.batch.BatchRoster
 import com.feature.agent.contract.AgentUiState
 import com.feature.agent.contract.DEFAULT_PROVIDERS
+import com.feature.agent.data.toUI
 import com.feature.agent.model.Provider
+import com.ui.agent.data.UIBalanceState
+import com.ui.agent.data.UIBalanceStatus
 import com.ui.agent.data.UIReadyTts
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -105,6 +109,84 @@ class AgentViewModel(application: Application) : BaseViewModel(application) {
      * 只有比对出变化才重新拉模型，免得每次返回都白跑一次网络请求。
      */
     private var configuredProviders: List<String> = emptyList()
+
+    /**
+     * 正在查额度的那个好友的品牌名。
+     *
+     * 用来丢弃过期的响应：用户在两个好友的详情页之间快速切换时，
+     * 先发出去的那个请求可能后回来，不挡一下就会把上一个厂商的余额
+     * 显示到这一个好友头上。
+     */
+    private var balanceRequestBrand: String? = null
+
+    /**
+     * 查这个好友用的服务商的额度。
+     *
+     * 为什么放在详情页而不是设置页：这一页回答的是「这个好友还能不能聊」。
+     * 余额见底、套餐窗口用光、方舟上的模型压根没开通——
+     * 这些在设置页那一排厂商里看不出来。
+     *
+     * @param model 只给火山用：方舟的模型要在控制台单独开通，
+     *              好友用的那个模型没开通的话，这个好友一句话也说不了。
+     */
+    fun loadBalance(brand: String, model: String) {
+        val provider = AIProviderCatalog.byName(brand)
+        if (provider == null) {
+            _uiState.update {
+                it.copy(
+                    balance = UIBalanceState(
+                        status = UIBalanceStatus.Unsupported,
+                        message = "没认得「$brand」这个厂商",
+                    )
+                )
+            }
+            return
+        }
+        if (provider.balance == null) {
+            _uiState.update {
+                it.copy(
+                    balance = UIBalanceState(
+                        providerName = provider.name,
+                        status = UIBalanceStatus.Unsupported,
+                        message = "${provider.name} 没有公开的额度查询接口，剩余额度请看它的控制台",
+                    )
+                )
+            }
+            return
+        }
+        val credential = AICredentials.get(provider.id)
+        val hasKey = credential != null &&
+            (credential.apiKey.isNotBlank() || credential.accessKeyId.isNotBlank())
+        if (!hasKey) {
+            _uiState.update {
+                it.copy(
+                    balance = UIBalanceState(
+                        providerName = provider.name,
+                        status = UIBalanceStatus.Failed,
+                        message = "还没在设置里配 ${provider.name} 的 API Key",
+                    )
+                )
+            }
+            return
+        }
+        balanceRequestBrand = brand
+        _uiState.update {
+            it.copy(
+                balance = UIBalanceState(
+                    providerName = provider.name,
+                    status = UIBalanceStatus.Loading,
+                )
+            )
+        }
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                BalanceQuery.query(provider, credential!!, targetModel = model)
+            }
+            // 过期响应直接丢掉：用户已经翻到别的厂商了
+            if (balanceRequestBrand != brand) return@launch
+            _uiState.update { it.copy(balance = result.toUI(provider.name)) }
+        }
+    }
 
     /**
      * 把「已配置 Key 的服务商」并入可选列表。
