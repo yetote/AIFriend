@@ -114,6 +114,7 @@ object ReplayTimeline {
         Phase.NIGHT_SEER -> 3
         Phase.NIGHT_WITCH -> 4
         Phase.NIGHT_PENDING -> 0 // 夜间汇聚，与夜间开始同级（消息本身仍带各自 phase）
+        Phase.DAWN_SETTLE -> 5 // 夜间结算，在女巫之后、白天之前
         Phase.DAY_SHERIFF_SIGNUP -> 10
         Phase.DAY_SHERIFF_SPEECH -> 11
         Phase.DAY_SHERIFF_WITHDRAW -> 12

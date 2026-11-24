@@ -1,6 +1,7 @@
 package com.feature.werewolf.prompt
 
 import com.feature.werewolf.game.GameEvent
+import com.feature.werewolf.game.witchActSettled
 import com.feature.werewolf.game.Phase
 import com.feature.werewolf.game.RosterEntry
 import com.feature.werewolf.game.SeerCheck
@@ -186,7 +187,7 @@ class WerewolfPromptTest {
         ).guardProtect(3).beginWolfVote()
 
         // 夜里狼刀了 4 号（女巫），女巫没用解药
-        val dawn = game.wolfVote(mapOf(1 to 4, 2 to 4)).seerCheck(6).witchAct(heal = false)
+        val dawn = game.wolfVote(mapOf(1 to 4, 2 to 4)).seerCheck(6).witchActSettled(heal = false)
 
         assertEquals(Phase.DAY_SHERIFF_SIGNUP, dawn.phase)
         assertTrue("死讯还没公布", dawn.history.none { it is GameEvent.Dawn })

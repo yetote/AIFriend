@@ -248,5 +248,6 @@ internal fun buildTurn(
         Phase.FINISHED -> null
         // 汇聚节点不问人类；人类守卫/狼人/预言家在各自虚拟化阶段下走老路径
         Phase.NIGHT_PENDING -> null
+        Phase.DAWN_SETTLE -> null // 结算阶段无人需要操作
     }
 }

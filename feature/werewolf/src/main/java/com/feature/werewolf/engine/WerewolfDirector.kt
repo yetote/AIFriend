@@ -139,6 +139,16 @@ class WerewolfDirector(
     // ---------------------------------------------------------------------
 
     /**
+     * 天亮结算节点：读齐守卫守护、狼刀、女巫用药的决定，一次性结算死亡 / 胜负 /
+     * 猎人开枪 / 天亮播报。行动阶段都已只写状态，这里的结算不依赖三路并发顺序。
+     */
+    internal suspend fun dawnSettle(table: WerewolfTable): WerewolfTable {
+        val before = table.game
+        val next = before.settlePendingNight()
+        return table.copy(game = next).syncPublicEvents(before)
+    }
+
+    /**
      * 夜间汇聚节点（R1 占位，R3 实现三路并发）。
      *
      * R1 阶段入夜仍走 NIGHT_GUARD，正常运行不会到这个节点；放一个明确的报错占位，
@@ -1074,6 +1084,7 @@ class WerewolfDirector(
             Phase.NIGHT_WOLF to ::nightWolf,
             Phase.NIGHT_SEER to ::nightSeer,
             Phase.NIGHT_WITCH to ::nightWitch,
+            Phase.DAWN_SETTLE to ::dawnSettle,
             Phase.DAY_SHERIFF_SIGNUP to ::sheriffSignup,
             Phase.DAY_SHERIFF_SPEECH to ::sheriffSpeech,
             Phase.DAY_SHERIFF_WITHDRAW to ::sheriffWithdraw,

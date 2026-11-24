@@ -36,7 +36,7 @@ class WerewolfWolfTacticsTest {
 
     /** 过掉预言家和女巫，把这一夜结算完。 */
     private fun settle(game: WerewolfGame, check: Int = 7): WerewolfGame =
-        game.seerCheck(check).witchAct(heal = false)
+        game.seerCheck(check).witchActSettled(heal = false)
 
     @Test
     fun `狼可以刀队友`() {

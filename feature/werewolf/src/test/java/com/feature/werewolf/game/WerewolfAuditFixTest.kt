@@ -61,7 +61,7 @@ class WerewolfAuditFixTest {
         // 同一局面拿掉警徽就是 4:4，照旧判狼胜（另一条用例覆盖）。
         val roles = listOf(WEREWOLF, WEREWOLF, SEER, WITCH, VILLAGER, VILLAGER)
         var mode = atSecondNight(roles, sheriff = 3)
-        mode = mode.wolfVote(mapOf(1 to 5, 2 to 5)).seerCheck(1).witchAct(heal = false)
+        mode = mode.wolfVote(mapOf(1 to 5, 2 to 5)).seerCheck(1).witchActSettled(heal = false)
 
         assertNull("警长的 1.5 票让绑票不成立", mode.winner)
         assertEquals(Phase.DAY_DISCUSSION, mode.phase)
@@ -71,7 +71,7 @@ class WerewolfAuditFixTest {
     fun `二比二且警徽已作废时仍然绑票获胜`() {
         val roles = listOf(WEREWOLF, WEREWOLF, SEER, WITCH, VILLAGER, VILLAGER)
         var mode = atSecondNight(roles, sheriff = null)
-        mode = mode.wolfVote(mapOf(1 to 5, 2 to 5)).seerCheck(1).witchAct(heal = false)
+        mode = mode.wolfVote(mapOf(1 to 5, 2 to 5)).seerCheck(1).witchActSettled(heal = false)
 
         assertEquals(Faction.WEREWOLF, mode.winner)
         assertEquals(Phase.FINISHED, mode.phase)
@@ -86,7 +86,7 @@ class WerewolfAuditFixTest {
         // 2 狼 2 好（3 预言家、4 女巫）时刀死 5 号猎人，原本会在开枪前直接判狼胜。
         val roles = listOf(WEREWOLF, WEREWOLF, SEER, WITCH, HUNTER, VILLAGER)
         var mode = atSecondNight(roles)
-        mode = mode.wolfVote(mapOf(1 to 5, 2 to 5)).seerCheck(1).witchAct(heal = false)
+        mode = mode.wolfVote(mapOf(1 to 5, 2 to 5)).seerCheck(1).witchActSettled(heal = false)
 
         assertEquals(Phase.HUNTER_SHOOT, mode.phase)
         assertEquals(5, mode.pendingHunterSeat)
@@ -102,7 +102,7 @@ class WerewolfAuditFixTest {
     fun `猎人放弃开枪时仍要结算绑票`() {
         val roles = listOf(WEREWOLF, WEREWOLF, SEER, WITCH, HUNTER, VILLAGER)
         var mode = atSecondNight(roles)
-        mode = mode.wolfVote(mapOf(1 to 5, 2 to 5)).seerCheck(1).witchAct(heal = false)
+        mode = mode.wolfVote(mapOf(1 to 5, 2 to 5)).seerCheck(1).witchActSettled(heal = false)
 
         val after = mode.hunterShoot(null)
         assertEquals(Faction.WEREWOLF, after.winner)
@@ -137,7 +137,7 @@ class WerewolfAuditFixTest {
         val start = WerewolfGame.withRoles(configOf(roles), roster(9), roles)
             .copy(day = 2, sheriffSeat = 4, sheriffElectionDone = true)
             .beginWolfVote()
-        var mode = start.wolfVote(mapOf(1 to 4, 2 to 4, 3 to 4)).witchAct(heal = false)
+        var mode = start.wolfVote(mapOf(1 to 4, 2 to 4, 3 to 4)).witchActSettled(heal = false)
 
         assertEquals(Phase.HUNTER_SHOOT, mode.phase)
         val after = mode.hunterShoot(1)
@@ -157,7 +157,7 @@ class WerewolfAuditFixTest {
     fun `竞选发言时自爆不吞首夜遗言，警徽顺延而不是作废`() {
         val roles = listOf(WEREWOLF, WEREWOLF, WEREWOLF, SEER, WITCH, HUNTER, VILLAGER, VILLAGER, VILLAGER)
         var mode = WerewolfGame.withRoles(configOf(roles), roster(9), roles).beginWolfVote()
-        mode = mode.wolfVote(mapOf(1 to 7, 2 to 7, 3 to 7)).seerCheck(1).witchAct(heal = false)
+        mode = mode.wolfVote(mapOf(1 to 7, 2 to 7, 3 to 7)).seerCheck(1).witchActSettled(heal = false)
 
         assertEquals(listOf(7), mode.pendingLastWords)
         mode = mode.signUpSheriff(setOf(1, 2))
@@ -180,11 +180,11 @@ class WerewolfAuditFixTest {
     fun `单爆只顺延一天，第二天天亮照样先上警`() {
         val roles = listOf(WEREWOLF, WEREWOLF, WEREWOLF, SEER, WITCH, HUNTER, VILLAGER, VILLAGER, VILLAGER)
         var mode = WerewolfGame.withRoles(configOf(roles), roster(9), roles).beginWolfVote()
-        mode = mode.wolfVote(mapOf(1 to 7, 2 to 7, 3 to 7)).seerCheck(1).witchAct(heal = false)
+        mode = mode.wolfVote(mapOf(1 to 7, 2 to 7, 3 to 7)).seerCheck(1).witchActSettled(heal = false)
         mode = mode.signUpSheriff(setOf(1, 2)).wolfExplode(1).finishLastWords().beginWolfVote()
 
         // 自爆的 1 号当晚仍然在狼队里，定刀这一票照样算（定刀结束才离场）
-        mode = mode.wolfVote(mapOf(1 to 8, 2 to 8, 3 to 8)).seerCheck(2).witchAct(heal = false)
+        mode = mode.wolfVote(mapOf(1 to 8, 2 to 8, 3 to 8)).seerCheck(2).witchActSettled(heal = false)
         assertTrue("定刀结束，自爆狼离场", mode.ghostWolves.isEmpty())
 
         assertEquals("警徽没作废，第二天开场还是先上警", Phase.DAY_SHERIFF_SIGNUP, mode.phase)
@@ -196,9 +196,9 @@ class WerewolfAuditFixTest {
     fun `连续两次竞选被打断，警徽才作废`() {
         val roles = listOf(WEREWOLF, WEREWOLF, WEREWOLF, SEER, WITCH, HUNTER, VILLAGER, VILLAGER, VILLAGER)
         var mode = WerewolfGame.withRoles(configOf(roles), roster(9), roles).beginWolfVote()
-        mode = mode.wolfVote(mapOf(1 to 7, 2 to 7, 3 to 7)).seerCheck(1).witchAct(heal = false)
+        mode = mode.wolfVote(mapOf(1 to 7, 2 to 7, 3 to 7)).seerCheck(1).witchActSettled(heal = false)
         mode = mode.signUpSheriff(setOf(1, 2)).wolfExplode(1).finishLastWords().beginWolfVote()
-        mode = mode.wolfVote(mapOf(1 to 8, 2 to 8, 3 to 8)).seerCheck(2).witchAct(heal = false)
+        mode = mode.wolfVote(mapOf(1 to 8, 2 to 8, 3 to 8)).seerCheck(2).witchActSettled(heal = false)
 
         // 第二天重新上警，第二只狼又爆一次
         val after = mode.signUpSheriff(setOf(2, 3)).wolfExplode(2)
@@ -215,7 +215,7 @@ class WerewolfAuditFixTest {
         // 累计两次就吞警徽。这里先验单次：PK 被爆只顺延，不作废。
         val roles = listOf(WEREWOLF, WEREWOLF, WEREWOLF, SEER, WITCH, HUNTER, VILLAGER, VILLAGER, VILLAGER)
         var mode = WerewolfGame.withRoles(configOf(roles), roster(9), roles).beginWolfVote()
-        mode = mode.wolfVote(mapOf(1 to 7, 2 to 7, 3 to 7)).seerCheck(1).witchAct(heal = false)
+        mode = mode.wolfVote(mapOf(1 to 7, 2 to 7, 3 to 7)).seerCheck(1).witchActSettled(heal = false)
 
         val voting = mode.signUpSheriff(setOf(1, 4)).beginSheriffVote()
         // 警下 3:3 平票，1 号和 4 号进 PK
@@ -239,11 +239,11 @@ class WerewolfAuditFixTest {
         // 「连续两次竞选被打断」不看断在哪一步——警上自爆就算。
         val roles = listOf(WEREWOLF, WEREWOLF, WEREWOLF, SEER, WITCH, HUNTER, VILLAGER, VILLAGER, VILLAGER)
         var mode = WerewolfGame.withRoles(configOf(roles), roster(9), roles).beginWolfVote()
-        mode = mode.wolfVote(mapOf(1 to 7, 2 to 7, 3 to 7)).seerCheck(1).witchAct(heal = false)
+        mode = mode.wolfVote(mapOf(1 to 7, 2 to 7, 3 to 7)).seerCheck(1).witchActSettled(heal = false)
         mode = mode.signUpSheriff(setOf(1, 2)).wolfExplode(1).finishLastWords().beginWolfVote()
 
         // 第二夜：自爆狼 1 号仍在狼队，8 号被杀
-        mode = mode.wolfVote(mapOf(1 to 8, 2 to 8, 3 to 8)).seerCheck(2).witchAct(heal = false)
+        mode = mode.wolfVote(mapOf(1 to 8, 2 to 8, 3 to 8)).seerCheck(2).witchActSettled(heal = false)
         assertEquals(Phase.DAY_SHERIFF_SIGNUP, mode.phase)
 
         // 第二天重新上警，2 号和 4 号平票进 PK，2 号（狼）在 PK 发言里爆

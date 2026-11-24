@@ -43,7 +43,7 @@ class WerewolfKingBearTest {
             next = next.seerCheck(next.aliveSeats.first { it != seer.seat })
         }
         if (next.phase == Phase.NIGHT_WITCH) {
-            next = next.witchAct(heal = false, poisonTarget = poison)
+            next = next.witchActSettled(heal = false, poisonTarget = poison)
         }
         return next
     }

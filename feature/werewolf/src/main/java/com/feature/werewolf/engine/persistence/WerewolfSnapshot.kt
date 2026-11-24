@@ -86,8 +86,12 @@ object WerewolfSnapshot {
      *
      * v23：事件多出 `SHERIFF_WITHDRAWN`（竞选发言之后的退水）。没有任何字段变更，
      * 旧档读出来就是「这一局没人退水」，行为不变。
+     *
+     * v24：女巫快照多出 nightHeal / nightPoison（本夜用药决定）——夜间行动不再立即结算，
+     * 决定暂存到天亮 DAWN_SETTLE 节点统一结算。旧档没有这两项，按「没救没毒」读，
+     * 行为与旧版一致。
      */
-    const val VERSION = 23
+    const val VERSION = 24
 
     private val json = Json {
         ignoreUnknownKeys = true   // 旧档多出来的字段不该让新版本读不出来
@@ -295,6 +299,9 @@ internal data class PlayerSnapshot(
 internal data class WitchSnapshot(
     val antidoteAvailable: Boolean = true,
     val poisonAvailable: Boolean = true,
+    /** 本夜用药决定，结算推迟到天亮；续档要带上，否则续档后结算会漏掉。 */
+    val nightHeal: Boolean = false,
+    val nightPoison: Int? = null,
 )
 
 @Serializable
@@ -446,7 +453,10 @@ internal fun WerewolfTable.toSnapshot(
         },
         day = game.day,
         phase = game.phase.name,
-        witch = WitchSnapshot(game.witch.antidoteAvailable, game.witch.poisonAvailable),
+        witch = WitchSnapshot(
+            game.witch.antidoteAvailable, game.witch.poisonAvailable,
+            game.witch.nightHeal, game.witch.nightPoison,
+        ),
         wolfVotes = game.wolfVotes,
         wolfVoteRound = game.wolfVoteRound,
         tonightVictim = game.tonightVictim,
@@ -591,7 +601,10 @@ internal fun TableSnapshot.toTable(): WerewolfTable = WerewolfTable(
         },
         day = day,
         phase = enumOf<Phase>(phase),
-        witch = WitchStock(witch.antidoteAvailable, witch.poisonAvailable),
+        witch = WitchStock(
+            witch.antidoteAvailable, witch.poisonAvailable,
+            witch.nightHeal, witch.nightPoison,
+        ),
         wolfVotes = wolfVotes,
         wolfVoteRound = wolfVoteRound,
         tonightVictim = tonightVictim,

@@ -49,7 +49,7 @@ private fun WerewolfGame.atWolfVote(): WerewolfGame =
     ): WerewolfGame {
         var next = game.atWolfVote().wolfVote(game.aliveWolves().associate { it.seat to victim })
         if (next.phase == Phase.NIGHT_SEER) next = next.seerCheck(checkTarget)
-        if (next.phase == Phase.NIGHT_WITCH) next = next.witchAct(heal = heal, poisonTarget = poison)
+        if (next.phase == Phase.NIGHT_WITCH) next = next.witchActSettled(heal = heal, poisonTarget = poison)
         return next
     }
 
@@ -102,7 +102,7 @@ private fun WerewolfGame.atWolfVote(): WerewolfGame =
         next = next.wolfVote(mapOf(1 to 5, 2 to 6))
         assertEquals(Phase.NIGHT_SEER, next.phase)
 
-        next = next.seerCheck(1).witchAct(heal = false, poisonTarget = null)
+        next = next.seerCheck(1).witchActSettled(heal = false, poisonTarget = null)
         val record = next.nights.single()
 
         assertNull("空刀的刀口必须是 null，不能记成 0 或上一个刀口", record.wolfTarget)

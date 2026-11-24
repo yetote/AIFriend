@@ -86,6 +86,7 @@ data class WerewolfProgress(
             Phase.NIGHT_SEER -> "预言家查验"
             Phase.NIGHT_WITCH -> "女巫用药"
             Phase.NIGHT_PENDING -> "夜间进行中"
+            Phase.DAWN_SETTLE -> "天亮"
             Phase.DAY_SHERIFF_SIGNUP -> "上警"
             Phase.DAY_SHERIFF_SPEECH -> "竞选发言"
             Phase.DAY_SHERIFF_WITHDRAW -> "退水"
@@ -106,4 +107,5 @@ data class WerewolfProgress(
  */
 val Phase.isNight: Boolean
     get() = this == Phase.NIGHT_GUARD || this == Phase.NIGHT_WOLF_CHAT ||
-        this == Phase.NIGHT_WOLF || this == Phase.NIGHT_SEER || this == Phase.NIGHT_WITCH
+        this == Phase.NIGHT_WOLF || this == Phase.NIGHT_SEER || this == Phase.NIGHT_WITCH ||
+        this == Phase.NIGHT_PENDING || this == Phase.DAWN_SETTLE

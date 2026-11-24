@@ -41,7 +41,7 @@ class WerewolfDeathCollisionTest {
         var next = game().wolfVote(game().aliveWolves().associate { it.seat to victim })
         if (next.phase == Phase.NIGHT_SEER) next = next.seerCheck(1)
         if (next.phase == Phase.NIGHT_WITCH) {
-            next = next.witchAct(heal = heal, poisonTarget = poison)
+            next = next.witchActSettled(heal = heal, poisonTarget = poison)
         }
         return next
     }

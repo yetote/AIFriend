@@ -604,7 +604,8 @@ class WerewolfDirectorTest {
         val game = standard9().copy(phase = Phase.NIGHT_WITCH, tonightVictim = 7)
         val director = WerewolfDirector(agentsOf(5 to witchAI))
 
-        val result = director.nightWitch(WerewolfTable(game))
+        val afterWitch = director.nightWitch(WerewolfTable(game))
+        val result = director.dawnSettle(afterWitch)
 
         assertEquals("用了解药，7 号活着", true, result.game.playerAt(7).alive)
         assertEquals(Phase.DAY_DISCUSSION, result.game.phase)
@@ -618,7 +619,8 @@ class WerewolfDirectorTest {
         val game = standard9().copy(phase = Phase.NIGHT_WITCH, tonightVictim = 7)
         val director = WerewolfDirector(agentsOf(5 to witchAI))
 
-        val result = director.nightWitch(WerewolfTable(game))
+        val afterWitch = director.nightWitch(WerewolfTable(game))
+        val result = director.dawnSettle(afterWitch)
 
         assertEquals(false, result.game.playerAt(7).alive)
         val dawn = result.publicTranscript.last { it.kind == MessageKind.DIVINE }

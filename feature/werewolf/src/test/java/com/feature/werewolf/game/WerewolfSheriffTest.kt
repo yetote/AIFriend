@@ -67,7 +67,7 @@ class WerewolfSheriffTest {
         var mode = game()
         mode = mode.wolfVote(mapOf(1 to 7, 2 to 7, 3 to 7))
         mode = mode.seerCheck(1)
-        mode = mode.witchAct(heal = false)
+        mode = mode.witchActSettled(heal = false)
 
         assertEquals(Phase.DAY_SHERIFF_SIGNUP, mode.phase)
         // 遗言已经排好队，但必须等竞选结束才轮到死者说话——
@@ -81,7 +81,7 @@ class WerewolfSheriffTest {
         var mode = game(config = plain)
         mode = mode.wolfVote(mapOf(1 to 7, 2 to 7, 3 to 7))
         mode = mode.seerCheck(1)
-        mode = mode.witchAct(heal = false)
+        mode = mode.witchActSettled(heal = false)
 
         assertEquals(Phase.DAY_LAST_WORDS, mode.phase)
     }

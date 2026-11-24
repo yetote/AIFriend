@@ -132,6 +132,9 @@ internal fun taskBrief(
             Phase.NIGHT_PENDING ->
                 append("第 ${game.day} 夜，夜间行动进行中，等待其他角色完成。")
 
+            Phase.DAWN_SETTLE ->
+                append("第 ${game.day} 夜的结算进行中，即将天亮。")
+
             Phase.DAY_SHERIFF_SIGNUP ->
                 append(
                     "第 ${game.day} 天，警长竞选开始，先问你要不要上警。" +

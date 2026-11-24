@@ -661,22 +661,16 @@ data class WerewolfGame(
             require(poisonTarget != witchPlayer.seat) { "女巫不能毒自己" }
         }
 
-        val deaths = buildList {
-            wolfKillDeath(healed = heal)?.let { add(it) }
-            // 毒药无视守护：守卫挡的是刀，不是药
-            if (poisonTarget != null) add(poisonTarget to DeathCause.WITCH_POISON)
-        }
+        // 只写决定与库存，不在这里结算。死亡 / 守救同归 / 胜负 / 播报统一推迟到
+        // DAWN_SETTLE 节点的 settlePendingNight()：那时守卫守护、狼刀、查验都已落齐，
+        // 无论三路并发谁先谁后，结算读到的都是完整状态。
         val stock = WitchStock(
             antidoteAvailable = witch.antidoteAvailable && !heal,
             poisonAvailable = witch.poisonAvailable && poisonTarget == null,
+            nightHeal = heal,
+            nightPoison = poisonTarget,
         )
-        return settleNight(
-            deaths,
-            stock,
-            healed = heal,
-            // 守救同归：守卫守的正是刀口，女巫又用了药
-            mutualProtection = heal && tonightVictim != null && tonightVictim == tonightGuardedSeat,
-        )
+        return copy(witch = stock, phase = Phase.DAWN_SETTLE)
     }
 
     // ---------------------------------------------------------------------
@@ -1136,6 +1130,7 @@ data class WerewolfGame(
     private fun advanceAfterWolves(votes: Map<Int, Int?>, victim: Int?): WerewolfGame {
         // 定刀结束 = 自爆狼离场。清在这里而不是天亮时清：他那句话已经说完了，
         // 再留一夜会让第二晚的商议名单里冒出一个死人。
+        // 不结算——死亡与胜负统一到 DAWN_SETTLE 节点，三路并发才能读到完整状态。
         val next = copy(wolfVotes = votes, tonightVictim = victim, ghostWolves = emptySet())
         return if (next.hasAliveRole(WerewolfRole.SEER)) {
             next.copy(phase = Phase.NIGHT_SEER)
@@ -1148,8 +1143,8 @@ data class WerewolfGame(
         if (hasAliveRole(WerewolfRole.WITCH)) {
             copy(phase = Phase.NIGHT_WITCH)
         } else {
-            // 没有女巫：没人能用药，狼刀（扣掉守卫挡下的那一刀）直接生效。
-            settleNight(listOfNotNull(wolfKillDeath(healed = false)), witch)
+            // 没有女巫：没人能用药，直接去天亮结算节点（那里按「没救没毒」结算）
+            copy(phase = Phase.DAWN_SETTLE)
         }
 
     /**
@@ -1187,6 +1182,31 @@ data class WerewolfGame(
      * 它要单独记一笔，否则复盘里只会看到「狼刀 X 号，守卫守了 X 号，女巫救了 X 号，
      * 然后 X 号死了」——看起来像引擎算错了。
      */
+    /**
+     * 天亮统一结算（[Phase.DAWN_SETTLE] 节点调用）。
+     *
+     * 所有夜间行动（守卫守护、狼人定刀、预言家查验、女巫用药）都已只写状态、不结算，
+     * 到这里一次性读齐 [tonightVictim] / [tonightGuardedSeat] / 女巫本夜决定，算出死亡、
+     * 胜负、猎人开枪和天亮播报。三路并发因此不依赖行动顺序。
+     */
+    internal fun settlePendingNight(): WerewolfGame {
+        require(phase == Phase.DAWN_SETTLE) { "当前不是天亮结算阶段：$phase" }
+        val heal = witch.nightHeal
+        val poison = witch.nightPoison
+        val deaths = buildList {
+            wolfKillDeath(healed = heal)?.let { add(it) }
+            // 毒药无视守护：守卫挡的是刀，不是药
+            if (poison != null) add(poison to DeathCause.WITCH_POISON)
+        }
+        return settleNight(
+            deaths,
+            witch,
+            healed = heal,
+            // 守救同归：守卫守的正是刀口，女巫又用了药
+            mutualProtection = heal && tonightVictim != null && tonightVictim == tonightGuardedSeat,
+        )
+    }
+
     private fun settleNight(
         deaths: List<Pair<Int, DeathCause>>,
         stock: WitchStock,
@@ -1370,6 +1390,8 @@ data class WerewolfGame(
         // 本夜的守护变成「昨夜」，用来限制守卫不能连守同一人；空守就等于没有限制
         lastGuardedSeat = tonightGuardedSeat,
         tonightGuardedSeat = null,
+        // 清掉昨夜的女巫用药决定，新的一夜从零开始（库存 antidote/poison 保留）
+        witch = witch.copy(nightHeal = false, nightPoison = null),
         wolfVotes = emptyMap(),
         wolfVoteRound = 1,
         tonightVictim = null,

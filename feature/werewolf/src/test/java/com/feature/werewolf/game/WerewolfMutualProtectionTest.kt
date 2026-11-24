@@ -41,7 +41,7 @@ class WerewolfMutualProtectionTest {
         // 守卫守 3 号（猎人），狼刀 3 号，女巫也救 3 号 → 守救同归
         val guarded = start.guardProtect(3)
         val voted = guarded.beginWolfVote().wolfVote(mapOf(1 to 3, 2 to 3))
-        val morning = voted.seerCheck(7).witchAct(heal = true)
+        val morning = voted.seerCheck(7).witchActSettled(heal = true)
 
         assertTrue("守救同归要死", !morning.playerAt(3).alive)
         assertEquals(

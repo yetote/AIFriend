@@ -44,7 +44,7 @@ class WerewolfGameTest {
             sheriffElectionDone = true,
         )
 
-        val dawn = game.atWolfVote().wolfVote(mapOf(1 to 3, 2 to 3))
+        val dawn = game.atWolfVote().wolfVote(mapOf(1 to 3, 2 to 3)).atDawn()
 
         assertNotEquals("徽章还没交，不能判负", Phase.FINISHED, dawn.phase)
         assertTrue("警徽待定", dawn.badgeUndecided)
@@ -64,7 +64,7 @@ class WerewolfGameTest {
             sheriffElectionDone = true,
         )
 
-        val dawn = game.atWolfVote().wolfVote(mapOf(1 to 3, 2 to 3))
+        val dawn = game.atWolfVote().wolfVote(mapOf(1 to 3, 2 to 3)).atDawn()
         val after = dawn.transferBadge(3, 1).finishLastWords()
 
         assertEquals(Phase.FINISHED, after.phase)
@@ -119,8 +119,8 @@ private fun WerewolfGame.atWolfVote(): WerewolfGame =
         val wolfSeats = game.aliveWolves().map { it.seat }
         var next = game.atWolfVote().wolfVote(wolfSeats.associateWith { victim })
         if (next.phase == Phase.NIGHT_SEER) next = next.seerCheck(checkTarget)
-        if (next.phase == Phase.NIGHT_WITCH) next = next.witchAct(heal = heal, poisonTarget = poison)
-        return next
+        if (next.phase == Phase.NIGHT_WITCH) next = next.witchActSettled(heal = heal, poisonTarget = poison)
+        return next.atDawn()
     }
 
     /** 走完一个白天：全员弃票，无人出局，进入下一夜。 */
@@ -179,7 +179,7 @@ private fun WerewolfGame.atWolfVote(): WerewolfGame =
         assertEquals(7, mode.tonightVictim)
 
         mode = mode.seerCheck(1)
-        mode = mode.witchAct(heal = false)
+        mode = mode.witchActSettled(heal = false)
 
         // 首夜死者要留遗言，遗言说完才进白天讨论
         assertEquals(Phase.DAY_LAST_WORDS, mode.phase)
@@ -202,7 +202,7 @@ private fun WerewolfGame.atWolfVote(): WerewolfGame =
         assertEquals(Phase.NIGHT_SEER, mode.phase)
 
         mode = mode.seerCheck(1)
-        mode = mode.witchAct(heal = false)
+        mode = mode.witchActSettled(heal = false)
         assertTrue(mode.history.filterIsInstance<GameEvent.Dawn>().single().isPeaceful)
     }
 
@@ -214,7 +214,7 @@ private fun WerewolfGame.atWolfVote(): WerewolfGame =
         mode = mode.seerCheck(1)
 
         assertFalse(mode.witchCanHeal)
-        assertThrows(IllegalStateException::class.java) { mode.witchAct(heal = true) }
+        assertThrows(IllegalStateException::class.java) { mode.witchActSettled(heal = true) }
     }
 
     @Test
@@ -227,7 +227,7 @@ private fun WerewolfGame.atWolfVote(): WerewolfGame =
         assertEquals(2, check.targetSeat)
         assertTrue(check.isWerewolf)
 
-        mode = mode.witchAct(heal = false)
+        mode = mode.witchActSettled(heal = false)
         assertEquals(1, mode.history.size)
         assertTrue(mode.history.all { it is GameEvent.Dawn })
     }
@@ -245,7 +245,7 @@ private fun WerewolfGame.atWolfVote(): WerewolfGame =
         var mode = game(standard9)
         mode = mode.wolfVote(mapOf(1 to 7, 2 to 7, 3 to 7))
         mode = mode.seerCheck(1)
-        mode = mode.witchAct(heal = true)
+        mode = mode.witchActSettled(heal = true)
 
         assertTrue(mode.playerAt(7).alive)
         assertFalse(mode.witch.antidoteAvailable)
@@ -258,7 +258,7 @@ private fun WerewolfGame.atWolfVote(): WerewolfGame =
         var mode = game(standard9)
         mode = mode.wolfVote(mapOf(1 to 7, 2 to 7, 3 to 7))
         mode = mode.seerCheck(1)
-        mode = mode.witchAct(heal = false, poisonTarget = 8)
+        mode = mode.witchActSettled(heal = false, poisonTarget = 8)
 
         assertEquals(DeathCause.WOLF_KILL, mode.playerAt(7).deathCause)
         assertEquals(DeathCause.WITCH_POISON, mode.playerAt(8).deathCause)
@@ -273,7 +273,7 @@ private fun WerewolfGame.atWolfVote(): WerewolfGame =
         mode = mode.seerCheck(1)
 
         assertThrows(IllegalArgumentException::class.java) {
-            mode.witchAct(heal = true, poisonTarget = 8)
+            mode.witchActSettled(heal = true, poisonTarget = 8)
         }
     }
 
@@ -282,7 +282,7 @@ private fun WerewolfGame.atWolfVote(): WerewolfGame =
         var mode = game(standard9)
         mode = mode.atWolfVote().wolfVote(mapOf(1 to 5, 2 to 5, 3 to 5))
         mode = mode.seerCheck(1)
-        mode = mode.witchAct(heal = true)
+        mode = mode.witchActSettled(heal = true)
 
         assertTrue(mode.playerAt(5).alive)
         assertTrue(mode.history.filterIsInstance<GameEvent.Dawn>().single().isPeaceful)
@@ -299,7 +299,7 @@ private fun WerewolfGame.atWolfVote(): WerewolfGame =
         mode = mode.seerCheck(1)
 
         val night2 = mode
-        assertThrows(IllegalArgumentException::class.java) { night2.witchAct(heal = true) }
+        assertThrows(IllegalArgumentException::class.java) { night2.witchActSettled(heal = true) }
     }
 
     @Test
@@ -313,7 +313,7 @@ private fun WerewolfGame.atWolfVote(): WerewolfGame =
         mode = mode.seerCheck(1)
 
         val night2 = mode
-        assertThrows(IllegalArgumentException::class.java) { night2.witchAct(heal = true) }
+        assertThrows(IllegalArgumentException::class.java) { night2.witchActSettled(heal = true) }
     }
 
     // ------------------------------------------------------------------
@@ -391,7 +391,7 @@ private fun WerewolfGame.atWolfVote(): WerewolfGame =
     fun `屠边规则下杀光神职即狼人获胜`() {
         val roles = listOf(WEREWOLF, SEER, VILLAGER, VILLAGER, VILLAGER)
         var mode = game(roles).wolfVote(mapOf(1 to 2)) // 刀预言家
-        mode = mode.seerCheck(1) // 预言家临死前仍可查验
+        mode = mode.seerCheck(1).atDawn() // 预言家临死前仍可查验
 
         assertEquals(Faction.WEREWOLF, mode.winner)
         assertEquals(Phase.FINISHED, mode.phase)
@@ -405,7 +405,7 @@ private fun WerewolfGame.atWolfVote(): WerewolfGame =
             winRule = WinRule.SLAY_ALL,
         )
         var mode = game(roles, config).wolfVote(mapOf(1 to 2))
-        mode = mode.seerCheck(1)
+        mode = mode.seerCheck(1).atDawn()
 
         assertNull(mode.winner)
         assertEquals(Phase.DAY_LAST_WORDS, mode.phase)

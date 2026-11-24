@@ -102,7 +102,7 @@ class WerewolfDayFlowTest {
         var mode = game().copy(day = 2, phase = Phase.NIGHT_WOLF)
         mode = mode.wolfVote(mode.aliveWolves().associate { it.seat to 5 })
         mode = mode.seerCheck(1)
-        mode = mode.witchAct(heal = false)
+        mode = mode.witchActSettled(heal = false)
 
         assertFalse(mode.playerAt(5).alive)
         assertTrue("第二夜起夜里死的人没有遗言", mode.pendingLastWords.isEmpty())

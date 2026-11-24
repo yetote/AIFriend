@@ -18,10 +18,21 @@ data class SeerCheck(
     val isWerewolf: Boolean,
 )
 
-/** 女巫剩余药品。解药和毒药全局限各一次。 */
+/**
+ * 女巫剩余药品 + 本夜的用药决定。
+ *
+ * 解药和毒药全局限各一次；[nightHeal] / [nightPoison] 暂存**本夜**的决定，
+ * 结算统一推迟到天亮节点（[WerewolfGame.settlePendingNight]）——夜间行动只写状态、
+ * 不立即结算，守卫 / 狼人 / 预言家三路才能并发。
+ * 新的一夜开始时 [WerewolfGame.startNextNight] 会把这两个决定清掉。
+ */
 data class WitchStock(
     val antidoteAvailable: Boolean = true,
     val poisonAvailable: Boolean = true,
+    /** 本夜是否用解药救人。 */
+    val nightHeal: Boolean = false,
+    /** 本夜毒药 targets 谁。null 表示没用毒。 */
+    val nightPoison: Int? = null,
 )
 
 /**
