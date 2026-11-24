@@ -1247,6 +1247,31 @@ class WerewolfPromptTest {
     }
 
     @Test
+    fun `读人框架含硬反证翻案与被查杀者表水`() {
+        // 12 人局教训：1 号报 2 号查杀、2 号翻牌猎人开枪带走 1 号——硬反证出现后
+        // 3、6 号翻了站边，7 号女巫夜里想通、白天却没翻。框架里必须写明「出现就重盘」。
+        val good = WerewolfPrompt.systemPrompt(standardGame(), seat = 3)
+
+        assertTrue("要有硬反证翻案一条：$good", good.contains("硬反证"))
+        assertTrue("要说翻牌/开枪这种可核的证据：$good", good.contains("开枪"))
+        assertTrue("要有被查杀者表水一条：$good", good.contains("被查杀的人怎么回应"))
+    }
+
+    @Test
+    fun `夜间决策不带读人框架，白天发言照旧带`() {
+        // 夜里的下刀 / 查验 / 用药没有发言可读，「从发言读人」那一大段白烧输入。
+        // 用 includeReading=false 关掉它；默认仍全量，老行为不变。
+        val full = WerewolfPrompt.systemPrompt(standardGame(), seat = 3)
+        val lean = WerewolfPrompt.systemPrompt(standardGame(), seat = 3, includeReading = false)
+
+        assertTrue("默认要带读人框架", full.contains("怎么从发言读人"))
+        assertFalse("夜间决策不该带读人框架", lean.contains("怎么从发言读人"))
+        // 底线不能因为精简而丢：身份、本轮任务、规则都还在
+        assertTrue("精简后身份还在", lean.contains("你的身份是"))
+        assertTrue("精简后规则还在", lean.contains("本局板子"))
+    }
+
+    @Test
     fun `猎人开枪有可执行的读人顺序，不是凭最怀疑`() {
         // 专栏的答案：该打一言未发的深水狼或冲锋狼，不是嗓门大的、也不是救过人的神职。
         val hunter = WerewolfPrompt.systemPrompt(standardGame(), seat = 5)

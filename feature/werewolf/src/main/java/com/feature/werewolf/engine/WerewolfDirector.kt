@@ -1532,6 +1532,9 @@ class WerewolfDirector(
                         playStyle = agent.playStyle,
                         ledger = PublicLedger.of(table),
                         roundBoard = RoundBoard.of(table.game, seat),
+                        // 夜里的下刀 / 查验 / 用药没有发言可读，「从发言读人」那一大段
+                        // 在决策时用不上，省几千字输入。白天投票仍要带着它判断投谁。
+                        includeReading = !phase.isNight,
                         webSearch = webSearchFor(agent),
                     ),
                     enableThinking = thinking,
@@ -1637,7 +1640,47 @@ class WerewolfDirector(
             append("\n")
         }
         appendSaidToday(recent, seat, game.day)
+        // 白天看不到自己夜里想通的事，是「昼夜判断割裂」的根因：
+        // 女巫夜里毒 10 号时已经推出「2 号是猎人 → 1 号假预言家 → 4 号真」，
+        // 白天发言时这条结论被上面的公开过滤挡掉，她又站回 1 号。
+        // 这里把**本人**夜里的判断单独捞回来喂给自己（只读 NIGHT_ACT 且 seat 本人，
+        // 狼队夜聊是 WOLF_CHAT、走 wolfPlan 那条私有通道，不会混进来）。
+        append(ownNightBrief(table, seat, game.day))
         append(task)
+    }
+
+    /**
+     * 把「本人昨夜的判断」拼成一段注入白天的上下文。
+     *
+     * 和狼队的处理方式对齐：狼队夜聊文字存在 `game.wolfPlan`，白天靠私有简报读；
+     * 守卫 / 预言家 / 女巫的夜间结论只写在 [MessageKind.NIGHT_ACT] 的 text 里，
+     * 而白天的 `recent` 会把所有非公开消息滤掉——所以这些结论在白天等于没想过。
+     *
+     * 只取 [MessageKind.NIGHT_ACT] 且 `seat` 是本人：[WerewolfTable.transcriptFor]
+     * 已经按 audience 过滤，再卡一次 seat 是双保险；狼队夜聊是 [MessageKind.WOLF_CHAT]，
+     * 不会被捞进来。所以这段对每个座位都只装得下他自己的判断，不构成泄底。
+     *
+     * 措辞上明确「别直接说出来」：夜里知道 1 号是悍跳、4 号是真预是**私有信息**，
+     * 白天只能拿它修正自己的站边和票，不能当众报「我昨晚算出 4 号是真预言家」。
+     */
+    internal fun ownNightBrief(table: WerewolfTable, seat: Int, today: Int): String {
+        val notes = table.transcriptFor(seat)
+            .filter { it.kind == MessageKind.NIGHT_ACT && it.seat == seat }
+            .filter { it.day >= (today - 1).coerceAtLeast(1) }
+            .takeLast(2)
+        if (notes.isEmpty()) return ""
+        return buildString {
+            append("【你昨夜的判断】\n")
+            append("下面这些是你昨夜自己想的事——只有你知道，别在白天直接说出来（尤其别报身份、别报你验到了谁）。\n")
+            append("但别把已经想通的结论又推翻：昨夜据此做出的判断，白天用它修正站边和票。\n")
+            notes.forEach { message ->
+                append("· ").append(message.phase.displayName).append("：")
+                append(message.text.replace('\n', ' ').take(NIGHT_NOTE_CHARS))
+                if (message.text.length > NIGHT_NOTE_CHARS) append("…")
+                append("\n")
+            }
+            append("\n")
+        }
     }
 
     /**
@@ -2067,6 +2110,9 @@ class WerewolfDirector(
 
         /** 复述自己旧发言时，每条摘要留多少字。够认出「这是同一段」，又不占预算。 */
         const val SAID_ECHO_CHARS = 80
+
+        /** 回看自己昨夜判断时，每条留多少字。够带上结论和依据，不至于把整段思考搬进来。 */
+        const val NIGHT_NOTE_CHARS = 120
 
         /** 发言被清洗/拒绝后仍然为空时的占位。宁可平庸，也不要一条空气泡。 */
         const val EMPTY_SPEECH_FALLBACK = "我先听完这一轮，暂时不改判断。"

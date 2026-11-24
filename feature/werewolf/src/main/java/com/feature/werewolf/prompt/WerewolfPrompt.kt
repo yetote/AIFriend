@@ -134,6 +134,13 @@ object WerewolfPrompt {
          * 默认空＝不注入，测试与复盘不受影响。
          */
         roundBoard: String? = null,
+        /**
+         * 要不要在引导式里带「从发言读人」那一大段。
+         *
+         * 夜里的决策（下刀 / 查验 / 用药）没有发言可读，带着它只是白烧几千字输入；
+         * 每次发言和白天投票仍需要它。默认 true 保持老行为，只有决策请求传 false。
+         */
+        includeReading: Boolean = true,
     ): String {
         val player = game.playerAt(seat)
         return buildString {
@@ -179,7 +186,13 @@ object WerewolfPrompt {
             // 引导式才给内置打法。自由式的核心就是「不给方法，只给事实和底线」——
             // 读人框架、板型结论、狼队菜单都在 strategyBrief 里，整段不出现。
             if (style == WerewolfPromptStyle.GUIDED) {
-                append(strategyBrief(game.config, player.role.isWerewolf).trimEnd()).append("\n\n")
+                append(
+                    strategyBrief(
+                        game.config,
+                        player.role.isWerewolf,
+                        includeReading = includeReading,
+                    ).trimEnd()
+                ).append("\n\n")
             }
             // 术语约定：引导式和自由式都给，它是语言约定，不是打法——
             // 没理由让 AI 自造黑话、把词用反。搜索式不给：它连规则都自己查，
@@ -588,7 +601,18 @@ object WerewolfPrompt {
      * @param isWolf 板型打法里有一段只对狼有用（打哪边更省刀、要不要分头站边），
      *   好人读到只会稀释自己的判断，所以按阵营分开。
      */
-    private fun strategyBrief(config: WerewolfConfig, isWolf: Boolean): String = buildString {
+    private fun strategyBrief(
+        config: WerewolfConfig,
+        isWolf: Boolean,
+        /**
+         * 要不要带「从发言读人」那一大段。
+         *
+         * 那段是**白天发言/投票**才用得上的分析框架；夜里的下刀、查验、用药是私密动作，
+         * 桌上没有发言可读，带着它只是白白占几千字输入。默认 true 保持老行为，
+         * 决策请求可以传 false 省 token——它自己的 instruction 会把合法目标写清楚。
+         */
+        includeReading: Boolean = true,
+    ): String = buildString {
         append("【基本打法】以下和你的性格、说话风格无关，冲突时以这里为准：\n")
         append("· 预言家每天开口第一件事，是报出前一晚验了谁、结果是好人还是狼人，然后才谈判断。")
         append("跳过不报、只喊结论不报验人，在好人眼里就是悍跳。\n")
@@ -601,10 +625,19 @@ object WerewolfPrompt {
         append("验到死人只是运气不好（他自己也不知道对方会死），不是悍跳的证据。")
         append("只有**验了活人还乱报、或者报不出自己验过的人**，那才是悍跳。\n")
         append("· 狼给谁发金水都不亏，「被发金水」证明不了干净；反过来，给金水的人也没必要急着投。\n")
+        // 本局教训：1 号悍跳查杀 9 号（真平民），9 号被查杀后不正面表水、反手砸 10 号，
+        // 被全场当成狼票出去；而 4 号真预言家查杀 10 号（真狼），10 号同样不表水，
+        // 却没人追。两件事的判别不是「谁态度好」，而是「被查杀者有没有正面解释自己不是狼」。
+        append("· **被查杀的人怎么回应，是验真假的关键一票**：被查杀后正面说自己为什么不是狼、" +
+            "对着验人链逐条解释的，像被冤枉的好人；不先自证、只反手把票砸向另一个人的，" +
+            "不管他嘴里多有理，都要记一笔——真被冤的人第一反应是证明自己，不是拉人下水。\n")
         // 从发言读人的框架：上面几条是「验人/金水该不该信」的单点判断，
         // 这里补成一套能贯穿整局的方法（心路、警徽流、保人、划水与冲锋的反面）。
         // 放在单点判断之后、板型打法之前，先教「怎么读」，再给「这张板子读什么」。
-        ReadingTells.lines(config).forEach { append("· ").append(it).append("\n") }
+        // 夜里的决策请求用不上它（没有发言可读），传 includeReading=false 省几千字输入。
+        if (includeReading) {
+            ReadingTells.lines(config).forEach { append("· ").append(it).append("\n") }
+        }
         append("· 神职不要主动报身份。")
         // 只有守卫有这一句：别人守不守人跟好人无关，守卫自己却最容易一开口就交代守人路线。
         Roles.of(WerewolfRole.GUARD).publicStrategy(WerewolfRole.GUARD)
