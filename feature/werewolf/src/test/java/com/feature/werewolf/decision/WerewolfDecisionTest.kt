@@ -207,8 +207,8 @@ class WerewolfDecisionTest {
         val g = game().copy(phase = Phase.DAY_VOTE, voteCandidates = listOf(1, 6, 7))
         val text = WerewolfDecisions.vote(g, candidates = listOf(1, 6, 7)).instruction
 
-        assertTrue("必须投出去", text.contains("这一票必须投出去"))
-        assertTrue("弃票要有前提", text.contains("确认的好人"))
+        assertTrue("有明确怀疑必须投出去", text.contains("有明确怀疑就必须投出去"))
+        assertTrue("分不清时可弃票但别乱投", text.contains("完全分不清时宁可弃票"))
         assertTrue("不能发言说 A 投票投 B", text.contains("票要和你今天说过的话一致"))
         assertTrue("理由要有依据", text.contains("别只写「感觉」「像狼」"))
     }
