@@ -50,10 +50,10 @@ object ExplodeWatch {
      * 「3 号」「3号」以及名字都算点名。
      *
      * 只认带「号」的写法，是因为裸数字会撞上「今天有 3 个人」「第 2 天」这类；
+     * 前面加负向前瞻 `(?<!\d)`，防止「11 号」「12 号」误中「1 号」「2 号」。
      * 名字没有这个问题，直接匹配。
      */
     private fun mentions(speech: String, seat: Int, name: String): Boolean =
-        speech.contains("$seat 号") ||
-            speech.contains("${seat}号") ||
+        Regex("""(?<!\d)$seat\s*号""").containsMatchIn(speech) ||
             (name.isNotBlank() && speech.contains(name))
 }

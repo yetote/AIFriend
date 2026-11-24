@@ -699,6 +699,15 @@ data class WerewolfGame(
     fun castVotes(votes: Map<Int, Int?>): WerewolfGame {
         require(phase == Phase.DAY_VOTE) { "当前不是投票阶段：$phase" }
         val living = exileVoters.toSet()
+        if (living.isEmpty()) {
+            // 极端局面（如全部存活有票权玩家都在 PK 台上）：没人有资格投票，直接无人出局。
+            return finishVote(
+                thisRound = emptyList(),
+                exiled = null,
+                voteCount = 0.0,
+                round = emptyList<Ballot>().toRound(VoteOutcome.NO_EXILE),
+            )
+        }
         require(votes.keys == living) { "所有有投票权的玩家都要投票，弃票传 null。期望 $living，实际 ${votes.keys}" }
 
         val candidates = (voteCandidates ?: votingSeats).toSet()
@@ -728,7 +737,10 @@ data class WerewolfGame(
         val top = tally.filterValues { it == max }.keys.sorted()
         val maxVotes = max / 2.0
         if (top.size > 1) {
-            return if (voteRound < config.maxVoteRounds) {
+            // 只有存在台外有票权玩家时，PK 加投才有意义；若全部有票权玩家都平票上台，
+            // 下一轮 exileVoters 为空，直接按无人出局收尾。
+            val hasOffStageVoters = votingSeats.any { it !in top }
+            return if (voteRound < config.maxVoteRounds && hasOffStageVoters) {
                 copy(
                     ballots = thisRound,
                     voteRound = voteRound + 1,
@@ -1099,10 +1111,11 @@ data class WerewolfGame(
         }
 
         val winnerFaction = next.evaluateWinner()
-        if (winnerFaction != null) {
+        if (winnerFaction == Faction.GOOD) {
             return next.copy(
                 phase = Phase.FINISHED,
                 winner = winnerFaction,
+                pendingHunterSeat = null,
                 history = next.history + GameEvent.GameOver(next.day, winnerFaction),
             )
         }
@@ -1113,6 +1126,24 @@ data class WerewolfGame(
             addAll(next.pendingLastWords)
             if (next.sheriffSeat == seat && seat !in this) add(seat)
         }.sorted()
+
+        // 首夜猎人被刀且死讯刚随竞选自爆公布：猎人照样在入夜前开枪，再走首夜遗言。
+        if (next.pendingHunterSeat != null) {
+            return next.copy(
+                phase = Phase.HUNTER_SHOOT,
+                afterHunterPhase = Phase.NIGHT_WOLF,
+                pendingLastWords = pending,
+            )
+        }
+
+        if (winnerFaction != null) {
+            return next.copy(
+                phase = Phase.FINISHED,
+                winner = winnerFaction,
+                history = next.history + GameEvent.GameOver(next.day, winnerFaction),
+            )
+        }
+
         return if (pending.isEmpty()) {
             next.startNextNight()
         } else {
@@ -1262,10 +1293,11 @@ data class WerewolfGame(
         // 在这里先判就把他那张枪牌吞了，和「猎人被狼刀可以开枪」直接冲突。
         val winnerFaction = next.evaluateWinner()
         if (winnerFaction == Faction.GOOD) {
-            return next.copy(
+            val revealed = next.publishDawnIfHeld()
+            return revealed.copy(
                 phase = Phase.FINISHED,
                 winner = winnerFaction,
-                history = next.history + GameEvent.GameOver(next.day, winnerFaction),
+                history = revealed.history + GameEvent.GameOver(revealed.day, winnerFaction),
             )
         }
 
@@ -1290,21 +1322,32 @@ data class WerewolfGame(
         }.sorted()
 
         return if (fallenHunter != null) {
-            next.copy(
-                phase = Phase.HUNTER_SHOOT,
-                pendingHunterSeat = fallenHunter,
-                afterHunterPhase = Phase.DAY_DISCUSSION,
-                // 遗言排在天亮开枪之后：先看枪打到谁，再让死者开口
-                pendingLastWords = lastWords,
-            )
+            if (holdDawn) {
+                // 有警长竞选时，死讯压在竞选之后公布——猎人开枪也必须等死讯公布后再开，
+                // 否则竞选前就有人开枪翻牌，直接泄露昨夜倒牌信息。
+                next.copy(
+                    pendingHunterSeat = fallenHunter,
+                    afterHunterPhase = Phase.DAY_DISCUSSION,
+                    pendingLastWords = lastWords,
+                ).dayOpening()
+            } else {
+                next.copy(
+                    phase = Phase.HUNTER_SHOOT,
+                    pendingHunterSeat = fallenHunter,
+                    afterHunterPhase = Phase.DAY_DISCUSSION,
+                    // 遗言排在天亮开枪之后：先看枪打到谁，再让死者开口
+                    pendingLastWords = lastWords,
+                )
+            }
         } else {
             // 没有猎人要开枪，狼方的胜负此刻就定了（狼全灭已在上面判过）。
             // 不在这里判的话，绑票局面会照常走进白天，白演一轮注定投不出人的投票。
             if (winnerFaction != null) {
-                return next.copy(
+                val revealed = next.publishDawnIfHeld()
+                return revealed.copy(
                     phase = Phase.FINISHED,
                     winner = winnerFaction,
-                    history = next.history + GameEvent.GameOver(next.day, winnerFaction),
+                    history = revealed.history + GameEvent.GameOver(revealed.day, winnerFaction),
                 )
             }
             next.copy(pendingLastWords = lastWords).dayOpening()
@@ -1377,7 +1420,14 @@ data class WerewolfGame(
     private fun afterHunter(): WerewolfGame {
         val cleared = copy(pendingHunterSeat = null)
         return if (afterHunterPhase == Phase.NIGHT_WOLF) {
-            cleared.startNextNight()
+            if (cleared.pendingLastWords.isNotEmpty()) {
+                cleared.copy(
+                    phase = Phase.DAY_LAST_WORDS,
+                    afterLastWordsPhase = Phase.NIGHT_WOLF,
+                )
+            } else {
+                cleared.startNextNight()
+            }
         } else {
             cleared.dayOpening()
         }
@@ -1456,10 +1506,16 @@ data class WerewolfGame(
             sheriffRunners = emptyList(),
             sheriffElectionDone = true,
         ).publishDawnIfHeld()
-        return if (announced.pendingLastWords.isNotEmpty()) {
-            announced.copy(phase = Phase.DAY_LAST_WORDS, afterLastWordsPhase = Phase.DAY_DISCUSSION)
-        } else {
-            announced.copy(phase = Phase.DAY_DISCUSSION)
+        return when {
+            announced.pendingHunterSeat != null -> announced.copy(
+                phase = Phase.HUNTER_SHOOT,
+                afterHunterPhase = Phase.DAY_DISCUSSION,
+            )
+            announced.pendingLastWords.isNotEmpty() -> announced.copy(
+                phase = Phase.DAY_LAST_WORDS,
+                afterLastWordsPhase = Phase.DAY_DISCUSSION,
+            )
+            else -> announced.copy(phase = Phase.DAY_DISCUSSION)
         }
     }
 
@@ -1654,14 +1710,20 @@ data class WerewolfGame(
             if (alphaId != null) {
                 require(roster.any { it.id == alphaId }) { "指定的头狼不在本局名单里" }
                 val assignedRole = assignment[alphaId]
-                require(assignedRole == null || assignedRole == WerewolfRole.WEREWOLF) {
+                require(assignedRole == null || assignedRole.isWerewolf) {
                     "头狼必须是狼人，${alphaId} 被指定成了「${assignedRole?.displayName}」"
                 }
             }
-            // 头狼没被指身份时自动补成狼人：头狼的本质就是「队里定战术的那只狼」，
-            // 指定他等于把一个狼名额派给了他，剩下的狼名额照旧随机
+            // 头狼没被指身份时自动补成狼阵营身份：优先普通狼，板子没有普通狼名额时回落到狼王
             val effective = if (alphaId != null && assignment[alphaId] == null) {
-                assignment + (alphaId to WerewolfRole.WEREWOLF)
+                val normalWolvesLeft = (config.composition[WerewolfRole.WEREWOLF] ?: 0) -
+                    assignment.values.count { it == WerewolfRole.WEREWOLF }
+                val fallbackWolf = if (normalWolvesLeft > 0 || !config.has(WerewolfRole.WEREWOLF_KING)) {
+                    WerewolfRole.WEREWOLF
+                } else {
+                    WerewolfRole.WEREWOLF_KING
+                }
+                assignment + (alphaId to fallbackWolf)
             } else {
                 assignment
             }

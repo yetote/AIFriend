@@ -2069,4 +2069,45 @@ class WerewolfDirectorTest {
         )
     }
 
+    @Test
+    fun `遗言结束触发终局或撕徽时同步写入公开记录`() = runBlocking {
+        // 6 人局 2 狼 2 好（4 号警长刚出局、只剩 1/2 狼和 3/5 好），警长选择撕徽后绑票终局
+        val roles = listOf(
+            WerewolfRole.WEREWOLF, WerewolfRole.WEREWOLF,
+            WerewolfRole.SEER, WerewolfRole.WITCH,
+            WerewolfRole.VILLAGER, WerewolfRole.VILLAGER,
+        )
+        val cfg = WerewolfConfig(
+            composition = roles.groupingBy { it }.eachCount(),
+            winRule = com.feature.werewolf.game.WinRule.SLAY_ALL,
+            hasSheriff = true,
+            maxVoteRounds = 2,
+        )
+        val base = WerewolfGame.withRoles(cfg, roster(6), roles).copy(
+            day = 2,
+            phase = Phase.DAY_LAST_WORDS,
+            sheriffSeat = 4,
+            sheriffElectionDone = true,
+            pendingLastWords = listOf(4),
+            afterLastWordsPhase = Phase.NIGHT_WOLF,
+            players = WerewolfGame.withRoles(cfg, roster(6), roles).players.map {
+                when (it.seat) {
+                    4, 6 -> it.copy(alive = false, deathCause = DeathCause.EXILE, deathDay = 2)
+                    else -> it
+                }
+            },
+        )
+        val director = WerewolfDirector(
+            agentsOf(4 to ScriptedAI(listOf("""{"target": null, "reason": "拿不准，撕掉。"}""")))
+        )
+
+        val result = director.lastWords(WerewolfTable(base))
+
+        assertTrue("撕徽后应立即判终局", result.game.isFinished)
+        assertTrue(
+            "终局播报必须同步进入 transcript",
+            result.publicTranscript.any { it.kind == MessageKind.DIVINE && it.text.contains("游戏结束") },
+        )
+    }
+
 }

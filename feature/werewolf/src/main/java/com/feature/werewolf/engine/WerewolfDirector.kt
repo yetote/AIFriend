@@ -845,7 +845,7 @@ class WerewolfDirector(
                             step = done,
                             total = total,
                             seats = pending,
-                            note = if (rounds > 0) "PK 后重投" else null,
+                            note = if (game.sheriffRound > 1) "PK 后重投" else null,
                         )
                     )
                 },
@@ -898,13 +898,13 @@ class WerewolfDirector(
         if (current.game.phase != Phase.DAY_LAST_WORDS) return current
 
         val pending = current.game.pendingLastWords
-        pending.filterNot { current.game.hasSpoken(it) }.forEachIndexed { index, seat ->
+        pending.filterNot { current.game.hasSpoken(it) }.forEach { seat ->
             if (current.game.phase != Phase.DAY_LAST_WORDS) return current
             onProgress(
                 WerewolfProgress(
                     day = current.game.day,
                     phase = Phase.DAY_LAST_WORDS,
-                    step = index + 1,
+                    step = pending.indexOf(seat) + 1,
                     total = pending.size,
                     seat = seat,
                 )
@@ -949,7 +949,9 @@ class WerewolfDirector(
             current = current.copy(game = current.game.markSpoken(seat))
             onTranscript(current)
         }
-        return current.copy(game = current.game.finishLastWords())
+        val beforeFinish = current.game
+        val afterFinish = beforeFinish.finishLastWords()
+        return current.copy(game = afterFinish).syncPublicEvents(beforeFinish)
     }
 
     /**
@@ -968,7 +970,14 @@ class WerewolfDirector(
             val game = current.game
             // 用本轮口径：首轮人人有票；PK 轮台上的人不投、其余存活玩家都投。
             val voters = game.exileVoters
-            val candidates = game.voteCandidates ?: voters
+            val candidates = game.voteCandidates ?: game.votingSeats
+
+            if (voters.isEmpty()) {
+                val afterVote = game.castVotes(emptyMap())
+                current = current.copy(game = afterVote).syncPublicEvents(game)
+                onTranscript(current)
+                break
+            }
 
             // 分批并发，每回一票就报一次进度，并带上「这一批还没回话的人」。
             // 十二个人同时问模型，服务端要排队、本机带宽也要分，
@@ -984,7 +993,7 @@ class WerewolfDirector(
                             step = done,
                             total = total,
                             seats = pending,
-                            note = if (rounds > 0) "平票，重新投票" else null,
+                            note = if (game.voteRound > 1) "平票，重新投票" else null,
                         )
                     )
                 },
@@ -1022,6 +1031,7 @@ class WerewolfDirector(
             next = next.append(ballotMessage(game, Phase.DAY_VOTE, votes))
             val afterVote = game.castVotes(votes)
             current = next.copy(game = afterVote).syncPublicEvents(game)
+            onTranscript(current)
             rounds++
         }
         return current
@@ -1560,6 +1570,7 @@ class WerewolfDirector(
                 model = agent.model,
                 systemPrompt = system,
                 enableThinking = thinking,
+                webSearch = webSearchFor(agent),
             )
         }
         return SpeechResult(
@@ -2088,23 +2099,26 @@ class WerewolfDirector(
         val fallback = ExplodeChoice(explode = false, reason = "")
         // 插爆不是独立 Phase，UI 不能靠 game.phase 出面板（会被误判成发言方向 / 警徽移交）。
         // 给人类座位打专用标记，buildTurn 据此出「要不要插爆」面板，走 submitExplode 提交。
-        if (agent.ai is HumanSeatAI) {
+        // 人类座位不吃 8 秒看门狗——真人读完发言再点按钮，超时面板凭空消失会极挫败。
+        val isHuman = agent.ai is HumanSeatAI
+        if (isHuman) {
             agent.ai.currentPhase = table.game.phase.name
             agent.ai.currentExplodeWatch = true
         }
+        val runDecision: suspend () -> StructuredOutcome<ExplodeChoice> = {
+            agent.ai.decide(
+                messages = listOf(ChatMessage.user("他刚说完，你来得及开口。")),
+                model = agent.model,
+                spec = WerewolfDecisions.explodeWatch(),
+                fallback = { fallback },
+                systemPrompt = WerewolfPrompt.explodeWatchBrief(table.game, seat, speaker, speech),
+                // 这一步只判断「要不要」，不需要深度思考，也不值得为它多等几秒。
+                enableThinking = false,
+                maxAttempts = 1,
+            )
+        }
         return try {
-            withTimeout(WATCH_TIMEOUT_MS) {
-                agent.ai.decide(
-                    messages = listOf(ChatMessage.user("他刚说完，你来得及开口。")),
-                    model = agent.model,
-                    spec = WerewolfDecisions.explodeWatch(),
-                    fallback = { fallback },
-                    systemPrompt = WerewolfPrompt.explodeWatchBrief(table.game, seat, speaker, speech),
-                    // 这一步只判断「要不要」，不需要深度思考，也不值得为它多等几秒。
-                    enableThinking = false,
-                    maxAttempts = 1,
-                )
-            }
+            if (isHuman) runDecision() else withTimeout(WATCH_TIMEOUT_MS) { runDecision() }
         } catch (cancelled: CancellationException) {
             // 外层还活着＝这是我们自己的超时；外层已取消＝真的该停。
             if (!currentCoroutineContext().isActive) throw cancelled

@@ -68,4 +68,10 @@ class ExplodeWatchTest {
     fun `喊名字也算点名`() {
         assertTrue(ExplodeWatch.shouldAsk(game, 1, "玩家1 这轮发言很虚，我先投他。"))
     }
+
+    @Test
+    fun `11号和12号不会误触发1号和2号的插爆检查`() {
+        assertFalse("11 号不能误中 1 号", ExplodeWatch.shouldAsk(game, 1, "今天必投 11 号，先出 11号。"))
+        assertFalse("12 号不能误中 2 号", ExplodeWatch.shouldAsk(game, 2, "我归票 12 号，大家跟我出 12号。"))
+    }
 }

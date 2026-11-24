@@ -152,6 +152,17 @@ class WerewolfDealAssignTest {
     }
 
     @Test
+    fun `头狼可以指定为狼王`() {
+        val config = WerewolfConfig(composition = WerewolfConfig.King10)
+        val assignment = mapOf("p2" to WerewolfRole.WEREWOLF_KING)
+        val game = WerewolfGame.deal(config, roster(10), Random(5), assignment, alphaId = "p2")
+
+        val alpha = game.players.first { it.id == "p2" }
+        assertEquals(WerewolfRole.WEREWOLF_KING, alpha.role)
+        assertEquals(alpha.seat, game.alphaWolfSeat)
+    }
+
+    @Test
     fun `标准档的上下文预算与旧常量一致`() {
         // 旧实现写死 3200；预算改成随发言档位缩放后，标准档不能悄悄变大——
         // 那会让老玩家的上下文突然多塞一截，请求变贵还可能撞模型上限

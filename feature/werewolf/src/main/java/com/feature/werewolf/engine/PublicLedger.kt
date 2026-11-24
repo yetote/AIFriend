@@ -1,5 +1,6 @@
 package com.feature.werewolf.engine
 
+import com.feature.werewolf.game.Ballot
 import com.feature.werewolf.game.Phase
 
 /**
@@ -32,12 +33,17 @@ object PublicLedger {
     /** 一轮投票里某个座位「说投谁 / 实际投谁」。 */
     internal data class VoteLine(val day: Int, val seat: Int, val said: Int?, val actual: Int?)
 
+    /** 一轮警长投票的公开票型：警长票不做言行对账，只保留「谁把警徽投给了谁」。 */
+    internal data class SheriffVoteRound(val day: Int, val ballots: List<Ballot>)
+
     internal data class Ledger(
         val claims: List<Claim> = emptyList(),
         val checks: List<Check> = emptyList(),
+        val sheriffVotes: List<SheriffVoteRound> = emptyList(),
         val votes: List<VoteLine> = emptyList(),
     ) {
-        val isEmpty: Boolean get() = claims.isEmpty() && checks.isEmpty() && votes.isEmpty()
+        val isEmpty: Boolean
+            get() = claims.isEmpty() && checks.isEmpty() && sheriffVotes.isEmpty() && votes.isEmpty()
     }
 
     /** 拼成一段可直接注入 system 的文字。没有可摘的东西时返回空串（不占位）。 */
@@ -50,6 +56,7 @@ object PublicLedger {
     internal fun collect(table: WerewolfTable): Ledger {
         val claims = LinkedHashMap<Pair<Int, String>, Claim>()
         val checks = LinkedHashMap<Pair<Int, Int>, Check>()
+        val sheriffVotes = mutableListOf<SheriffVoteRound>()
         val votes = mutableListOf<VoteLine>()
         // 每个座位当天最后说出口的票向。投票那一刻读它，就是「话」；唱票卡是「票」。
         val promised = HashMap<Pair<Int, Int>, Int>()
@@ -71,27 +78,37 @@ object PublicLedger {
                 }
 
                 MessageKind.BALLOT -> {
-                    // 只对账放逐票：警长投票时大家说的是「我选 X 号当警长」，
-                    // 和「我这一票投 X 号」不是同一个句式，混在一起会一直误报。
-                    if (message.phase != Phase.DAY_VOTE) return@forEach
                     val card = message.ballot ?: return@forEach
-                    card.ballots.forEach { ballot ->
-                        votes += VoteLine(
-                            day = message.day,
-                            seat = ballot.voterSeat,
-                            said = promised[message.day to ballot.voterSeat],
-                            actual = ballot.targetSeat,
-                        )
+                    when (message.phase) {
+                        Phase.DAY_SHERIFF_VOTE -> {
+                            // 警下票型是 12 人局最重要的公开证据，但警长投票不和白天放逐承诺对账。
+                            if (card.ballots.isNotEmpty()) {
+                                sheriffVotes += SheriffVoteRound(message.day, card.ballots)
+                            }
+                        }
+
+                        Phase.DAY_VOTE -> {
+                            card.ballots.forEach { ballot ->
+                                votes += VoteLine(
+                                    day = message.day,
+                                    seat = ballot.voterSeat,
+                                    said = promised[message.day to ballot.voterSeat],
+                                    actual = ballot.targetSeat,
+                                )
+                            }
+                        }
+
+                        else -> Unit
                     }
                 }
 
                 else -> Unit
             }
         }
-        return Ledger(claims.values.toList(), checks.values.toList(), votes)
+        return Ledger(claims.values.toList(), checks.values.toList(), sheriffVotes, votes)
     }
 
-    private val ROLE_WORDS = "(预言家|女巫|猎人|白痴|守卫)"
+    private val ROLE_WORDS = "(预言家|女巫|猎人|白痴|守卫|熊)"
 
     /**
      * 「我是预言家」「我跳预言家」「我认女巫」。
@@ -136,7 +153,7 @@ object PublicLedger {
     )
 
     /** 「3 号是金水」「5 号查杀」——先报结果再补验人顺序的说法。 */
-    private val CHECK_BARE = Regex("""(\d{1,2})\s*号(?:是|为)?\s*(金水|查杀)""")
+    private val CHECK_BARE = Regex("""(?<!\d)(\d{1,2})\s*号(?:是|为)?\s*(金水|查杀)""")
 
     private fun checkClaims(text: String): List<Pair<Int, String>> {
         val found = mutableListOf<Pair<Int, String>>()
@@ -205,6 +222,27 @@ object PublicLedger {
                     }
                 )
                 append("\n")
+            }
+            if (ledger.sheriffVotes.isNotEmpty()) {
+                val countByDay = ledger.sheriffVotes.groupingBy { it.day }.eachCount()
+                val seenByDay = HashMap<Int, Int>()
+                ledger.sheriffVotes.forEach { round ->
+                    val roundIndex = (seenByDay[round.day] ?: 0) + 1
+                    seenByDay[round.day] = roundIndex
+                    val label = if ((countByDay[round.day] ?: 0) > 1) {
+                        "第 ${round.day} 天警长票型（第 $roundIndex 轮）"
+                    } else {
+                        "第 ${round.day} 天警长票型"
+                    }
+                    append("· $label：")
+                    append(
+                        round.ballots.joinToString("、") { b ->
+                            val target = b.targetSeat?.let { "$it" } ?: "弃票"
+                            "${b.voterSeat}→$target"
+                        }
+                    )
+                    append("\n")
+                }
             }
             if (ledger.votes.isNotEmpty()) {
                 ledger.votes.groupBy { it.day }.toSortedMap().forEach { (day, lines) ->

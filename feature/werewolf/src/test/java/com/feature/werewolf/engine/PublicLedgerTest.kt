@@ -104,4 +104,25 @@ class PublicLedgerTest {
         assertEquals("", PublicLedger.of(table()))
         assertEquals("", PublicLedger.of(table(speech(6, "今天天气不错，大家随便聊聊。"))))
     }
+
+    @Test
+    fun `熊身份声明与警长票型都会记入公开台账`() {
+        val sheriffBallot = WerewolfMessage(
+            day = 1,
+            phase = Phase.DAY_SHERIFF_VOTE,
+            seat = null,
+            kind = MessageKind.BALLOT,
+            text = "第 1 天 警长投票：2→4、3→4、5→弃票",
+            ballot = BallotCard(listOf(Ballot(2, 4), Ballot(3, 4), Ballot(5, null))),
+        )
+        val text = PublicLedger.of(
+            table(
+                speech(6, "我是熊，今天早上咆哮了。"),
+                sheriffBallot,
+            )
+        )
+        assertTrue("熊声明要入账", text.contains("6 号自称熊"))
+        assertTrue("警长票型要入账", text.contains("第 1 天警长票型：2→4、3→4、5→弃票"))
+        assertFalse("警长票不做言行矛盾误报", text.contains("话和票对不上"))
+    }
 }

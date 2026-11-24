@@ -445,4 +445,46 @@ class WerewolfSheriffTest {
         assertTrue("枪杀者不留遗言", shot.pendingLastWords.isEmpty())
         assertEquals(Phase.NIGHT_WOLF_CHAT, shot.phase)
     }
+
+    @Test
+    fun `开警长板子首夜猎人被刀时先竞选警长，公布死讯后再开枪`() {
+        var mode = game()
+        // 6 号是猎人，首夜被狼刀
+        mode = mode.wolfVote(mapOf(1 to 6, 2 to 6, 3 to 6))
+        mode = mode.seerCheck(1)
+        mode = mode.witchActSettled(heal = false)
+
+        assertEquals("首夜猎人被刀也要先走警长竞选", Phase.DAY_SHERIFF_SIGNUP, mode.phase)
+        assertTrue("竞选前死讯暂不公布", mode.history.none { it is GameEvent.Dawn })
+        assertEquals("猎人开枪权先保留", 6, mode.pendingHunterSeat)
+
+        // 竞选结束公布死讯，此时才进入猎人开枪
+        val afterElection = mode.signUpSheriff(setOf(4))
+        assertTrue("竞选后公布死讯", afterElection.history.any { it is GameEvent.Dawn })
+        assertEquals("死讯公布后立刻进猎人开枪", Phase.HUNTER_SHOOT, afterElection.phase)
+        assertEquals(6, afterElection.pendingHunterSeat)
+
+        // 猎人开枪带走 1 号狼后，再进首夜遗言
+        val afterShot = afterElection.hunterShoot(1)
+        assertEquals(Phase.DAY_LAST_WORDS, afterShot.phase)
+        assertEquals(listOf(6), afterShot.pendingLastWords)
+        assertEquals(Phase.DAY_DISCUSSION, afterShot.finishLastWords().phase)
+    }
+
+    @Test
+    fun `全员平票上台无台外投票人时直接无人出局`() {
+        val small = listOf(WEREWOLF, WEREWOLF, SEER, WITCH, VILLAGER, VILLAGER)
+        val cfg = WerewolfConfig(
+            composition = small.groupingBy { it }.eachCount(),
+            hasSheriff = true,
+            maxVoteRounds = 2,
+        )
+        // 6 人互相两两各拿 1 票，全员平票上台，没有台外投票人
+        val voting = WerewolfGame.withRoles(cfg, roster(6), small)
+            .copy(day = 2, phase = Phase.DAY_VOTE, sheriffElectionDone = true)
+        val after = voting.castVotes(mapOf(1 to 2, 2 to 3, 3 to 4, 4 to 5, 5 to 6, 6 to 1))
+
+        assertEquals("无台外投票人时直接入夜，不进空投票人的第二轮", Phase.NIGHT_WOLF_CHAT, after.phase)
+        assertTrue(after.history.any { it is GameEvent.NoExile })
+    }
 }
