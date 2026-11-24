@@ -1565,6 +1565,36 @@ class WerewolfPromptTest {
     }
 
     @Test
+    fun `自由式拿到核对事实，但不拿打法倾向`() {
+        // 自由式砍的是「怎么发言、怎么藏、狼队怎么配合」这些打法倾向，
+        // 不是「怎么核对局面」的硬事实——没有事实判据，强模型也会把编造的心路当真。
+        val game = standardGame()
+        val free = WerewolfPrompt.systemPrompt(game, seat = 3, style = WerewolfPromptStyle.FREE)
+        val guided = WerewolfPrompt.systemPrompt(game, seat = 3, style = WerewolfPromptStyle.GUIDED)
+
+        assertTrue("自由式要有核对事实一块", free.contains("【核对事实】"))
+        assertTrue("要有翻牌硬反证", free.contains("翻牌/开枪是硬反证"))
+        assertTrue("要有验人改口判据", free.contains("验人信息前后改口是悍跳"))
+        assertTrue("要有放逐轮次", free.contains("放逐轮次"))
+        // 打法倾向仍然不给
+        assertFalse("自由式仍不给基本打法整段", free.contains("【基本打法】"))
+        assertFalse("自由式仍不教身份作业", free.contains("你的白天发言只有三件任务"))
+        // 引导式走原路径：有完整读人框架，不重复注入 factsBrief
+        assertTrue("引导式有读人框架", guided.contains("怎么从发言读人"))
+        assertFalse("引导式不重复注入核对事实块", guided.contains("【核对事实】"))
+    }
+
+    @Test
+    fun `搜索式也拿到核对事实`() {
+        // 搜索式连规则都交给模型查，但可核对的事实判据仍要带——
+        // 否则它联网查来的通用打法配上错误判断，比自由式更差。
+        val game = standardGame()
+        val search = WerewolfPrompt.systemPrompt(game, seat = 3, style = WerewolfPromptStyle.SEARCH)
+        assertTrue("搜索式也要有核对事实", search.contains("【核对事实】"))
+        assertTrue("搜索式要有票型对账", search.contains("票型对账"))
+    }
+
+    @Test
     fun `自由式照样给规则与身份机制，只砍打法`() {
         // 曾经这一档只给「人数 + 配比 + 有无警长」，理由是规则都在模型训练数据里。
         // 实测打不住：本局有几条不是标准局先验（屠边、警长 1.5 票、守救同归、

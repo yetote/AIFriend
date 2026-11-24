@@ -45,7 +45,7 @@ enum class UIWerewolfSpeechLength(val label: String, val hint: String) {
  */
 enum class UIWerewolfPromptStyle(val label: String, val hint: String) {
     GUIDED("引导式", "内置读人框架、身份打法和狼队战术。小模型靠它才不会说废话"),
-    FREE("自由式", "规则与身份技能照给，打法全交给模型自己想。适合强推理模型"),
+    FREE("自由式", "规则与身份技能照给，打法倾向交给模型；核对事实照给。适合强推理模型"),
     // 这一档的取舍要说清楚：提示词短了，但每步可能多等几十秒，
     // 而且只有部分厂商支持在对话接口里联网（豆包 / 千问 / 混元 / 智谱）。
     // 不支持的座位会在 AI 设置页的「连接自检」里被按搜索式验出来、当场标红。
