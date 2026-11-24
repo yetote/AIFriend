@@ -1258,6 +1258,42 @@ class WerewolfPromptTest {
     }
 
     @Test
+    fun `首夜心路不构成证据，且要能验算座位`() {
+        // 12 人局复盘：1 号悍跳说「首验开对角验 9 号」，但 12 人局 1 号对角是 7 号、
+        // 9 号是下家位——它自己的思考里知道是 7，发言仍说 9。全场却因为「心路清晰」信了它。
+        // 框架必须写明：首夜零信息，谁都能编心路；唯一能核的是理由本身能不能验算。
+        val good = WerewolfPrompt.systemPrompt(standardGame(), seat = 3)
+
+        assertTrue("要有首夜心路反过来的约束：$good", good.contains("第 1 夜零信息"))
+        assertTrue("要说首夜说得出理由不算证据：$good", good.contains("谁都能给随机的一刀编一套漂亮心路"))
+        assertTrue("要能验算座位：$good", good.contains("对不上就是编的"))
+        assertTrue("要给具体对角例子：$good", good.contains("1 号对角是 7 号"))
+        assertTrue("要说心路朴素是实话：$good", good.contains("心路朴素"))
+    }
+
+    @Test
+    fun `警徽流不把验发过言的人当错`() {
+        // 12 号骂 4 号「放着警上发过言的 2、3 不验」——把验发过言的人当成负面，
+        // 而 1 号「从抢警徽的人里挖一个」却被当成正面。同一把尺子量出相反结论，
+        // 说明这条标准本身是软的，不能当硬证据。
+        val good = WerewolfPrompt.systemPrompt(standardGame(), seat = 3)
+
+        assertTrue("要明说验发过言的人不是错：$good", good.contains("验发过言的人不是错"))
+        assertTrue("要说这类标准是软尺子：$good", good.contains("软尺子"))
+    }
+
+    @Test
+    fun `盘对跳第一看能不能当场核对而非验人记录数量`() {
+        // 旧文案说「报不出连续验人记录就是悍跳」，但第 1 天根本不存在连续记录——
+        // 两个预言家首夜都只验了一个人。这条会让好人误伤说实话的 4 号。
+        val good = WerewolfPrompt.systemPrompt(standardGame(), seat = 3)
+
+        assertTrue("要改成第一看能当场核对：$good", good.contains("盘对跳第一看"))
+        assertTrue("要明确心路流畅不算证据：$good", good.contains("心路讲得再流畅也不算证据"))
+        assertTrue("首夜例外仍要在：$good", good.contains("第 1 天只报了一个验人是正常的"))
+    }
+
+    @Test
     fun `夜间决策不带读人框架，白天发言照旧带`() {
         // 夜里的下刀 / 查验 / 用药没有发言可读，「从发言读人」那一大段白烧输入。
         // 用 includeReading=false 关掉它；默认仍全量，老行为不变。
