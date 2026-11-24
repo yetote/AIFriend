@@ -2,36 +2,36 @@ package com.ui.common.theme
 
 import androidx.compose.ui.graphics.Color
 
-val UIFriendBarTitleColor = Color(0xff172235)
-val UIFriendBarTitle2Color = Color(0xFFBFC5CC)
-val UIFriendBarGray = Color(0xFFF2F4F7)
-val UIFriendBarRed = Color(0xFFE83636)
-val UIFriendBarBlue = Color(0xFF1F385F)
-val UIFriendBarHeaderTagGreenColor = Color(0xFF86A3A9)    // 左上角 YOUR AI CREW 颜色
-val UIFriendBarDividerLineColor = Color(0xFF2C4970)       // 分割线颜色
-val UIFriendBarDecorativeWaveColor = Color(0xFF2A4B75)    // 右下角波浪装饰边框颜色
-// 颜色定义
-val UIFriendBarTitleColor2 = Color(0xFF1E2538)          // 主标题颜色
-val UIFriendBarSubtitleColor = Color(0xFF425979)       // 副标题/提示词颜色
-val UIFriendBarCreateButtonBg = Color(0xFFEEF4FF)      // 创建按钮浅蓝色背景
-val UIFriendBarCreateButtonText = Color(0xFF2B6BFF)    // 创建按钮蓝色文字/图标
-val UIFriendBarSearchInputBg = Color(0xFFFFFFFF)       // 搜索框白色背景
-val UIFriendBarTabSelectedBg = Color(0xFF1F2937)        // 选中 Tab 深蓝黑背景
-val UIFriendBarTabSelectedText = Color(0xFFFFFFFF)      // 选中 Tab 白色文字
-val UIFriendBarTabUnselectedBg = Color(0xFFFFFFFF)    // 未选中 Tab 白色背景
-val UIFriendBarTabUnselectedText = Color(0xFF6B7280)  // 未选中 Tab 灰色文字
-val UIFriendBarListCardBg = Color(0xFFFFFFFF)           // 列表卡片白色背景
-val UIFriendBarItemTitleColor = Color(0xFF111827)       // 智能体名称深色
-val UIFriendBarItemSubtitleColor = Color(0xFF4B5563)    // 职业描述颜色
-val UIFriendBarItemMetaColor = Color(0xFF9CA3AF)        // 底部元数据灰色
-val UIFriendBarOnlineGreen = Color(0xFF10B981)          // 在线绿点颜色
-val UIFriendBarTagBgBlue = Color(0xFFEFF6FF)            // 模型 Tag 浅蓝背景
-val UIFriendBarTagTextBlue = Color(0xFF2563EB)          // 模型 Tag 蓝色文字
-val UIFriendBarDividerColor = Color(0xFFF3F4F6)         // 分割线浅灰颜色
+val UIFriendBarTitleColor = Color(0xFF0F172A)             // 深墨青主标题
+val UIFriendBarTitle2Color = Color(0xFF94A3B8)            // 银灰追踪副标
+val UIFriendBarGray = Color(0xFFF1F5F9)                   // 瓷灰分组底
+val UIFriendBarRed = Color(0xFFE11D48)                    // 绯红警示色
+val UIFriendBarBlue = Color(0xFF1E293B)                   // 暮夜深蓝灰
+val UIFriendBarHeaderTagGreenColor = Color(0xFFA5B4FC)    // Hero 顶部星辉靛标签色
+val UIFriendBarDividerLineColor = Color(0xFF334155)       // 深色卡分割线
+val UIFriendBarDecorativeWaveColor = Color(0xFF38BDF8)    // 极光点缀高光
+// 全站语义色体系
+val UIFriendBarTitleColor2 = Color(0xFF0F172A)            // 区块主标题
+val UIFriendBarSubtitleColor = Color(0xFF475569)          // 次级正文 / 副标题
+val UIFriendBarCreateButtonBg = Color(0xFFEEF2FF)         // 浅靛雾胶囊底
+val UIFriendBarCreateButtonText = Color(0xFF4338CA)       // 暮靛主题文字/图标
+val UIFriendBarSearchInputBg = Color(0xFFFFFFFF)          // 搜索框纯白底
+val UIFriendBarTabSelectedBg = Color(0xFF0F172A)          // 选中 Tab 深墨底
+val UIFriendBarTabSelectedText = Color(0xFFFFFFFF)        // 选中 Tab 纯白字
+val UIFriendBarTabUnselectedBg = Color(0xFFFFFFFF)        // 未选中 Tab 浅白底
+val UIFriendBarTabUnselectedText = Color(0xFF64748B)      // 未选中 Tab 岩灰字
+val UIFriendBarListCardBg = Color(0xFFFFFFFF)             // 列表卡片白底
+val UIFriendBarItemTitleColor = Color(0xFF0F172A)         // 智能体名称深墨色
+val UIFriendBarItemSubtitleColor = Color(0xFF475569)      // 职业描述岩灰色
+val UIFriendBarItemMetaColor = Color(0xFF8492A6)          // 底部元数据银灰色
+val UIFriendBarOnlineGreen = Color(0xFF10B981)            // 在线翡翠绿
+val UIFriendBarTagBgBlue = Color(0xFFEEF2FF)              // 模型 Tag 浅靛底
+val UIFriendBarTagTextBlue = Color(0xFF4338CA)            // 模型 Tag 暮靛字
+val UIFriendBarDividerColor = Color(0xFFE2E8F0)           // 极细分割线
 
 // 对话页
-val UIChatUserBubble = Color(0xFF2B6BFF)                // 用户消息气泡
-val UIChatAssistantBubble = Color(0xFFFFFFFF)           // AI 消息气泡
-val UIChatInputBg = Color(0xFFF2F4F7)                   // 输入框背景
-val UIChatErrorBg = Color(0xFFFFF2F2)                   // 错误提示背景
-val UIChatSendDisabled = Color(0xFFBFC5CC)              // 发送按钮禁用态
+val UIChatUserBubble = Color(0xFF4338CA)                  // 用户消息气泡
+val UIChatAssistantBubble = Color(0xFFFFFFFF)             // AI 消息气泡
+val UIChatInputBg = Color(0xFFF1F5F9)                     // 输入框背景
+val UIChatErrorBg = Color(0xFFFFF1F2)                     // 错误提示背景
+val UIChatSendDisabled = Color(0xFFCBD5E1)                // 发送按钮禁用态

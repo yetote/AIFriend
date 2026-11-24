@@ -184,8 +184,11 @@ fun UIDialogButtons(
                 modifier = Modifier
                     .weight(1f)
                     .height(44.dp)
-                    .clip(RoundedCornerShape(UIRadiusControl))
-                    .background(UIGlassSurface)
+                    .uiControl(
+                        shape = RoundedCornerShape(UIRadiusControl),
+                        color = UIFieldFill,
+                        borderColor = UIGlassStroke
+                    )
                     .clickable { onCancel() },
                 contentAlignment = Alignment.Center
             ) {
@@ -197,13 +200,20 @@ fun UIDialogButtons(
                 )
             }
         }
+        val usePrimaryBrush = confirmColor == UIFriendBarTagTextBlue
         Box(
             modifier = Modifier
                 .weight(1f)
                 .height(44.dp)
-                .uiControl(
-                    shape = RoundedCornerShape(UIRadiusControl),
-                    color = if (confirmEnabled) confirmColor else confirmColor.copy(alpha = 0.35f)
+                .clip(RoundedCornerShape(UIRadiusControl))
+                .then(
+                    if (usePrimaryBrush && confirmEnabled) {
+                        Modifier.background(UIActionBrush)
+                    } else {
+                        Modifier.background(
+                            if (confirmEnabled) confirmColor else confirmColor.copy(alpha = 0.35f)
+                        )
+                    }
                 )
                 .clickable(enabled = confirmEnabled) { onConfirm() },
             contentAlignment = Alignment.Center

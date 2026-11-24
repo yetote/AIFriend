@@ -18,10 +18,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -37,14 +33,20 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import com.ui.common.UIAvatar
 import com.ui.common.pageInsetsBottom
 import com.ui.common.pageInsetsTop
 import com.ui.common.theme.UIActionBrush
-import com.ui.common.theme.UIRadiusCard
+import com.ui.common.theme.UIDialogButtons
+import com.ui.common.theme.UIFriendBarItemMetaColor
+import com.ui.common.theme.UIFriendBarTagBgBlue
+import com.ui.common.theme.UIFriendBarTagTextBlue
+import com.ui.common.theme.UIFriendBarTitleColor
+import com.ui.common.theme.UIGradientBackground
+import com.ui.common.theme.UIIosDialog
 import com.ui.common.theme.UIRadiusControl
 import com.ui.common.theme.UISeparator
+import com.ui.common.theme.UITopBar
 import com.ui.common.theme.uiCard
 import com.ui.werewolf.data.UIWerewolfFriend
 import com.ui.werewolf.data.UIWerewolfMissingSeat
@@ -80,57 +82,34 @@ fun UIWerewolfReplaySetupScreen(
     var picking by remember { mutableStateOf<UIWerewolfMissingSeat?>(null) }
     val ready = missing.all { picks.containsKey(it.seat) }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Brush.verticalGradient(listOf(SetupBackdrop, Color(0xFFE9EEF7))))
-            .pageInsetsTop()
-    ) {
+    UIGradientBackground(modifier = Modifier.pageInsetsTop()) {
         Column(modifier = Modifier.fillMaxSize()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 4.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = onCancel) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "返回",
-                        tint = SetupTitle
-                    )
-                }
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "这局有几位不在好友里了",
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = SetupTitle
-                    )
-                    Text(
-                        text = "给每个空座位挑一个替身，或者让它只显示文字",
-                        fontSize = 11.sp,
-                        color = SetupDim,
-                        maxLines = 2
-                    )
-                }
-            }
+            UITopBar(title = "补齐演出替身", onBack = onCancel)
 
             LazyColumn(
                 modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 4.dp, bottom = 10.dp),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 item {
-                    Text(
-                        text = if (candidates.isEmpty()) {
-                            "好友里已经没有可用的替身了（这一局的人把好友占满了），只能让这些座位静音。"
-                        } else {
-                            "替身只影响头像和声音，不影响任何剧情——存档里的身份、发言、票型都不会变。"
-                        },
-                        fontSize = 11.sp,
-                        color = SetupDim
-                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = "这局有几位角色已不在好友列表里",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = UIFriendBarTitleColor
+                        )
+                        Text(
+                            text = if (candidates.isEmpty()) {
+                                "好友里已经没有可用的替身了（这一局的人把好友占满了），只能让这些座位静音。"
+                            } else {
+                                "给每个空座位挑一位替身，或设为只显示文字。替身仅影响头像和声音，不改变存档剧情。"
+                            },
+                            fontSize = 12.sp,
+                            lineHeight = 17.sp,
+                            color = UIFriendBarItemMetaColor
+                        )
+                    }
                 }
                 items(missing, key = { it.seat }) { seat ->
                     MissingSeatCard(
@@ -150,7 +129,8 @@ fun UIWerewolfReplaySetupScreen(
                             .clickable { picks = missing.associate { it.seat to null } }
                             .padding(vertical = 10.dp, horizontal = 4.dp),
                         fontSize = 12.sp,
-                        color = SetupDim
+                        fontWeight = FontWeight.Medium,
+                        color = UIFriendBarTagTextBlue
                     )
                 }
             }
@@ -158,12 +138,12 @@ fun UIWerewolfReplaySetupScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 14.dp)
+                    .padding(horizontal = 16.dp)
                     .pageInsetsBottom()
                     .padding(bottom = 12.dp)
                     .clip(RoundedCornerShape(UIRadiusControl))
                     .background(if (ready) UIActionBrush else Brush.linearGradient(
-                        listOf(SetupDim.copy(alpha = 0.3f), SetupDim.copy(alpha = 0.3f))
+                        listOf(UIFriendBarItemMetaColor.copy(alpha = 0.3f), UIFriendBarItemMetaColor.copy(alpha = 0.3f))
                     ))
                     .clickable(enabled = ready) { onConfirm(picks) }
                     .padding(vertical = 13.dp),
@@ -214,34 +194,35 @@ private fun MissingSeatCard(
     ) {
         Box(
             modifier = Modifier
-                .size(34.dp)
+                .size(36.dp)
                 .clip(CircleShape)
-                .background(SetupTitle.copy(alpha = 0.08f)),
+                .background(UIFriendBarTagBgBlue),
             contentAlignment = Alignment.Center
         ) {
-            Text(text = "${seat.seat}", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = SetupTitle)
+            Text(text = "${seat.seat}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = UIFriendBarTagTextBlue)
         }
         Spacer(Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = seat.name.ifBlank { "${seat.seat} 号" },
                 fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                color = SetupTitle,
+                fontWeight = FontWeight.SemiBold,
+                color = UIFriendBarTitleColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = "${seat.seat} 号 · 原来的角色已经不在了",
                 fontSize = 11.sp,
-                color = SetupDim
+                color = UIFriendBarItemMetaColor
             )
         }
         Spacer(Modifier.width(8.dp))
         Text(
             text = label,
             fontSize = 12.sp,
-            color = if (pickedName != null || muted) SetupTitle else SetupAccent,
+            fontWeight = FontWeight.Medium,
+            color = if (pickedName != null || muted) UIFriendBarTitleColor else UIFriendBarTagTextBlue,
             maxLines = 1
         )
     }
@@ -254,45 +235,51 @@ private fun SubstitutePicker(
     onDismiss: () -> Unit,
     onPick: (String?) -> Unit,
 ) {
-    Dialog(onDismissRequest = onDismiss) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(UIRadiusCard))
-                .background(Color(0xFFF7F9FD))
-                .padding(vertical = 14.dp)
-        ) {
-            Text(
-                text = "用谁来演 ${seat.seat} 号",
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = SetupTitle,
-                modifier = Modifier.padding(horizontal = 16.dp)
+    UIIosDialog(
+        title = "用谁来演 ${seat.seat} 号",
+        subtitle = "候选里不含这一局已经出现过的角色，避免撞脸撞声音",
+        onDismiss = onDismiss,
+        actions = {
+            UIDialogButtons(
+                confirmText = "设为静音",
+                onConfirm = { onPick(null) },
+                cancelText = "取消",
+                onCancel = onDismiss
             )
+        }
+    ) {
+        if (candidates.isEmpty()) {
             Text(
-                text = "候选里不含这一局已经出现过的角色，避免撞脸撞声音",
-                fontSize = 11.sp,
-                color = SetupDim,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
+                text = "当前没有其他可用好友，可直接将该座位设为静音。",
+                fontSize = 13.sp,
+                color = UIFriendBarItemMetaColor
             )
-            Spacer(Modifier.height(8.dp))
-            LazyColumn(modifier = Modifier.height(300.dp)) {
+        } else {
+            LazyColumn(modifier = Modifier.height(260.dp)) {
                 items(candidates, key = { it.id }) { friend ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
                             .clickable { onPick(friend.id) }
-                            .padding(horizontal = 16.dp, vertical = 9.dp),
+                            .padding(horizontal = 8.dp, vertical = 9.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        UIAvatar(name = friend.name, avatarPath = friend.avatarPath, size = 32.dp)
+                        UIAvatar(name = friend.name, avatarPath = friend.avatarPath, size = 34.dp)
                         Spacer(Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(text = friend.name, fontSize = 13.sp, color = SetupTitle, maxLines = 1)
+                            Text(
+                                text = friend.name,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = UIFriendBarTitleColor,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                             Text(
                                 text = friend.model,
-                                fontSize = 10.sp,
-                                color = SetupDim,
+                                fontSize = 11.sp,
+                                color = UIFriendBarItemMetaColor,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -301,28 +288,11 @@ private fun SubstitutePicker(
                     Box(
                         Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp)
-                            .height(1.dp)
+                            .height(0.5.dp)
                             .background(UISeparator)
                     )
-                }
-                item {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onPick(null) }
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(text = "这个座位静音", fontSize = 13.sp, color = SetupDim)
-                    }
                 }
             }
         }
     }
 }
-
-private val SetupBackdrop = Color(0xFFF1F4FA)
-private val SetupTitle = Color(0xFF1B2230)
-private val SetupDim = Color(0xFF7C8496)
-private val SetupAccent = Color(0xFF2B5FD9)

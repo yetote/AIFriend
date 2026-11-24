@@ -4,6 +4,9 @@ import com.ui.common.pageInsets
 import com.ui.common.UIAvatar
 import com.ui.common.UIGroupAvatar
 import com.ui.common.UIGroupMember
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.text.format.DateUtils
 import android.widget.Toast
 import androidx.compose.animation.core.animateFloatAsState
@@ -70,9 +73,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.TextFieldValue
@@ -162,7 +163,6 @@ fun UIRoomChatPage(
     var showMentionPicker by remember { mutableStateOf(false) }
     var mentionTriggerAt by remember { mutableStateOf<Int?>(null) }
     var actionMessage by remember { mutableStateOf<UIRoomMessage?>(null) }
-    val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val memberNames = remember(members) { members.associate { it.id to it.name } }
@@ -463,7 +463,8 @@ fun UIRoomChatPage(
                     text = "复制",
                     modifier = Modifier.weight(1f)
                 ) {
-                    clipboard.setText(AnnotatedString(target.content))
+                    val manager = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                    manager?.setPrimaryClip(ClipData.newPlainText("message", target.content))
                     Toast.makeText(context, "已复制", Toast.LENGTH_SHORT).show()
                     actionMessage = null
                 }
@@ -530,16 +531,24 @@ private fun RoomTopBar(
             // 和圆角卡片体系放在一起必然突兀。这里直接留空、让渐变透上来，
             // 顶栏就和聊天区连成一片，只靠一条 hairline 交代内容的起点。
             .uiHairlineBottom()
-            .padding(horizontal = 6.dp, vertical = 8.dp),
+            .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        IconButton(onClick = onBack) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .uiControl(shape = CircleShape, color = UIGlassSurfaceStrong)
+                .clickable(onClick = onBack),
+            contentAlignment = Alignment.Center
+        ) {
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = "返回",
-                tint = UIFriendBarTitleColor
+                tint = UIFriendBarTitleColor,
+                modifier = Modifier.size(18.dp)
             )
         }
+        Spacer(Modifier.width(10.dp))
         // 和首页卡片用同一套群头像：自己有头像优先，否则拼成员
         if (avatarPath != null) {
             UIAvatar(

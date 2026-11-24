@@ -30,6 +30,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -149,7 +150,8 @@ private fun TtsSection(
                 .fillMaxWidth()
                 .uiCard(
                     shape = RoundedCornerShape(UIRadiusCard),
-                    borderColor = if (selected) UIFriendBarCreateButtonText.copy(alpha = 0.35f) else UIGlassStroke
+                    color = if (selected) UIFriendBarTagBgBlue.copy(alpha = 0.55f) else Color(0xF8FFFFFF),
+                    borderColor = if (selected) UIFriendBarCreateButtonText.copy(alpha = 0.45f) else UIGlassStroke
                 )
                 .clickable { onProviderSelect(provider.id) }
                 .padding(horizontal = 14.dp, vertical = 10.dp),
@@ -427,6 +429,7 @@ private fun TtsSaveButton(enabled: Boolean, loading: Boolean, onClick: () -> Uni
         modifier = Modifier
             .fillMaxWidth()
             .height(48.dp)
+            .clip(RoundedCornerShape(UIRadiusControl))
             .background(
                 brush = if (enabled) UIActionBrush else TtsActionBrushDisabled,
                 shape = RoundedCornerShape(UIRadiusControl)

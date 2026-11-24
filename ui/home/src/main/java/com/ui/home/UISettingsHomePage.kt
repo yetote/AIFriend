@@ -16,10 +16,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -28,6 +33,7 @@ import com.ui.common.pageInsetsBottom
 import com.ui.common.pageInsetsTop
 import com.ui.common.theme.UIFriendBarItemMetaColor
 import com.ui.common.theme.UIFriendBarItemSubtitleColor
+import com.ui.common.theme.UIFriendBarOnlineGreen
 import com.ui.common.theme.UIFriendBarTagBgBlue
 import com.ui.common.theme.UIFriendBarTagTextBlue
 import com.ui.common.theme.UIFriendBarTitleColor
@@ -126,14 +132,15 @@ private fun SettingsEntry(
     ) {
         Box(
             modifier = Modifier
-                .size(38.dp)
-                .background(UIFriendBarTagBgBlue, CircleShape),
+                .size(42.dp)
+                .clip(CircleShape)
+                .background(UIFriendBarTagBgBlue),
             contentAlignment = Alignment.Center
         ) {
             Text(
                 text = badge,
                 fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = FontWeight.Bold,
                 color = UIFriendBarTagTextBlue
             )
         }
@@ -142,32 +149,49 @@ private fun SettingsEntry(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = title,
-                    fontSize = 14.sp,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = UIFriendBarTitleColor
                 )
                 if (configured) {
-                    Spacer(Modifier.width(7.dp))
-                    Text(
-                        text = "已配置",
-                        fontSize = 10.sp,
-                        color = UIFriendBarTagTextBlue,
+                    Spacer(Modifier.width(8.dp))
+                    Row(
                         modifier = Modifier
-                            .background(UIFriendBarTagBgBlue, RoundedCornerShape(4.dp))
-                            .padding(horizontal = 5.dp, vertical = 2.dp)
-                    )
+                            .clip(RoundedCornerShape(50))
+                            .background(Color(0x1610B981))
+                            .padding(horizontal = 7.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(5.dp)
+                                .background(UIFriendBarOnlineGreen, CircleShape)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = "已配置",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color(0xFF047857)
+                        )
+                    }
                 }
             }
             Spacer(Modifier.height(4.dp))
             Text(
                 text = subtitle,
-                fontSize = 11.sp,
+                fontSize = 12.sp,
                 color = UIFriendBarItemSubtitleColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
         }
         Spacer(Modifier.width(8.dp))
-        Text(text = "›", fontSize = 22.sp, color = UIFriendBarItemMetaColor)
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = UIFriendBarItemMetaColor,
+            modifier = Modifier.size(20.dp)
+        )
     }
 }

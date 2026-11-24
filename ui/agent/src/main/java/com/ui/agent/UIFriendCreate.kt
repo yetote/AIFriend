@@ -12,10 +12,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -186,6 +188,24 @@ private fun CustomSearchBar(
                 cursorBrush = SolidColor(UIFriendBarTagTextBlue),
                 modifier = Modifier.fillMaxWidth()
             )
+        }
+        if (value.isNotEmpty()) {
+            Spacer(Modifier.width(6.dp))
+            Box(
+                modifier = Modifier
+                    .size(22.dp)
+                    .clip(CircleShape)
+                    .background(UIFriendBarItemMetaColor.copy(alpha = 0.16f))
+                    .clickable { onValueChange("") },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "清空搜索",
+                    tint = UIFriendBarItemMetaColor,
+                    modifier = Modifier.size(13.dp)
+                )
+            }
         }
     }
 }

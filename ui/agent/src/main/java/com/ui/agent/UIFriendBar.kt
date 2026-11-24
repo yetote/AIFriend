@@ -2,6 +2,7 @@ package com.ui.agent
 
 import com.ui.common.UIAvatar
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -50,27 +51,28 @@ fun UIFriendBar(
             .padding(horizontal = 20.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column() {
+        Column {
             Text(
                 fontSize = 26.sp,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = (-0.5).sp,
                 text = "AI智能体",
                 color = UIFriendBarTitleColor
             )
             Spacer(Modifier.height(2.dp))
             Text(
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Medium,
-                letterSpacing = 1.4.sp,
-                text = "MY AGENT",
-                color = UIFriendBarTitle2Color.copy(alpha = 0.75f)
+                fontSize = 10.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 1.8.sp,
+                text = "CELESTIAL CREW",
+                color = UIFriendBarTitle2Color
             )
         }
         Spacer(modifier = Modifier.weight(1f))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            // 这里原本是通知按钮，但一直没有绑定点击，是个死控件。
-            // 现在换成设置入口：模型和 Key 是当前唯一需要用户手动配置的东西，
-            // 放在首页右上角比新开一个 Tab 更省事，也不占主导航的位置。
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             BadgedBox(badge = {
                 if (isNotification) {
                     Badge(
@@ -83,7 +85,7 @@ fun UIFriendBar(
             }) {
                 Box(
                     modifier = Modifier
-                        .size(38.dp)
+                        .size(40.dp)
                         .uiControl(shape = CircleShape, color = UIGlassSurfaceStrong)
                         .clickable { onSettingsClick() },
                     contentAlignment = Alignment.Center
@@ -96,13 +98,21 @@ fun UIFriendBar(
                     )
                 }
             }
-            UIAvatar(
-                name = "我",
-                avatarPath = userAvatarPath,
-                size = 38.dp,
-                shape = CircleShape,
-                modifier = Modifier.clickable { onAvatarClick() }
-            )
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .border(1.5.dp, Color.White, CircleShape)
+                    .clickable { onAvatarClick() },
+                contentAlignment = Alignment.Center
+            ) {
+                UIAvatar(
+                    name = "我",
+                    avatarPath = userAvatarPath,
+                    size = 38.dp,
+                    shape = CircleShape
+                )
+            }
         }
     }
 }

@@ -34,7 +34,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -47,20 +46,6 @@ import com.ui.werewolf.data.UIWerewolfVerdict
 import com.ui.werewolf.data.shortModelLabel
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.ui.geometry.Offset
-
-// ---------------------------------------------------------------------------
-// 字号
-//
-// 这页是要连着盯十几分钟的：一屏里同时有人物、发言、倒计时和操作按钮，
-// 以前为了塞下 12 人的座位表，正文压到 12sp、名字压到 9sp——字是塞下了，
-// 但一屏字全是一样细的小灰块，读两轮眼睛就累。
-//
-// 所以这里整体往上抬一档：正文 14sp、名字 11sp、身份徽标 9.5sp，
-// 座位列从 62dp 放宽到 72dp 给头像留位置，中间那列宁可一行少两个字。
-// 唯一的硬约束还是 12 人局一列 6 个人（高度），所以头像只到 34dp。
-// ---------------------------------------------------------------------------
-
-/** 发言正文。整页最该被读的东西，字号也最大。 */
 
 /**
  * 座位分列。

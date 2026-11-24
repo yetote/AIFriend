@@ -21,6 +21,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -195,8 +198,8 @@ private fun FriendGroupHeader(name: String, count: Int) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(UIFriendBarGray)
-            .padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 8.dp),
+            .background(UIFriendBarGray.copy(alpha = 0.85f))
+            .padding(start = 16.dp, end = 16.dp, top = 11.dp, bottom = 9.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
@@ -213,9 +216,14 @@ private fun FriendGroupHeader(name: String, count: Int) {
         Spacer(modifier = Modifier.width(6.dp))
         Text(
             text = "$count",
+            modifier = Modifier
+                .clip(RoundedCornerShape(50))
+                .background(UIFriendBarTagBgBlue)
+                .padding(horizontal = 6.dp, vertical = 1.dp),
             style = TextStyle(
-                fontSize = 11.sp,
-                color = UIFriendBarItemMetaColor,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = UIFriendBarTagTextBlue,
                 platformStyle = PlatformTextStyle(includeFontPadding = false)
             )
         )
@@ -360,6 +368,13 @@ private fun AgentListItem(    data: UIFriendListData,
                 )
             )
         }
+        Spacer(modifier = Modifier.width(6.dp))
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = UIFriendBarItemMetaColor.copy(alpha = 0.65f),
+            modifier = Modifier.size(18.dp)
+        )
     }
 }
 

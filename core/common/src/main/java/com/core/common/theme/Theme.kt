@@ -18,22 +18,22 @@ val CompactTypography = Typography(
     )
 )
 
-/** 全站基础色板：蓝色主色，配 iOS 风格的浅底深字。 */
+/** 全站基础色板：瓷白墨韵 + 暮靛星辉，清透浅底配深邃靛紫主色。 */
 private val AIFriendColorScheme = lightColorScheme(
-    primary = Color(0xFF2B6BFF),
+    primary = Color(0xFF4338CA),
     onPrimary = Color.White,
-    primaryContainer = Color(0x1A2B6BFF),
-    onPrimaryContainer = Color(0xFF1B4ED8),
-    secondary = Color(0xFF5B93FF),
+    primaryContainer = Color(0xFFEEF2FF),
+    onPrimaryContainer = Color(0xFF312E81),
+    secondary = Color(0xFF6366F1),
     onSecondary = Color.White,
-    background = Color(0xFFF8FAFD),
-    onBackground = Color(0xFF1B2434),
+    background = Color(0xFFF6F7FB),
+    onBackground = Color(0xFF0F172A),
     surface = Color(0xFFFFFFFF),
-    onSurface = Color(0xFF1B2434),
-    surfaceVariant = Color(0xFFF2F5FA),
-    onSurfaceVariant = Color(0xFF667085),
-    outline = Color(0xFFD0D7E2),
-    error = Color(0xFFE5484D),
+    onSurface = Color(0xFF0F172A),
+    surfaceVariant = Color(0xFFEDF1F8),
+    onSurfaceVariant = Color(0xFF475569),
+    outline = Color(0xFFCBD5E1),
+    error = Color(0xFFE11D48),
     onError = Color.White
 )
 

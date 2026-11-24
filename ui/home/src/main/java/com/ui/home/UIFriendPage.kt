@@ -34,6 +34,9 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -44,6 +47,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -62,6 +66,7 @@ import com.ui.common.theme.UIGradientBackground
 import com.ui.common.theme.UIHeroBrush
 import com.ui.common.theme.UIRadiusCard
 import com.ui.common.theme.UIRadiusControl
+import com.ui.common.theme.UIWerewolfHeroBrush
 import com.ui.common.theme.uiCard
 import com.ui.common.theme.UIFriendBarCreateButtonBg
 import com.ui.common.theme.UIFriendBarCreateButtonText
@@ -109,7 +114,7 @@ fun UIFriendPage(
                 .pageInsetsBottom()
         ) {
             UIFriendBar(
-                isNotification = true,
+                isNotification = false,
                 userAvatarPath = userAvatarPath,
                 onAvatarClick = onPickUserAvatar,
                 onSettingsClick = onOpenSettings
@@ -220,64 +225,110 @@ fun UIFriendPage(
  */
 @Composable
 private fun WerewolfEntry(onClick: () -> Unit) {
-    Row(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
             .shadow(
-                12.dp,
+                16.dp,
                 RoundedCornerShape(UIRadiusCard),
                 clip = false,
-                ambientColor = UIBlobBlue,
-                spotColor = UIBlobBlue
+                ambientColor = Color(0x334E1930),
+                spotColor = Color(0x334E1930)
             )
             .clip(RoundedCornerShape(UIRadiusCard))
-            .background(UIHeroBrush)
+            .background(UIWerewolfHeroBrush)
+            .border(0.75.dp, Color(0x3DFDE68A), RoundedCornerShape(UIRadiusCard))
             .clickable { onClick() }
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically
     ) {
+        // 右上角微弱月辉光晕：暗夜推理的氛围点缀
         Box(
             modifier = Modifier
-                .size(38.dp)
-                .clip(CircleShape)
-                .background(Color.White.copy(alpha = 0.16f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = "狼",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = Color.White
-            )
-        }
-        Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = "狼人杀",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = Color.White
-            )
-            Spacer(Modifier.height(3.dp))
-            Text(
-                text = "挑几个好友围一桌，看它们互相骗",
-                fontSize = 12.sp,
-                color = Color.White.copy(alpha = 0.78f)
-            )
-        }
-        Box(
+                .align(Alignment.TopEnd)
+                .size(120.dp)
+                .background(
+                    Brush.radialGradient(
+                        listOf(Color(0x33F59E0B), Color(0x14E11D48), Color.Transparent)
+                    )
+                )
+        )
+        Row(
             modifier = Modifier
-                .clip(RoundedCornerShape(50))
-                .background(Color.White)
-                .padding(horizontal = 14.dp, vertical = 7.dp)
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "开局",
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = UIFriendBarTitleColor
-            )
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(
+                        Brush.linearGradient(
+                            listOf(Color(0x3DF59E0B), Color(0x2AE11D48))
+                        )
+                    )
+                    .border(1.dp, Color(0x66FDE68A), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "狼",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFFFEF3C7)
+                )
+            }
+            Spacer(Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = "狼人杀剧场",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Text(
+                        text = "NIGHT",
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.8.sp,
+                        color = Color(0xFFFDE68A),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(Color(0x28F59E0B))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "挑几位好友围一桌，亲历逻辑博弈与暗夜推理",
+                    fontSize = 12.sp,
+                    color = Color.White.copy(alpha = 0.76f)
+                )
+            }
+            Spacer(Modifier.width(10.dp))
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(Color(0xFFFDF8EE))
+                    .padding(start = 13.dp, end = 9.dp, top = 7.dp, bottom = 7.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "开局",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF2B1633)
+                )
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = Color(0xFF2B1633),
+                    modifier = Modifier.size(16.dp)
+                )
+            }
         }
     }
 }
@@ -320,15 +371,23 @@ private fun RoomSection(
             )
         }
         if (rooms.isEmpty()) {
-            Text(
-                text = if (hasSearch) {
-                    "没有匹配的聊天室"
-                } else {
-                    "把多个好友拉进同一个房间，一次提问、各自回答"
-                },
-                fontSize = 13.sp,
-                color = UIFriendBarItemMetaColor
-            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .uiCard(shape = RoundedCornerShape(UIRadiusControl), elevation = 4.dp)
+                    .clickable(enabled = !hasSearch) { onCreateRoom() }
+                    .padding(horizontal = 14.dp, vertical = 13.dp)
+            ) {
+                Text(
+                    text = if (hasSearch) {
+                        "没有匹配的聊天室"
+                    } else {
+                        "把多位好友拉进同一房间，一次提问、各自作答"
+                    },
+                    fontSize = 13.sp,
+                    color = UIFriendBarItemMetaColor
+                )
+            }
         } else {
             Row(
                 modifier = Modifier.horizontalScroll(rememberScrollState()),
@@ -430,7 +489,9 @@ private fun EmptyFriends(hasSearch: Boolean, onCreateClick: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 32.dp),
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .uiCard(shape = RoundedCornerShape(UIRadiusCard), elevation = 6.dp)
+            .padding(horizontal = 24.dp, vertical = 30.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {

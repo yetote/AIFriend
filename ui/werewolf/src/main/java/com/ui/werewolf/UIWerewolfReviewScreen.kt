@@ -51,6 +51,7 @@ import com.ui.common.theme.UIFieldFill
 import com.ui.common.theme.UIGlassBar
 import com.ui.common.theme.UIGlassStroke
 import com.ui.common.theme.UIGlassSurfaceStrong
+import com.ui.common.theme.UIGradientBackground
 import com.ui.common.theme.UIRadiusCard
 import com.ui.common.theme.UIRadiusControl
 import com.ui.common.theme.UISeparator
@@ -80,17 +81,16 @@ import com.ui.werewolf.data.UITokenUsage
 // 不用来装饰。赢家横幅例外，那是整页唯一需要「一眼看到」的东西。
 // ---------------------------------------------------------------------------
 
-private val ReviewBackdrop = Color(0xFFF1F4FA)
-private val ReviewTitle = Color(0xFF1B2230)
-private val ReviewBody = Color(0xFF3A4152)
-private val ReviewDim = Color(0xFF7C8496)
+private val ReviewTitle = Color(0xFF0F172A)
+private val ReviewBody = Color(0xFF334155)
+private val ReviewDim = Color(0xFF64748B)
 
-private val WolfRed = Color(0xFFB7312B)
-private val GodBlue = Color(0xFF2B5FD9)
-private val VillagerGray = Color(0xFF6B7280)
+private val WolfRed = Color(0xFFD92D4B)
+private val GodBlue = Color(0xFF4338CA)
+private val VillagerGray = Color(0xFF64748B)
 
-private val WolfBanner = listOf(Color(0xFF2A0E14), Color(0xFF6E1E29))
-private val GoodBanner = listOf(Color(0xFF0D1B2E), Color(0xFF1D4272))
+private val WolfBanner = listOf(Color(0xFF180E1E), Color(0xFF5D192E))
+private val GoodBanner = listOf(Color(0xFF0F172A), Color(0xFF312E81))
 
 /**
  * 复盘页。
@@ -134,12 +134,7 @@ fun UIWerewolfReviewScreen(
     val dialogueDays = review.dialogues.filter { godView || it.open.isNotEmpty() }
     val hasSecret = review.dialogues.any { it.hasSecret }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Brush.verticalGradient(listOf(ReviewBackdrop, Color(0xFFE9EEF7))))
-            .pageInsetsTop()
-    ) {
+    UIGradientBackground(modifier = Modifier.pageInsetsTop()) {
         Column(modifier = Modifier.fillMaxSize()) {
             val bothExports = onExport != null && onExportGame != null
             ReviewTopBar(
@@ -724,7 +719,7 @@ private fun DayCard(day: UIWerewolfDayReport) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .uiCard(shape = RoundedCornerShape(UIRadiusCard), elevation = 0.dp)
+            .uiCard(shape = RoundedCornerShape(UIRadiusCard), elevation = 6.dp)
             .padding(horizontal = 14.dp, vertical = 12.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -810,7 +805,7 @@ private fun NightDetailCard(detail: UIWerewolfNightDetail) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .uiCard(shape = RoundedCornerShape(UIRadiusCard), elevation = 0.dp)
+            .uiCard(shape = RoundedCornerShape(UIRadiusCard), elevation = 6.dp)
             .padding(horizontal = 14.dp, vertical = 10.dp)
     ) {
         Text(
@@ -896,7 +891,7 @@ private fun NightCard(nights: List<UIWerewolfNightReport>) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .uiCard(shape = RoundedCornerShape(UIRadiusCard), elevation = 0.dp)
+            .uiCard(shape = RoundedCornerShape(UIRadiusCard), elevation = 6.dp)
             .padding(horizontal = 14.dp, vertical = 6.dp)
     ) {
         nights.forEachIndexed { index, night ->
@@ -953,7 +948,7 @@ private fun CheckCard(checks: List<UIWerewolfCheckReport>) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .uiCard(shape = RoundedCornerShape(UIRadiusCard), elevation = 0.dp)
+            .uiCard(shape = RoundedCornerShape(UIRadiusCard), elevation = 6.dp)
             .padding(horizontal = 14.dp, vertical = 6.dp)
     ) {
         checks.forEachIndexed { index, check ->
@@ -1081,7 +1076,7 @@ private fun DialogueDayCard(day: UIWerewolfDialogueDay, showSecret: Boolean) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .uiCard(shape = RoundedCornerShape(UIRadiusCard), elevation = 0.dp)
+            .uiCard(shape = RoundedCornerShape(UIRadiusCard), elevation = 6.dp)
             .padding(horizontal = 14.dp, vertical = 12.dp)
     ) {
         Row(

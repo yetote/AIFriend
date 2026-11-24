@@ -22,8 +22,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.VolumeOff
-import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -49,20 +49,6 @@ import com.ui.common.theme.UIShadowSoft
 import com.ui.common.theme.uiHairlineBottom
 import com.ui.werewolf.data.UIWerewolfLive
 import com.ui.werewolf.data.UIWerewolfReplay
-
-// ---------------------------------------------------------------------------
-// 字号
-//
-// 这页是要连着盯十几分钟的：一屏里同时有人物、发言、倒计时和操作按钮，
-// 以前为了塞下 12 人的座位表，正文压到 12sp、名字压到 9sp——字是塞下了，
-// 但一屏字全是一样细的小灰块，读两轮眼睛就累。
-//
-// 所以这里整体往上抬一档：正文 14sp、名字 11sp、身份徽标 9.5sp，
-// 座位列从 62dp 放宽到 72dp 给头像留位置，中间那列宁可一行少两个字。
-// 唯一的硬约束还是 12 人局一列 6 个人（高度），所以头像只到 34dp。
-// ---------------------------------------------------------------------------
-
-/** 发言正文。整页最该被读的东西，字号也最大。 */
 
 /**
  * 预言家的验人本。
@@ -274,7 +260,7 @@ internal fun TableTopBar(
                 // 一旦失败不重建就永远灰着）。禁用反而断了唯一的恢复入口。
             ) {
                 Icon(
-                    imageVector = if (autoSpeak) Icons.Filled.VolumeUp else Icons.Filled.VolumeOff,
+                    imageVector = if (autoSpeak) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeOff,
                     contentDescription = if (!speechReady) {
                         "语音暂不可用，点此重试"
                     } else if (autoSpeak) {

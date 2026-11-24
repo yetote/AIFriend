@@ -268,19 +268,25 @@ private fun ChatTopBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            // 顶栏不再铺白底：通栏直角白带贴边最突兀，直接让渐变透上来，
-            // 顶栏与聊天区连成一片，只靠一条 hairline 交代内容起点。
             .uiHairlineBottom()
-            .padding(horizontal = 6.dp, vertical = 8.dp),
+            .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        IconButton(onClick = onBack) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .uiControl(shape = CircleShape, color = UIGlassSurfaceStrong)
+                .clickable(onClick = onBack),
+            contentAlignment = Alignment.Center
+        ) {
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = "返回",
-                tint = UIFriendBarTitleColor
+                tint = UIFriendBarTitleColor,
+                modifier = Modifier.size(18.dp)
             )
         }
+        Spacer(Modifier.width(10.dp))
         UIAvatar(
             name = friendName,
             avatarPath = avatarPath,
@@ -451,6 +457,7 @@ private fun ReasoningBlock(
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
             .background(UIFieldFill)
+            .border(0.6.dp, UIGlassStroke, RoundedCornerShape(10.dp))
             .padding(horizontal = 10.dp, vertical = 8.dp)
     ) {
         Row(

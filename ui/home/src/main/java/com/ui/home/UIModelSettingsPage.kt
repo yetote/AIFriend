@@ -579,8 +579,9 @@ private fun ProviderRow(
             .fillMaxWidth()
             .uiCard(
                 shape = RoundedCornerShape(UIRadiusCard),
+                color = if (selected) UIFriendBarTagBgBlue.copy(alpha = 0.55f) else UIGlassSurfaceStrong,
                 borderColor = if (selected) {
-                    UIFriendBarCreateButtonText.copy(alpha = 0.35f)
+                    UIFriendBarCreateButtonText.copy(alpha = 0.45f)
                 } else {
                     UIGlassStroke
                 }

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -23,12 +24,14 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.core.common.ext.toKString
 import com.core.common.theme.zeroPaddingStyle
 import com.ui.common.theme.UIBlobBlue
+import com.ui.common.theme.UIFriendBarOnlineGreen
 import com.ui.common.theme.UIHeroBrush
 import com.ui.common.theme.UIRadiusSheet
 import com.ui.common.theme.UIFriendBarDecorativeWaveColor
@@ -46,33 +49,33 @@ fun UIFriendCrewStatusCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
-            .height(184.dp)
+            .height(194.dp)
             .shadow(
-                elevation = 18.dp,
+                elevation = 20.dp,
                 shape = RoundedCornerShape(UIRadiusSheet),
                 clip = false,
-                ambientColor = UIBlobBlue,
-                spotColor = UIBlobBlue
+                ambientColor = Color(0x331E294E),
+                spotColor = Color(0x331E294E)
             )
             .clip(RoundedCornerShape(UIRadiusSheet))
             .background(UIHeroBrush)
-            .border(0.5.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(UIRadiusSheet))
+            .border(0.8.dp, Color.White.copy(alpha = 0.16f), RoundedCornerShape(UIRadiusSheet))
     ) {
-        // --- 1. 右下角层叠圆角装饰背景 ---
-        DecorativeWaves(
+        // --- 1. 星辉极光径向光晕（替代旧版暗色波浪，通透明亮） ---
+        CelestialAuroraGlow(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .offset(x = 10.dp, y = 20.dp)
+                .offset(x = 28.dp, y = 26.dp)
         )
 
-        // --- 2. 顶部高光，模拟玻璃反光 ---
+        // --- 2. 顶部微光反光带 ---
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(90.dp)
+                .height(84.dp)
                 .background(
                     Brush.verticalGradient(
-                        listOf(Color.White.copy(alpha = 0.16f), Color.Transparent)
+                        listOf(Color.White.copy(alpha = 0.10f), Color.Transparent)
                     )
                 )
         )
@@ -84,27 +87,35 @@ fun UIFriendCrewStatusCard(
                 .padding(horizontal = 20.dp, vertical = 18.dp),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // 上半部分：标题和右上角状态
+            // 上半部分：标题和右上角在线胶囊
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.Top
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    // Tag: YOUR AI CREW
-                    Text(
-                        text = "YOUR AI CREW",
-                        style = zeroPaddingStyle(
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = UIFriendBarHeaderTagGreenColor,
-                            letterSpacing = 0.8.sp
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .background(UIFriendBarOnlineGreen, CircleShape)
                         )
-                    )
+                        Text(
+                            text = "YOUR AI CREW",
+                            style = zeroPaddingStyle(
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = UIFriendBarHeaderTagGreenColor,
+                                letterSpacing = 1.4.sp
+                            )
+                        )
+                    }
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    // 主标题
                     Text(
                         text = "$title 位智能体，正在为你协同\n工作",
                         style = zeroPaddingStyle(
@@ -116,26 +127,36 @@ fun UIFriendCrewStatusCard(
                     )
                 }
 
-                // 右上角在线人数 Badge
+                Spacer(modifier = Modifier.width(12.dp))
                 OnlineBadge(onlineCount = onlineCount.toKString())
             }
 
-            // 中间分割线
-            Box(
+            // 下半部分：半透明玻璃托盘承载 3 列统计数据
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(0.5.dp)
-                    .background(Color.White.copy(alpha = 0.14f))
-            )
-
-            // 下半部分：3列统计数据
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Start
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color.White.copy(alpha = 0.08f))
+                    .border(0.6.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(16.dp))
+                    .padding(horizontal = 14.dp, vertical = 11.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 StatItem(value = activeCount.toKString(), label = "活跃好友", modifier = Modifier.weight(1f))
+                Box(
+                    modifier = Modifier
+                        .width(0.6.dp)
+                        .height(26.dp)
+                        .background(Color.White.copy(alpha = 0.14f))
+                )
                 StatItem(value = messageCount.toKString(), label = "消息总数", modifier = Modifier.weight(1f))
-                StatItem(value = mostActive, label = "最活跃", modifier = Modifier.weight(1f))
+                Box(
+                    modifier = Modifier
+                        .width(0.6.dp)
+                        .height(26.dp)
+                        .background(Color.White.copy(alpha = 0.14f))
+                )
+                StatItem(value = mostActive, label = "最活跃", modifier = Modifier.weight(1.1f))
             }
         }
     }
@@ -148,21 +169,24 @@ private fun StatItem(
     label: String,
     modifier: Modifier = Modifier
 ) {
-    Column(modifier = modifier) {
+    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
             text = value,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
             style = zeroPaddingStyle(
-                fontSize = 18.sp,
+                fontSize = 16.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.White
             )
         )
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(3.dp))
         Text(
             text = label,
+            maxLines = 1,
             style = zeroPaddingStyle(
-                fontSize = 11.sp,
-                color = Color.White.copy(alpha = 0.6f)
+                fontSize = 10.sp,
+                color = Color.White.copy(alpha = 0.64f)
             )
         )
     }
@@ -173,10 +197,11 @@ private fun StatItem(
 private fun OnlineBadge(onlineCount: String) {
     Box(
         modifier = Modifier
-            .width(56.dp)
-            .height(56.dp)
-            .border(1.dp, Color.White.copy(alpha = 0.22f), RoundedCornerShape(14.dp))
-            .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(14.dp)),
+            .width(58.dp)
+            .height(58.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color.White.copy(alpha = 0.11f))
+            .border(0.8.dp, Color.White.copy(alpha = 0.24f), RoundedCornerShape(16.dp)),
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -187,7 +212,7 @@ private fun OnlineBadge(onlineCount: String) {
                 text = onlineCount,
                 style = zeroPaddingStyle(
                     fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.ExtraBold,
                     color = Color.White
                 )
             )
@@ -196,33 +221,42 @@ private fun OnlineBadge(onlineCount: String) {
                 text = "在线",
                 style = zeroPaddingStyle(
                     fontSize = 10.sp,
-                    color = Color.White.copy(alpha = 0.7f)
+                    color = UIFriendBarHeaderTagGreenColor
                 )
             )
         }
     }
 }
 
-// 右下角层叠拱形/波浪装饰背景
+// 极光星晕装饰
 @Composable
-private fun DecorativeWaves(modifier: Modifier = Modifier) {
-    Box(modifier = modifier.size(160.dp, 120.dp)) {
+private fun CelestialAuroraGlow(modifier: Modifier = Modifier) {
+    Box(modifier = modifier.size(180.dp)) {
         Box(
             modifier = Modifier
-                .size(160.dp, 120.dp)
-                .border(18.dp, UIFriendBarDecorativeWaveColor, RoundedCornerShape(topStart = 80.dp))
+                .size(180.dp)
+                .background(
+                    Brush.radialGradient(
+                        listOf(
+                            Color(0x406366F1),
+                            UIFriendBarDecorativeWaveColor.copy(alpha = 0.16f),
+                            Color.Transparent
+                        )
+                    ),
+                    CircleShape
+                )
         )
         Box(
             modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .size(120.dp, 90.dp)
-                .border(18.dp, UIFriendBarDecorativeWaveColor.copy(alpha = 0.7f), RoundedCornerShape(topStart = 60.dp))
+                .align(Alignment.Center)
+                .size(110.dp)
+                .border(0.8.dp, Color.White.copy(alpha = 0.10f), CircleShape)
         )
         Box(
             modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .size(80.dp, 60.dp)
-                .border(18.dp, UIFriendBarDecorativeWaveColor.copy(alpha = 0.4f), RoundedCornerShape(topStart = 40.dp))
+                .align(Alignment.Center)
+                .size(164.dp)
+                .border(0.6.dp, Color.White.copy(alpha = 0.06f), CircleShape)
         )
     }
 }

@@ -20,7 +20,9 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -647,10 +649,11 @@ private fun PromptEntryCard(onClick: () -> Unit) {
                 modifier = Modifier.padding(top = 2.dp)
             )
         }
-        Text(
-            text = "›",
-            fontSize = 18.sp,
-            color = UIFriendBarTagTextBlue
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = UIFriendBarTagTextBlue,
+            modifier = Modifier.size(18.dp)
         )
     }
 }
@@ -671,8 +674,7 @@ private fun SetupSwitchRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(UIRadiusControl))
-            .background(UIGlassSurfaceStrong)
+            .uiControl(shape = RoundedCornerShape(UIRadiusControl))
             .clickable { onCheckedChange(!checked) }
             .padding(start = 14.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -719,10 +721,9 @@ private fun SetupFoldRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(UIRadiusControl))
-            .background(UIGlassSurfaceStrong)
+            .uiControl(shape = RoundedCornerShape(UIRadiusControl))
             .clickable { onToggle() }
-            .padding(horizontal = 14.dp, vertical = 10.dp),
+            .padding(horizontal = 14.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -740,11 +741,11 @@ private fun SetupFoldRow(
             )
         }
         Spacer(Modifier.width(10.dp))
-        // 用三角而不是箭头：展开是「向下摊开」，箭头朝上读起来像「收起」。
-        Text(
-            text = if (expanded) "▼" else "▶",
-            fontSize = 11.sp,
-            color = UIFriendBarItemSubtitleColor
+        Icon(
+            imageVector = if (expanded) Icons.Filled.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = if (expanded) "收起" else "展开",
+            tint = UIFriendBarItemSubtitleColor,
+            modifier = Modifier.size(18.dp)
         )
     }
 }
