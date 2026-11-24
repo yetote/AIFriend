@@ -35,6 +35,14 @@ enum class Phase(val displayName: String) {
     NIGHT_WITCH("女巫用药"),
 
     /**
+     * 夜间汇聚节点：守卫 / 狼人 / 预言家三路并发，都完成后才进女巫。
+     *
+     * 各路完成状态看 transcript 里有没有该身份当夜的发言——续档时发言已落库，
+     * 就不会再跑这一路。详见 [com.feature.werewolf.engine.WerewolfChain]。
+     */
+    NIGHT_PENDING("夜间进行中"),
+
+    /**
      * 上警：每人表态要不要竞选警长。
      *
      * 只在「开了警长」的板子上出现：第 1 天，以及竞选被自爆打断之后的顺延日。

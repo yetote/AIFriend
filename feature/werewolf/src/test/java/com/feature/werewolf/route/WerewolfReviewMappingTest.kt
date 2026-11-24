@@ -109,6 +109,7 @@ class WerewolfReviewMappingTest {
                 Phase.HUNTER_SHOOT -> game.hunterShoot(game.aliveSeats.randomOrNull(rng))
 
                 Phase.FINISHED -> game
+                Phase.NIGHT_PENDING -> error("R1 阶段不应到达 NIGHT_PENDING")
             }
         }
         return game

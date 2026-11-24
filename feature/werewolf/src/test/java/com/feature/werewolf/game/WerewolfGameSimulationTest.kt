@@ -215,6 +215,8 @@ class WerewolfGameSimulationTest {
         }
 
         Phase.FINISHED -> game
+        // R3 才会从 NIGHT_PENDING 入夜；R1 阶段模拟不到，占位保证穷举
+        Phase.NIGHT_PENDING -> error("R1 阶段不应到达 NIGHT_PENDING")
     }
 
     /** 每一步都要成立的性质。这些一旦破了，说明规则层已经自相矛盾。 */

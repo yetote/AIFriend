@@ -139,6 +139,15 @@ class WerewolfDirector(
     // ---------------------------------------------------------------------
 
     /**
+     * 夜间汇聚节点（R1 占位，R3 实现三路并发）。
+     *
+     * R1 阶段入夜仍走 NIGHT_GUARD，正常运行不会到这个节点；放一个明确的报错占位，
+     * 避免将来真走到时静默空转。R3 会把它做成 fan-out/fan-in 的并发节点。
+     */
+    private suspend fun nightPending(table: WerewolfTable): WerewolfTable =
+        error("夜间汇聚节点尚未接入（R3 实现），当前 phase=${table.game.phase}")
+
+    /**
      * 守卫守护。**先于狼人**，所以这里拿不到刀口，守卫只能盲守。
      *
      * 守了谁只有守卫自己知道——说出来的话，狼人下一夜就知道该换谁了。
@@ -1040,34 +1049,50 @@ class WerewolfDirector(
         var steps = 0
         while (!current.game.isFinished) {
             check(steps++ < MAX_STEPS) { "编排没有收敛，停在 ${current.game.phase}" }
-            current = when (current.game.phase) {
-                Phase.NIGHT_GUARD -> nightGuard(current)
-                Phase.NIGHT_WOLF_CHAT -> nightWolfChat(current)
-                Phase.NIGHT_WOLF -> nightWolf(current)
-                Phase.NIGHT_SEER -> nightSeer(current)
-                Phase.NIGHT_WITCH -> nightWitch(current)
-                Phase.DAY_SHERIFF_SIGNUP -> sheriffSignup(current)
-                Phase.DAY_SHERIFF_SPEECH -> sheriffSpeech(current)
-                Phase.DAY_SHERIFF_WITHDRAW -> sheriffWithdraw(current)
-                Phase.DAY_SHERIFF_VOTE -> sheriffVote(current)
-                Phase.DAY_DISCUSSION -> {
-                    val discussed = discussion(current)
-                    // 讨论里可能有人自爆，那样这一天已经结束了，不能再开投票
-                    if (discussed.game.phase == Phase.DAY_DISCUSSION) {
-                        discussed.copy(game = discussed.game.beginVote())
-                    } else {
-                        discussed
-                    }
-                }
-                Phase.DAY_VOTE -> vote(current)
-                Phase.DAY_LAST_WORDS -> lastWords(current)
-                Phase.HUNTER_SHOOT -> hunterShoot(current)
-                // 只有 winner 非空才会是 FINISHED，循环条件已经挡住
-                Phase.FINISHED -> current
-            }
+            // 责任链：每个阶段是一个自治节点，play() 只查表分发，不再 when 穷举。
+            // 加阶段 = 加表项，不会漏掉某处 when 导致编译不过或流程卡死。
+            val handler = chain[current.game.phase]
+                ?: error("责任链没有 ${current.game.phase} 节点")
+            current = handler(current)
             onUpdate(current)
         }
         return current
+    }
+
+    /**
+     * 阶段责任链：phase → 处理节点。
+     *
+     * 每个节点自己处理本阶段、自己决定下一个 phase（通过规则方法推进 game.phase），
+     * play() 每轮重读 phase 再查表，形成一条自治链。DAY_DISCUSSION 的「自爆后不开投票」
+     * 和 NIGHT_PENDING 的三路并发都封在各自节点里，不污染分发逻辑。
+     */
+    private val chain: Map<Phase, suspend (WerewolfTable) -> WerewolfTable> by lazy {
+        mapOf(
+            Phase.NIGHT_PENDING to ::nightPending,
+            Phase.NIGHT_GUARD to ::nightGuard,
+            Phase.NIGHT_WOLF_CHAT to ::nightWolfChat,
+            Phase.NIGHT_WOLF to ::nightWolf,
+            Phase.NIGHT_SEER to ::nightSeer,
+            Phase.NIGHT_WITCH to ::nightWitch,
+            Phase.DAY_SHERIFF_SIGNUP to ::sheriffSignup,
+            Phase.DAY_SHERIFF_SPEECH to ::sheriffSpeech,
+            Phase.DAY_SHERIFF_WITHDRAW to ::sheriffWithdraw,
+            Phase.DAY_SHERIFF_VOTE to ::sheriffVote,
+            Phase.DAY_DISCUSSION to ::discussionThenVote,
+            Phase.DAY_VOTE to ::vote,
+            Phase.DAY_LAST_WORDS to ::lastWords,
+            Phase.HUNTER_SHOOT to ::hunterShoot,
+        )
+    }
+
+    /** 白天讨论节点：讨论完若没自爆就进投票；自爆已把这一天翻篇，不再开投票。 */
+    private suspend fun discussionThenVote(table: WerewolfTable): WerewolfTable {
+        val discussed = discussion(table)
+        return if (discussed.game.phase == Phase.DAY_DISCUSSION) {
+            discussed.copy(game = discussed.game.beginVote())
+        } else {
+            discussed
+        }
     }
 
     // ---------------------------------------------------------------------
