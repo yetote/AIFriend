@@ -15,8 +15,8 @@ android {
         applicationId = "com.yetote.aifriend"
         minSdk = 24
         targetSdk = 36
-        versionCode = 103
-        versionName = "0.0.103"
+        versionCode = 104
+        versionName = "0.0.104"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
