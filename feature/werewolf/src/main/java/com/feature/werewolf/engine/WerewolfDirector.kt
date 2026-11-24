@@ -307,15 +307,11 @@ class WerewolfDirector(
         val wolves = game.nightWolves().sortedBy { it.seat }
         if (wolves.isEmpty()) return table
 
-        // 发言顺序：**头狼先**，其余按座位。头狼是这一夜的指挥，
-        // 他先说战术，后面的人才有「执行还是反对」的对象——顺序反了，
-        // 先发言的人只能说自己的计划，后发言的人听到一堆互不相干的方案。
+        // 发言顺序：**头狼先**，其余按座位。顺序在引擎里（[WerewolfGame.nightWolfSpeechOrder]），
+        // 提示词里的「本轮发言顺序」用的是同一份——这里若另算一套，
+        // 就会出现「模型说自己第二个说，牌桌上他排第五个」。
         val head = game.nightHead
-        val ordered = if (head == null) {
-            wolves
-        } else {
-            wolves.sortedBy { if (it.seat == head) 0 else 1 }
-        }
+        val ordered = game.nightWolfSpeechOrder().map { game.playerAt(it) }
 
         val audience = wolves.map { it.seat }.toSet()
         var current = table
@@ -1251,6 +1247,9 @@ class WerewolfDirector(
             playStyle = agent.playStyle,
             // 原文只喂今天 + 昨天，跨天的「谁跳过预言家、谁话和票对不上」全靠台账。
             ledger = PublicLedger.of(table),
+            // 本轮发言顺序与进度。模型看不到编排层的排队表，
+            // 不给就会把还没开口的人当成已经表过态。
+            roundBoard = RoundBoard.of(table.game, seat),
             webSearch = webSearchFor(agent),
         )
         val thinking = pacing.thinkingAllowed(seat, agent.thinkingEnabled)
@@ -1532,6 +1531,7 @@ class WerewolfDirector(
                         limit = pacing.currentLimit, style = promptStyle, speechLength = speechLength,
                         playStyle = agent.playStyle,
                         ledger = PublicLedger.of(table),
+                        roundBoard = RoundBoard.of(table.game, seat),
                         webSearch = webSearchFor(agent),
                     ),
                     enableThinking = thinking,

@@ -122,6 +122,18 @@ object WerewolfPrompt {
          * 靠这段才留得住。默认空＝不注入，测试与复盘不受影响。
          */
         ledger: String? = null,
+        /**
+         * 每轮记录板（见 [com.feature.werewolf.engine.RoundBoard]）。
+         *
+         * 和 [ledger] 分工：台账是**跨天**的「谁说过什么能核对的话」，
+         * 记录板是**本轮**的「发言顺序 + 谁已经说过、谁还没说」。
+         *
+         * 不给的话模型只能猜轮次：会把还没开口的人当成已经表过态，
+         * 或者不知道自己排在第几个、说出「等 5 号说完我再补充」这种空话。
+         *
+         * 默认空＝不注入，测试与复盘不受影响。
+         */
+        roundBoard: String? = null,
     ): String {
         val player = game.playerAt(seat)
         return buildString {
@@ -193,6 +205,11 @@ object WerewolfPrompt {
             // 挨着放模型才会拿它当推理依据，而不是当成又一段背景资料。
             if (!ledger.isNullOrBlank()) {
                 append(ledger.trimEnd()).append("\n\n")
+            }
+            // 每轮记录板紧跟台账：同样是「可核对的事实」，而且它回答的正是
+            // 本轮任务里的那个问题——现在该谁说、前面谁说过了。
+            if (!roundBoard.isNullOrBlank()) {
+                append(roundBoard.trimEnd()).append("\n\n")
             }
             append(privateBriefing(game, seat, style)).append("\n\n")
             // 残局挡刀是打法，自由式不给——能不能靠穿神衣服晃狼，让它自己判断。

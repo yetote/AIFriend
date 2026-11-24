@@ -233,6 +233,67 @@ data class WerewolfGame(
     fun nightWolves(): List<WerewolfPlayer> = nightWolfSeats().map { playerAt(it) }
 
     /**
+     * 狼队商议的发言顺序：**头狼先**，其余按座位。
+     *
+     * 顺序本身是一个规则性的事实，不是编排层的临时安排：
+     * 头狼是这一夜的指挥，他先说战术，后面的人才有「执行还是反对」的对象——
+     * 顺序反了，先发言的人只能说自己的计划，后发言的人听到一堆互不相干的方案。
+     *
+     * 以前这段排序写在编排层的商议环节里，提示词拿不到。现在下沉到引擎，
+     * 编排层照它叫人、提示词照它告诉模型顺序，两边永远一致——
+     * 提示词若另写一份，必然出现「模型说自己第二个说，牌桌上他排第五个」。
+     */
+    fun nightWolfSpeechOrder(): List<Int> {
+        val wolves = nightWolves().sortedBy { it.seat }
+        val head = nightHead
+        return if (head == null) {
+            wolves.map { it.seat }
+        } else {
+            // sortedBy 是稳定排序：头狼之外的狼保持座位序。
+            wolves.sortedBy { if (it.seat == head) 0 else 1 }.map { it.seat }
+        }
+    }
+
+    /**
+     * 本轮的有序发言者名单——「本轮」指当前这个**逐座位发言**的阶段。
+     *
+     * 这是本轮顺序的唯一权威来源：编排层照它叫人，提示词照它告诉模型。
+     *
+     * 只覆盖四种逐座位发言的阶段：
+     * - 白天讨论 → [discussionOrder]（警长定序；警长还没定序时顺序尚不存在，返回空）
+     * - 竞选发言 → [sheriffCandidates]（平票 PK 时候选已收窄）
+     * - 遗言 → [pendingLastWords]
+     * - 狼人商议 → [nightWolfSpeechOrder]
+     *
+     * 其余阶段（投票、夜晚行动）返回空列表：那些阶段没有「发言顺序」可言，
+     * 硬凑一个只会让模型以为自己该说话。
+     */
+    fun currentRoundSpeakers(): List<Int> = when (phase) {
+        Phase.DAY_DISCUSSION -> if (speechDirectionPending) emptyList() else discussionOrder
+        Phase.DAY_SHERIFF_SPEECH -> sheriffCandidates.sorted()
+        Phase.DAY_LAST_WORDS -> pendingLastWords
+        Phase.NIGHT_WOLF_CHAT -> nightWolfSpeechOrder()
+        else -> emptyList()
+    }
+
+    /**
+     * 本轮已经发过言的座位（按本轮发言顺序排）。
+     *
+     * 阶段/轮次一变，旧的发言名单就作废了（见 [currentPhaseKey]）：
+     * 狼刀平票重谈、警长 PK 都要重新说一轮。这时返回空，
+     * 而不是把上一轮的成绩带过来。
+     */
+    fun currentRoundSpokenSeats(): List<Int> {
+        if (spokenPhaseKey != currentPhaseKey) return emptyList()
+        val speakers = currentRoundSpeakers()
+        val known = speakers.filter { it in spokenSeats }
+        // 名单外的座位理论上不该有（记账只发生在发言环节），但真出现时也别吞掉：
+        // 少一个「已经说过」的人，模型就会以为他还没表态。
+        val extra = spokenSeats.filterNot { it in speakers }.sorted()
+        return known + extra
+    }
+
+    /**
      * 女巫此刻能否使用解药。药还在、并且今晚确实有人被刀，两个条件都满足才行。
      *
      * 编排层先用这个判断再调 [witchAct]，就能避开「空刀夜强行用药」这条异常路径。
