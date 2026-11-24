@@ -1381,16 +1381,32 @@ class WerewolfDirector(
             timedOut = true
             timedOutLimitMs = if (speechStartedAt > 0L) speechMs else thinkingMs
         } catch (error: Throwable) {
-            // **超时**且已经说出半句的，保留这半句继续这一轮。
+            // **超时**一律不当故障处理：说了一半留半句，一个字没说就当它这一轮没说话。
             // 抛出去等于整局停在「模型响应超时」上，续档还会重放同一阶段、撞同一个超时，
             // 用户看到的是「这局再也打不下去了」。半句话不好听，但牌桌能往前走。
             //
             // 只对超时这么办：连接被重置、鉴权失败这类是「链路真的坏了」，
             // 必须让编排层把错误显示出来，别伪装成一局正常但奇怪的发言。
-            if (content.isEmpty() || !error.isTimeoutLike()) throw error
+            if (!error.isTimeoutLike()) throw error
             // 流式吐了一半才超时：底层抛上来的超时同样要关思考，
             // 只是这半句还得留着（下面的 raw 分支用 content），不能当整体超时丢掉。
             degradedByTimeout = true
+            //
+            // 正文一个字都没吐就超时（还在思考就被掐）：按「这一轮它没说话」处理，
+            // 落一句空话兜底，牌局继续往下走。
+            //
+            // 这一支是**不限时限**档位下唯一的超时出口：那个档位没有看门狗
+            // （思考段和发言段的时限都是 0，bounded 为 false），超时只来自传输层，
+            // 走的就是这里。而同一份超时在「标准」档位下由看门狗掐，走的是
+            // timedOut 那条路——落一句空话、牌局继续。
+            //
+            // 同一份超时，两个档位两种结果（一个跳过这一句、一个整局停住），
+            // 差别只在「有没有看门狗」，这是漏判，不是设计。
+            if (content.isEmpty()) {
+                timedOut = true
+                // 传输层超时没有「档位」这一说，如实报等到的时长
+                timedOutLimitMs = System.currentTimeMillis() - started
+            }
         } finally {
             withContext(NonCancellable) { onLive(null) }
         }

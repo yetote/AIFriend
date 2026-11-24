@@ -11,6 +11,7 @@ import com.feature.werewolf.game.SpeechDirection
 import com.feature.werewolf.game.WerewolfConfig
 import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfRole
+import com.feature.werewolf.game.WerewolfTurnLimit
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -222,6 +223,91 @@ class WerewolfDirectorTest {
         ): kotlinx.coroutines.flow.Flow<ChatDelta> = kotlinx.coroutines.flow.flow {
             if (sayFirst != null) emit(ChatDelta(content = sayFirst))
             kotlinx.coroutines.delay(10_000)
+        }
+
+        @Deprecated("测试用不到")
+        override suspend fun chat(message: String, model: String): String =
+            chat(listOf(ChatMessage.user(message)), model)
+    }
+
+    /**
+     * 传输层超时的替身异常。
+     *
+     * 类名里必须带 "Timeout"：[com.core.ai.isTimeoutLike] 按类名判定，
+     * 和各家的超时异常类（Socket / Connect / HttpRequest…）同一个口径。
+     * 不直接用 `java.net.SocketTimeoutException`：那是 JDK 的类，
+     * 换成别的传输层异常时这条测试就测不到真正的分支了。
+     */
+    private class FakeTransportTimeout(message: String) : RuntimeException(message)
+
+    /**
+     * 一个字都没吐，流就断了的模型。
+     *
+     * 模拟的是「不限时限」档位下真实发生的事：那个档位没有看门狗，
+     * 超时只来自传输层——请求发出去，等传输层自己喊超时。
+     */
+    private class TransportTimeoutAI : IAI {
+        override suspend fun requestModel() = Unit
+        override var modelSet: MutableSet<String> = mutableSetOf()
+        override var brandName: String = "传输超时"
+        override var company: String = "传输超时"
+
+        override suspend fun chat(
+            messages: List<ChatMessage>,
+            model: String,
+            systemPrompt: String?,
+            enableThinking: Boolean,
+            jsonMode: Boolean,
+            webSearch: Boolean,
+        ): String = throw FakeTransportTimeout("读超时")
+
+        override fun chatStream(
+            messages: List<ChatMessage>,
+            model: String,
+            systemPrompt: String?,
+            enableThinking: Boolean,
+            jsonMode: Boolean,
+            webSearch: Boolean,
+        ): kotlinx.coroutines.flow.Flow<ChatDelta> = kotlinx.coroutines.flow.flow {
+            throw FakeTransportTimeout("读超时")
+        }
+
+        @Deprecated("测试用不到")
+        override suspend fun chat(message: String, model: String): String =
+            chat(listOf(ChatMessage.user(message)), model)
+    }
+
+    /**
+     * 说了半句就断的模型。
+     *
+     * 和 [TransportTimeoutAI] 对着看：一个一个字都没说，一个说了半句。
+     * 两条走的分支不一样（空 vs 非空），所以要各测一次。
+     */
+    private class HalfSpokenTimeoutAI : IAI {
+        override suspend fun requestModel() = Unit
+        override var modelSet: MutableSet<String> = mutableSetOf()
+        override var brandName: String = "半句超时"
+        override var company: String = "半句超时"
+
+        override suspend fun chat(
+            messages: List<ChatMessage>,
+            model: String,
+            systemPrompt: String?,
+            enableThinking: Boolean,
+            jsonMode: Boolean,
+            webSearch: Boolean,
+        ): String = throw FakeTransportTimeout("读超时")
+
+        override fun chatStream(
+            messages: List<ChatMessage>,
+            model: String,
+            systemPrompt: String?,
+            enableThinking: Boolean,
+            jsonMode: Boolean,
+            webSearch: Boolean,
+        ): kotlinx.coroutines.flow.Flow<ChatDelta> = kotlinx.coroutines.flow.flow {
+            emit(ChatDelta(content = "我觉得 5 号"))
+            throw FakeTransportTimeout("读超时")
         }
 
         @Deprecated("测试用不到")
@@ -1575,6 +1661,67 @@ class WerewolfDirectorTest {
         )
         assertEquals("超时的座位本局不再开思考", game.aliveSeats.toSet(), pacing.thinkingOff.value)
         assertEquals("按思考时限记账", 1, pacing.timings.value.getValue(1).timeouts)
+    }
+
+    /**
+     * 「不限时限」档位下，传输层超时不该把整局停住。
+     *
+     * 那个档位没有看门狗（思考段和发言段的时限都是 0），超时只来自传输层，
+     * 走的是导演里 catch 的那条路。而同一份超时在「标准」档位下由看门狗掐，
+     * 落一句空话、牌局继续——两个档位本来应该是同一个结果。
+     *
+     * 实测踩过的坑：某个模型在长上下文里思考了二十分钟才超时，一超时整局就停在
+     * 「模型响应超时」上，续档还会重放同一阶段、再撞一次超时。
+     */
+    @Test
+    fun `不限时限档位下传输层超时按空话兜底，不让整局停下`() = runBlocking {
+        val pacing = WerewolfPacing(limit = WerewolfTurnLimit.UNLIMITED)
+        val game = standard9()
+        val agents = game.players.associate { player ->
+            player.seat to SeatAgent(ai = TransportTimeoutAI(), model = "slow")
+        }
+        val director = WerewolfDirector(agents = agents, pacing = pacing)
+
+        val result = director.discussion(
+            WerewolfTable(game.copy(phase = Phase.DAY_DISCUSSION))
+        )
+
+        val speeches = result.transcript.filter { it.kind == MessageKind.SPEECH }
+        assertEquals("每个人都要留下一条，不能空过", game.aliveSeats.size, speeches.size)
+        assertTrue(
+            "一个字没吐就按空话兜底：${speeches.first().text}",
+            // SILENT_SPEECH 的值（companion 是 private，抄一份字面量）
+            speeches.all { it.text == "……我这轮先听大家的。" },
+        )
+        assertEquals("超时的座位本局不再开思考", game.aliveSeats.toSet(), pacing.thinkingOff.value)
+        assertEquals("按超时记账", 1, pacing.timings.value.getValue(1).timeouts)
+    }
+
+    /**
+     * 同一个超时，说了一半就断的，保留那半句。
+     *
+     * 和上一条对着看：内容空 → 落空话；内容有 → 留半句。
+     * 两条都不许把整局停下。
+     */
+    @Test
+    fun `不限时限档位下传输层超时保留已经说出的半句`() = runBlocking {
+        val pacing = WerewolfPacing(limit = WerewolfTurnLimit.UNLIMITED)
+        val game = standard9()
+        val agents = game.players.associate { player ->
+            player.seat to SeatAgent(ai = HalfSpokenTimeoutAI(), model = "slow")
+        }
+        val director = WerewolfDirector(agents = agents, pacing = pacing)
+
+        val result = director.discussion(
+            WerewolfTable(game.copy(phase = Phase.DAY_DISCUSSION))
+        )
+
+        val speeches = result.transcript.filter { it.kind == MessageKind.SPEECH }
+        assertEquals("每个人都要留下一条，不能空过", game.aliveSeats.size, speeches.size)
+        assertTrue(
+            "半句要留下：${speeches.first().text}",
+            speeches.all { it.text.contains("我觉得 5 号") },
+        )
     }
 
     @Test
