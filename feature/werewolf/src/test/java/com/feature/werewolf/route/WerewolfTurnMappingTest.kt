@@ -126,4 +126,30 @@ class WerewolfTurnMappingTest {
             quietTurn!!.hint.orEmpty().contains("没有人被狼人袭击"),
         )
     }
+
+    @Test
+    fun `并发时游戏阶段被别的路刷走，查验面板仍按 HumanTurn 的阶段出`() {
+        // 三路并发：狼人路把 game.phase 刷成 NIGHT_WOLF_CHAT，但这一步其实是预言家查验。
+        // buildTurn 必须看 HumanTurn.phase，否则真人预言家验不了人。
+        val game = game().copy(phase = Phase.NIGHT_WOLF_CHAT)
+        val seer = game.players.first { it.role == WerewolfRole.SEER }
+        val turn = buildTurn(
+            game,
+            humanSeat = seer.seat,
+            me = seer,
+            waiting = HumanTurn("", emptyList(), true, phase = Phase.NIGHT_SEER.name),
+        )
+        assertTrue("要出查验面板", turn?.title?.contains("查验") == true)
+    }
+
+    /** 4 预言家 + 其它平民的局；够建出一个预言家座位。 */
+    private fun game(): WerewolfGame = WerewolfGame.withRoles(
+        config = WerewolfConfig(composition = mapOf(WerewolfRole.WEREWOLF to 2, WerewolfRole.SEER to 1, WerewolfRole.VILLAGER to 5)),
+        roster = (1..8).map { RosterEntry(id = "p$it", name = "$it") },
+        roles = listOf(
+            WerewolfRole.WEREWOLF, WerewolfRole.WEREWOLF, WerewolfRole.SEER,
+            WerewolfRole.VILLAGER, WerewolfRole.VILLAGER, WerewolfRole.VILLAGER,
+            WerewolfRole.VILLAGER, WerewolfRole.VILLAGER,
+        ),
+    )
 }

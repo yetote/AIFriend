@@ -1365,6 +1365,8 @@ class WerewolfDirector(
     ): SpeechResult {
         val agent = agentOf(seat)
         val game = table.game
+        // 与 ask 同理：把这一步所属阶段交给人类座位，页面按它出输入区（并发时 game.phase 不可靠）
+        if (agent.ai is HumanSeatAI) agent.ai.currentPhase = game.phase.name
         val messages = listOf(ChatMessage.user(context(table, seat, task)))
         val system = WerewolfPrompt.systemPrompt(
             game, seat, agent.persona, customPrompt,
@@ -1602,6 +1604,9 @@ class WerewolfDirector(
     ): StructuredOutcome<T> {
         val agent = agentOf(seat)
         val phase = table.game.phase
+        // 三路并发时 UI 的 table.phase 会被别的路刷掉；人类回合的面板必须按这一步
+        // 真正所属的阶段出，所以把 phase 直接交给 HumanSeatAI 塞进 HumanTurn。
+        if (agent.ai is HumanSeatAI) agent.ai.currentPhase = phase.name
         // 深度思考是「角色属性 + 本局运行状态」相与：超时被关掉的座位，
         // 这一局剩下的步骤都按关着走，直到玩家在设置面板里手动打开。
         // 单轮覆盖排在最前面：它是一次性的，不写回任何状态。

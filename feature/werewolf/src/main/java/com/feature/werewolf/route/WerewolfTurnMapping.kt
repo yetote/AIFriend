@@ -37,7 +37,12 @@ internal fun buildTurn(
         .filter { it.seat != humanSeat }
         .map { UIWerewolfTarget(seat = it.seat, name = it.name) }
 
-    return when (game.phase) {
+    // 优先用 HumanTurn 自带的阶段：夜间三路并发时 game.phase 会被别的路的中间态占据，
+    // 而这一步真正属于哪个阶段只有导演知道（它写进了 HumanTurn.phase）。
+    // 白天串行流程里两者一致；HumanTurn 没带 phase 时（老代码路径）退回 game.phase。
+    val phase = waiting.phase?.let { runCatching { com.feature.werewolf.game.Phase.valueOf(it) }.getOrNull() }
+        ?: game.phase
+    return when (phase) {
         // 上警报名：点自己 = 上警，点「不上警」= 弃权。
         // 复用 VOTE 面板而不是新做一个开关：这一步的答案就是「一个座位或 null」，
         // 和投票的形状完全一样，多一种面板只会多一处要维护的按钮文案

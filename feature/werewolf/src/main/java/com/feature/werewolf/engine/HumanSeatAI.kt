@@ -13,6 +13,15 @@ data class HumanTurn(
     val messages: List<ChatMessage>,
     /** true 表示这次要的是结构化决策（JSON），false 是自由发言。 */
     val jsonMode: Boolean,
+    /**
+     * 这一步属于哪个阶段（Phase 名）。
+     *
+     * 夜间三路并发时，守卫 / 狼人 / 预言家同时在跑，UI 的 table.phase 会被狼人路的
+     * 中间态占据，停在上述某一段——而人类回合的面板必须按「这一步真正属于哪个阶段」
+     * 来出（预言家要出「查验谁」）。所以 phase 由导演在提问前直接塞进来，
+     * 不依赖 UI 当时看到的 table.phase。
+     */
+    val phase: String? = null,
 )
 
 /**
@@ -41,6 +50,10 @@ class HumanSeatAI : IAI {
 
     val waiting: Boolean get() = waiter != null
 
+    /** 导演在提问前写下本步所属阶段，chat() 推 turn 时带上（见 HumanTurn.phase）。 */
+    @Volatile
+    var currentPhase: String? = null
+
     override suspend fun requestModel() = Unit
 
     override var modelSet: MutableSet<String> = mutableSetOf()
@@ -63,6 +76,7 @@ class HumanSeatAI : IAI {
             systemPrompt = systemPrompt.orEmpty(),
             messages = messages,
             jsonMode = jsonMode,
+            phase = currentPhase,
         )
         try {
             return deferred.await()

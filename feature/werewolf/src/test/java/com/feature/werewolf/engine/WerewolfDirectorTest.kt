@@ -2007,4 +2007,34 @@ class WerewolfDirectorTest {
         assertEquals("续档不重跑已完成的身份", first.transcript.size, again.transcript.size)
     }
 
+    @Test
+    fun `真人是预言家时第一夜会弹出查验回合`() = runBlocking {
+        // 10 人守卫局，4 号是预言家 → 换成人类座位
+        val game = guard10()
+        val human = HumanSeatAI()
+        val agents = game.players.associate { p ->
+            p.seat to if (p.seat == 4) SeatAgent(human, "human") else SeatAgent(AutoAI(), "test-model")
+        }
+        val director = WerewolfDirector(agents, random = Random(11))
+
+        val job = launch { director.play(WerewolfTable(game)) }
+        // 等人类回合出现（守卫/狼人是 AI，会先跑完；随后预言家挂起等人）
+        var appeared = false
+        repeat(50) {
+            if (human.turn.value != null) appeared = true
+            if (!appeared) kotlinx.coroutines.delay(10)
+        }
+        assertTrue("真人预言家的查验回合应该出现", appeared)
+        assertTrue("预言家的回合必须是结构化决策", human.turn.value!!.jsonMode)
+        // 三路并发里 UI 的 table.phase 会被狼人路刷成 NIGHT_WOLF_CHAT，
+        // 所以 buildTurn 改看 HumanTurn 自带的 phase——它必须是 NIGHT_SEER 才出「查验谁」。
+        assertEquals("人类回合要自带预言家阶段，否则查验面板出不来",
+            Phase.NIGHT_SEER.name, human.turn.value!!.phase)
+
+        // 提交查验，引擎应能消费这次输入并继续推进（不卡死）
+        assertTrue("提交应被接受", human.submit("""{"target": 2, "reason": "查一下"}"""))
+        delay(50)
+        job.cancelAndJoin()
+    }
+
 }
