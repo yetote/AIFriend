@@ -2194,4 +2194,191 @@ class WerewolfDirectorTest {
         )
     }
 
+    @Test
+    fun `不限时档位下思考陷入整句复读时自动掐断并带着思考关思考收尾`() = runBlocking {
+        val pacing = WerewolfPacing(limit = WerewolfTurnLimit.UNLIMITED)
+        var concludeSeenThinking = true
+        var concludeSawReasoning = false
+        val loopingAI = object : IAI {
+            override suspend fun requestModel() = Unit
+            override var modelSet: MutableSet<String> = mutableSetOf()
+            override var brandName: String = "复读思考模型"
+            override var company: String = "测试"
+
+            override fun chatStream(
+                messages: List<ChatMessage>,
+                model: String,
+                systemPrompt: String?,
+                enableThinking: Boolean,
+                jsonMode: Boolean,
+                webSearch: Boolean,
+            ): kotlinx.coroutines.flow.Flow<ChatDelta> = kotlinx.coroutines.flow.flow {
+                val sentence = "等等，如果3号是预言家那我们今晚到底该刀谁呢，我再重新算一遍。"
+                emit(ChatDelta(reasoning = "先看7号像神。"))
+                repeat(100) {
+                    emit(ChatDelta(reasoning = sentence))
+                    delay(10)
+                }
+            }
+
+            override suspend fun chat(
+                messages: List<ChatMessage>,
+                model: String,
+                systemPrompt: String?,
+                enableThinking: Boolean,
+                jsonMode: Boolean,
+                webSearch: Boolean,
+            ): String {
+                concludeSeenThinking = enableThinking
+                concludeSawReasoning = messages.any { it.content.contains("先看7号像神") }
+                return "今晚刀 7 号，明天我起跳预言家。"
+            }
+
+            @Deprecated("测试用不到")
+            override suspend fun chat(message: String, model: String): String = "今晚刀 7 号。"
+        }
+
+        val game = standard9().copy(phase = Phase.NIGHT_WOLF_CHAT)
+        val agents = game.players.associate { p ->
+            p.seat to SeatAgent(
+                ai = if (p.seat == 1) loopingAI else ScriptedAI(listOf("同意刀 7 号。")),
+                model = "test",
+                thinkingEnabled = true,
+            )
+        }
+        val director = WerewolfDirector(agents = agents, pacing = pacing)
+        val result = director.nightWolfChat(WerewolfTable(game))
+
+        val wolf1Speech = result.transcript.first { it.seat == 1 && it.kind == MessageKind.WOLF_CHAT }
+        assertTrue("应拿到收尾发言而不是空话：${wolf1Speech.text}", wolf1Speech.text.contains("刀 7 号"))
+        assertFalse("收尾请求必须关掉深度思考", concludeSeenThinking)
+        assertTrue("收尾请求应带上之前已想出的思考内容", concludeSawReasoning)
+        assertEquals("思考复读收尾不计入超时", 0, pacing.timings.value.getValue(1).timeouts)
+    }
+
+    @Test
+    fun `不限时档位下玩家点催一下，向全体正在思考的AI广播并带着已想内容收尾`() = runBlocking {
+        val pacing = WerewolfPacing(limit = WerewolfTurnLimit.UNLIMITED)
+        val thinkingStarted = java.util.concurrent.atomic.AtomicInteger(0)
+        val concludeDisabledThinking = java.util.concurrent.atomic.AtomicInteger(0)
+
+        fun slowThinkingWolf(target: Int) = object : IAI {
+            override suspend fun requestModel() = Unit
+            override var modelSet: MutableSet<String> = mutableSetOf()
+            override var brandName: String = "慢思考狼"
+            override var company: String = "测试"
+
+            override fun chatStream(
+                messages: List<ChatMessage>,
+                model: String,
+                systemPrompt: String?,
+                enableThinking: Boolean,
+                jsonMode: Boolean,
+                webSearch: Boolean,
+            ): kotlinx.coroutines.flow.Flow<ChatDelta> = kotlinx.coroutines.flow.flow {
+                emit(ChatDelta(reasoning = "我在认真分析，倾向刀 $target 号……"))
+                thinkingStarted.incrementAndGet()
+                // 模拟不限时档位下一直卡在思考里
+                delay(60_000L)
+            }
+
+            override suspend fun chat(
+                messages: List<ChatMessage>,
+                model: String,
+                systemPrompt: String?,
+                enableThinking: Boolean,
+                jsonMode: Boolean,
+                webSearch: Boolean,
+            ): String {
+                if (!enableThinking) concludeDisabledThinking.incrementAndGet()
+                return """{"target": $target, "reason": "按刚才想好的直接刀 $target 号。"}"""
+            }
+
+            @Deprecated("测试用不到")
+            override suspend fun chat(message: String, model: String): String =
+                """{"target": $target, "reason": "刀 $target 号。"}"""
+        }
+
+        val game = standard9().beginWolfVote()
+        val agents = game.players.associate { p ->
+            p.seat to SeatAgent(
+                ai = if (p.seat in setOf(1, 2, 3)) slowThinkingWolf(7) else ScriptedAI(listOf("好")),
+                model = "test",
+                thinkingEnabled = true,
+            )
+        }
+        val director = WerewolfDirector(agents = agents, pacing = pacing)
+
+        val deferred = async { director.nightWolf(WerewolfTable(game)) }
+        // 等三只狼都进入思考状态
+        repeat(100) { if (thinkingStarted.get() < 3) delay(10) }
+        assertEquals("三只狼都应进入思考", 3, thinkingStarted.get())
+
+        // 玩家点一次「催一下」→ 广播给全体正在思考的 3 只狼
+        pacing.nudge()
+        val result = deferred.await()
+
+        assertEquals("三只狼收尾后应一致定刀 7 号", 7, result.game.tonightVictim)
+        assertEquals("三只狼的收尾请求都应关掉深度思考", 3, concludeDisabledThinking.get())
+        assertTrue(
+            "玩家主动催一下不算超时，不能因此关闭思考",
+            setOf(1, 2, 3).all { pacing.timings.value.getValue(it).timeouts == 0 && it !in pacing.thinkingOff.value },
+        )
+    }
+
+    @Test
+    fun `发言思考段超时但已有思考内容时，带着思考收尾而不是直接落空话`() = runBlocking {
+        val pacing = WerewolfPacing()
+        pacing.overrideThinkingMs = 120L
+        pacing.overrideSpeechMs = 10_000L
+        val timeouts = mutableListOf<TurnTimeout>()
+
+        val slowWithThought = object : IAI {
+            override suspend fun requestModel() = Unit
+            override var modelSet: MutableSet<String> = mutableSetOf()
+            override var brandName: String = "慢思考"
+            override var company: String = "测试"
+
+            override fun chatStream(
+                messages: List<ChatMessage>,
+                model: String,
+                systemPrompt: String?,
+                enableThinking: Boolean,
+                jsonMode: Boolean,
+                webSearch: Boolean,
+            ): kotlinx.coroutines.flow.Flow<ChatDelta> = kotlinx.coroutines.flow.flow {
+                emit(ChatDelta(reasoning = "1号和4号对跳，我更信1号。"))
+                delay(10_000L)
+            }
+
+            override suspend fun chat(
+                messages: List<ChatMessage>,
+                model: String,
+                systemPrompt: String?,
+                enableThinking: Boolean,
+                jsonMode: Boolean,
+                webSearch: Boolean,
+            ): String = "我站边 1 号，今天出 4 号。"
+
+            @Deprecated("测试用不到")
+            override suspend fun chat(message: String, model: String): String = "我站边 1 号。"
+        }
+
+        val game = standard9().copy(phase = Phase.DAY_DISCUSSION)
+        val agents = game.players.associate { p ->
+            p.seat to SeatAgent(
+                ai = if (p.seat == 2) slowWithThought else ScriptedAI(listOf("过。")),
+                model = "test",
+                thinkingEnabled = true,
+            )
+        }
+        val director = WerewolfDirector(agents = agents, pacing = pacing, onTimedOut = { timeouts += it })
+        val result = director.discussion(WerewolfTable(game))
+
+        val speech2 = result.transcript.first { it.seat == 2 && it.kind == MessageKind.SPEECH }
+        assertTrue("已有思考内容超时应收尾拿到真正发言：${speech2.text}", speech2.text.contains("站边 1 号"))
+        assertEquals("超时本身仍需计入账本", 1, pacing.timings.value.getValue(2).timeouts)
+        assertTrue("超时通知仍应触发", timeouts.any { it.seat == 2 })
+    }
+
 }

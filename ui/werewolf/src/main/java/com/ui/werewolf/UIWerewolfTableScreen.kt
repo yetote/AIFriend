@@ -98,6 +98,8 @@ fun UIWerewolfTableScreen(
     onExplode: (() -> Unit)? = null,
     /** 长按思考气泡：本局隐藏这个座位的思考气泡。不传就不响应长按。 */
     onHideThinkingBubble: ((seat: Int) -> Unit)? = null,
+    /** 催一下：向全体正在思考的 AI 广播收尾指令。传 null 不显示入口。 */
+    onNudge: (() -> Unit)? = null,
     /** 复盘演出：播放 / 暂停。 */
     onReplayToggle: () -> Unit = {},
     onReplayPrev: () -> Unit = {},
@@ -208,7 +210,11 @@ fun UIWerewolfTableScreen(
                 live = live,
                 night = night,
                 textColor = textColor,
-                dimColor = dimColor
+                dimColor = dimColor,
+                onNudge = onNudge?.takeIf {
+                    live.running && !live.finished && replay == null &&
+                        live.turn == null && live.retry == null
+                },
             )
 
             // 预言家的验人本 / 女巫的药水本 / 守卫的守护本：常驻在自己身份条下面，

@@ -395,6 +395,9 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
     /** 手动关/开某个座位的深度思考。开只是恢复角色自己的设定。 */
     fun setSeatThinking(seat: Int, on: Boolean) = controller.setSeatThinking(seat, on)
 
+    /** 催一下当前所有正在思考的 AI，让它们立刻给出结论。 */
+    fun nudgeThinking() = controller.nudgeThinking()
+
     /** 轮到人类时非空，界面据此弹出输入区。 */
     val humanTurn: StateFlow<HumanTurn?> = human.turn
 

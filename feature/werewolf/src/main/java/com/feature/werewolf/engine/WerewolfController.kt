@@ -165,6 +165,11 @@ class WerewolfController(
         pacing.setThinking(seat, on)
     }
 
+    /** 催一下当前所有正在思考的 AI，让它们立刻带着已想内容给出结论。 */
+    fun nudgeThinking() {
+        pacing.nudge()
+    }
+
     /**
      * 续上某一局。
      *

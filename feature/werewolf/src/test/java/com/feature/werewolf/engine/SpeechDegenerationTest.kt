@@ -74,4 +74,22 @@ class SpeechDegenerationTest {
         // 但刷够 24 个还是故障
         assertTrue(SpeechDegeneration.cutIndex("哈".repeat(30)) != null)
     }
+
+    @Test
+    fun `思考过程整句连续重复三遍即判原地打转并保留第一遍`() {
+        val prefix = "先看场上局势，1号跳了预言家。"
+        val loop = "等等，如果3号是真预言家那4号就是狼，不对我再确认一下。"
+        val text = prefix + loop + loop + loop
+        val cut = SpeechDegeneration.cutReasoningIndex(text)
+        assertTrue("整句重复 3 遍必须命中", cut != null)
+        assertEquals(prefix + loop, text.substring(0, cut!!))
+    }
+
+    @Test
+    fun `正常长思考不误判为原地打转`() {
+        val normal = "先分析1号发言：他给了2号金水，逻辑比较顺畅。再看3号：3号起跳查杀4号，但力度偏弱。" +
+            "如果1号是真的，那么3号和4号里可能有一只狼在做身份；如果3号是真的，4号就是铁狼。" +
+            "今晚我们狼队优先刀掉可能的神职，比如6号或者7号，白天再看警徽流走向。"
+        assertNull(SpeechDegeneration.cutReasoningIndex(normal))
+    }
 }

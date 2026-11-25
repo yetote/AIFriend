@@ -148,6 +148,21 @@ class WerewolfPacing(
     private val _timings = MutableStateFlow<Map<Int, SeatTiming>>(emptyMap())
     val timings: StateFlow<Map<Int, SeatTiming>> = _timings.asStateFlow()
 
+    private val _nudgeEpoch = MutableStateFlow(0L)
+    /**
+     * 玩家手动「催一下」的广播版本号。
+     *
+     * 只增不减：每一步 AI 开始时记下当时的值，一旦变大，所有此刻正在思考的 AI
+     * 都会立刻收尾、带着已想出的内容关思考给结论。广播给全体而不是点名具体座位，
+     * 避免参与局在夜里暴露谁正在行动。
+     */
+    val nudgeEpoch: StateFlow<Long> = _nudgeEpoch.asStateFlow()
+
+    /** 催一下当前所有正在思考的 AI，让它们立刻给结论。 */
+    fun nudge() {
+        _nudgeEpoch.update { it + 1L }
+    }
+
     val currentLimit: WerewolfTurnLimit get() = _limit.value
 
     /**
@@ -164,6 +179,9 @@ class WerewolfPacing(
 
     /** 只压发言段（发言档）。同上。 */
     internal var overrideSpeechMs: Long? = null
+
+    /** 只压收尾请求（「说结论」）的时限，测试用。null 用默认值。 */
+    internal var overrideConcludeMs: Long? = null
 
     /** 这一步的时限。0 表示不设限。 */
     fun limitMs(kind: TurnKind): Long = when (kind) {

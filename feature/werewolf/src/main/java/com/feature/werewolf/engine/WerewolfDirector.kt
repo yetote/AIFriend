@@ -25,6 +25,7 @@ import com.feature.werewolf.game.WerewolfSpeechLength
 import com.feature.werewolf.prompt.ReadingTells
 import com.feature.werewolf.prompt.WerewolfPrompt
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -32,6 +33,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -1443,6 +1445,12 @@ class WerewolfDirector(
         var degradedByTimeout = false
         // 模型输出退化（同一字符/短串刷屏）：掐断流后留着这半句，不当成故障。
         var cutByDegeneration = false
+        // 思考阶段陷入复读/原地打转：掐断流后带着已想内容关思考直接收尾。
+        var cutReasoningByDegeneration = false
+        // 玩家点了「催一下」：掐断当前思考，带着已想内容关思考直接收尾。
+        var nudged = false
+        val isHuman = agent.ai is HumanSeatAI
+        val startNudge = pacing.nudgeEpoch.value
 
         suspend fun consume() {
             agent.ai.chatStream(
@@ -1467,9 +1475,19 @@ class WerewolfDirector(
                     cutByDegeneration = true
                     return@takeWhile false
                 }
-                // 思考过程即便退化也不影响发言，但要防复盘里出现一屏复读。
-                // 这里只截断、不掐断：正文可能还在正常往外说。
-                SpeechDegeneration.cutIndex(reasoning)?.let { reasoning.setLength(it) }
+                // 还没开始吐正文（仍在思考）：思考陷入复读/原地打转就直接掐断流，
+                // 下面带着已想出的内容关思考收尾——防止不限时档位下死循环思考十几分钟。
+                // 正文已经开始吐了则只截断复盘里的思考，不打断正常发言。
+                if (content.isEmpty()) {
+                    val reasoningCut = SpeechDegeneration.cutReasoningIndex(reasoning)
+                    if (reasoningCut != null) {
+                        reasoning.setLength(reasoningCut)
+                        cutReasoningByDegeneration = true
+                        return@takeWhile false
+                    }
+                } else {
+                    SpeechDegeneration.cutIndex(reasoning)?.let { reasoning.setLength(it) }
+                }
                 true
             }.collect { delta ->
                 delta.usage?.let { usage = it }
@@ -1502,7 +1520,7 @@ class WerewolfDirector(
         // 超时不抛异常——说话说到一半被打断，把已经说出去的那半句留下就行，牌桌能继续。
         val thinkingMs = pacing.limitMs(TurnKind.DECISION)
         val speechMs = pacing.limitMs(TurnKind.SPEECH)
-        val bounded = (thinkingMs > 0 || speechMs > 0) && agent.ai !is HumanSeatAI
+        val bounded = (thinkingMs > 0 || speechMs > 0) && !isHuman
         val started = System.currentTimeMillis()
         var timedOut = false
         // 真正掐下去的那一段的上限：思考段超时和发言段超时，提示里报的秒数不一样
@@ -1511,35 +1529,49 @@ class WerewolfDirector(
         var speechStartedAt = 0L
 
         try {
-            when {
-                !bounded -> consume()
+            if (isHuman) {
+                consume()
+            } else {
                 // withTimeout 表达不了「跑着跑着换一个 deadline」（吐字的时刻因模型而异），
-                // 用看门狗手动掐：正文吐出的那一刻切换时钟；某一段为 0 就不限那一段。
-                else -> coroutineScope {
+                // 同时还要在「不限」档位下响应玩家的「催一下」广播——统一用协程 + 监听收口。
+                coroutineScope {
                     val worker = launch { consume() }
-                    while (worker.isActive) {
-                        if (speechStartedAt == 0L && content.isNotEmpty()) {
-                            speechStartedAt = System.currentTimeMillis()
+                    val nudgeWatcher = launch {
+                        pacing.nudgeEpoch.first { it > startNudge }
+                        nudged = true
+                        worker.cancel()
+                    }
+                    try {
+                        if (!bounded) {
+                            worker.join()
+                        } else {
+                            while (worker.isActive) {
+                                if (speechStartedAt == 0L && content.isNotEmpty()) {
+                                    speechStartedAt = System.currentTimeMillis()
+                                }
+                                val segmentMs = if (speechStartedAt > 0L) speechMs else thinkingMs
+                                if (segmentMs <= 0L) {
+                                    // 本段不限。两段都不限不会进到这里（外层已拦），
+                                    // 所以另一段必然有限：轮询等收工或等段切换，切换后换 deadline。
+                                    if (withTimeoutOrNull(SEGMENT_POLL_MS) { worker.join() } != null) break
+                                    continue
+                                }
+                                val wait = (if (speechStartedAt > 0L) speechStartedAt else started) +
+                                    segmentMs - System.currentTimeMillis()
+                                if (wait <= 0) {
+                                    timedOut = true
+                                    timedOutLimitMs = segmentMs
+                                    // 我们掐的：取消 worker 是正常收尾，不会把异常抛给外层
+                                    worker.cancel()
+                                    break
+                                }
+                                // 等 worker 收工，最多等到本段的 deadline：谁先到算谁的。
+                                // 到点没等到（返回 null）就回循环再看一眼——可能刚好吐字，时钟要换段。
+                                if (withTimeoutOrNull(wait) { worker.join() } != null) break
+                            }
                         }
-                        val segmentMs = if (speechStartedAt > 0L) speechMs else thinkingMs
-                        if (segmentMs <= 0L) {
-                            // 本段不限。两段都不限不会进到这里（外层已拦），
-                            // 所以另一段必然有限：轮询等收工或等段切换，切换后换 deadline。
-                            if (withTimeoutOrNull(SEGMENT_POLL_MS) { worker.join() } != null) break
-                            continue
-                        }
-                        val wait = (if (speechStartedAt > 0L) speechStartedAt else started) +
-                            segmentMs - System.currentTimeMillis()
-                        if (wait <= 0) {
-                            timedOut = true
-                            timedOutLimitMs = segmentMs
-                            // 我们掐的：取消 worker 是正常收尾，不会把异常抛给外层
-                            worker.cancel()
-                            break
-                        }
-                        // 等 worker 收工，最多等到本段的 deadline：谁先到算谁的。
-                        // 到点没等到（返回 null）就回循环再看一眼——可能刚好吐字，时钟要换段。
-                        if (withTimeoutOrNull(wait) { worker.join() } != null) break
+                    } finally {
+                        nudgeWatcher.cancel()
                     }
                 }
             }
@@ -1547,9 +1579,11 @@ class WerewolfDirector(
             // 和 [ask] 同一条规矩：外层还活着说明是这次时限到了；
             // 外层已经取消（退出、暂停、换局）就照常抛
             if (!currentCoroutineContext().isActive) throw cancelled
-            if (!bounded) throw cancelled
-            timedOut = true
-            timedOutLimitMs = if (speechStartedAt > 0L) speechMs else thinkingMs
+            if (!bounded && !nudged) throw cancelled
+            if (!nudged) {
+                timedOut = true
+                timedOutLimitMs = if (speechStartedAt > 0L) speechMs else thinkingMs
+            }
         } catch (error: Throwable) {
             // **超时**一律不当故障处理：说了一半留半句，一个字没说就当它这一轮没说话。
             // 抛出去等于整局停在「模型响应超时」上，续档还会重放同一阶段、撞同一个超时，
@@ -1598,6 +1632,21 @@ class WerewolfDirector(
             pacing.record(seat, elapsed, TurnKind.SPEECH, timedOut = false, night = game.phase.isNight)
         }
 
+        // 思考被掐（玩家催了 / 思考复读 / 带着思考超时）且正文还没吐字：
+        // 不直接扔掉前面的思考，带上已想内容关掉思考收尾，几秒拿到真正的发言。
+        // 完全没吐过任何思考的超时（链路真挂住）跳过收尾，避免对着死连接再等一轮。
+        val concluded = if (
+            content.isEmpty() && !isHuman &&
+            (nudged || cutReasoningByDegeneration || (timedOut && reasoning.isNotBlank()))
+        ) {
+            concludeSpeech(agent, messages, system, reasoning.toString())?.let { reply ->
+                usage = usage.plus(reply.usage)
+                reply.text
+            }
+        } else {
+            null
+        }
+
         // 流式一个片段都没收到（厂商没实现 SSE，或者返回了空流）时补一次普通请求。
         // 不补的话这句话会变成空白，后面所有人都会看到「3 号：」后面什么都没有。
         //
@@ -1605,8 +1654,9 @@ class WerewolfDirector(
         // 这时给一句能接得上的话，比留个空白或者让整局报错都好。
         val raw = when {
             content.isNotEmpty() -> content.toString()
-            // 整段都是刷屏、被截成空：再发一次完整请求多半还是坏的，直接兜底。
-            timedOut || cutByDegeneration -> SILENT_SPEECH
+            !concluded.isNullOrBlank() -> concluded
+            // 整段都是刷屏、被截成空，或收尾仍失败：直接兜底。
+            timedOut || nudged || cutByDegeneration || cutReasoningByDegeneration -> SILENT_SPEECH
             // 这一补发在看门狗之外：关掉思考、并按思考时限兜住，免得在这里再死等一个传输层超时。
             else -> {
                 val retry: suspend () -> String = {
@@ -1706,53 +1756,102 @@ class WerewolfDirector(
         // 时限是**这一局**的节奏控制，和传输层那 8 分钟不是一回事：
         // 它管的是「想太久等于白想」，超时之后按兜底动作往下走，牌局不中断。
         // 人类座位不受限——他要想多久是他自己的事。
+        val isHuman = agent.ai is HumanSeatAI
         val limitMs = pacing.limitMs(TurnKind.DECISION)
-        val bounded = limitMs > 0 && agents[seat]?.ai !is HumanSeatAI
+        val bounded = limitMs > 0 && !isHuman
+        val startNudge = pacing.nudgeEpoch.value
         val started = System.currentTimeMillis()
+        val messages = listOf(ChatMessage.user(context(table, seat, task)))
+        val system = WerewolfPrompt.systemPrompt(
+            table.game, seat, agent.persona, customPrompt,
+            limit = pacing.currentLimit, style = promptStyle, speechLength = speechLength,
+            playStyle = agent.playStyle,
+            // 按阶段拆包：夜里没有发言可读，整块读人框架都不给；
+            // 白天投票类决策只需要「投谁/怎么核对」的核心判据，
+            // 那些「怎么从发言读身份」的细条在发言早已说完时用不上——砍掉省几千字。
+            includeReading = !phase.isNight,
+            readingScope = if (phase.isNight) {
+                ReadingTells.Scope.ALL // 夜间 includeReading=false，scope 不影响
+            } else if (phase == Phase.DAY_VOTE || phase == Phase.DAY_SHERIFF_VOTE ||
+                phase == Phase.DAY_LAST_WORDS || phase == Phase.HUNTER_SHOOT
+            ) {
+                ReadingTells.Scope.VOTE
+            } else {
+                ReadingTells.Scope.ALL
+            },
+            webSearch = webSearchFor(agent),
+            ledger = PublicLedger.of(table),
+            roundBoard = RoundBoard.of(table.game, seat),
+        )
+        var timedOut = false
+        var nudged = false
+        var reasoningDegenerated = false
+        var latestReasoning = ""
+
         val outcome = try {
-            val call: suspend () -> StructuredOutcome<T> = {
+            suspend fun call(onReasoningCb: (suspend (String) -> Unit)?): StructuredOutcome<T> =
                 agent.ai.decide(
-                    messages = listOf(ChatMessage.user(context(table, seat, task))),
+                    messages = messages,
                     model = agent.model,
                     spec = spec,
                     fallback = fallback,
-                    systemPrompt = WerewolfPrompt.systemPrompt(
-                        table.game, seat, agent.persona, customPrompt,
-                        limit = pacing.currentLimit, style = promptStyle, speechLength = speechLength,
-                        playStyle = agent.playStyle,
-                        ledger = PublicLedger.of(table),
-                        roundBoard = RoundBoard.of(table.game, seat),
-                        // 按阶段拆包：夜里没有发言可读，整块读人框架都不给；
-                        // 白天投票类决策只需要「投谁/怎么核对」的核心判据，
-                        // 那些「怎么从发言读身份」的细条在发言早已说完时用不上——砍掉省几千字。
-                        includeReading = !phase.isNight,
-                        readingScope = if (phase.isNight) {
-                            ReadingTells.Scope.ALL // 夜间 includeReading=false，scope 不影响
-                        } else if (phase == Phase.DAY_VOTE || phase == Phase.DAY_SHERIFF_VOTE ||
-                            phase == Phase.DAY_LAST_WORDS || phase == Phase.HUNTER_SHOOT
-                        ) {
-                            ReadingTells.Scope.VOTE
-                        } else {
-                            ReadingTells.Scope.ALL
-                        },
-                        webSearch = webSearchFor(agent),
-                    ),
+                    systemPrompt = system,
                     enableThinking = thinking,
-                    onReasoning = pushReasoning,
+                    onReasoning = onReasoningCb,
                     webSearch = webSearchFor(agent),
                 )
+
+            if (isHuman) {
+                call(pushReasoning)
+            } else {
+                var result: StructuredOutcome<T>? = null
+                coroutineScope {
+                    lateinit var worker: Job
+                    val onReasoningWrapped: (suspend (String) -> Unit)? = if (thinking) {
+                        { reasoning ->
+                            val cut = SpeechDegeneration.cutReasoningIndex(reasoning)
+                            if (cut != null) {
+                                latestReasoning = reasoning.substring(0, cut).trimEnd()
+                                reasoningDegenerated = true
+                                worker.cancel()
+                            } else {
+                                latestReasoning = reasoning
+                                pushReasoning?.invoke(reasoning)
+                            }
+                        }
+                    } else {
+                        null
+                    }
+                    worker = launch {
+                        result = call(onReasoningWrapped)
+                    }
+                    val nudgeWatcher = launch {
+                        pacing.nudgeEpoch.first { it > startNudge }
+                        nudged = true
+                        worker.cancel()
+                    }
+                    try {
+                        if (bounded) {
+                            if (withTimeoutOrNull(limitMs) { worker.join() } == null) {
+                                timedOut = true
+                                worker.cancel()
+                            }
+                        } else {
+                            worker.join()
+                        }
+                    } finally {
+                        nudgeWatcher.cancel()
+                    }
+                }
+                result
             }
-            // 用 withTimeout 而不用 withTimeoutOrNull：`decide` 内部把超时当成
-            // 「这个座位这次没答上来」并返回兜底值，那样我们就分不清
-            // 「它自己想放弃了」和「我们把它掐了」——而后者必须关掉这个座位的深度思考。
-            if (bounded) withTimeout(limitMs) { call() } else call()
         } catch (cancelled: CancellationException) {
             // 这里会收到两种取消，必须分清：
-            // - 内层 withTimeout 到点了 → 外层 context 还是活的 → 这是我们自己的超时；
+            // - 内层时限/催一下/思考复读取消了 worker → 外层 context 还是活的；
             // - 用户退出 / 暂停 / 换局 → 外层已经 inactive，照常往上抛，别伪装成超时。
-            // 只捕获 TimeoutCancellationException 不够：`decide` 内部重试时会重新抛，
-            // 抛出来的可能是普通 CancellationException。
-            if (!currentCoroutineContext().isActive || !bounded) throw cancelled
+            if (!currentCoroutineContext().isActive) throw cancelled
+            if (!bounded && !nudged && !reasoningDegenerated) throw cancelled
+            if (!nudged && !reasoningDegenerated) timedOut = true
             null
         } finally {
             if (holdsBubble) {
@@ -1764,11 +1863,10 @@ class WerewolfDirector(
 
         val elapsed = System.currentTimeMillis() - started
         // 两种超时都要关思考：
-        // - outcome == null：外层时限掐断了请求；
+        // - timedOut：外层时限掐断了请求；
         // - outcome.timedOut：decide 内部超时后降级重试/兜底，正常返回了结果。
-        // 后者以前被当成「没事」，下一轮又把思考打开，模型一次次撞同一个超时。
-        // 超时的头号原因就是思考把额度吃光了，关掉之后通常几十秒就能回话。
-        if (outcome == null || outcome.timedOut) {
+        // 玩家主动「催一下」或思考复读不算超时，不因此永久关掉该座位思考。
+        if (timedOut || outcome?.timedOut == true) {
             val disabled = pacing.recordTimeout(seat, elapsed, TurnKind.DECISION, night = phase.isNight)
             onTimedOut(
                 TurnTimeout(
@@ -1783,14 +1881,134 @@ class WerewolfDirector(
         } else {
             pacing.record(seat, elapsed, TurnKind.DECISION, timedOut = false, night = phase.isNight)
         }
-        // 内部降级成功时 outcome 已经有合法结果（或已经兜底），直接用它；
-        // 只有外层掐断才需要我们在这里补一个兜底。
-        return outcome ?: StructuredOutcome(
+
+        if (outcome != null) return outcome
+
+        // 思考被掐（玩家催了 / 思考复读 / 带着思考超时）：带上已想内容关思考收尾，
+        // 尽量拿到真实决定而不是直接随机兜底。完全没吐思考的超时直接兜底，不拖死连接。
+        if (!isHuman && (nudged || reasoningDegenerated || (timedOut && latestReasoning.isNotBlank()))) {
+            val concluded = concludeDecision(
+                agent = agent,
+                messages = messages,
+                system = system,
+                spec = spec,
+                fallback = fallback,
+                accumulatedReasoning = latestReasoning,
+                timedOut = timedOut,
+            )
+            if (concluded != null) return concluded
+        }
+
+        return StructuredOutcome(
             value = fallback(),
             attempts = 0,
             usedFallback = true,
-            lastError = "超出思考时限",
+            lastError = when {
+                nudged -> "已催促收尾，使用兜底"
+                reasoningDegenerated -> "思考复读已截断，使用兜底"
+                else -> "超出思考时限"
+            },
+            reasoning = latestReasoning,
+            timedOut = timedOut,
         )
+    }
+
+    /**
+     * 思考被掐后「说结论」（发言版）：把已想出的内容节选带回去，关掉深度思考要求立刻发言。
+     * 任何非取消异常或超限都返回 null，由上层退回兜底空话，绝不拖死牌桌。
+     */
+    private suspend fun concludeSpeech(
+        agent: SeatAgent,
+        messages: List<ChatMessage>,
+        system: String,
+        accumulatedReasoning: String,
+    ): com.core.ai.model.ChatReply? {
+        val timeoutMs = pacing.overrideConcludeMs ?: CONCLUDE_TIMEOUT_MS
+        val concludeMessages = buildConcludeMessages(
+            messages = messages,
+            accumulatedReasoning = accumulatedReasoning,
+            directive = "思考时间到此为止，不要再继续分析或纠结，请立刻直接说出你的最终发言。",
+        )
+        return try {
+            withTimeoutOrNull(timeoutMs) {
+                agent.ai.chatWithUsage(
+                    messages = concludeMessages,
+                    model = agent.model,
+                    systemPrompt = system,
+                    enableThinking = false,
+                    jsonMode = false,
+                    webSearch = false,
+                )
+            }
+        } catch (cancelled: CancellationException) {
+            if (!currentCoroutineContext().isActive) throw cancelled
+            null
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    /**
+     * 思考被掐后「说结论」（决策版）：带着已想内容关思考、单次请求直接要 JSON 决定。
+     */
+    private suspend fun <T> concludeDecision(
+        agent: SeatAgent,
+        messages: List<ChatMessage>,
+        system: String,
+        spec: StructuredSpec<T>,
+        fallback: () -> T,
+        accumulatedReasoning: String,
+        timedOut: Boolean,
+    ): StructuredOutcome<T>? {
+        val timeoutMs = pacing.overrideConcludeMs ?: CONCLUDE_TIMEOUT_MS
+        val concludeMessages = buildConcludeMessages(
+            messages = messages,
+            accumulatedReasoning = accumulatedReasoning,
+            directive = "思考到此为止，不要再继续分析，请立刻直接输出符合要求的 JSON 决定。",
+        )
+        return try {
+            withTimeoutOrNull(timeoutMs) {
+                agent.ai.decide(
+                    messages = concludeMessages,
+                    model = agent.model,
+                    spec = spec,
+                    fallback = fallback,
+                    systemPrompt = system,
+                    enableThinking = false,
+                    maxAttempts = 1,
+                    onReasoning = null,
+                    webSearch = false,
+                )
+            }?.let { res ->
+                res.copy(
+                    reasoning = res.reasoning.ifBlank { accumulatedReasoning },
+                    timedOut = timedOut || res.timedOut,
+                )
+            }
+        } catch (cancelled: CancellationException) {
+            if (!currentCoroutineContext().isActive) throw cancelled
+            null
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private fun buildConcludeMessages(
+        messages: List<ChatMessage>,
+        accumulatedReasoning: String,
+        directive: String,
+    ): List<ChatMessage> = buildList {
+        addAll(messages)
+        val tail = accumulatedReasoning.trim().takeLast(CONCLUDE_REASONING_CHARS)
+        val prompt = buildString {
+            if (tail.isNotEmpty()) {
+                append("你刚才已经思考了以下内容（节选）：\n")
+                append(tail)
+                append("\n\n")
+            }
+            append(directive)
+        }
+        add(ChatMessage.user(prompt))
     }
 
     // ---------------------------------------------------------------------
@@ -2497,6 +2715,12 @@ class WerewolfDirector(
          * 不是等答案本身。超时就当不爆，牌局继续——插爆是锦上添花，不能为此卡住整局。
          */
         const val WATCH_TIMEOUT_MS = 8_000L
+
+        /** 「催一下」或思考被掐后的收尾请求时限（关思考发一次性请求，通常几秒回来）。 */
+        const val CONCLUDE_TIMEOUT_MS = 25_000L
+
+        /** 收尾请求带回去的已思考尾部字数：留最新推理结论，不撑爆上下文。 */
+        const val CONCLUDE_REASONING_CHARS = 1_500
 
         /**
          * 发言超出时限、又一句话都没接上时的替身发言。

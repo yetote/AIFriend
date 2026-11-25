@@ -110,9 +110,82 @@ internal object SpeechDegeneration {
         return earliest
     }
 
+    /**
+     * 思考过程的退化/死循环检测。
+     *
+     * 深度思考模型卡住时，除了短串刷屏（[cutIndex]），更常见的是**整句/整段原地打转**
+     * （同一句 20～200 字的分析反复写三四遍）。普通发言的 [cutIndex] 只扫 2～8 字短串，
+     * 抓不到这种循环，这里补一层长周期检测，专供思维链使用。
+     */
+    fun cutReasoningIndex(text: String): Int? = cutReasoningIndex(text as CharSequence)
+
+    fun cutReasoningIndex(text: StringBuilder): Int? = cutReasoningIndex(text as CharSequence)
+
+    private fun cutReasoningIndex(text: CharSequence): Int? {
+        val basic = cutIndex(text)
+        val longLoop = longCycleCut(text)
+        return when {
+            basic == null -> longLoop
+            longLoop == null -> basic
+            else -> minOf(basic, longLoop)
+        }
+    }
+
+    /**
+     * 尾部出现长句/短段连续重复：周期 12～200 字。
+     * 12～23 字要连续重复 4 轮，24～200 字连续重复 3 轮即判原地打转。
+     * 返回第二次重复开始的位置（保留第一遍思考，砍掉后面的原地打转）。
+     */
+    private fun longCycleCut(text: CharSequence): Int? {
+        val len = text.length
+        if (len < LONG_CYCLE_MIN * LONG_CYCLE_SHORT_TIMES) return null
+        val maxPeriod = minOf(LONG_CYCLE_MAX, len / LONG_CYCLE_TIMES)
+        for (period in LONG_CYCLE_MIN..maxPeriod) {
+            val needTimes = if (period < LONG_CYCLE_LONG_THRESHOLD) LONG_CYCLE_SHORT_TIMES else LONG_CYCLE_TIMES
+            if (len < period * needTimes) continue
+            // 先比最后一个字符，不匹配 O(1) 跳过，避免长思维链上无谓扫字符串
+            val tailChar = text[len - 1]
+            if (text[len - 1 - period] != tailChar || text[len - 1 - period * 2] != tailChar) continue
+            val unitStart = len - period
+            if (isAllTrivial(text, unitStart, len)) continue
+            var times = 1
+            var start = unitStart
+            while (start - period >= 0 && regionEquals(text, start - period, unitStart, period)) {
+                times++
+                start -= period
+            }
+            if (times >= needTimes) {
+                // 保留第一遍，从第二遍开头截断
+                return start + period
+            }
+        }
+        return null
+    }
+
+    private fun isAllTrivial(text: CharSequence, from: Int, to: Int): Boolean {
+        for (i in from until to) {
+            val ch = text[i]
+            if (!ch.isWhitespace() && ch !in PUNCTUATION) return false
+        }
+        return true
+    }
+
+    private fun regionEquals(text: CharSequence, a: Int, b: Int, len: Int): Boolean {
+        for (i in 0 until len) {
+            if (text[a + i] != text[b + i]) return false
+        }
+        return true
+    }
+
     /** 纯标点串不算退化（比如正文末尾的一串「……」）。 */
     private val PUNCTUATION = setOf(
         '。', '，', '、', '；', '：', '？', '！', '…', '·', '—', '-', '.', ',', ';', ':', '?', '!',
         '（', '）', '【', '】', '「', '」', '《', '》', '(', ')', '[', ']', '{', '}',
     )
+
+    private const val LONG_CYCLE_MIN = 12
+    private const val LONG_CYCLE_MAX = 200
+    private const val LONG_CYCLE_LONG_THRESHOLD = 24
+    private const val LONG_CYCLE_SHORT_TIMES = 4
+    private const val LONG_CYCLE_TIMES = 3
 }

@@ -667,6 +667,7 @@ fun WerewolfRoute(
                         showPaceSheet = true
                     },
                     onHideThinkingBubble = viewModel::hideThinkingBubble,
+                    onNudge = viewModel::nudgeThinking,
                     onRetry = viewModel::retryFailedStep,
                     onGiveUpStep = viewModel::giveUpFailedStep,
                     onSwapRetrySeat = { seat -> swappingSeat = seat },

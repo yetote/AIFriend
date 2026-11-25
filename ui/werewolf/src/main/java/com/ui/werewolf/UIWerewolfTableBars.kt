@@ -29,6 +29,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -49,6 +54,7 @@ import com.ui.common.theme.UIShadowSoft
 import com.ui.common.theme.uiHairlineBottom
 import com.ui.werewolf.data.UIWerewolfLive
 import com.ui.werewolf.data.UIWerewolfReplay
+import kotlinx.coroutines.delay
 
 /**
  * 预言家的验人本。
@@ -444,6 +450,11 @@ internal fun SelfBar(
     night: Boolean,
     textColor: Color,
     dimColor: Color,
+    /**
+     * 催一下：向当前所有正在思考的 AI 广播收尾指令（不点名具体座位，参与局夜里不泄密）。
+     * 传 null 不画按钮（轮到人类自己操作、复盘演出、已结束、出错等情况）。
+     */
+    onNudge: (() -> Unit)? = null,
 ) {
     if (!live.spectating && live.selfSeat == null) return
 
@@ -474,6 +485,9 @@ internal fun SelfBar(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            if (onNudge != null) {
+                NudgePill(night = night, dimColor = dimColor, onNudge = onNudge)
+            }
             if (live.running) ThinkingDot(color = if (night) SelfBlueNight else SelfBlue)
             return@Row
         }
@@ -513,8 +527,54 @@ internal fun SelfBar(
             )
         }
         Spacer(Modifier.weight(1f))
+        if (onNudge != null) {
+            NudgePill(night = night, dimColor = dimColor, onNudge = onNudge)
+        }
         if (live.running) ThinkingDot(color = if (night) SelfBlueNight else SelfBlue)
     }
+}
+
+/**
+ * 「催一下」胶囊按钮：广播给全体正在思考的 AI 立刻给结论。
+ * 点下后短暂停留「已催」状态 2 秒，给玩家明确反馈，同时防误连点。
+ */
+@Composable
+private fun NudgePill(
+    night: Boolean,
+    dimColor: Color,
+    onNudge: () -> Unit,
+) {
+    var cooling by remember { mutableStateOf(false) }
+    LaunchedEffect(cooling) {
+        if (cooling) {
+            delay(2_000L)
+            cooling = false
+        }
+    }
+    val accent = if (night) Color(0xFFE5B869) else Color(0xFFB87A1F)
+    Text(
+        text = if (cooling) "已催" else "催一下",
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(
+                if (cooling) (if (night) NightControlFill else DayControlFill)
+                else accent.copy(alpha = if (night) 0.22f else 0.12f)
+            )
+            .border(
+                0.7.dp,
+                if (cooling) (if (night) NightControlBorder else DayControlBorder)
+                else accent.copy(alpha = if (night) 0.48f else 0.34f),
+                RoundedCornerShape(50),
+            )
+            .clickable(enabled = !cooling) {
+                cooling = true
+                onNudge()
+            }
+            .padding(horizontal = 9.dp, vertical = 3.dp),
+        fontSize = FsMeta,
+        fontWeight = if (cooling) FontWeight.Normal else FontWeight.SemiBold,
+        color = if (cooling) dimColor else accent,
+    )
 }
 
 @Composable
