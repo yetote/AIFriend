@@ -156,6 +156,7 @@ fun RoomRoute(
                     onStopReply = viewModel::stopRoomReply,
                     onStopAll = viewModel::stopAllRoomReplies,
                     onStopAutoChat = { viewModel.stopAutoChat(room.id) },
+                    onDeleteMessage = { messageId -> viewModel.deleteRoomMessage(room.id, messageId) },
                     onOpenSettings = { screen = RoomScreen.Settings(room.id) },
                     onLoadMore = { viewModel.loadOlderRoomMessages(room.id) }
                 )
@@ -175,18 +176,22 @@ fun RoomRoute(
                     .intersect(room.memberIds.toSet())
                     .ifEmpty { room.memberIds.toSet() }
                 val estimatedTokens = estimatedTargets.maxOfOrNull { friendId ->
+                    val joinedSeq = room.memberJoinSeq[friendId] ?: 0L
+                    val activeSummary = if (room.summaryEnabled && joinedSeq == 0L) room.summaryText else ""
+                    val activeSummarySeq = if (activeSummary.isNotBlank()) room.summaryUntilSeq else 0L
                     buildRoomContext(
                         messages = roomMessages,
                         friendId = friendId,
-                        joinedSeq = room.memberJoinSeq[friendId] ?: 0L,
+                        joinedSeq = joinedSeq,
                         otherWindowRounds = if (room.discussionEnabled) {
                             room.discussionWindow
                         } else {
                             null
                         },
-                        friendNames = names
+                        friendNames = names,
+                        summaryUntilSeq = activeSummarySeq
                     ).trimToBudget(if (room.discussionEnabled) 4000 else 6000)
-                        .sumOf { estimateTokens(it.content) }
+                        .sumOf { estimateTokens(it.content) } + estimateTokens(activeSummary)
                 } ?: 0
 
                 UIRoomSettingsScreen(
@@ -219,10 +224,13 @@ fun RoomRoute(
                     discussionWindow = room.discussionWindow,
                     autoChatEnabled = room.autoChatEnabled,
                     autoChatTurns = room.autoChatTurns,
+                    summaryEnabled = room.summaryEnabled,
+                    summaryText = room.summaryText,
+                    summarizing = room.id in state.summarizingRooms,
                     messageCount = roomMessages.size,
                     estimatedContextTokens = estimatedTokens,
                     estimatedRequestCount = estimatedTargets.size,
-                    onSave = { name, prompt, discussion, window, autoChat, turns ->
+                    onSave = { name, prompt, discussion, window, autoChat, turns, summary ->
                         viewModel.saveRoomSettings(
                             room.id,
                             name,
@@ -230,10 +238,13 @@ fun RoomRoute(
                             discussion,
                             window,
                             autoChat,
-                            turns
+                            turns,
+                            summary
                         )
                         screen = RoomScreen.Chat(room.id)
                     },
+                    onRefreshSummary = { viewModel.refreshRoomSummaryNow(room.id) },
+                    onClearSummary = { viewModel.clearRoomSummary(room.id) },
                     onToggleMember = viewModel::toggleRoomMember,
                     onClearMessages = {
                         viewModel.clearRoomMessages(room.id)

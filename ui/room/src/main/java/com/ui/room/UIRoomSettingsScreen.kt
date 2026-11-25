@@ -85,6 +85,9 @@ fun UIRoomSettingsScreen(
     discussionWindow: Int,
     autoChatEnabled: Boolean,
     autoChatTurns: Int,
+    summaryEnabled: Boolean = false,
+    summaryText: String = "",
+    summarizing: Boolean = false,
     messageCount: Int,
     estimatedContextTokens: Int,
     estimatedRequestCount: Int,
@@ -94,8 +97,11 @@ fun UIRoomSettingsScreen(
         discussionEnabled: Boolean,
         discussionWindow: Int,
         autoChatEnabled: Boolean,
-        autoChatTurns: Int
+        autoChatTurns: Int,
+        summaryEnabled: Boolean
     ) -> Unit,
+    onRefreshSummary: () -> Unit = {},
+    onClearSummary: () -> Unit = {},
     onToggleMember: (String) -> Unit,
     onClearMessages: () -> Unit,
     onExport: () -> Unit,
@@ -108,6 +114,7 @@ fun UIRoomSettingsScreen(
     var window by rememberSaveable(discussionWindow) { mutableIntStateOf(discussionWindow.coerceIn(1, 5)) }
     var autoChat by rememberSaveable(autoChatEnabled) { mutableStateOf(autoChatEnabled) }
     var autoTurns by rememberSaveable(autoChatTurns) { mutableIntStateOf(autoChatTurns.coerceIn(1, 20)) }
+    var summary by rememberSaveable(summaryEnabled) { mutableStateOf(summaryEnabled) }
     var showMembers by remember { mutableStateOf(false) }
     var pendingWindow by remember { mutableStateOf<Int?>(null) }
     var pendingDiscussion by remember { mutableStateOf(false) }
@@ -129,7 +136,8 @@ fun UIRoomSettingsScreen(
         discussion != discussionEnabled ||
         window != savedWindow ||
         (autoChat && discussion) != savedAutoChat ||
-        autoTurns != savedTurns
+        autoTurns != savedTurns ||
+        summary != summaryEnabled
 
     val requestBack = {
         if (dirty) showDiscardConfirm = true else onBack()
@@ -151,7 +159,7 @@ fun UIRoomSettingsScreen(
                             if (name.isNotBlank()) UIFriendBarTagTextBlue else UIGlassSurface
                         )
                         .clickable(enabled = name.isNotBlank()) {
-                            onSave(name, prompt, discussion, window, autoChat, autoTurns)
+                            onSave(name, prompt, discussion, window, autoChat, autoTurns, summary)
                         }
                         .padding(horizontal = 16.dp, vertical = 7.dp),
                     fontSize = 14.sp,
@@ -359,6 +367,74 @@ fun UIRoomSettingsScreen(
                             )
                         }
                     }
+
+                    SettingsDivider()
+                    SettingSwitchRow(
+                        title = "共享纪要（滚动摘要）",
+                        subtitle = "长对话超出最近窗口时，自动把较早的公开讨论压成要点注入上下文，避免越聊越忘",
+                        checked = summary,
+                        onCheckedChange = { summary = it }
+                    )
+
+                    if (summary || summaryText.isNotBlank()) {
+                        SettingsDivider()
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "当前纪要",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = UIFriendBarTitleColor,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(
+                                    text = if (summarizing) "生成中…" else "立即更新",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = if (!summarizing && messageCount > 8) {
+                                        UIFriendBarTagTextBlue
+                                    } else {
+                                        UIFriendBarItemMetaColor
+                                    },
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(50))
+                                        .background(UIFriendBarTagBgBlue.copy(alpha = if (!summarizing && messageCount > 8) 1f else 0.45f))
+                                        .clickable(enabled = !summarizing && messageCount > 8) { onRefreshSummary() }
+                                        .padding(horizontal = 11.dp, vertical = 4.dp)
+                                )
+                                if (summaryText.isNotBlank()) {
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        text = "清空",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = UIFriendBarRed,
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(50))
+                                            .background(UIFriendBarRed.copy(alpha = 0.10f))
+                                            .clickable(enabled = !summarizing) { onClearSummary() }
+                                            .padding(horizontal = 11.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+                            Text(
+                                text = summaryText.ifBlank {
+                                    "暂未生成纪要（公开对话超过 10 条后会自动压缩，或点上方「立即更新」手动生成）。"
+                                },
+                                fontSize = 12.5.sp,
+                                lineHeight = 18.sp,
+                                color = if (summaryText.isNotBlank()) UIFriendBarSubtitleColor else UIFriendBarItemMetaColor
+                            )
+                        }
+                    }
                 }
 
                 Text(
@@ -543,7 +619,7 @@ fun UIRoomSettingsScreen(
                     confirmEnabled = name.isNotBlank(),
                     onConfirm = {
                         showDiscardConfirm = false
-                        onSave(name, prompt, discussion, window, autoChat, autoTurns)
+                        onSave(name, prompt, discussion, window, autoChat, autoTurns, summary)
                     },
                     cancelText = "放弃修改",
                     onCancel = {

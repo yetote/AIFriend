@@ -9,10 +9,26 @@ package com.ui.common
 //
 // 分两层：下面的解析是纯函数（可单测），上面的 Composable 只负责把结果画出来。
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.ParagraphStyle
 import androidx.compose.ui.text.SpanStyle
@@ -24,6 +40,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /** 行内片段的样式。嵌套不考虑——AI 发言里几乎不会出现「加粗里套斜体」。 */
@@ -188,12 +205,99 @@ private fun inlineMarkAt(input: String, pos: Int): InlineHit? {
     return null
 }
 
+/** 块级结构：普通 Markdown 段落组，或围栏代码块（```）。 */
+internal sealed interface MdBlock {
+    data class Prose(val lines: List<MdLine>) : MdBlock
+    data class CodeBlock(
+        val language: String = "",
+        val code: String,
+        val unclosed: Boolean = false,
+    ) : MdBlock
+}
+
+private val FENCE_OPEN_RE = Regex("^\\s*```([A-Za-z0-9_+#.-]*)\\s*$")
+private val FENCE_CLOSE_RE = Regex("^\\s*```\\s*$")
+
+/**
+ * 将文本切分为「普通 Markdown 块」与「围栏代码块」。
+ *
+ * 围栏内部不做行内标记解析，保证代码原样呈现；流式输出尚未闭合时标记 [MdBlock.CodeBlock.unclosed]。
+ */
+internal fun parseMarkdownBlocks(text: String): List<MdBlock> {
+    val rawLines = text.replace("\r\n", "\n").split('\n')
+    val blocks = ArrayList<MdBlock>()
+    val proseBuf = ArrayList<String>()
+    var inCode = false
+    var codeLang = ""
+    val codeBuf = ArrayList<String>()
+
+    fun flushProse() {
+        if (proseBuf.isEmpty()) return
+        // 去掉紧贴代码块前后的纯空行，避免渲染出现过大空隙
+        var start = 0
+        var end = proseBuf.size
+        if (blocks.isNotEmpty()) {
+            while (start < end && proseBuf[start].isBlank()) start++
+        }
+        while (end > start && proseBuf[end - 1].isBlank() && inCode) end--
+        if (start < end) {
+            blocks += MdBlock.Prose(parseMarkdown(proseBuf.subList(start, end).joinToString("\n")))
+        }
+        proseBuf.clear()
+    }
+
+    for (raw in rawLines) {
+        if (!inCode) {
+            val open = FENCE_OPEN_RE.matchEntire(raw)
+            if (open != null) {
+                inCode = true
+                flushProse()
+                codeLang = open.groupValues[1].trim()
+                codeBuf.clear()
+            } else {
+                proseBuf += raw
+            }
+        } else {
+            if (FENCE_CLOSE_RE.matches(raw)) {
+                blocks += MdBlock.CodeBlock(
+                    language = codeLang,
+                    code = codeBuf.joinToString("\n"),
+                    unclosed = false,
+                )
+                inCode = false
+                codeLang = ""
+                codeBuf.clear()
+            } else {
+                codeBuf += raw
+            }
+        }
+    }
+
+    if (inCode) {
+        blocks += MdBlock.CodeBlock(
+            language = codeLang,
+            code = codeBuf.joinToString("\n"),
+            unclosed = true,
+        )
+    } else if (proseBuf.isNotEmpty()) {
+        var start = 0
+        if (blocks.isNotEmpty()) {
+            while (start < proseBuf.size && proseBuf[start].isBlank()) start++
+        }
+        if (start < proseBuf.size) {
+            blocks += MdBlock.Prose(parseMarkdown(proseBuf.subList(start, proseBuf.size).joinToString("\n")))
+        }
+    }
+    return blocks
+}
+
 /**
  * 渲染一段可能含 Markdown 的 AI 发言。
  *
  * @param baseSize 正文基准字号，由调用方给（牌桌发言、密谈、内心字号本来不一样）
  * @param baseLineHeight 正文基准行高
  * @param trailing 追加在末尾的普通文本，流式光标用（不会被当 Markdown 解析）
+ * @param enableCodeBlocks 是否启用围栏代码块卡片渲染；默认开启，无代码块时退化为单个 Text 零额外开销
  */
 @Composable
 fun UIMarkdownText(
@@ -203,66 +307,168 @@ fun UIMarkdownText(
     baseLineHeight: TextUnit,
     modifier: Modifier = Modifier,
     trailing: String = "",
+    enableCodeBlocks: Boolean = true,
 ) {
-    val lines = parseMarkdown(text)
-    val annotated = buildAnnotatedString {
-        lines.forEachIndexed { index, line ->
-            if (index > 0) append('\n')
-            when (line.kind) {
-                MdLineKind.BLANK -> Unit
-                MdLineKind.DIVIDER -> withStyle(SpanStyle(color = color.copy(alpha = 0.35f))) {
-                    append("────────")
+    val blocks = remember(text, enableCodeBlocks) {
+        if (enableCodeBlocks && text.contains("```")) {
+            parseMarkdownBlocks(text)
+        } else {
+            listOf(MdBlock.Prose(parseMarkdown(text)))
+        }
+    }
+    val onDark = color.luminance() > 0.5f
+    val inlineCodeBg = if (onDark) Color.White.copy(alpha = 0.14f) else Color(0x1417203A)
+
+    if (blocks.size == 1 && blocks[0] is MdBlock.Prose) {
+        val prose = blocks[0] as MdBlock.Prose
+        Text(
+            text = buildProseAnnotatedString(prose.lines, color, baseSize, inlineCodeBg, trailing),
+            modifier = modifier,
+            fontSize = baseSize,
+            lineHeight = baseLineHeight,
+            color = color,
+        )
+        return
+    }
+
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        blocks.forEachIndexed { idx, block ->
+            val blockTrailing = if (idx == blocks.lastIndex) trailing else ""
+            when (block) {
+                is MdBlock.Prose -> {
+                    Text(
+                        text = buildProseAnnotatedString(
+                            lines = block.lines,
+                            color = color,
+                            baseSize = baseSize,
+                            inlineCodeBg = inlineCodeBg,
+                            trailing = blockTrailing,
+                        ),
+                        fontSize = baseSize,
+                        lineHeight = baseLineHeight,
+                        color = color,
+                    )
                 }
-                MdLineKind.HEADING -> {
-                    val scale = when (line.level) {
-                        1 -> 1.22f
-                        2 -> 1.12f
-                        else -> 1.04f
-                    }
-                    withStyle(
-                        SpanStyle(
-                            fontSize = baseSize * scale,
-                            fontWeight = FontWeight.Bold,
-                        )
-                    ) { appendSpans(line.spans) }
+
+                is MdBlock.CodeBlock -> {
+                    MarkdownCodeBlock(
+                        language = block.language,
+                        code = if (blockTrailing.isNotEmpty()) block.code + blockTrailing else block.code,
+                        onDark = onDark,
+                    )
                 }
-                MdLineKind.BULLET, MdLineKind.ORDERED -> {
-                    withStyle(
-                        ParagraphStyle(
-                            textIndent = TextIndent(firstLine = 0.sp, restLine = 12.sp)
-                        )
-                    ) {
-                        withStyle(SpanStyle(color = color.copy(alpha = 0.72f))) {
-                            append(line.marker + " ")
-                        }
-                        appendSpans(line.spans)
-                    }
-                }
-                MdLineKind.QUOTE -> {
-                    withStyle(
-                        ParagraphStyle(
-                            textIndent = TextIndent(firstLine = 6.sp, restLine = 6.sp)
-                        )
-                    ) {
-                        withStyle(SpanStyle(color = color.copy(alpha = 0.5f))) { append("▏ ") }
-                        appendSpans(line.spans)
-                    }
-                }
-                MdLineKind.TEXT -> appendSpans(line.spans)
             }
         }
-        if (trailing.isNotEmpty()) append(trailing)
     }
-    Text(
-        text = annotated,
-        modifier = modifier,
-        fontSize = baseSize,
-        lineHeight = baseLineHeight,
-        color = color,
-    )
 }
 
-private fun AnnotatedString.Builder.appendSpans(spans: List<MdSpan>) {
+@Composable
+private fun MarkdownCodeBlock(
+    language: String,
+    code: String,
+    onDark: Boolean,
+) {
+    val bg = if (onDark) Color(0x38080D1C) else Color(0xFF151C32)
+    val border = if (onDark) Color.White.copy(alpha = 0.16f) else Color(0xFF283457)
+    val labelColor = Color(0xFF9EB0D8)
+    val codeColor = Color(0xFFEAF0FF)
+    val shape = RoundedCornerShape(10.dp)
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(bg)
+            .border(0.7.dp, border, shape)
+            .padding(horizontal = 11.dp, vertical = 8.dp),
+    ) {
+        if (language.isNotBlank()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = language,
+                    fontSize = 10.5.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Medium,
+                    color = labelColor,
+                )
+            }
+            Spacer(Modifier.height(4.dp))
+        }
+        Text(
+            text = code,
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            fontFamily = FontFamily.Monospace,
+            fontSize = 12.5.sp,
+            lineHeight = 18.sp,
+            color = codeColor,
+        )
+    }
+}
+
+private fun buildProseAnnotatedString(
+    lines: List<MdLine>,
+    color: Color,
+    baseSize: TextUnit,
+    inlineCodeBg: Color,
+    trailing: String,
+): AnnotatedString = buildAnnotatedString {
+    lines.forEachIndexed { index, line ->
+        if (index > 0) append('\n')
+        when (line.kind) {
+            MdLineKind.BLANK -> Unit
+            MdLineKind.DIVIDER -> withStyle(SpanStyle(color = color.copy(alpha = 0.35f))) {
+                append("────────")
+            }
+            MdLineKind.HEADING -> {
+                val scale = when (line.level) {
+                    1 -> 1.22f
+                    2 -> 1.12f
+                    else -> 1.04f
+                }
+                withStyle(
+                    SpanStyle(
+                        fontSize = baseSize * scale,
+                        fontWeight = FontWeight.Bold,
+                    )
+                ) { appendSpans(line.spans, inlineCodeBg) }
+            }
+            MdLineKind.BULLET, MdLineKind.ORDERED -> {
+                withStyle(
+                    ParagraphStyle(
+                        textIndent = TextIndent(firstLine = 0.sp, restLine = 12.sp)
+                    )
+                ) {
+                    withStyle(SpanStyle(color = color.copy(alpha = 0.72f))) {
+                        append(line.marker + " ")
+                    }
+                    appendSpans(line.spans, inlineCodeBg)
+                }
+            }
+            MdLineKind.QUOTE -> {
+                withStyle(
+                    ParagraphStyle(
+                        textIndent = TextIndent(firstLine = 6.sp, restLine = 6.sp)
+                    )
+                ) {
+                    withStyle(SpanStyle(color = color.copy(alpha = 0.5f))) { append("▏ ") }
+                    appendSpans(line.spans, inlineCodeBg)
+                }
+            }
+            MdLineKind.TEXT -> appendSpans(line.spans, inlineCodeBg)
+        }
+    }
+    if (trailing.isNotEmpty()) append(trailing)
+}
+
+private fun AnnotatedString.Builder.appendSpans(spans: List<MdSpan>, inlineCodeBg: Color) {
     spans.forEach { span ->
         when (span.style) {
             MdInlineStyle.NORMAL -> append(span.text)
@@ -271,8 +477,13 @@ private fun AnnotatedString.Builder.appendSpans(spans: List<MdSpan>) {
             MdInlineStyle.STRIKE -> withStyle(SpanStyle(textDecoration = TextDecoration.LineThrough)) {
                 append(span.text)
             }
-            MdInlineStyle.CODE -> withStyle(SpanStyle(fontFamily = FontFamily.Monospace)) {
-                append(span.text)
+            MdInlineStyle.CODE -> withStyle(
+                SpanStyle(
+                    fontFamily = FontFamily.Monospace,
+                    background = inlineCodeBg,
+                )
+            ) {
+                append(" ${span.text} ")
             }
         }
     }

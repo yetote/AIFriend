@@ -2,6 +2,7 @@ package com.ui.agent
 
 import com.ui.common.pageInsets
 import com.ui.common.UIAvatar
+import com.ui.common.UIMarkdownText
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -413,12 +414,22 @@ private fun MessageBubble(
                     }
                 }
                 if (message.content.isNotBlank() || !streaming) {
-                    Text(
-                        text = if (streaming) message.content + "▌" else message.content,
-                        fontSize = 15.sp,
-                        lineHeight = 22.sp,
-                        color = if (isUser) Color.White else UIFriendBarTitleColor
-                    )
+                    if (isUser) {
+                        Text(
+                            text = message.content,
+                            fontSize = 15.sp,
+                            lineHeight = 22.sp,
+                            color = Color.White
+                        )
+                    } else {
+                        UIMarkdownText(
+                            text = message.content,
+                            color = UIFriendBarTitleColor,
+                            baseSize = 15.sp,
+                            baseLineHeight = 22.sp,
+                            trailing = if (streaming) "▌" else ""
+                        )
+                    }
                 } else if (message.reasoning.isNullOrBlank()) {
                     // 既没正文也还没收到思考内容：至少让气泡里有点东西在动
                     Text(

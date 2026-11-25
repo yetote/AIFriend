@@ -65,7 +65,13 @@ data class RoomEntity(
     /** 用户发言后，是否让成员继续自由对话。 */
     val autoChatEnabled: Boolean = false,
     /** 自由对话接话次数上限（一次接话 = 一轮）。 */
-    val autoChatTurns: Int = 3
+    val autoChatTurns: Int = 3,
+    /** 是否开启长对话滚动摘要（共享纪要）。 */
+    val summaryEnabled: Boolean = false,
+    /** 当前已生成的共享纪要正文。 */
+    val summaryText: String = "",
+    /** 已吸收进共享纪要的最大消息 seq（0 表示尚无摘要）。 */
+    val summaryUntilSeq: Long = 0L
 )
 
 @Entity(

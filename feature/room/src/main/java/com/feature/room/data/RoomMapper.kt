@@ -26,7 +26,10 @@ fun Room.toStored(): StoredRoom = StoredRoom(
     autoChatTurns = autoChatTurns,
     pinned = pinned,
     avatarPath = avatarPath,
-    memberJoinSeq = memberJoinSeq
+    memberJoinSeq = memberJoinSeq,
+    summaryEnabled = summaryEnabled,
+    summaryText = summaryText,
+    summaryUntilSeq = summaryUntilSeq
 )
 
 fun StoredRoom.toRoom(): Room = Room(
@@ -41,7 +44,10 @@ fun StoredRoom.toRoom(): Room = Room(
     autoChatTurns = autoChatTurns,
     pinned = pinned,
     avatarPath = avatarPath,
-    memberJoinSeq = memberJoinSeq
+    memberJoinSeq = memberJoinSeq,
+    summaryEnabled = summaryEnabled,
+    summaryText = summaryText,
+    summaryUntilSeq = summaryUntilSeq
 )
 
 /**
@@ -72,14 +78,20 @@ private val AUTO_CHAT_RULES = """
 fun buildRoomSystemPrompt(
     roomPrompt: String,
     friendPrompt: String,
-    autoChat: Boolean = false
+    autoChat: Boolean = false,
+    sharedSummary: String = ""
 ): String {
     val room = roomPrompt.trim()
+    val summary = sharedSummary.trim()
     return buildString {
         if (room.isNotBlank()) {
             append(room).append("\n\n")
         }
         append(friendPrompt)
+        if (summary.isNotBlank()) {
+            append("\n\n【聊天室共享纪要（较早对话摘要）】\n")
+            append(summary)
+        }
         append("\n\n")
         append(ROOM_CHAT_RULES)
         if (autoChat) {
@@ -100,6 +112,9 @@ fun buildRoomMarkdown(
         append("# ").append(room.name).append("\n\n")
         if (room.prompt.isNotBlank()) {
             append("> ").append(room.prompt.replace("\n", "\n> ")).append("\n\n")
+        }
+        if (room.summaryText.isNotBlank()) {
+            append("## 共享纪要\n\n").append(room.summaryText.trim()).append("\n\n---\n\n")
         }
         messages.sortedWith(compareBy({ it.createdAt }, { it.seq })).forEach { message ->
             val time = formatter.format(Date(message.createdAt))
@@ -169,7 +184,9 @@ fun buildRoomContext(
     joinedSeq: Long = 0L,
     otherWindowRounds: Int? = null,
     friendNames: Map<String, String> = emptyMap(),
-    burstAsRounds: Boolean = false
+    burstAsRounds: Boolean = false,
+    /** 已吸收进共享纪要的最大 seq；>0 时跳过该 seq 及之前的公开消息（私聊定向轮仍保留）。 */
+    summaryUntilSeq: Long = 0L
 ): List<ChatMessage> {
     val sorted = messages.sortedWith(compareBy({ it.createdAt }, { it.seq }))
 
@@ -177,6 +194,7 @@ fun buildRoomContext(
     // 自由对话模式下，别人的每一条 AI 发言也单独算一轮。
     val roundOf = HashMap<Long, Int>(sorted.size)
     val roundVisible = HashMap<Int, Boolean>()
+    val roundTargeted = HashMap<Int, Boolean>()
     var round = 0
     sorted.forEach { message ->
         val startsRound = when (message.sender) {
@@ -188,6 +206,7 @@ fun buildRoomContext(
             round++
             val targets = (message.sender as? RoomSender.User)?.let { message.targetIds }
             roundVisible[round] = targets == null || friendId in targets
+            roundTargeted[round] = targets != null
         }
         roundOf[message.seq] = round
     }
@@ -197,9 +216,17 @@ fun buildRoomContext(
         return roundVisible[roundOf[message.seq] ?: 0] ?: true
     }
 
+    fun alreadyInSummary(message: RoomMessage): Boolean {
+        if (summaryUntilSeq <= 0L || message.seq > summaryUntilSeq) return false
+        if (message.sender == RoomSender.System) return false
+        // 定向 @ 的私密轮次不进共享纪要，所以也不能被摘要跳过
+        return roundTargeted[roundOf[message.seq] ?: 0] != true
+    }
+
     if (otherWindowRounds == null) {
         return sorted.asSequence()
             .filter { it.seq >= joinedSeq }
+            .filterNot { alreadyInSummary(it) }
             .filter { message -> visibleToViewer(message) && isVisible(message, friendId) }
             .map { message -> toChatMessage(message, friendId, friendNames) }
             .toList()
@@ -210,6 +237,7 @@ fun buildRoomContext(
 
     return sorted.asSequence()
         .filter { it.seq >= joinedSeq }
+        .filterNot { alreadyInSummary(it) }
         .filter { message ->
             visibleToViewer(message) &&
                 (isVisible(message, friendId) ||

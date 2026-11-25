@@ -123,4 +123,30 @@ class UIMarkdownTextTest {
         assertEquals(3, lines.size)
         assertEquals(MdLineKind.BLANK, lines[1].kind)
     }
+
+    @Test
+    fun `围栏代码块被拆成独立块且内部星号不被解析`() {
+        val raw = "先看代码：\n```kotlin\nval x = 2 ** 3\nprintln(x)\n```\n解释完毕"
+        val blocks = parseMarkdownBlocks(raw)
+
+        assertEquals(3, blocks.size)
+        assertEquals(MdBlock.Prose(parseMarkdown("先看代码：")), blocks[0])
+        assertEquals(
+            MdBlock.CodeBlock(language = "kotlin", code = "val x = 2 ** 3\nprintln(x)", unclosed = false),
+            blocks[1],
+        )
+        assertEquals(MdBlock.Prose(parseMarkdown("解释完毕")), blocks[2])
+    }
+
+    @Test
+    fun `流式未闭合代码块保留已输出内容并标记未闭合`() {
+        val raw = "示例：\n```python\ndef hello():\n    return 1"
+        val blocks = parseMarkdownBlocks(raw)
+
+        assertEquals(2, blocks.size)
+        val code = blocks[1] as MdBlock.CodeBlock
+        assertEquals("python", code.language)
+        assertEquals("def hello():\n    return 1", code.code)
+        assertEquals(true, code.unclosed)
+    }
 }

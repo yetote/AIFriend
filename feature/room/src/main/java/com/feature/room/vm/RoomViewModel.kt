@@ -19,6 +19,7 @@ import com.core.repository.storage.ProfileRepository
 import com.core.repository.storage.RoomRepository
 import com.feature.room.contract.RoomUiState
 import com.feature.room.data.AutoChatPolicy
+import com.feature.room.data.RoomSummary
 import com.feature.room.data.RoomTopic
 import com.feature.room.data.buildRoomContext
 import com.feature.room.data.buildRoomMarkdown
@@ -59,6 +60,7 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
     private val roomLocks = mutableMapOf<String, Mutex>()
     private val roomJobs = ConcurrentHashMap<String, Job>()
     private val autoChatJobs = ConcurrentHashMap<String, Job>()
+    private val summaryLocks = ConcurrentHashMap<String, Mutex>()
 
     /**
      * 每个房间当前自由对话的「代次」。
@@ -511,7 +513,8 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
         discussionEnabled: Boolean,
         discussionWindow: Int,
         autoChatEnabled: Boolean,
-        autoChatTurns: Int
+        autoChatTurns: Int,
+        summaryEnabled: Boolean = false
     ) {
         val trimmedName = name.trim()
         if (trimmedName.isEmpty()) return
@@ -528,7 +531,8 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
                             discussionEnabled = discussionEnabled,
                             discussionWindow = discussionWindow.coerceIn(1, 5),
                             autoChatEnabled = autoChat,
-                            autoChatTurns = AutoChatPolicy.sanitizeTurns(autoChatTurns)
+                            autoChatTurns = AutoChatPolicy.sanitizeTurns(autoChatTurns),
+                            summaryEnabled = summaryEnabled
                         )
                     } else {
                         room
@@ -538,6 +542,103 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
         }
         if (!autoChat) cancelAutoChat(roomId)
         persistRoom(roomId)
+        if (summaryEnabled) {
+            maybeRefreshSummary(roomId, force = false)
+        }
+    }
+
+    /** 手动触发更新共享纪要（需要至少累积 2 条超出活跃窗口的较早公开消息）。 */
+    fun refreshRoomSummaryNow(roomId: String) {
+        maybeRefreshSummary(roomId, force = true)
+    }
+
+    /** 清空共享纪要正文并重置已摘要水位，开关状态保持不变。 */
+    fun clearRoomSummary(roomId: String) {
+        if (_uiState.value.rooms.none { it.id == roomId }) return
+        _uiState.update { state ->
+            state.copy(
+                rooms = state.rooms.map { room ->
+                    if (room.id == roomId) {
+                        room.copy(summaryText = "", summaryUntilSeq = 0L)
+                    } else {
+                        room
+                    }
+                }
+            )
+        }
+        persistRoom(roomId)
+    }
+
+    /**
+     * 后台滚动更新共享纪要：非阻塞、串行加锁，失败静默忽略不打断聊天。
+     */
+    private fun maybeRefreshSummary(roomId: String, force: Boolean) {
+        viewModelScope.launch {
+            val lock = summaryLocks.getOrPut(roomId) { Mutex() }
+            if (!lock.tryLock()) return@launch
+            try {
+                val state = _uiState.value
+                val room = state.rooms.firstOrNull { it.id == roomId } ?: return@launch
+                if (!force && !room.summaryEnabled) return@launch
+                val helper = room.memberIds.firstNotNullOfOrNull { id ->
+                    state.friends.firstOrNull { it.id == id }
+                } ?: return@launch
+                val ai = aiFor(helper.brand) ?: return@launch
+
+                val allMessages = runCatching { roomRepository.loadAllMessages(roomId) }
+                    .getOrNull()
+                    ?.map { it.toRoomMessage() }
+                    ?.takeIf { it.isNotEmpty() }
+                    ?: state.roomMessages.filter { it.roomId == roomId }
+
+                val batch = RoomSummary.pickBatchToSummarize(
+                    messages = allMessages,
+                    summaryUntilSeq = room.summaryUntilSeq,
+                    force = force,
+                ) ?: return@launch
+
+                _uiState.update { it.copy(summarizingRooms = it.summarizingRooms + roomId) }
+                val names = state.friends.associate { it.id to it.name }
+                val prompt = RoomSummary.buildSummaryPrompt(
+                    roomName = room.name,
+                    roomPrompt = room.prompt,
+                    existingSummary = room.summaryText,
+                    batch = batch,
+                    friendNames = names,
+                )
+                val raw = ai.chat(
+                    messages = listOf(ChatMessage.user(prompt)),
+                    model = helper.model,
+                    systemPrompt = "你是严谨的会议纪要助手，只输出简明中文要点。",
+                    enableThinking = false,
+                )
+                val summary = RoomSummary.sanitize(raw)
+                if (summary.isNotBlank()) {
+                    _uiState.update { current ->
+                        current.copy(
+                            rooms = current.rooms.map { r ->
+                                if (r.id == roomId) {
+                                    r.copy(
+                                        summaryText = summary,
+                                        summaryUntilSeq = maxOf(r.summaryUntilSeq, batch.throughSeq),
+                                    )
+                                } else {
+                                    r
+                                }
+                            }
+                        )
+                    }
+                    persistRoom(roomId)
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                // 纪要是增强能力，失败静默忽略，绝不阻塞或污染主聊天流
+            } finally {
+                _uiState.update { it.copy(summarizingRooms = it.summarizingRooms - roomId) }
+                lock.unlock()
+            }
+        }
     }
 
     fun setRoomAvatar(roomId: String, bytes: ByteArray) {
@@ -565,12 +666,30 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
         }
     }
 
+    /** 删除房间里的单条消息（内存与数据库同步清理，后续请求上下文不再包含这条消息）。 */
+    fun deleteRoomMessage(roomId: String, messageId: String) {
+        val existed = _uiState.value.roomMessages.any { it.id == messageId && it.roomId == roomId }
+        if (!existed) return
+        _uiState.update { state ->
+            state.copy(
+                roomMessages = state.roomMessages.filterNot { it.id == messageId && it.roomId == roomId }
+            )
+        }
+        viewModelScope.launch {
+            runCatching { roomRepository.deleteMessage(messageId) }
+        }
+    }
+
     fun clearRoomMessages(roomId: String) {
         val state = _uiState.value
         val room = state.rooms.firstOrNull { it.id == roomId } ?: return
         cancelAutoChat(roomId)
         cancelRoomJobs(roomId)
-        val resetRoom = room.copy(memberJoinSeq = room.memberIds.associateWith { 0L })
+        val resetRoom = room.copy(
+            memberJoinSeq = room.memberIds.associateWith { 0L },
+            summaryText = "",
+            summaryUntilSeq = 0L
+        )
         _uiState.update { current ->
             current.copy(
                 rooms = current.rooms.map { if (it.id == roomId) resetRoom else it },
@@ -745,10 +864,15 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
                 discussion -> DISCUSSION_MAX_TOKENS
                 else -> NORMAL_MAX_TOKENS
             }
+            val joinedSeq = room.memberJoinSeq[friendId] ?: 0L
+            // 仅对初始成员（joinSeq == 0）注入共享纪要，保持「新加入成员看不到加入前历史」的隔离约定
+            val activeSummary = if (room.summaryEnabled && joinedSeq == 0L) room.summaryText else ""
+            val activeSummarySeq = if (activeSummary.isNotBlank()) room.summaryUntilSeq else 0L
+
             var context = buildRoomContext(
                 messages = state.roomMessages.filter { it.roomId == roomId },
                 friendId = friendId,
-                joinedSeq = room.memberJoinSeq[friendId] ?: 0L,
+                joinedSeq = joinedSeq,
                 // 自由对话里每一条别人的发言都算一轮：窗口只给 1 时，每个人都只看得到
                 // 紧挨着的那一句，话题会像传话游戏一样越传越偏，所以这里兜底到 2 轮。
                 otherWindowRounds = if (discussion) {
@@ -761,7 +885,8 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
                     state.friends.firstOrNull { it.id == id }?.let { id to it.name }
                 }.toMap(),
                 // 自由对话里每一条别人的发言都算一轮，窗口 N 才有意义
-                burstAsRounds = isBurstTurn
+                burstAsRounds = isBurstTurn,
+                summaryUntilSeq = activeSummarySeq
             )
             if (roundIndex != null) {
                 context = context + ChatMessage.user(
@@ -798,11 +923,13 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
             val content = StringBuilder()
             val reasoning = StringBuilder()
             var lastPush = 0L
-            val estimatedInput = TokenCounter.estimateInput(context, buildRoomSystemPrompt(
+            val systemPrompt = buildRoomSystemPrompt(
                 room.prompt,
                 friend.systemPrompt,
-                autoChat = isBurstTurn
-            ))
+                autoChat = isBurstTurn,
+                sharedSummary = activeSummary
+            )
+            val estimatedInput = TokenCounter.estimateInput(context, systemPrompt)
             var usage = TokenUsage.EMPTY
             fun currentUsage(): TokenUsage = if (usage.total > 0) usage else TokenUsage(
                 input = estimatedInput,
@@ -845,11 +972,7 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
                 ai.chatStream(
                     messages = context,
                     model = friend.model,
-                    systemPrompt = buildRoomSystemPrompt(
-                        room.prompt,
-                        friend.systemPrompt,
-                        autoChat = isBurstTurn
-                    ),
+                    systemPrompt = systemPrompt,
                     enableThinking = friend.thinkingEnabled
                 ).collect { delta ->
                     delta.usage?.let { usage = it }
@@ -886,6 +1009,9 @@ class RoomViewModel(application: Application) : BaseViewModel(application) {
                 }
                 if (isRoomActive(roomId)) {
                     _uiState.update { it.copy(roomErrors = it.roomErrors - friendId) }
+                }
+                if (room.summaryEnabled && reply.isNotBlank()) {
+                    maybeRefreshSummary(roomId, force = false)
                 }
                 reply
             } catch (cancelled: CancellationException) {

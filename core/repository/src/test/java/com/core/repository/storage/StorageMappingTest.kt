@@ -52,7 +52,10 @@ class StorageMappingTest {
             avatarPath = "/avatars/r1_1.jpg",
             autoChatEnabled = true,
             autoChatTurns = 10,
-            memberJoinSeq = mapOf("a" to 0L, "b" to 5L)
+            memberJoinSeq = mapOf("a" to 0L, "b" to 5L),
+            summaryEnabled = true,
+            summaryText = "已达成方案 A 共识",
+            summaryUntilSeq = 12L
         )
 
         val withMembers = RoomWithMembers(

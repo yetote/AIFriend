@@ -34,6 +34,8 @@ data class RoomUiState(
     val autoChatCompleted: Int = 0,
     /** 自由对话本次的接话上限。 */
     val autoChatTotal: Int = 0,
+    /** 正在后台生成共享纪要的房间集合。 */
+    val summarizingRooms: Set<String> = emptySet(),
     /** 好友列表是否已经读过一次（区分「还没读」和「真的没有成员」）。 */
     val friendsLoaded: Boolean = false,
     val loaded: Boolean = false

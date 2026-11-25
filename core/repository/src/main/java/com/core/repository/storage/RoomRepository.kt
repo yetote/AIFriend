@@ -62,6 +62,11 @@ class RoomRepository(context: Context) {
         dao.insertMessage(message.toEntity())
     }
 
+    /** 删除聊天室里的单条消息。 */
+    suspend fun deleteMessage(messageId: String) {
+        dao.deleteMessage(messageId)
+    }
+
     /** 删除好友时，清掉它在所有房间里的消息。 */
     suspend fun deleteMessagesBySender(friendId: String) {
         dao.deleteMessagesBySender(friendId)

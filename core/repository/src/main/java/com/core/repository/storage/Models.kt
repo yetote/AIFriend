@@ -52,7 +52,10 @@ data class StoredRoom(
     val avatarPath: String? = null,
     val autoChatEnabled: Boolean = false,
     val autoChatTurns: Int = 3,
-    val memberJoinSeq: Map<String, Long> = emptyMap()
+    val memberJoinSeq: Map<String, Long> = emptyMap(),
+    val summaryEnabled: Boolean = false,
+    val summaryText: String = "",
+    val summaryUntilSeq: Long = 0L
 )
 
 @Serializable
@@ -117,7 +120,10 @@ internal fun StoredRoom.toEntity(): RoomEntity = RoomEntity(
     pinned = pinned,
     avatarPath = avatarPath,
     autoChatEnabled = autoChatEnabled,
-    autoChatTurns = autoChatTurns
+    autoChatTurns = autoChatTurns,
+    summaryEnabled = summaryEnabled,
+    summaryText = summaryText,
+    summaryUntilSeq = summaryUntilSeq
 )
 
 internal fun RoomWithMembers.toStored(): StoredRoom = StoredRoom(
@@ -133,7 +139,10 @@ internal fun RoomWithMembers.toStored(): StoredRoom = StoredRoom(
     avatarPath = room.avatarPath,
     autoChatEnabled = room.autoChatEnabled,
     autoChatTurns = room.autoChatTurns,
-    memberJoinSeq = members.associate { it.friendId to it.joinSeq }
+    memberJoinSeq = members.associate { it.friendId to it.joinSeq },
+    summaryEnabled = room.summaryEnabled,
+    summaryText = room.summaryText,
+    summaryUntilSeq = room.summaryUntilSeq
 )
 
 internal fun StoredRoomMessage.toEntity(): RoomMessageEntity = RoomMessageEntity(

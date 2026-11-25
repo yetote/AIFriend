@@ -37,7 +37,13 @@ data class Room(
      * 成员加入时的消息 seq（0 表示房间创建时就已加入）。
      * 新加入的 AI 只看得到这个位置之后的内容，之前的用户历史不会同步给它。
      */
-    val memberJoinSeq: Map<String, Long> = emptyMap()
+    val memberJoinSeq: Map<String, Long> = emptyMap(),
+    /** 是否开启长对话滚动摘要（共享纪要）。 */
+    val summaryEnabled: Boolean = false,
+    /** 当前共享纪要正文；非空且启用时会注入各成员的 system prompt。 */
+    val summaryText: String = "",
+    /** 已被吸收进共享纪要的最大消息 seq（0 表示尚无摘要）。 */
+    val summaryUntilSeq: Long = 0L
 )
 
 sealed interface RoomSender {

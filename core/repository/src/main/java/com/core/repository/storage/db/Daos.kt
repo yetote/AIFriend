@@ -122,6 +122,9 @@ interface RoomDao {
     @Query("SELECT COUNT(*) FROM room_messages WHERE roomId = :roomId")
     suspend fun countMessages(roomId: String): Int
 
+    @Query("DELETE FROM room_messages WHERE id = :messageId")
+    suspend fun deleteMessage(messageId: String)
+
     @Query("DELETE FROM room_messages WHERE senderType = 'ai' AND senderId = :friendId")
     suspend fun deleteMessagesBySender(friendId: String)
 

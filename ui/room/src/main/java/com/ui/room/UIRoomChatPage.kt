@@ -4,6 +4,7 @@ import com.ui.common.pageInsets
 import com.ui.common.UIAvatar
 import com.ui.common.UIGroupAvatar
 import com.ui.common.UIGroupMember
+import com.ui.common.UIMarkdownText
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -155,6 +156,7 @@ fun UIRoomChatPage(
     onStopReply: (String) -> Unit,
     onStopAll: () -> Unit,
     onStopAutoChat: () -> Unit = {},
+    onDeleteMessage: (String) -> Unit = {},
     onOpenSettings: () -> Unit,
     onLoadMore: () -> Unit
 ) {
@@ -163,6 +165,7 @@ fun UIRoomChatPage(
     var showMentionPicker by remember { mutableStateOf(false) }
     var mentionTriggerAt by remember { mutableStateOf<Int?>(null) }
     var actionMessage by remember { mutableStateOf<UIRoomMessage?>(null) }
+    var pendingDeleteMessage by remember { mutableStateOf<UIRoomMessage?>(null) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val memberNames = remember(members) { members.associate { it.id to it.name } }
@@ -479,8 +482,36 @@ fun UIRoomChatPage(
                     onInputChange("「$name：$excerpt」\n" + input)
                     actionMessage = null
                 }
+                DialogPillAction(
+                    text = "删除",
+                    modifier = Modifier.weight(1f),
+                    containerColor = UIFriendBarRed.copy(alpha = 0.11f),
+                    contentColor = UIFriendBarRed
+                ) {
+                    pendingDeleteMessage = target
+                    actionMessage = null
+                }
             }
         }
+    }
+
+    pendingDeleteMessage?.let { target ->
+        UIIosDialog(
+            title = "删除这条消息？",
+            subtitle = "删除后不会再出现在聊天记录与后续 AI 上下文中，不可恢复。",
+            onDismiss = { pendingDeleteMessage = null },
+            actions = {
+                UIDialogButtons(
+                    confirmText = "删除",
+                    confirmColor = UIFriendBarRed,
+                    onConfirm = {
+                        onDeleteMessage(target.id)
+                        pendingDeleteMessage = null
+                    },
+                    onCancel = { pendingDeleteMessage = null }
+                )
+            }
+        )
     }
 
     if (showSearch) {
@@ -777,12 +808,22 @@ private fun RoomMessageBubble(
                         }
                     }
                     if (message.content.isNotBlank() || !message.isStreaming) {
-                        Text(
-                            text = if (message.isStreaming) message.content + "▌" else message.content,
-                            fontSize = 15.sp,
-                            lineHeight = 22.sp,
-                            color = if (message.isUser) Color.White else UIFriendBarTitleColor
-                        )
+                        if (message.isUser) {
+                            Text(
+                                text = message.content,
+                                fontSize = 15.sp,
+                                lineHeight = 22.sp,
+                                color = Color.White
+                            )
+                        } else {
+                            UIMarkdownText(
+                                text = message.content,
+                                color = UIFriendBarTitleColor,
+                                baseSize = 15.sp,
+                                baseLineHeight = 22.sp,
+                                trailing = if (message.isStreaming) "▌" else ""
+                            )
+                        }
                     } else if (message.reasoning.isNullOrBlank()) {
                         Text(
                             text = "…",
@@ -1355,18 +1396,20 @@ fun RoomMembersDialog(
     }
 }
 
-/** 弹窗里的胶囊动作按钮（复制 / 引用）。 */
+/** 弹窗里的胶囊动作按钮（复制 / 引用 / 删除）。 */
 @Composable
 private fun DialogPillAction(
     text: String,
     modifier: Modifier = Modifier,
+    containerColor: Color = UIFriendBarTagBgBlue,
+    contentColor: Color = UIFriendBarTagTextBlue,
     onClick: () -> Unit
 ) {
     Box(
         modifier = modifier
             .height(38.dp)
             .clip(RoundedCornerShape(50))
-            .background(UIFriendBarTagBgBlue)
+            .background(containerColor)
             .clickable { onClick() },
         contentAlignment = Alignment.Center
     ) {
@@ -1374,7 +1417,7 @@ private fun DialogPillAction(
             text = text,
             fontSize = 14.sp,
             fontWeight = FontWeight.Medium,
-            color = UIFriendBarTagTextBlue
+            color = contentColor
         )
     }
 }
