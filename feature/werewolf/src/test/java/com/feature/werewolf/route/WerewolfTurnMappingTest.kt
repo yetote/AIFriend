@@ -159,6 +159,24 @@ class WerewolfTurnMappingTest {
         assertTrue("要出插爆面板而不是发言方向", turn?.kind == com.ui.werewolf.data.UIWerewolfTurnKind.EXPLODE)
     }
 
+    @Test
+    fun `上警报名使用独立二选一面板，不走牌桌选人弹窗`() {
+        val game = game().copy(phase = Phase.DAY_SHERIFF_SIGNUP)
+        val seer = game.players.first { it.role == WerewolfRole.SEER }
+        val turn = buildTurn(
+            game,
+            humanSeat = seer.seat,
+            me = seer,
+            waiting = HumanTurn("", emptyList(), true, phase = Phase.DAY_SHERIFF_SIGNUP.name),
+        )
+        assertTrue(
+            "上警报名应使用独立的 SHERIFF_SIGNUP 二选一面板，而非弹出牌桌选人框的 VOTE",
+            turn?.kind == com.ui.werewolf.data.UIWerewolfTurnKind.SHERIFF_SIGNUP,
+        )
+        assertTrue("拒选文案应为不上警", turn?.abstainLabel == "不上警")
+        assertTrue("本人座位应透传给上警提交动作", turn?.seat == seer.seat)
+    }
+
     /** 4 预言家 + 其它平民的局；够建出一个预言家座位。 */
     private fun game(): WerewolfGame = WerewolfGame.withRoles(
         config = WerewolfConfig(composition = mapOf(WerewolfRole.WEREWOLF to 2, WerewolfRole.SEER to 1, WerewolfRole.VILLAGER to 5)),

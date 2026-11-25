@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
@@ -75,7 +74,6 @@ internal fun TurnPanel(
     modifier: Modifier = Modifier,
 ) {
     val dockShape = RoundedCornerShape(topStart = UIRadiusCard, topEnd = UIRadiusCard)
-    val accent = if (night) SelfBlueNight else SelfBlue
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -92,24 +90,27 @@ internal fun TurnPanel(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .size(7.dp)
-                    .clip(CircleShape)
-                    .background(accent)
-            )
-            Spacer(Modifier.width(7.dp))
-            Text(
-                text = turn.title,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
-                color = textColor
-            )
-            turn.hint?.let {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(width = 3.5.dp, height = 14.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(if (night) Color(0xFFE5B869) else Color(0xFFC84B2A))
+                )
+                Spacer(Modifier.width(8.dp))
                 Text(
-                    text = " · $it",
-                    fontSize = FsMeta,
+                    text = turn.title,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = textColor
+                )
+            }
+            turn.hint?.takeIf { it.isNotBlank() }?.let {
+                Text(
+                    text = it,
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp,
                     color = dimColor
                 )
             }
@@ -123,6 +124,14 @@ internal fun TurnPanel(
                 onSubmit = onSpeech
             )
 
+            UIWerewolfTurnKind.SHERIFF_SIGNUP -> SheriffSignupRow(
+                night = night,
+                textColor = textColor,
+                declineLabel = turn.abstainLabel ?: "不上警",
+                onSignup = { onVote(turn.seat) },
+                onDecline = { onVote(null) },
+            )
+
             UIWerewolfTurnKind.VOTE -> PickTarget(
                 turn = turn,
                 day = day,
@@ -132,7 +141,6 @@ internal fun TurnPanel(
                 night = night,
                 onPick = onVote,
                 onAbstain = if (turn.canAbstain) {
-                    // 上警报名的「不做」是「不上警」不是「弃票」，用 abstainLabel 区分
                     { onVote(null) }
                 } else null,
             )
@@ -175,6 +183,68 @@ internal fun TurnPanel(
             UIWerewolfTurnKind.EXPLODE -> ExplodeRow(
                 textColor = textColor,
                 onPick = onExplode,
+            )
+        }
+    }
+}
+
+/**
+ * 上警报名：直接给「上警 / 不上警」两个等宽主次按钮，无需打开 12 人选人弹窗。
+ */
+@Composable
+private fun SheriffSignupRow(
+    night: Boolean,
+    textColor: Color,
+    declineLabel: String,
+    onSignup: () -> Unit,
+    onDecline: () -> Unit,
+) {
+    val shape = RoundedCornerShape(UIRadiusControl)
+    val ctrlFill = if (night) NightControlFill else DayControlFill
+    val ctrlBorder = if (night) NightControlBorder else DayControlBorder
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .shadow(
+                    elevation = 6.dp,
+                    shape = shape,
+                    clip = false,
+                    ambientColor = UIBlobBlue,
+                    spotColor = UIBlobBlue,
+                )
+                .clip(shape)
+                .background(UIActionBrush)
+                .clickable { onSignup() }
+                .padding(vertical = 11.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = "上警",
+                fontSize = FsAction,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White,
+            )
+        }
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .clip(shape)
+                .background(ctrlFill)
+                .border(0.9.dp, ctrlBorder, shape)
+                .clickable { onDecline() }
+                .padding(vertical = 11.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = declineLabel,
+                fontSize = FsAction,
+                fontWeight = FontWeight.Medium,
+                color = textColor,
             )
         }
     }

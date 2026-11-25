@@ -54,11 +54,11 @@ internal fun buildTurn(
     val phase = waiting.phase?.let { runCatching { com.feature.werewolf.game.Phase.valueOf(it) }.getOrNull() }
         ?: game.phase
     return when (phase) {
-        // 上警报名：点自己 = 上警，点「不上警」= 弃权。
-        // 复用 VOTE 面板而不是新做一个开关：这一步的答案就是「一个座位或 null」，
-        // 和投票的形状完全一样，多一种面板只会多一处要维护的按钮文案
+        // 上警报名是纯粹的二选一（上警 / 不上警），不能复用 VOTE：
+        // VOTE 走的是「从牌桌选人 →」弹窗，让人在 12 人牌桌里只点自己来报名非常反直觉。
+        // 提交值仍沿用 VoteChoice(humanSeat / null)，与引擎和存档协议完全一致。
         Phase.DAY_SHERIFF_SIGNUP -> UIWerewolfTurn(
-            kind = UIWerewolfTurnKind.VOTE,
+            kind = UIWerewolfTurnKind.SHERIFF_SIGNUP,
             seat = humanSeat,
             title = "要不要竞选警长",
             hint = "只是举手报名，理由留到竞选发言；上过警的人首轮不能投警长票",
