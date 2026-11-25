@@ -190,4 +190,40 @@ class PublicLedgerTest {
         assertTrue("警长票型要入账", text.contains("第 1 天警长票型：2→4、3→4、5→弃票"))
         assertFalse("警长票不做言行矛盾误报", text.contains("话和票对不上"))
     }
+
+    @Test
+    fun `预言家警徽流按最新一版记入，多子句连续报验人不漏抓，非预言家与转述忽略`() {
+        val text = PublicLedger.of(
+            table(
+                speech(2, "我是真预言家，第一夜验了4号好人，警徽流留7号、9号。", day = 1, phase = Phase.DAY_SHERIFF_SPEECH),
+                speech(5, "2号警徽流留7号、9号太水了，我不信他。", day = 1),
+                speech(2, "昨晚验了7号是狼人，2号逻辑没毛病，我警徽流改留9号、11号。", day = 2),
+                speech(6, "我是预言家，第一夜验了3号查杀，昨晚验了8号金水，我警徽流先验10号顺验12号。", day = 2),
+            )
+        )
+        assertTrue("2 号第 1 夜验 4 好人：$text", text.contains("2 号称第 1 天验 4 号是好人"))
+        assertTrue("2 号第 2 夜验 7 狼人：$text", text.contains("2 号称第 2 天验 7 号是狼人"))
+        assertTrue("6 号同句两验全抓到：$text", text.contains("6 号称第 2 天验 3 号是狼人") && text.contains("6 号称第 2 天验 8 号是好人"))
+        assertTrue("2 号警徽流更新为最新版 9→11：$text", text.contains("2 号（第 2 天）留 9号→11号"))
+        assertFalse("2 号旧警徽流应被新流覆盖：$text", text.contains("7号→9号"))
+        assertTrue("6 号警徽流记入：$text", text.contains("6 号（第 2 天）留 10号→12号"))
+        assertFalse("5 号不是预言家，转述警徽流不入账：$text", text.contains("5 号（"))
+    }
+
+    @Test
+    fun `女巫起跳者报出的银水与毒口入账，假设与计划与非女巫转述绝不污染`() {
+        val text = PublicLedger.of(
+            table(
+                speech(4, "我不藏了，我是女巫，第一夜救了5号，昨晚毒了8号。", day = 2),
+                speech(7, "4号说他昨晚救了5号、毒了8号，我觉得他在编。", day = 2),
+                speech(9, "我跳女巫，第一夜没救3号，今晚打算毒10号，如果今晚不平安我就毒11号。", day = 2),
+            )
+        )
+        assertTrue("4 号救 5 号入账：$text", text.contains("4 号称第 2 天救了 5 号"))
+        assertTrue("4 号毒 8 号入账：$text", text.contains("4 号称第 2 天毒了 8 号"))
+        assertFalse("7 号没跳女巫，转述不入账：$text", text.contains("7 号称"))
+        assertFalse("9 号否定句「没救3号」不入账：$text", text.contains("9 号称第 2 天救了 3 号"))
+        assertFalse("9 号未来计划「今晚打算毒10号」不入账：$text", text.contains("9 号称第 2 天毒了 10 号"))
+        assertFalse("9 号假设句「如果…就毒11号」不入账：$text", text.contains("9 号称第 2 天毒了 11 号"))
+    }
 }

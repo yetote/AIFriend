@@ -199,6 +199,13 @@ class WerewolfDirector(
         val guardGame = guardTable?.game
         val wolfGame = wolfTable?.game
         val seerGame = seerTable?.game
+        // 并发三路各自可能更新自己座位的私密狼坑本，按「相对 base 变动过的键」合并，互不覆盖。
+        val mergedNotes = LinkedHashMap(base.beliefNotes)
+        listOfNotNull(guardGame, wolfGame, seerGame).forEach { part ->
+            part.beliefNotes.forEach { (seat, note) ->
+                if (base.beliefNotes[seat] != note) mergedNotes[seat] = note
+            }
+        }
         val finalGame = base.copy(
             // 守卫写入
             tonightGuardedSeat = if (guardGame != null) guardGame.tonightGuardedSeat else base.tonightGuardedSeat,
@@ -210,8 +217,10 @@ class WerewolfDirector(
             ghostWolves = if (wolfGame != null) wolfGame.ghostWolves else base.ghostWolves,
             nightHead = if (wolfGame != null) wolfGame.nightHead else base.nightHead,
             wolfPlan = if (wolfGame != null) wolfGame.wolfPlan else base.wolfPlan,
+            wolfStyleSeed = if (wolfGame != null) wolfGame.wolfStyleSeed else base.wolfStyleSeed,
             // 预言家写入
             seerChecks = if (seerGame != null) seerGame.seerChecks else base.seerChecks,
+            beliefNotes = mergedNotes,
             // 发言进度：狼人路 talkRound 的 markSpoken 要保留——续档靠它跳过已发言的狼。
             // 守卫 / 预言家是单次决策不走 markSpoken，所以取狼人路的值即可。
             spokenPhaseKey = if (wolfGame != null) wolfGame.spokenPhaseKey else base.spokenPhaseKey,
@@ -249,7 +258,7 @@ class WerewolfDirector(
         onProgress(WerewolfProgress(game.day, Phase.NIGHT_GUARD, 1, 1, seat = guard.seat))
         val outcome = askGuard(table, guard.seat)
         val target = outcome.value.target
-        val next = game.guardProtect(target)
+        val next = game.guardProtect(target).withBeliefNote(guard.seat, outcome.value.note)
         return table
             .append(
                 WerewolfMessage(
@@ -260,7 +269,7 @@ class WerewolfDirector(
                     text = if (target == null) "这晚我不守人。" + outcome.value.reason
                     else "我守 $target 号。" + outcome.value.reason,
                     // 思维链跟着这条记录存：对局里靠开关决定给不给看，复盘里点开就能看
-                    reasoning = outcome.reasoning,
+                    reasoning = combineReasoningWithNote(outcome.reasoning, outcome.value.note),
                     usage = outcome.usage,
                     audience = setOf(guard.seat),
                 )
@@ -281,23 +290,22 @@ class WerewolfDirector(
     suspend fun nightWolfChat(table: WerewolfTable): WerewolfTable {
         val game = table.game
         if (game.phase != Phase.NIGHT_WOLF_CHAT) return table
-        // 每晚随机指定一名头狼：没有指挥，四只狼就是四份互不相干的上下文，
-        // 夜里各说各的、白天各跳各的。随机而不是固定给某个座位（第一个发言的、
-        // 或者模型最强的），是为了让每局都有变化，也避免永远有人背这个角色。
-        //
-        // 续档时**沿用存档里的头狼**：同一条夜里换人当头狼，而 transcript 里已经
-        // 躺着旧头狼的发言，场上会凭空多出一个「假头狼」。存档里的头狼已经出局
-        // （理论上不会，但存档可能被改过）才重选。
         val aliveWolves = game.aliveWolves()
-        // 导演钉死的头狼优先：只要活着，每晚都是他——导演指定头狼就是要看
-        // 「这个模型带一队狼」能打成什么样。他出局后走原有规则。
-        // 其次沿用存档里的头狼：同一条夜里换人当头狼，而 transcript 里已经
-        // 躺着旧头狼的发言，场上会凭空多出一个「假头狼」。存档里的头狼已经出局
-        // （理论上不会，但存档可能被改过）才重选。
         val head = game.alphaWolfSeat?.takeIf { seat -> aliveWolves.any { it.seat == seat } }
             ?: game.nightHead?.takeIf { seat -> aliveWolves.any { it.seat == seat } }
             ?: aliveWolves.randomOrNull(random)?.seat
-        val prepared = if (head == null) table else table.copy(game = game.copy(nightHead = head))
+        // 第 1 夜为本局随机抽一张狼队风向卡（仅引导式头狼可见，每局自然走出不同剧本）
+        val styleSeed = game.wolfStyleSeed ?: if (game.day == 1) {
+            com.feature.werewolf.prompt.roles.WolfStyleCards.pick(game.config, random)
+        } else {
+            null
+        }
+        val prepared = table.copy(
+            game = game.copy(
+                nightHead = head ?: game.nightHead,
+                wolfStyleSeed = styleSeed,
+            )
+        )
         val spoken = talkRound(prepared, note = null)
         return spoken.copy(game = spoken.game.beginWolfVote())
     }
@@ -357,6 +365,7 @@ class WerewolfDirector(
                         seat = firstSeat,
                         kind = MessageKind.WOLF_CHAT,
                         text = killLine("我们", first.value.target) + first.value.reason,
+                        reasoning = combineReasoningWithNote(first.reasoning, first.value.note),
                         usage = first.usage,
                         audience = wolves.map { it.seat }.toSet(),
                     )
@@ -370,6 +379,7 @@ class WerewolfDirector(
                             seat = seat,
                             kind = MessageKind.WOLF_CHAT,
                             text = killLine("我", outcome.value.target) + outcome.value.reason,
+                            reasoning = combineReasoningWithNote(outcome.reasoning, outcome.value.note),
                             usage = outcome.usage,
                             audience = wolves.map { it.seat }.toSet(),
                         )
@@ -378,7 +388,9 @@ class WerewolfDirector(
             }
 
             val votes = outcomes.associate { (seat, outcome) -> seat to outcome.value.target }
-            val afterVote = game.wolfVote(votes)
+            val afterVote = outcomes.fold(game.wolfVote(votes)) { acc, (seat, outcome) ->
+                acc.withBeliefNote(seat, outcome.value.note)
+            }
             current = next.copy(game = afterVote).syncPublicEvents(game)
             // 定刀结果也推一次：平票时界面要能立刻看到「谁指了谁」，
             // 否则下一轮商议的发言会显得凭空多出来一段
@@ -476,7 +488,7 @@ class WerewolfDirector(
 
         onProgress(WerewolfProgress(game.day, Phase.NIGHT_SEER, 1, 1, seat = seer.seat))
         val outcome = askSeer(table, seer.seat)
-        val next = game.seerCheck(outcome.value.target)
+        val next = game.seerCheck(outcome.value.target).withBeliefNote(seer.seat, outcome.value.note)
         val check = next.seerChecks.last()
         return table
             .append(
@@ -492,7 +504,7 @@ class WerewolfDirector(
                     // 这条消息的 audience 只有预言家本人，写结论不构成泄露。
                     text = "查验 ${check.targetSeat} 号：${if (check.isWerewolf) "狼人" else "好人"}。" +
                         outcome.value.reason,
-                    reasoning = outcome.reasoning,
+                    reasoning = combineReasoningWithNote(outcome.reasoning, outcome.value.note),
                     usage = outcome.usage,
                     audience = setOf(seer.seat),
                 )
@@ -522,6 +534,7 @@ class WerewolfDirector(
         val outcome = askWitch(table, witch.seat)
         val choice = outcome.value
         val next = game.witchAct(heal = choice.heal, poisonTarget = choice.poison)
+            .withBeliefNote(witch.seat, choice.note)
         return table
             .append(
                 WerewolfMessage(
@@ -530,7 +543,7 @@ class WerewolfDirector(
                     seat = witch.seat,
                     kind = MessageKind.NIGHT_ACT,
                     text = describeWitchChoice(choice.heal, choice.poison) + choice.reason,
-                    reasoning = outcome.reasoning,
+                    reasoning = combineReasoningWithNote(outcome.reasoning, choice.note),
                     usage = outcome.usage,
                     audience = setOf(witch.seat),
                 )
@@ -789,13 +802,16 @@ class WerewolfDirector(
                     seat = seat,
                     kind = MessageKind.SPEECH,
                     text = said,
-                    reasoning = outcome.reasoning,
+                    reasoning = combineReasoningWithNote(outcome.reasoning, outcome.value.note),
                     usage = outcome.usage,
                 )
             )
         }
         val withdrawn = outcomes.filter { it.second.value.withdraw }.map { it.first }.toSet()
-        return current.copy(game = game.withdrawSheriff(withdrawn))
+        val afterWithdraw = outcomes.fold(game.withdrawSheriff(withdrawn)) { acc, (seat, outcome) ->
+            acc.withBeliefNote(seat, outcome.value.note)
+        }
+        return current.copy(game = afterWithdraw)
             .syncPublicEvents(game)
             .also { onTranscript(it) }
     }
@@ -866,13 +882,15 @@ class WerewolfDirector(
                         // 「没人听见」终于对上了（放逐投票同理，也只给本人）。
                         // 观战是上帝视角，emergedVisible 对 humanSeat==null 不过滤，照样看得见。
                         audience = setOf(seat),
-                        reasoning = outcome.reasoning,
+                        reasoning = combineReasoningWithNote(outcome.reasoning, outcome.value.note),
                     )
                 )
             }
             val votes = outcomes.associate { (seat, outcome) -> seat to outcome.value.target }
             next = next.append(ballotMessage(game, Phase.DAY_SHERIFF_VOTE, votes))
-            val after = game.castSheriffVotes(votes)
+            val after = outcomes.fold(game.castSheriffVotes(votes)) { acc, (seat, outcome) ->
+                acc.withBeliefNote(seat, outcome.value.note)
+            }
             current = next.copy(game = after).syncPublicEvents(game)
             onTranscript(current)
             rounds++
@@ -1018,7 +1036,7 @@ class WerewolfDirector(
                         // 不靠这条原文。观战是上帝视角，emergedVisible 对
                         // humanSeat==null 不过滤，照样看得见。
                         audience = setOf(seat),
-                        reasoning = outcome.reasoning,
+                        reasoning = combineReasoningWithNote(outcome.reasoning, outcome.value.note),
                     )
                 )
             }
@@ -1027,7 +1045,9 @@ class WerewolfDirector(
             // 唱票卡在结算前生成：警长权重取的是**投票那一刻**的 sheriffSeat，
             // 用 afterVote 的话，投出的警长一旦出局/移交，票就按新警长算了。
             next = next.append(ballotMessage(game, Phase.DAY_VOTE, votes))
-            val afterVote = game.castVotes(votes)
+            val afterVote = outcomes.fold(game.castVotes(votes)) { acc, (seat, outcome) ->
+                acc.withBeliefNote(seat, outcome.value.note)
+            }
             current = next.copy(game = afterVote).syncPublicEvents(game)
             onTranscript(current)
             rounds++
@@ -1798,6 +1818,7 @@ class WerewolfDirector(
         // 白天盘身份时把队友当成可疑对象，甚至投票落到队友身上，等于白送一张狼。
         // 所以每次请求的正文开头都钉一条，短、硬、只在本人的请求里出现。
         appendMemoryAnchor(game, seat)
+        appendBeliefNote(game, seat)
         val lines = recentlySaid(renderRecent(recent, game.day))
         if (lines.isNotEmpty()) {
             append("【本日进程】\n")
@@ -1812,6 +1833,27 @@ class WerewolfDirector(
         // 狼队夜聊是 WOLF_CHAT、走 wolfPlan 那条私有通道，不会混进来）。
         append(ownNightBrief(table, seat, game.day))
         append(task)
+    }
+
+    /**
+     * 把**本人**上一轮写下的私密狼坑本注入本次上下文。
+     *
+     * 严格只读 `game.beliefNotes[seat]`——每个座位只能看见自己记的心证，
+     * 绝不读取他人笔记，既能跨昼夜记住狼坑与布局、消除「说完就忘」，又不构成泄底。
+     */
+    private fun StringBuilder.appendBeliefNote(game: WerewolfGame, seat: Int) {
+        val note = game.beliefNotes[seat]?.takeIf { it.isNotBlank() } ?: return
+        append("【你的私密狼坑本（仅你可见，上轮记下的心证）】\n")
+        append(note).append("\n")
+        append("—— 结合本轮新发言更新你的判断：证据支持就延续布局，出现新硬证就果断修正。\n\n")
+    }
+
+    /** 把结构化决策附带的私密心证笔记并进复盘思考链，不改变对局内可见性。 */
+    private fun combineReasoningWithNote(reasoning: String, note: String): String {
+        val cleaned = note.replace('\n', ' ').trim().take(WerewolfGame.BELIEF_NOTE_MAX_CHARS)
+        if (cleaned.isEmpty()) return reasoning
+        val tag = "【私密狼坑本更新】$cleaned"
+        return if (reasoning.isBlank()) tag else "$reasoning\n\n$tag"
     }
 
     /**

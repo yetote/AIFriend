@@ -440,17 +440,23 @@ class WerewolfPromptTest {
         assertTrue(guided.contains("【基本打法】"))
         assertTrue(guided.contains("【白天推理准则】"))
 
-        // FREE 保留硬规则 + 核对事实 + 术语，砍掉打法与身份作业
+        // FREE 保留硬规则 + 核对事实 + 术语 + 自由式放开授权，砍掉打法公式与身份作业
         assertTrue(free.contains("【胜负规则】"))
         assertTrue(free.contains("【核对事实】"))
+        assertTrue(free.contains("【自由式对局】"))
+        assertTrue(free.contains("放开你的战术自由度"))
+        assertFalse("自由式不塞套路公式「查杀 > 对跳」", free.contains("查杀 > 对跳"))
         assertTrue(free.contains("【术语约定】"))
         assertFalse(free.contains("【基本打法】"))
         assertFalse(free.contains("【白天推理准则】"))
         assertFalse(WerewolfPrompt.systemPrompt(game, seat = 1, style = WerewolfPromptStyle.FREE).contains("【狼队打法菜单】"))
 
-        // SEARCH 只留版型+胜负+核对事实+联网许可
+        // SEARCH 只留版型+胜负+核对事实+联网许可，不带自由式自由度段落
         assertTrue(search.contains("【版型】"))
         assertTrue(search.contains("【胜负】"))
+        assertTrue(search.contains("【核对事实】"))
+        assertFalse(search.contains("【自由式对局】"))
+        assertFalse(search.contains("查杀 > 对跳"))
         assertTrue(search.contains("你可以联网检索"))
         assertFalse(search.contains("【遗言】"))
         assertFalse(search.contains("【术语约定】"))
@@ -469,8 +475,29 @@ class WerewolfPromptTest {
 
         assertTrue(all.contains("【白天推理准则】"))
         assertTrue(vote.contains("【核对事实】"))
+        assertTrue("引导式 VOTE 保留出人优先级提醒", vote.contains("查杀 > 对跳"))
         assertFalse(vote.contains("【白天推理准则】"))
         assertFalse(night.contains("【白天推理准则】"))
+    }
+
+    @Test
+    fun `狼队开局风向卡仅在第 1 夜引导式商议阶段注入给狼，绝不漏给好人或自由式或次夜`() {
+        val seed = "【双狼悍跳搅局流】安排一狼正跳预言家、一狼警上反水或补跳试探。"
+        val night1Chat = gameWithGuard().copy(
+            day = 1,
+            phase = Phase.NIGHT_WOLF_CHAT,
+            nightHead = 1,
+            wolfStyleSeed = seed,
+        )
+        val wolfPrompt = WerewolfPrompt.systemPrompt(night1Chat, seat = 1, style = WerewolfPromptStyle.GUIDED)
+        assertTrue("第 1 夜引导式狼聊看到风向卡", wolfPrompt.contains("【本局狼队风向启发"))
+        assertTrue("风向卡原文注入", wolfPrompt.contains(seed))
+
+        // 好人、自由式、定刀阶段、第 2 夜都不注入
+        assertFalse("好人绝看不到风向卡", WerewolfPrompt.systemPrompt(night1Chat, seat = 3).contains(seed))
+        assertFalse("自由式不灌风向卡", WerewolfPrompt.systemPrompt(night1Chat, seat = 1, style = WerewolfPromptStyle.FREE).contains(seed))
+        assertFalse("定刀阶段不灌风向卡", WerewolfPrompt.systemPrompt(night1Chat.copy(phase = Phase.NIGHT_WOLF), seat = 1).contains(seed))
+        assertFalse("第 2 夜不再灌首夜风向卡", WerewolfPrompt.systemPrompt(night1Chat.copy(day = 2), seat = 1).contains(seed))
     }
 
     @Test

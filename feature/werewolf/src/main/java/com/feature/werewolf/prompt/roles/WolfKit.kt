@@ -124,6 +124,9 @@ internal object WolfKit : RoleKit {
                 lines += WolfSideMath.of(game)
                 // 战术菜单只在商议阶段（NIGHT_WOLF_CHAT）注入，定刀表决阶段（NIGHT_WOLF）已经达成共识，不再重复灌 11 套战术省 token
                 if (game.phase == Phase.NIGHT_WOLF_CHAT) {
+                    if (game.day == 1 && !game.wolfStyleSeed.isNullOrBlank()) {
+                        lines += "【本局狼队风向启发（每局随机，供头狼破局参考，可结合局势采纳或微调，不必死板照搬）】${game.wolfStyleSeed}"
+                    }
                     lines += "【狼队打法菜单】头狼从下面挑一套具体分工并点名谁执行，挑定后白天统一照演、别中途变卦："
                     lines += WolfTactics.menu(game.config)
                 }

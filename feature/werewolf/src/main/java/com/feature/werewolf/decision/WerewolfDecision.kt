@@ -8,26 +8,29 @@ import com.feature.werewolf.game.WerewolfRole
 import kotlinx.serialization.Serializable
 import kotlin.random.Random
 
-/** 狼人夜刀 / 预言家查验的结果。[reason] 会作为夜间发言显示，所以要求模型写一句人话。 */
+/** 狼人夜刀 / 预言家查验的结果。[reason] 会作为夜间发言显示，[note] 写入本人私密狼坑本。 */
 @Serializable
 data class SeatChoice(
     val target: Int,
     val reason: String = "",
+    val note: String = "",
 )
 
-/** 女巫用药。两种药互斥，都不填等于什么都不做。 */
+/** 女巫用药。两种药互斥，都不填等于什么都不做。[note] 写入本人私密狼坑本。 */
 @Serializable
 data class WitchChoice(
     val heal: Boolean = false,
     val poison: Int? = null,
     val reason: String = "",
+    val note: String = "",
 )
 
-/** 白天投票 / 猎人开枪。`target` 为 null 表示弃票或不开枪。 */
+/** 白天投票 / 猎人开枪。`target` 为 null 表示弃票或不开枪。[note] 写入本人私密狼坑本。 */
 @Serializable
 data class VoteChoice(
     val target: Int? = null,
     val reason: String = "",
+    val note: String = "",
 )
 
 /**
@@ -73,6 +76,7 @@ data class ExplodeChoice(
 data class WithdrawChoice(
     val withdraw: Boolean = false,
     val reason: String = "",
+    val note: String = "",
 )
 
 /**
@@ -101,24 +105,21 @@ object WerewolfDecisions {
         "reason 是你心里的判断（没人听见，也不会朗读）：一句话说清理由，不要复述别人已经说过的内容。"
 
     /**
-     * 狼人夜刀。
-     *
-     * 候选是**全部存活座位**，包括自己和队友：自刀骗解药、刀队友做身份都是线下正经打法。
-     * 引擎 v12 起也放开了这两条（以前有两道 require 拦着）。
-     *
-     * `target = null` 是**空刀**：不是失误，是战术——连着空两夜能让好人误判「有守卫守中了」。
-     * 所以这里用 [VoteChoice] 而不是 [SeatChoice]：形状和投票一样，人类座位那边
-     * 「空刀」按钮直接走弃权那条路，不用再加一种提交类型。
+     * 私密狼坑本（跨轮心证笔记）更新提示：零额外请求，直接随 JSON 决策带回并持久化给下一轮的自己看。
      */
+    private const val BELIEF_NOTE_HINT =
+        "可选填 \"note\"（仅你自己和复盘可见，≤80 字，写下你此刻的跨轮心证：站边谁、暂定狼坑、铁好人、下轮打算，留空则沿用旧笔记）。"
+
     fun wolfKill(game: WerewolfGame, seat: Int): StructuredSpec<VoteChoice> {
         val candidates = game.aliveSeats
         return StructuredSpec(
             instruction = buildString {
-                append("输出 {\"target\": 座位号或 null, \"reason\": \"一句话理由\"}。")
+                append("输出 {\"target\": 座位号或 null, \"reason\": \"一句话理由\", \"note\": \"可选心证笔记\"}。")
                 append("target 是今晚要刀的人，可以从 ${list(candidates)} 里选——")
                 append("**包括你自己（$seat 号）和你的队友**：自刀骗解药、刀队友做身份都是合法战术。")
                 append("不想刀任何人就填 null（空刀），这也是合法战术，不是失误。")
                 append("reason 用一句中文说明你为什么这么选，这句话队友会看到。")
+                append(BELIEF_NOTE_HINT)
             },
             serializer = VoteChoice.serializer(),
             validate = { it.target == null || it.target in candidates },
@@ -129,9 +130,9 @@ object WerewolfDecisions {
     fun seerCheck(game: WerewolfGame, seat: Int): StructuredSpec<SeatChoice> {
         val candidates = game.aliveSeats.filter { it != seat }
         return StructuredSpec(
-            instruction = "输出 {\"target\": 座位号, \"reason\": \"一句话理由\"}。" +
+            instruction = "输出 {\"target\": 座位号, \"reason\": \"一句话理由\", \"note\": \"可选心证笔记\"}。" +
                 "target 必须是今晚要查验的人，只能从 ${list(candidates)} 中选，不能选自己。" +
-                "reason 用一句中文说明你的判断依据。",
+                "reason 用一句中文说明你的判断依据。" + BELIEF_NOTE_HINT,
             serializer = SeatChoice.serializer(),
             validate = { it.target in candidates },
         )
@@ -139,8 +140,6 @@ object WerewolfDecisions {
 
     /** 女巫用药。校验比前两个复杂：药是否还在、能不能自救、两种药是否互斥。 */
     fun witch(game: WerewolfGame, seat: Int): StructuredSpec<WitchChoice> {
-        // 毒药候选里去掉自己。这不是校验的补充，而是**信息**：女巫看不到名单时
-        // 会去猜能不能毒到自己，猜错就白白重试一轮。
         val poisonCandidates = game.aliveSeats.filter { it != seat }
         val victim = game.tonightVictim
         val antidoteGone = !game.witch.antidoteAvailable
@@ -148,10 +147,8 @@ object WerewolfDecisions {
             !(game.day == 1 && game.config.witchCanSelfHealOnFirstNight)
         return StructuredSpec(
             instruction = buildString {
-                append("输出 {\"heal\": true 或 false, \"poison\": 座位号或 null, \"reason\": \"一句话理由\"}。")
+                append("输出 {\"heal\": true 或 false, \"poison\": 座位号或 null, \"reason\": \"一句话理由\", \"note\": \"可选心证笔记\"}。")
                 if (antidoteGone) {
-                    // 解药一空，夜里零信息：刀口、平安夜、甚至自己被刀都不再披露。
-                    // 白天的死讯播报是全场公开的，那才是她该有的信息渠道。
                     append("你的解药已经用完，今晚谁被袭击、还是没有人被袭击，你都不会被告知。")
                 } else {
                     append(
@@ -165,9 +162,6 @@ object WerewolfDecisions {
                 append("heal 表示是否用解药救今晚被刀的人")
                 append(
                     when {
-                        // 「不能用」有好几种原因，必须分清：说成同一句，女巫会以为自己漏了信息。
-                        // 自己中刀时优先说「救不了你自己」——库存状态上一句已经交待过，
-                        // 这一刻对她有用的信息是「后果」，不是「药还剩几瓶」。
                         antidoteGone -> "（解药已经用完了，只能填 false）"
                         doomed -> "（救不了你自己）"
                         victim == null -> "（今晚没人被刀，用不上）"
@@ -184,17 +178,15 @@ object WerewolfDecisions {
                 )
                 append("。两种药同一夜不能一起用，不想用药就 heal=false 且 poison=null。")
                 if (doomed && game.witchCanPoison) {
-                    // 女巫本人今晚必死，毒药不留就等于作废。不明说的话，模型会用
-                    // 「留到更关键的时刻」这种说法把唯一一次机会省掉。
                     append("注意：你今晚必死，这是你唯一一次用毒药的机会，留着不会再有下次。")
                 }
                 append(INNER_REASON_HINT)
+                append(BELIEF_NOTE_HINT)
             },
             serializer = WitchChoice.serializer(),
             validate = { choice ->
                 val healOk = !choice.heal || (
                     game.witchCanHeal &&
-                        // 女巫不能自救，第一夜按配置可能例外；这里跟引擎保持同一套判断
                         (game.tonightVictim != seat || (game.day == 1 && game.config.witchCanSelfHealOnFirstNight))
                     )
                 val poisonOk = choice.poison == null || (
@@ -207,19 +199,14 @@ object WerewolfDecisions {
         )
     }
 
-    /**
-     * 守卫守护。
-     *
-     * 候选里**包含自己**——守自己是常见选择，引擎不该替守卫排除。
-     * 允许空守，所以用 [VoteChoice]（target 可空）而不是 [SeatChoice]。
-     */
+    /** 守卫守护。候选包含自己，允许空守。 */
     fun guardProtect(game: WerewolfGame, seat: Int): StructuredSpec<VoteChoice> {
         val valid = game.guardTargets
         return StructuredSpec(
-            instruction = "输出 {\"target\": 座位号或 null, \"reason\": \"一句话理由\"}。" +
+            instruction = "输出 {\"target\": 座位号或 null, \"reason\": \"一句话理由\", \"note\": \"可选心证笔记\"}。" +
                 "target 是你要守护的人，只能从 ${list(valid)} 中选（可以选你自己）；不想守任何人就填 null。" +
                 (game.lastGuardedSeat?.let { "你昨夜守的是 $it 号，不能连续两夜守同一个人。" } ?: "") +
-                INNER_REASON_HINT,
+                INNER_REASON_HINT + BELIEF_NOTE_HINT,
             serializer = VoteChoice.serializer(),
             validate = { it.target == null || it.target in valid },
         )
@@ -229,7 +216,7 @@ object WerewolfDecisions {
     fun vote(game: WerewolfGame, candidates: List<Int>): StructuredSpec<VoteChoice> {
         val valid = candidates.filter { it in game.votingSeats }
         return StructuredSpec(
-            instruction = "输出 {\"target\": 座位号或 null, \"reason\": \"一句话理由\"}。" +
+            instruction = "输出 {\"target\": 座位号或 null, \"reason\": \"一句话理由\", \"note\": \"可选心证笔记\"}。" +
                 "target 是你要投的人，只能从 ${list(valid)} 中选。" +
                 "**有明确怀疑就必须投出去**：弃票浪费好人唯一武器，「不想得罪人」「再看看」不是理由。" +
                 "但**完全分不清时宁可弃票，也别无理由乱投**——乱投的人第二天讲不清站边依据，" +
@@ -237,23 +224,14 @@ object WerewolfDecisions {
                 "**票要和你今天说过的话一致**：你在发言里说怀疑谁，就投谁；" +
                 "说了 A 却投 B，在场上等于当众承认自己在打哑谜。" +
                 "reason 是心里的依据（没人听见）：一句话点出你凭什么怀疑他——" +
-                "他的哪句话前后对不上、哪张票反常，别只写「感觉」「像狼」。",
+                "他的哪句话前后对不上、哪张票反常，别只写「感觉」「像狼」。" +
+                BELIEF_NOTE_HINT,
             serializer = VoteChoice.serializer(),
             validate = { it.target == null || it.target in valid },
         )
     }
 
-    /**
-     * 上警报名。
-     *
-     * 用 [VoteChoice] 而不是新建一个 `Boolean` 决策：`target` 填自己的座位号就是上警、
-     * 填 null 就是不上警。牌桌上的输入面板、人类提交路径、存档都因此不用为它再加一条分支，
-     * 而「选自己」这个动作在界面上也说得通（点自己的头像报名）。
-     *
-     * **这一步只出决定，不出话**：线下就是举手，理由属于竞选发言环节。所以 instruction
-     * 不再诱导模型写竞选宣言（写成 `reason` 会被当成发言播出去，第一阶段就会变成
-     * 12 个人各讲一段）。
-     */
+    /** 上警报名。 */
     fun sheriffSignup(game: WerewolfGame, seat: Int): StructuredSpec<VoteChoice> {
         return StructuredSpec(
             instruction = "输出 {\"target\": 座位号或 null}。" +
@@ -265,20 +243,9 @@ object WerewolfDecisions {
         )
     }
 
-    /**
-     * 退水：竞选发言说完了，要不要放弃竞选。
-     *
-     * 必须把三件事写清楚，模型不会自己推出来：
-     * 退了就**不再被投票**、首轮也**没有警长票**（上过警的人首轮不投）——
-     * 但平票 PK 时台外的人都能投，退水的人这一轮有票，别把他写成永远的哑巴；
-     * 剩下的候选还有谁；如果只剩一个人不退，他直接当选。
-     *
-     * 兜底是不退水（[WithdrawChoice] 的默认值）——
-     * 「想不清楚」不该被当成让位，让位是有成本的。
-     */
+    /** 退水：竞选发言说完了，要不要放弃竞选。 */
     fun withdraw(game: WerewolfGame, seat: Int): StructuredSpec<WithdrawChoice> {
         val remaining = game.sheriffCandidates.filter { it != seat }
-        // 「退了会怎样」按警上还剩几个人给：一个人时退水就是白送警徽，得说清楚
         val stakes = if (remaining.isEmpty()) {
             "警上只剩你一个，你一退水本局就没有警长。"
         } else {
@@ -286,30 +253,28 @@ object WerewolfDecisions {
                 "他们如果全都退水，你直接当选。"
         }
         return StructuredSpec(
-            instruction = "输出 {\"withdraw\": true 或 false, \"reason\": \"一句话理由\"}。" +
+            instruction = "输出 {\"withdraw\": true 或 false, \"reason\": \"一句话理由\", \"note\": \"可选心证笔记\"}。" +
                 "竞选发言已经说完，现在问你要不要**退水**（放弃竞选）。" +
                 "退水的人不再被投票；首轮你也没有警长票（上过警的人首轮不投），" +
                 "但只要出现平票 PK，台上之外的人都能投，你这一轮照样有票。" +
-                stakes + INNER_REASON_HINT,
+                stakes + INNER_REASON_HINT + BELIEF_NOTE_HINT,
             serializer = WithdrawChoice.serializer(),
             validate = { true },
         )
     }
 
-    /** 警长投票：只能投上警的那几个人，且不能投自己（自己上警了本来也投不了）。 */
+    /** 警长投票：只能投上警的那几个人，且不能投自己。 */
     fun sheriffVote(game: WerewolfGame, candidates: List<Int>): StructuredSpec<VoteChoice> {
         val valid = candidates.sorted()
-        // 首轮只有警下能投；PK 轮台上的人不投、其余存活都能投（含上过警没进 PK 的）。
-        // 这句话不能写死「你是警下的人」——PK 轮会问到上过警的人，自相矛盾。
         val who = if (game.sheriffRound <= 1) {
             "你是警下的人，这一票决定警徽归谁。"
         } else {
             "现在是平票 PK：台上的人不能投，你在台外，这一票决定警徽归谁。"
         }
         return StructuredSpec(
-            instruction = "输出 {\"target\": 座位号或 null, \"reason\": \"一句话理由\"}。" +
+            instruction = "输出 {\"target\": 座位号或 null, \"reason\": \"一句话理由\", \"note\": \"可选心证笔记\"}。" +
                 "target 是你要选为警长的人，只能从 ${list(valid)} 中选；实在不想选就填 null。" +
-                who + INNER_REASON_HINT,
+                who + INNER_REASON_HINT + BELIEF_NOTE_HINT,
             serializer = VoteChoice.serializer(),
             validate = { it.target == null || it.target in valid },
         )

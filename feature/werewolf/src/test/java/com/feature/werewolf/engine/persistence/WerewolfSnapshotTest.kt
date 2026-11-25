@@ -82,6 +82,11 @@ class WerewolfSnapshotTest {
             ),
             pendingHunterSeat = 5,
             afterHunterPhase = Phase.DAY_DISCUSSION,
+            beliefNotes = mapOf(
+                1 to "装民冲票，把3号真预打成悍跳",
+                4 to "站边3号，狼坑暂定1、2，今晚考虑毒1",
+            ),
+            wolfStyleSeed = "【狼踩狼做身份流】两名狼人提前约好轻微互踩拉对立，制造假反水做高深水狼身份。",
             history = listOf(
                 GameEvent.Dawn(day = 1, deadSeats = listOf(5, 7)),
                 GameEvent.Exiled(day = 2, seat = 2, voteCount = 5.0),
@@ -472,6 +477,24 @@ class WerewolfSnapshotTest {
         val restored = WerewolfSnapshot.decode(text)
         assertNotNull("v2 档应该还能续上", restored)
         assertEquals("缺的字段按默认值补齐", legacy, restored)
+    }
+
+    @Test
+    fun `v24 旧档缺少 beliefNotes 和 wolfStyleSeed 时按默认值兼容读取`() {
+        val legacy = richTable().let {
+            it.copy(game = it.game.copy(beliefNotes = emptyMap(), wolfStyleSeed = null))
+        }
+        var text = WerewolfSnapshot.encode(legacy)
+            .replaceFirst("\"version\":${WerewolfSnapshot.VERSION}", "\"version\":24")
+        listOf("\"beliefNotes\":{},", "\"wolfStyleSeed\":null,")
+            .forEach { field ->
+                assertTrue("构造 v24 档失败：$field 没找到", text.contains(field))
+                text = text.replace(field, "")
+            }
+
+        val restored = WerewolfSnapshot.decode(text)
+        assertNotNull("v24 档必须能正常续档", restored)
+        assertEquals("缺省字段应补为空心证与 null 风向卡", legacy, restored)
     }
 
     @Test

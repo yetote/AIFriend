@@ -86,10 +86,10 @@ object WerewolfPrompt {
                     ).trimEnd()
                 ).append("\n\n")
                 if (includeReading && effectiveScope == ReadingTells.Scope.VOTE) {
-                    append(factsBrief(game.config).trimEnd()).append("\n\n")
+                    append(voteFactsBrief(game.config).trimEnd()).append("\n\n")
                 }
             } else {
-                append(factsBrief(game.config).trimEnd()).append("\n\n")
+                append(freeFactsBrief(game.config, openPlay = style == WerewolfPromptStyle.FREE).trimEnd()).append("\n\n")
             }
 
             if (style != WerewolfPromptStyle.SEARCH) {
@@ -344,8 +344,24 @@ object WerewolfPrompt {
         if (isWolf) board.wolves.forEach { append("· ").append(it).append("\n") }
     }
 
-    /** 投票决策与自由式/搜索式专用的精简事实核对表（绝不含打法倾向）。 */
-    private fun factsBrief(config: WerewolfConfig): String = buildString {
+    /** 引导式投票决策专用：精简事实核对表 + 轮次提醒。 */
+    private fun voteFactsBrief(config: WerewolfConfig): String = buildString {
+        append(objectiveFactsLines(config))
+        append("· **警长票 vs 白天放逐**：警长票投综合最可信的真预（不因谁报查杀就盲投他）；白天放逐遵循 查杀 > 对跳 > 行为破绽，少分票，完全分不清宁可弃票。\n")
+    }
+
+    /**
+     * 自由式 / 搜索式专用：只给纯客观可核事实 + 放开模型自由度授权，不塞任何打法公式。
+     */
+    private fun freeFactsBrief(config: WerewolfConfig, openPlay: Boolean): String = buildString {
+        append(objectiveFactsLines(config))
+        if (openPlay) {
+            append("【自由式对局】本局完全放开你的战术自由度，不限制固定套路：只要不违背游戏硬规则与阵营保密红线，")
+            append("反常规起跳、心理诈身份、倒钩反水、藏药钓鱼、穿神衣服挡刀等都由你自主创造，一切以帮所在阵营获胜为最高目标。\n")
+        }
+    }
+
+    private fun objectiveFactsLines(config: WerewolfConfig): String = buildString {
         append("【核对事实】拿不准时按以下可核硬判据判断：\n")
         append("· **验人前后改口 = 假预**：真预言家不会记错自己验了谁；先报金水后打铁狼、改验人对象基本坐实假预。\n")
         append("· **首夜零信息无心路**：第 1 天只报 1 验、验到死人、说不出心路全正常，只核座位等可验算理由；第 2 天起看警徽流是否兑现（改流与验过补新合法）。\n")
@@ -358,7 +374,6 @@ object WerewolfPrompt {
         }
         append("\n")
         append("· **票型对账**：话投 A 实投 B、全程绑定冲票是硬证据；被发金水不证清白，敢报查杀也不等于真。\n")
-        append("· **警长票 vs 白天放逐**：警长票投综合最可信的真预（不因谁报查杀就盲投他）；白天放逐遵循 查杀 > 对跳 > 行为破绽，少分票，完全分不清宁可弃票。\n")
     }
 
     // ---------------------------------------------------------------------

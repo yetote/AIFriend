@@ -90,8 +90,11 @@ object WerewolfSnapshot {
      * v24：女巫快照多出 nightHeal / nightPoison（本夜用药决定）——夜间行动不再立即结算，
      * 决定暂存到天亮 DAWN_SETTLE 节点统一结算。旧档没有这两项，按「没救没毒」读，
      * 行为与旧版一致。
+     *
+     * v25：对局多出 `beliefNotes`（每座位的私密心证笔记）与 `wolfStyleSeed`（本局狼队开局风向卡）。
+     * 均为带默认值的新增字段，旧档兼容读出为空映射 / null。
      */
-    const val VERSION = 24
+    const val VERSION = 25
 
     private val json = Json {
         ignoreUnknownKeys = true   // 旧档多出来的字段不该让新版本读不出来
@@ -268,6 +271,9 @@ internal data class TableSnapshot(
     /** v15 起：逐座位发言的续档进度。见 [WerewolfGame.spokenPhaseKey]。 */
     val spokenPhaseKey: String = "",
     val spokenSeats: List<Int> = emptyList(),
+    /** v25 起：每座位的私密心证笔记与本局狼队开局风向卡。 */
+    val beliefNotes: Map<Int, String> = emptyMap(),
+    val wolfStyleSeed: String? = null,
     val transcript: List<MessageSnapshot> = emptyList(),
 )
 
@@ -490,6 +496,8 @@ internal fun WerewolfTable.toSnapshot(
         afterHunterPhase = game.afterHunterPhase.name,
         spokenPhaseKey = game.spokenPhaseKey,
         spokenSeats = game.spokenSeats.sorted(),
+        beliefNotes = game.beliefNotes,
+        wolfStyleSeed = game.wolfStyleSeed,
         history = game.history.map { it.toSnapshot() },
         winner = game.winner?.name,
         nights = game.nights.map {
@@ -638,6 +646,8 @@ internal fun TableSnapshot.toTable(): WerewolfTable = WerewolfTable(
         afterHunterPhase = enumOf<Phase>(afterHunterPhase),
         spokenPhaseKey = spokenPhaseKey,
         spokenSeats = spokenSeats.toSet(),
+        beliefNotes = beliefNotes,
+        wolfStyleSeed = wolfStyleSeed,
         history = history.map { it.toEvent() },
         winner = winner?.let { enumOf<Faction>(it) },
         nights = nights.map {

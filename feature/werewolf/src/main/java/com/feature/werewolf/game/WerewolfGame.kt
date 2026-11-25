@@ -181,9 +181,27 @@ data class WerewolfGame(
      *
      * 只用于发言这类逐座位阶段，不参与任何规则判定。
      */
+    /**
+     * 每位玩家的「私密狼坑本 / 跨轮心证笔记」（座位号 → 最新简明心证）。
+     *
+     * 严格信息隔离：只注入给该座位本人，让模型在跨天/跨轮时维持连续推理与长线布局，
+     * 不会每轮从零失忆重算；复盘时上帝视角可见。
+     */
+    val beliefNotes: Map<Int, String> = emptyMap(),
+    /**
+     * 本局狼队随机抽取的开局风向启发（仅第 1 夜狼人商议阶段给狼队参考，不泄给好人）。
+     * 让每局自然分叉出不同剧本，避免千篇一律。
+     */
+    val wolfStyleSeed: String? = null,
     val spokenPhaseKey: String = "",
     val spokenSeats: Set<Int> = emptySet(),
 ) {
+    /** 更新某个座位的私密心证笔记；空白内容忽略，避免覆盖掉之前已写好的有效笔记。 */
+    fun withBeliefNote(seat: Int, note: String?): WerewolfGame {
+        val cleaned = note?.replace('\n', ' ')?.trim()?.take(BELIEF_NOTE_MAX_CHARS)
+        if (cleaned.isNullOrEmpty()) return this
+        return copy(beliefNotes = beliefNotes + (seat to cleaned))
+    }
     /**
      * 当前发言进度的作用域标识。
      *
@@ -1669,6 +1687,9 @@ data class WerewolfGame(
     companion object {
         /** 狼人平票后最多商议几轮。第二轮再平票就空刀。 */
         const val MAX_WOLF_VOTE_ROUNDS = 2
+
+        /** 每位玩家私密心证笔记的最大字符数，防止单条笔记膨胀挤占上下文预算。 */
+        const val BELIEF_NOTE_MAX_CHARS = 120
 
         /**
          * 警长投票最多几轮：首轮 + 一次 PK。

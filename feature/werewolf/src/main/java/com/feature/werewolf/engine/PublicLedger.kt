@@ -5,19 +5,18 @@ import com.feature.werewolf.game.GameEvent
 import com.feature.werewolf.game.Phase
 
 /**
- * 公开台账：把「谁说过什么可核对的话」从公开发言里摘出来，跨天累积。
+ * 公开台账（高清无污染版）：把「谁说过什么可核对的硬信息」从公开发言与公开唱票里摘出来，跨天累积。
  *
- * ## 设计底线
- *
- * 台账在模型眼里等同于「客观事实」，宁可少摘，绝不能误摘：
- * 1. **只摘本人第一人称声称**：引用、转述或质疑别人说过的身份与验人，绝不能记成发言人自己说的。
- * 2. **只有声称过预言家且未撤回者才记验人**：外置位讨论「6 号验 3 号查杀」「4 号金水」不是他自己验的。
- * 3. **退水与撤回要留痕**：警上诈身份后退水或改口声明不是预言家的，要在台账里显式标出。
- * 4. **信息隔离**：只读 `audience == null` 的公开发言、公开事件与公开唱票卡，夜聊与内心活动一律不进。
+ * 覆盖六类可核对事实：
+ * 1. 身份声称（含「我是真预言家」及已退水/撤回标记）；
+ * 2. 预言家起跳者报出的第一人称验人（严格隔离转述与跨子句拼错）；
+ * 3. 预言家起跳者声明的警徽流目标（保留最新一版）；
+ * 4. 女巫起跳者报出的第一人称银水（救人）与毒口；
+ * 5. 警长投票公开票型；
+ * 6. 白天放逐票型对账（兼容「投 X 号 / 今天出 X / 这轮推 X」）。
  */
 object PublicLedger {
 
-    /** 一条「我是什么身份」。同一座位同一身份只留第一次说的那次。 */
     internal data class Claim(
         val day: Int,
         val seat: Int,
@@ -26,26 +25,29 @@ object PublicLedger {
         val retracted: Boolean = false,
     )
 
-    /** 一条报出来的验人。同一座位对同一目标同一结果只留第一次；若改口不同结果会如实保留两条。 */
     internal data class Check(val day: Int, val seat: Int, val target: Int, val verdict: String)
 
-    /** 一轮投票里某个座位「说投谁 / 实际投谁」。 */
+    internal data class BadgeFlow(val day: Int, val seat: Int, val targets: List<Int>)
+
+    internal data class WitchReport(val day: Int, val seat: Int, val action: String, val target: Int)
+
     internal data class VoteLine(val day: Int, val seat: Int, val said: Int?, val actual: Int?)
 
-    /** 一轮警长投票的公开票型：警长票不做言行对账，只保留「谁把警徽投给了谁」。 */
     internal data class SheriffVoteRound(val day: Int, val ballots: List<Ballot>)
 
     internal data class Ledger(
         val claims: List<Claim> = emptyList(),
         val checks: List<Check> = emptyList(),
+        val badgeFlows: List<BadgeFlow> = emptyList(),
+        val witchReports: List<WitchReport> = emptyList(),
         val sheriffVotes: List<SheriffVoteRound> = emptyList(),
         val votes: List<VoteLine> = emptyList(),
     ) {
         val isEmpty: Boolean
-            get() = claims.isEmpty() && checks.isEmpty() && sheriffVotes.isEmpty() && votes.isEmpty()
+            get() = claims.isEmpty() && checks.isEmpty() && badgeFlows.isEmpty() &&
+                witchReports.isEmpty() && sheriffVotes.isEmpty() && votes.isEmpty()
     }
 
-    /** 拼成一段可直接注入 system 的文字。没有可摘的东西时返回空串（不占位）。 */
     fun of(table: WerewolfTable): String = render(collect(table))
 
     // ---------------------------------------------------------------------
@@ -55,17 +57,18 @@ object PublicLedger {
     internal fun collect(table: WerewolfTable): Ledger {
         val claims = LinkedHashMap<Pair<Int, String>, Claim>()
         val checks = LinkedHashMap<Triple<Int, Int, String>, Check>()
+        val badgeFlows = LinkedHashMap<Int, BadgeFlow>()
+        val witchReports = LinkedHashMap<Triple<Int, String, Int>, WitchReport>()
         val sheriffVotes = mutableListOf<SheriffVoteRound>()
         val votes = mutableListOf<VoteLine>()
         val promised = HashMap<Pair<Int, Int>, Int>()
 
-        // 已退水座位（来自公开事件 + 退水阶段公开发言）
         val withdrawnSeats = table.game.history
             .filterIsInstance<GameEvent.SheriffWithdrawn>()
             .flatMap { it.seats }
             .toMutableSet()
-        // 曾经声称过预言家的座位 & 明确撤回/声明诈身份的座位
         val seerClaimants = HashSet<Int>()
+        val witchClaimants = HashSet<Int>()
         val retractedSeerSeats = HashSet<Int>()
 
         table.transcript.forEach { message ->
@@ -84,23 +87,31 @@ object PublicLedger {
 
                     roleClaims(text).forEach { role ->
                         claims.getOrPut(seat to role) { Claim(message.day, seat, role) }
-                        if (role == SEER_ROLE) {
-                            seerClaimants += seat
-                            // 若之前退过水但之后又明确重跳，不取消已退水历史，只允许当下记录验人
-                        }
+                        if (role == SEER_ROLE) seerClaimants += seat
+                        if (role == WITCH_ROLE) witchClaimants += seat
                     }
 
-                    // 只有声称过预言家、且尚未声明撤回/诈身份的座位，才摘录其第一人称验人
+                    // 只有声称过预言家且未撤回者，才摘录第一人称验人与警徽流
                     if (seat in seerClaimants && seat !in retractedSeerSeats) {
                         checkClaims(text, seat).forEach { (target, verdict) ->
                             checks.getOrPut(Triple(seat, target, verdict)) {
                                 Check(message.day, seat, target, verdict)
                             }
                         }
+                        badgeFlowTargets(text, seat)?.let { targets ->
+                            badgeFlows[seat] = BadgeFlow(message.day, seat, targets)
+                        }
                     }
 
-                    // 白天讨论阶段的票向承诺才用于放逐对账（警上竞选发言的「今天推 X」不算放逐阶段承诺，
-                    // 但若当天白天讨论未改口也可兜底；这里仅在讨论阶段覆盖或记录）
+                    // 只有声称过女巫者，才摘录第一人称银水（救人）与毒口
+                    if (seat in witchClaimants) {
+                        witchReportClaims(text, seat).forEach { (action, target) ->
+                            witchReports.getOrPut(Triple(seat, action, target)) {
+                                WitchReport(message.day, seat, action, target)
+                            }
+                        }
+                    }
+
                     if (message.phase == Phase.DAY_DISCUSSION) {
                         lastPromise(text, seat)?.let { promised[message.day to seat] = it }
                     }
@@ -144,25 +155,26 @@ object PublicLedger {
                 claim
             }
         }
-        return Ledger(finalizedClaims, checks.values.toList(), sheriffVotes, votes)
+        return Ledger(
+            claims = finalizedClaims,
+            checks = checks.values.toList(),
+            badgeFlows = badgeFlows.values.toList(),
+            witchReports = witchReports.values.toList(),
+            sheriffVotes = sheriffVotes,
+            votes = votes,
+        )
     }
 
     private const val SEER_ROLE = "预言家"
+    private const val WITCH_ROLE = "女巫"
     private val ROLE_WORDS = "(预言家|女巫|猎人|白痴|守卫|熊)"
 
-    /**
-     * 「我是预言家」「我是真预言家」「我跳预言家」「我认女巫」。
-     *
-     * 兼容「真 / 正牌 / 那个 / 一张」等修饰词，防止漏掉「我是真预言家」。
-     */
     private val ROLE_CLAIM = Regex(
         """(?:我是|我跳|我认|我就是|我这边是|我才是)\s*(?:那个|一名|一张|真|正牌)?\s*$ROLE_WORDS"""
     )
 
-    /** 「我预言家，昨晚验了……」「我真预言家：……」 */
     private val ROLE_CLAIM_BARE = Regex("""我(?:真)?$ROLE_WORDS[，,。：:]""")
 
-    /** 明确撤回预言家身份或说明警上只是诈身份。 */
     private val SEER_RETRACT = Regex(
         """(?:我(?:其实|本来|压根)?不是\s*(?:真)?预言家|我收回预言家|我警上跳预(?:言家)?(?:只|就)是诈|我(?:刚才|警上)(?:只是|就是)诈身份)"""
     )
@@ -184,11 +196,6 @@ object PublicLedger {
         return found.distinct()
     }
 
-    /**
-     * 前面是不是假设句、否定句、或正在引用别人的原话。
-     *
-     * 「如果我是预言家」「他说“我是预言家”」「我不是预言家」都不能记成本人声称。
-     */
     private fun isHypotheticalOrQuoted(text: String, index: Int): Boolean {
         if (isInsideQuotes(text, index)) return true
         val before = text.substring(maxOf(0, index - 6), index)
@@ -219,30 +226,20 @@ object PublicLedger {
         "不是", "并非", "假装", "装成", "冒充",
     )
 
-    /** 句子切分：不跨句号、问号、感叹号、分号或换行提取验人，杜绝跨子句硬拼。 */
     private val SENTENCE_SPLIT = Regex("""[。！？；\n]+""")
 
-    /**
-     * 显式验人句：「第 1 夜验了 7 号，是好人」「首夜验的 4 号是好人」「验到 3 号是狼」「昨晚验的 2 号金水」。
-     *
-     * 中间只允许短停顿与系词（如「，结果是」「是」），绝不跨分号或大段正文匹配。
-     */
     private val CHECK = Regex(
         """(?:查验|验|查|摸)\s*(?:了|过|的|到|出)?\s*(\d{1,2})\s*号?\s*(?:[，,：:]\s*)?(?:结果)?(?:是|为|牌是|是个)?\s*(好人|狼人|金水|查杀|狼(?![队坑面刀人]))"""
     )
 
-    /** 「查杀 3 号」「昨晚查杀 3 号」。 */
     private val CHECK_KILL_PREFIX = Regex("""(?<!被)查杀\s*(?:了|的)?\s*(\d{1,2})\s*号""")
 
-    /** 「3 号金水」「5 号是查杀」——仅在无第三人称主语的本人报验人句里采纳。 */
     private val CHECK_BARE = Regex("""(?<!\d)(\d{1,2})\s*号\s*(?:是|为)?\s*(金水|查杀)""")
 
-    /** 第三人称或转述/未来计划特征：一旦出现在同一句的验人动词之前，说明不是本人已完成的查验。 */
     private val THIRD_PERSON_BEFORE_CHECK = Regex(
         """(?:他|她|对方|别人|人家|\d{1,2}\s*号|改口说|声称|凭什么|信他|补验|准备|打算|计划|警徽流|留.{0,4}验|先验|后验|要验|想验|如果|假如|假设|要是|没验|未验)"""
     )
 
-    /** 验人结果紧跟疑问/选择词说明不是定论（如「验 8 号是好人还是狼」）。 */
     private val QUESTION_AFTER_CHECK = Regex("""^\s*(?:还是|吗|呢|\?|？)""")
 
     internal fun checkClaims(text: String, seat: Int): List<Pair<Int, String>> {
@@ -269,7 +266,6 @@ object PublicLedger {
                 val target = match.groupValues[1].toIntOrNull() ?: return@forEach
                 if (target == seat) return@forEach
                 if (isCheckQuotedOrThirdPerson(sentence, match.range.first, match.range.last + 1)) return@forEach
-                // 裸写「X 号金水/查杀」要求本句有明确第一人称/夜间报验语境，避免顺口讨论「4 号金水」被误记
                 val before = sentence.substring(0, match.range.first)
                 if (!FIRST_PERSON_CHECK_CUE.containsMatchIn(before)) return@forEach
                 found += target to normalizeVerdict(match.groupValues[2])
@@ -278,12 +274,37 @@ object PublicLedger {
         return found.distinct()
     }
 
+    private val CLAUSE_BOUNDARY = Regex("""[，,：:]""")
+
+    /** 截出紧贴 [start] 之前的当前子句（最后一个逗号/冒号之后）。 */
+    private fun localClauseBefore(sentence: String, start: Int): String {
+        val prefix = sentence.substring(0, start)
+        val last = CLAUSE_BOUNDARY.findAll(prefix).lastOrNull()?.range?.last ?: -1
+        return prefix.substring(last + 1)
+    }
+
+    private val SENTENCE_HYPOTHETICAL = Regex("""(?:如果|假如|假设|要是|万一|若是|倘若)""")
+    private val THIRD_PERSON_ACTOR = Regex(
+        """(?:他|她|对方|别人|人家|你\s*\d{1,2}\s*号|\d{1,2}\s*号\s*(?:自己|警上|跳|自称|说|称|报|验|查(?!杀)|摸|改口|发|给|留|救|毒|泼|捞))"""
+    )
+    private val CLAUSE_FIRST_PERSON = Regex("""(?:^|[，,：:])\s*我""")
+
+    /** 句子前半段若存在整句假设，或存在未在后续子句切回「我」的第三人称动作主语，判定为转述/假设。 */
+    private fun hasUnresetThirdPersonBefore(sentence: String, start: Int): Boolean {
+        val prefix = sentence.substring(0, start)
+        if (SENTENCE_HYPOTHETICAL.containsMatchIn(prefix)) return true
+        val lastActor = THIRD_PERSON_ACTOR.findAll(prefix).lastOrNull() ?: return false
+        val afterActor = prefix.substring(lastActor.range.last + 1)
+        return !CLAUSE_FIRST_PERSON.containsMatchIn(afterActor)
+    }
+
     private val FIRST_PERSON_CHECK_CUE = Regex("""(?:我|昨晚|昨夜|首夜|第\s*[1-9一二三四五六七八九]\s*夜|昨天|今早)""")
 
     private fun isCheckQuotedOrThirdPerson(sentence: String, start: Int, end: Int): Boolean {
         if (isInsideQuotes(sentence, start)) return true
-        val before = sentence.substring(0, start)
-        if (THIRD_PERSON_BEFORE_CHECK.containsMatchIn(before)) return true
+        val clauseBefore = localClauseBefore(sentence, start)
+        if (THIRD_PERSON_BEFORE_CHECK.containsMatchIn(clauseBefore)) return true
+        if (hasUnresetThirdPersonBefore(sentence, start)) return true
         val after = sentence.substring(minOf(end, sentence.length))
         if (QUESTION_AFTER_CHECK.containsMatchIn(after)) return true
         return false
@@ -295,11 +316,74 @@ object PublicLedger {
         else -> word
     }
 
-    /**
-     * 白天发言里的票向承诺：
-     * - 「我这一票投 5 号」「投给 5 号」
-     * - 「今天出 2 号」「这轮推 6 号」「我归票 4 号」
-     */
+    // ---------------------------------------------------------------------
+    // 预言家警徽流摘取（仅本人声明，忽略转述）
+    // ---------------------------------------------------------------------
+
+    private val THIRD_PERSON_BEFORE_FLOW = Regex("""(?:他|她|对方|别人|\d{1,2}\s*号(?:的)?|说|称|问)""")
+    private val FLOW_DECLARE_VERB = Regex("""(?:留|改|先|顺|验|打|是|：|:)""")
+    private val SEAT_NUMBER_IN_FLOW = Regex("""(?<!\d)(\d{1,2})(?!\s*[天夜票轮次人个])""")
+
+    internal fun badgeFlowTargets(text: String, seat: Int): List<Int>? {
+        var latest: List<Int>? = null
+        SENTENCE_SPLIT.split(text).forEach { rawSentence ->
+            val sentence = rawSentence.trim()
+            val idx = sentence.indexOf("警徽流")
+            if (idx < 0 || isInsideQuotes(sentence, idx)) return@forEach
+            val clauseBefore = localClauseBefore(sentence, idx)
+            if (THIRD_PERSON_BEFORE_FLOW.containsMatchIn(clauseBefore)) return@forEach
+            if (hasUnresetThirdPersonBefore(sentence, idx)) return@forEach
+            // 取「警徽流」之后到句尾（或到第一个转折/解释大段之前，最多 28 字）
+            val after = sentence.substring(idx + 3).take(28)
+            if (!FLOW_DECLARE_VERB.containsMatchIn(after)) return@forEach
+            val targets = SEAT_NUMBER_IN_FLOW.findAll(after)
+                .mapNotNull { it.groupValues[1].toIntOrNull() }
+                .filter { it in 1..20 && it != seat }
+                .distinct()
+                .take(3)
+                .toList()
+            if (targets.isNotEmpty()) latest = targets
+        }
+        return latest
+    }
+
+    // ---------------------------------------------------------------------
+    // 女巫银水 / 毒口摘取（仅声称女巫者本人第一人称报出）
+    // ---------------------------------------------------------------------
+
+    private val WITCH_HEAL = Regex("""(?:救(?:了|下|的|过)?|捞(?:了|起|的)?|银水(?:是|为))\s*(\d{1,2})\s*号""")
+    private val WITCH_POISON = Regex("""(?:毒(?:了|死|的|走)?|泼(?:了|的)?)\s*(\d{1,2})\s*号""")
+    private val THIRD_PERSON_OR_PLAN_BEFORE_WITCH = Regex(
+        """(?:他|她|对方|别人|\d{1,2}\s*号|如果|假如|假设|要是|准备|打算|计划|今晚|明晚|想|要|可以|别|没|不|会|可能|说|称)"""
+    )
+
+    internal fun witchReportClaims(text: String, seat: Int): List<Pair<String, Int>> {
+        val found = mutableListOf<Pair<String, Int>>()
+        SENTENCE_SPLIT.split(text).forEach { rawSentence ->
+            val sentence = rawSentence.trim()
+            if (sentence.isEmpty()) return@forEach
+
+            WITCH_HEAL.findAll(sentence).forEach { match ->
+                if (isInsideQuotes(sentence, match.range.first)) return@forEach
+                val clauseBefore = localClauseBefore(sentence, match.range.first)
+                if (THIRD_PERSON_OR_PLAN_BEFORE_WITCH.containsMatchIn(clauseBefore)) return@forEach
+                if (hasUnresetThirdPersonBefore(sentence, match.range.first)) return@forEach
+                val target = match.groupValues[1].toIntOrNull() ?: return@forEach
+                if (target in 1..20) found += "救" to target
+            }
+
+            WITCH_POISON.findAll(sentence).forEach { match ->
+                if (isInsideQuotes(sentence, match.range.first)) return@forEach
+                val clauseBefore = localClauseBefore(sentence, match.range.first)
+                if (THIRD_PERSON_OR_PLAN_BEFORE_WITCH.containsMatchIn(clauseBefore)) return@forEach
+                if (hasUnresetThirdPersonBefore(sentence, match.range.first)) return@forEach
+                val target = match.groupValues[1].toIntOrNull() ?: return@forEach
+                if (target in 1..20 && target != seat) found += "毒" to target
+            }
+        }
+        return found.distinct()
+    }
+
     private val PROMISE = Regex(
         """(?:投(?:给|到)?|(?:今天|这轮|本轮|这一票|我(?:今天|这一票)?|归票(?:给)?)\s*(?:优先|先|就|还是|直接)?\s*(?:出|推|投|砸(?:向|在)?))\s*(\d{1,2})\s*号?"""
     )
@@ -359,6 +443,25 @@ object PublicLedger {
                 append(
                     ledger.checks.joinToString("；") {
                         "${it.seat} 号称第 ${it.day} 天验 ${it.target} 号是${it.verdict}"
+                    }
+                )
+                append("\n")
+            }
+            if (ledger.badgeFlows.isNotEmpty()) {
+                append("· 预言家最新警徽流：")
+                append(
+                    ledger.badgeFlows.joinToString("；") { flow ->
+                        "${flow.seat} 号（第 ${flow.day} 天）留 " +
+                            flow.targets.joinToString("→") { "${it}号" }
+                    }
+                )
+                append("\n")
+            }
+            if (ledger.witchReports.isNotEmpty()) {
+                append("· 女巫起跳者报出的用药：")
+                append(
+                    ledger.witchReports.joinToString("；") {
+                        "${it.seat} 号称第 ${it.day} 天${it.action}了 ${it.target} 号"
                     }
                 )
                 append("\n")
