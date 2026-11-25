@@ -62,8 +62,11 @@ internal fun TurnPanel(
     textColor: Color,
     dimColor: Color,
     surface: Color,
-    /** 牌桌上的全部座位，给选人弹窗用（头像、存活、死因）。 */
+    /** 牌桌上的全部座位，给选人弹窗与快捷选号用（头像、存活、死因）。 */
     seats: List<UIWerewolfSeatLive> = emptyList(),
+    /** 提前在等待期写好的发言草稿；传非 null 时直接回填并双向同步，发出后由这里清空。 */
+    draftText: String? = null,
+    onDraftChange: ((String) -> Unit)? = null,
     onSpeech: (String) -> Unit,
     onVote: (Int?) -> Unit,
     onSeat: (Int) -> Unit,
@@ -123,6 +126,8 @@ internal fun TurnPanel(
                 selfSeat = turn.seat,
                 textColor = textColor,
                 dimColor = dimColor,
+                externalText = draftText,
+                onExternalTextChange = onDraftChange,
                 onSubmit = onSpeech
             )
 
@@ -349,9 +354,15 @@ internal fun SpeechInput(
     selfSeat: Int? = null,
     textColor: Color,
     dimColor: Color,
+    externalText: String? = null,
+    onExternalTextChange: ((String) -> Unit)? = null,
     onSubmit: (String) -> Unit,
 ) {
-    var text by rememberSaveable { mutableStateOf("") }
+    var localText by rememberSaveable { mutableStateOf("") }
+    val text = externalText ?: localText
+    val setText: (String) -> Unit = { updated ->
+        if (onExternalTextChange != null) onExternalTextChange(updated) else localText = updated
+    }
     val fieldFill = if (night) NightControlFill else DayControlFill
     val fieldBorder = if (night) NightControlBorder else DayControlBorder
     val quickSeats = seats.filter { it.alive && it.seat != selfSeat }.sortedBy { it.seat }
@@ -375,7 +386,7 @@ internal fun SpeechInput(
                     label = "${s.seat}号",
                     night = night,
                     textColor = textColor,
-                    onClick = { text = appendQuickToken(text, "${s.seat}号") },
+                    onClick = { setText(appendQuickToken(text, "${s.seat}号")) },
                 )
             }
             quickWords.forEach { word ->
@@ -383,7 +394,7 @@ internal fun SpeechInput(
                     label = word,
                     night = night,
                     textColor = dimColor,
-                    onClick = { text = appendQuickToken(text, word) },
+                    onClick = { setText(appendQuickToken(text, word)) },
                 )
             }
         }
@@ -406,7 +417,7 @@ internal fun SpeechInput(
                 }
                 BasicTextField(
                     value = text,
-                    onValueChange = { text = it },
+                    onValueChange = setText,
                     modifier = Modifier.fillMaxWidth(),
                     textStyle = TextStyle(fontSize = 15.sp, color = textColor),
                     cursorBrush = SolidColor(if (night) SelfBlueNight else SelfBlue),
@@ -427,7 +438,7 @@ internal fun SpeechInput(
                     )
                     .clickable(enabled = enabled) {
                         onSubmit(text.trim())
-                        text = ""
+                        setText("")
                     }
                     .padding(horizontal = 18.dp, vertical = 11.dp)
             ) {
@@ -437,6 +448,152 @@ internal fun SpeechInput(
                     fontWeight = FontWeight.SemiBold,
                     color = if (enabled) Color.White else dimColor
                 )
+            }
+        }
+    }
+}
+
+/**
+ * 游玩模式专属「等待期预写发言草稿」底部栏：
+ * 等前面 AI 深度思考时，玩家随时可展开提前写好下一次白天发言草稿（纯本地笔记，不传给 AI）；
+ * 轮到自己白天发言时自动回填进 [SpeechInput]，核对后一键发出。
+ */
+@Composable
+internal fun SpeechDraftDock(
+    draft: String,
+    onDraftChange: (String) -> Unit,
+    expanded: Boolean,
+    onToggleExpanded: () -> Unit,
+    night: Boolean,
+    isWolfSelf: Boolean,
+    seats: List<UIWerewolfSeatLive>,
+    selfSeat: Int?,
+    surface: Color,
+    textColor: Color,
+    dimColor: Color,
+    modifier: Modifier = Modifier,
+) {
+    val dockShape = RoundedCornerShape(topStart = UIRadiusCard, topEnd = UIRadiusCard)
+    val fieldFill = if (night) NightControlFill else DayControlFill
+    val fieldBorder = if (night) NightControlBorder else DayControlBorder
+    val accent = if (night) SelfBlueNight else SelfBlue
+    val quickSeats = seats.filter { it.alive && it.seat != selfSeat }.sortedBy { it.seat }
+    val quickWords = listOf("金水", "查杀", "银水", "警徽流", "站边", "归票", "今天出", "认民", "过")
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .shadow(10.dp, dockShape, clip = false, UIShadowSoft, UIShadowSoft)
+            .clip(dockShape)
+            .background(surface)
+            .border(0.8.dp, if (night) NightStroke else DayStroke, dockShape)
+            .padding(horizontal = 14.dp, vertical = 9.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onToggleExpanded),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = "草稿",
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(accent.copy(alpha = if (night) 0.24f else 0.13f))
+                    .padding(horizontal = 8.dp, vertical = 2.dp),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = accent,
+            )
+            val preview = when {
+                draft.isNotBlank() -> "${draft.replace('\n', ' ').trim()}（${draft.trim().length}字）"
+                night && isWolfSelf -> "趁等待预写白天发言草稿（不会发进夜聊）…"
+                night -> "趁等待预写明天白天发言草稿，轮到你自动填入…"
+                else -> "趁等待预写发言草稿，轮到你自动填入…"
+            }
+            Text(
+                text = preview,
+                modifier = Modifier.weight(1f),
+                fontSize = 12.5.sp,
+                color = if (draft.isNotBlank()) textColor else dimColor,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            )
+            Text(
+                text = if (expanded) "收起" else if (draft.isNotBlank()) "编辑" else "写草稿",
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.Medium,
+                color = accent,
+            )
+        }
+
+        if (expanded) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                quickSeats.forEach { s ->
+                    QuickInsertChip(
+                        label = "${s.seat}号",
+                        night = night,
+                        textColor = textColor,
+                        onClick = { onDraftChange(appendQuickToken(draft, "${s.seat}号")) },
+                    )
+                }
+                quickWords.forEach { word ->
+                    QuickInsertChip(
+                        label = word,
+                        night = night,
+                        textColor = dimColor,
+                        onClick = { onDraftChange(appendQuickToken(draft, word)) },
+                    )
+                }
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(UIRadiusControl))
+                        .background(fieldFill)
+                        .border(0.8.dp, fieldBorder, RoundedCornerShape(UIRadiusControl))
+                        .padding(horizontal = 12.dp, vertical = 9.dp),
+                ) {
+                    if (draft.isEmpty()) {
+                        Text(
+                            text = "提前记下你的站边、验人或归票思路，轮到发言自动带入",
+                            fontSize = 12.5.sp,
+                            color = dimColor.copy(alpha = 0.8f),
+                        )
+                    }
+                    BasicTextField(
+                        value = draft,
+                        onValueChange = onDraftChange,
+                        modifier = Modifier.fillMaxWidth(),
+                        textStyle = TextStyle(fontSize = 14.sp, color = textColor),
+                        cursorBrush = SolidColor(accent),
+                        maxLines = 3,
+                    )
+                }
+                if (draft.isNotBlank()) {
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "清空",
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(UIRadiusControl))
+                            .background(fieldFill)
+                            .border(0.8.dp, fieldBorder, RoundedCornerShape(UIRadiusControl))
+                            .clickable { onDraftChange("") }
+                            .padding(horizontal = 12.dp, vertical = 9.dp),
+                        fontSize = 12.5.sp,
+                        color = dimColor,
+                    )
+                }
             }
         }
     }

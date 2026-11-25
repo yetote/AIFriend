@@ -1,8 +1,10 @@
 package com.feature.werewolf.route
 
 import com.feature.werewolf.engine.BallotCard
+import com.feature.werewolf.engine.HumanTurn
 import com.feature.werewolf.engine.MessageKind
 import com.feature.werewolf.engine.WerewolfMessage
+import com.feature.werewolf.engine.WerewolfProgress
 import com.feature.werewolf.engine.WerewolfTable
 import com.feature.werewolf.engine.WerewolfUiState
 import com.feature.werewolf.game.Ballot
@@ -255,5 +257,137 @@ class WerewolfTableBoundaryTest {
         val md = WerewolfMarkdown.of(review)
         assertTrue("Markdown 导出包含狼队开局风向章节", md.contains("## 本局狼队开局风向"))
         assertTrue(md.contains("狼踩狼做身份流"))
+    }
+
+    @Test
+    fun `夜间等待状态在游玩模式下全遮罩且整夜 key 恒定，不泄露角色、人数与阶段切换`() {
+        val base = sampleTable()
+
+        fun nightWaiting(phase: Phase, humanSeat: Int?, seat: Int? = null, seats: List<Int> = emptyList(), step: Int = 1, total: Int = 1) =
+            WerewolfUiState(
+                table = base.copy(game = base.game.copy(day = 2, phase = phase)),
+                running = true,
+                progress = WerewolfProgress(day = 2, phase = phase, step = step, total = total, seat = seat, seats = seats),
+            ).toLive(humanSeat = humanSeat, turn = null, avatars = emptyMap(), autoSpeak = false, decisionSeconds = 60).waiting
+
+        // 1. 人类好人（7 号平民）：无论夜里走到守卫、狼聊、狼刀、预言家还是女巫，都严格全遮罩且 key 完全一致（防秒表重置侧信道）
+        val goodKeys = listOf(
+            nightWaiting(Phase.NIGHT_GUARD, humanSeat = 7, seat = 5),
+            nightWaiting(Phase.NIGHT_WOLF_CHAT, humanSeat = 7, seat = 1, step = 1, total = 2),
+            nightWaiting(Phase.NIGHT_WOLF, humanSeat = 7, seats = listOf(1, 2), step = 1, total = 2),
+            nightWaiting(Phase.NIGHT_SEER, humanSeat = 7, seat = 3),
+            nightWaiting(Phase.NIGHT_WITCH, humanSeat = 7, seat = 4),
+        ).map { w ->
+            assertNotNull("夜间运行中应给出等待卡", w)
+            assertTrue("好人夜间必须全遮罩", w!!.maskedNight)
+            assertNull("好人夜间绝不暴露行动座位", w.seat)
+            assertEquals("好人夜间绝不暴露进度", 0, w.done)
+            assertEquals("好人夜间绝不暴露总数", 0, w.total)
+            assertTrue("好人夜间绝不暴露并发座位", w.pendingSeats.isEmpty())
+            assertEquals("夜色渐深，各角色正在行动", w.actionLabel)
+            w.key
+        }
+        assertEquals("好人整夜 key 必须恒定，避免秒表归零暴露子阶段切换", 1, goodKeys.toSet().size)
+
+        // 2. 人类狼人（1 号）：狼队密谈时可见 2 号狼队友思考；切到狼刀/预言家/女巫后立即回归遮罩
+        val wolfChat = nightWaiting(Phase.NIGHT_WOLF_CHAT, humanSeat = 1, seat = 2, step = 2, total = 2)
+        assertNotNull(wolfChat)
+        assertFalse("狼人在狼队密谈时可见队友思考", wolfChat!!.maskedNight)
+        assertEquals(2, wolfChat.seat)
+        assertEquals("正在狼队密谈", wolfChat.actionLabel)
+
+        val wolfDuringSeer = nightWaiting(Phase.NIGHT_SEER, humanSeat = 1, seat = 3)
+        val wolfDuringWitch = nightWaiting(Phase.NIGHT_WITCH, humanSeat = 1, seat = 4)
+        assertNotNull(wolfDuringSeer)
+        assertNotNull(wolfDuringWitch)
+        assertTrue(wolfDuringSeer!!.maskedNight)
+        assertTrue(wolfDuringWitch!!.maskedNight)
+        assertNull(wolfDuringSeer.seat)
+        assertEquals(wolfDuringSeer.key, wolfDuringWitch.key)
+
+        // 3. 上帝观战视角：夜间显示真实阶段、座位或并发待定座位
+        val godSeer = nightWaiting(Phase.NIGHT_SEER, humanSeat = null, seat = 3)
+        assertNotNull(godSeer)
+        assertFalse(godSeer!!.maskedNight)
+        assertEquals(3, godSeer.seat)
+        assertTrue(godSeer.actionLabel.contains(Phase.NIGHT_SEER.displayName))
+
+        val godWolfKill = nightWaiting(Phase.NIGHT_WOLF, humanSeat = null, seats = listOf(2, 1), step = 1, total = 2)
+        assertNotNull(godWolfKill)
+        assertFalse(godWolfKill!!.maskedNight)
+        assertNull(godWolfKill.seat)
+        assertEquals(listOf(1, 2), godWolfKill.pendingSeats)
+        assertEquals(1, godWolfKill.done)
+        assertEquals(2, godWolfKill.total)
+    }
+
+    @Test
+    fun `白天并发投票与单人发言等待态展示实时进度，并受朗读闸门与人类回合约束`() {
+        val base = sampleTable()
+
+        // 1. 白天并发投票：游玩模式与上帝模式均可看公开落票进度，且落票递增时 batch key 不变（秒表不重置）
+        val voteStart = WerewolfUiState(
+            table = base.copy(game = base.game.copy(day = 2, phase = Phase.DAY_VOTE)),
+            running = true,
+            progress = WerewolfProgress(day = 2, phase = Phase.DAY_VOTE, step = 2, total = 7, seats = listOf(8, 3, 5)),
+        ).toLive(humanSeat = 7, turn = null, avatars = emptyMap(), autoSpeak = false, decisionSeconds = 60).waiting
+        val voteLater = WerewolfUiState(
+            table = base.copy(game = base.game.copy(day = 2, phase = Phase.DAY_VOTE)),
+            running = true,
+            progress = WerewolfProgress(day = 2, phase = Phase.DAY_VOTE, step = 5, total = 7, seats = listOf(8)),
+        ).toLive(humanSeat = 7, turn = null, avatars = emptyMap(), autoSpeak = false, decisionSeconds = 60).waiting
+        assertNotNull(voteStart)
+        assertNotNull(voteLater)
+        assertFalse(voteStart!!.maskedNight)
+        assertEquals("放逐投票进行中", voteStart.actionLabel)
+        assertEquals(2, voteStart.done)
+        assertEquals(7, voteStart.total)
+        assertEquals(listOf(3, 5, 8), voteStart.pendingSeats)
+        assertEquals("同一轮投票落票推进时秒表 key 保持稳定", voteStart.key, voteLater!!.key)
+        assertEquals(5, voteLater.done)
+        assertEquals(listOf(8), voteLater.pendingSeats)
+
+        // 2. 白天单人思考：警长定序 → 警长发言（同一座位连续两步）key 必须不同以重置秒表
+        val dirWaiting = WerewolfUiState(
+            table = base.copy(game = base.game.copy(day = 2, phase = Phase.DAY_DISCUSSION)),
+            running = true,
+            progress = WerewolfProgress(day = 2, phase = Phase.DAY_DISCUSSION, step = 0, total = 7, seat = 3, note = "警长定发言方向"),
+        ).toLive(humanSeat = 7, turn = null, avatars = emptyMap(), autoSpeak = false, decisionSeconds = 60).waiting
+        val speechWaiting = WerewolfUiState(
+            table = base.copy(game = base.game.copy(day = 2, phase = Phase.DAY_DISCUSSION)),
+            running = true,
+            progress = WerewolfProgress(day = 2, phase = Phase.DAY_DISCUSSION, step = 1, total = 7, seat = 3),
+        ).toLive(humanSeat = 7, turn = null, avatars = emptyMap(), autoSpeak = false, decisionSeconds = 60).waiting
+        assertEquals("正在决定发言顺序", dirWaiting!!.actionLabel)
+        assertEquals("正在组织语言", speechWaiting!!.actionLabel)
+        assertTrue("同一座位从定序切到发言应重置秒表 key", dirWaiting.key != speechWaiting.key)
+
+        // 3. 朗读闸门（speechBusy）或轮到人类操作（turn != null）时，waiting 必须收起（防剧透 / 避免与操作面板打架）
+        val gatedBusy = WerewolfUiState(
+            table = base.copy(game = base.game.copy(day = 2, phase = Phase.DAY_DISCUSSION)),
+            running = true,
+            progress = WerewolfProgress(day = 2, phase = Phase.DAY_DISCUSSION, step = 1, total = 7, seat = 3),
+        ).toLive(
+            humanSeat = 7,
+            turn = null,
+            avatars = emptyMap(),
+            autoSpeak = true,
+            speechReady = true,
+            revealedIndex = base.transcript.lastIndex,
+            speechBusy = true,
+        ).waiting
+        assertNull("朗读占用期间不得提前展示下一位等待卡", gatedBusy)
+
+        val humanTurnWaiting = WerewolfUiState(
+            table = base.copy(game = base.game.copy(day = 2, phase = Phase.DAY_DISCUSSION)),
+            running = true,
+            progress = WerewolfProgress(day = 2, phase = Phase.DAY_DISCUSSION, step = 2, total = 7, seat = 7),
+        ).toLive(
+            humanSeat = 7,
+            turn = HumanTurn(systemPrompt = "", messages = emptyList(), jsonMode = false),
+            avatars = emptyMap(),
+            autoSpeak = false,
+        ).waiting
+        assertNull("轮到人类操作时不展示 AI 等待卡", humanTurnWaiting)
     }
 }

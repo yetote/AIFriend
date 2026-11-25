@@ -140,6 +140,10 @@ fun UIWerewolfTableScreen(
     // 游玩模式下玩家手动给座位贴的私密身份记号：按本局座位名单做 key，换局自动清空，局内昼夜切换保留
     val seatRosterKey = remember(live.seats) { live.seats.map { it.seat to it.name } }
     val manualMarks = remember(seatRosterKey) { mutableStateMapOf<Int, UIWerewolfPlayerMark>() }
+    // 游玩模式下等待期预写的发言草稿：白天与夜间狼聊严格分桶，防止误把夜聊草稿发到白天（或反之）
+    var dayDraft by remember(seatRosterKey) { mutableStateOf("") }
+    var nightDraft by remember(seatRosterKey) { mutableStateOf("") }
+    var draftExpanded by remember(seatRosterKey) { mutableStateOf(false) }
     // 点击侧边座位头像查看档案与历史发言
     var inspectingSeat by remember { mutableStateOf<Int?>(null) }
     // 顶栏「台账」一键速查弹窗
@@ -282,6 +286,12 @@ fun UIWerewolfTableScreen(
             )
 
             val turn = live.turn
+            LaunchedEffect(turn != null) {
+                if (turn != null) draftExpanded = false
+            }
+            val selfAlive = live.seats.firstOrNull { it.isSelf }?.alive == true
+            val canDraft = !live.spectating && live.selfSeat != null &&
+                live.running && !live.finished && selfAlive
             when {
                 // 演出：底下是播放条。这一条必须排在 finished 之前——演出时
                 // `finished` 是 false，但哪怕将来变了，也不该把「看复盘」按钮顶上来。
@@ -318,6 +328,10 @@ fun UIWerewolfTableScreen(
                     dimColor = dimColor,
                     surface = surface,
                     seats = live.seats,
+                    draftText = if (night) nightDraft else dayDraft,
+                    onDraftChange = { updated ->
+                        if (night) nightDraft = updated else dayDraft = updated
+                    },
                     onSpeech = onSpeech,
                     onVote = onVote,
                     onSeat = onSeat,
@@ -326,6 +340,21 @@ fun UIWerewolfTableScreen(
                     onWithdraw = onWithdraw,
                     onExplode = onExplodeAnswer,
                     modifier = Modifier.pageInsetsBottom()
+                )
+
+                canDraft -> SpeechDraftDock(
+                    draft = dayDraft,
+                    onDraftChange = { dayDraft = it },
+                    expanded = draftExpanded,
+                    onToggleExpanded = { draftExpanded = !draftExpanded },
+                    night = night,
+                    isWolfSelf = live.selfFactionLabel == "狼人",
+                    seats = live.seats,
+                    selfSeat = live.selfSeat,
+                    surface = surface,
+                    textColor = textColor,
+                    dimColor = dimColor,
+                    modifier = Modifier.pageInsetsBottom(),
                 )
 
                 else -> {

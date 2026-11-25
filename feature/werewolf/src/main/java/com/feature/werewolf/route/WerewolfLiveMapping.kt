@@ -30,6 +30,7 @@ import com.ui.werewolf.data.UIWerewolfSeatLive
 import com.ui.werewolf.data.UIWerewolfStreaming
 import com.ui.werewolf.data.UITokenUsage
 import com.ui.werewolf.data.UIWerewolfVerdict
+import com.ui.werewolf.data.UIWerewolfWaiting
 import com.ui.werewolf.data.UIWerewolfWitchNotebook
 
 /**
@@ -316,6 +317,23 @@ internal fun WerewolfUiState.toLive(
             }
         }
 
+    val waiting = buildWaiting(
+        game = game,
+        progress = progress,
+        momentDay = moment.day,
+        running = running,
+        finished = finished,
+        hasHumanTurn = turn != null,
+        onStage = onStage,
+        speechBusy = speechBusy && gated,
+        reveal = reveal,
+        humanSeat = humanSeat,
+        me = me,
+        actorSeat = actorSeat,
+        avatars = avatars,
+        decisionSeconds = decisionSeconds,
+    )
+
     return UIWerewolfLive(
         day = moment.day,
         // 夜里的阶段名要按视角收：参与局里「守卫守护」「女巫用药」是在报这个角色在场，
@@ -346,6 +364,7 @@ internal fun WerewolfUiState.toLive(
         seats = seats,
         lines = lines,
         streaming = streaming,
+        waiting = waiting,
         selfSeat = humanSeat,
         selfRoleLabel = me?.role?.displayName,
         selfFactionLabel = me?.role?.faction?.displayName,
@@ -382,6 +401,108 @@ internal fun WerewolfUiState.toLive(
         thinkingSpeechSeconds = speechSeconds,
         timeoutNotice = timeoutNotice,
         timeoutAt = timeoutAt,
+    )
+}
+
+/**
+ * 构建牌桌底部的「正在等待 AI」快照，严格按视角裁剪夜间信息与未播报阶段。
+ */
+private fun buildWaiting(
+    game: WerewolfGame?,
+    progress: WerewolfProgress?,
+    momentDay: Int,
+    running: Boolean,
+    finished: Boolean,
+    hasHumanTurn: Boolean,
+    onStage: Boolean,
+    speechBusy: Boolean,
+    reveal: Boolean,
+    humanSeat: Int?,
+    me: WerewolfPlayer?,
+    actorSeat: Int?,
+    avatars: Map<String, String?>,
+    decisionSeconds: Int,
+): UIWerewolfWaiting? {
+    if (!running || finished || hasHumanTurn || !onStage || speechBusy) return null
+    val p = progress ?: return null
+
+    // 夜间分支：游玩模式默认全遮罩（不露角色、不露座次、不露人数、整夜固定 key 防计时重置泄密）
+    if (p.phase.isNightPhase()) {
+        val wolfChatVisible = !reveal &&
+            p.phase == Phase.NIGHT_WOLF_CHAT &&
+            me?.role?.isWerewolf == true &&
+            actorSeat != null &&
+            actorSeat != humanSeat
+        if (!reveal && !wolfChatVisible) {
+            return UIWerewolfWaiting(
+                key = "day$momentDay-NIGHT-masked",
+                actionLabel = "夜色渐深，各角色正在行动",
+                maskedNight = true,
+                limitSeconds = decisionSeconds,
+            )
+        }
+        val speaker = actorSeat?.let { s -> game?.players?.firstOrNull { it.seat == s } }
+        val pending = if (reveal) p.seats.sorted() else emptyList()
+        val nightKey = if (actorSeat != null) {
+            "day$momentDay-${p.phase.name}-$actorSeat-${p.step}"
+        } else {
+            "day$momentDay-${p.phase.name}-batch"
+        }
+        return UIWerewolfWaiting(
+            key = nightKey,
+            seat = actorSeat,
+            speaker = speaker?.name,
+            avatarPath = speaker?.id?.let { avatars[it] },
+            actionLabel = when {
+                wolfChatVisible -> "正在狼队密谈"
+                pending.isNotEmpty() -> "${p.phase.displayName}进行中"
+                else -> "正在${p.phase.displayName}"
+            },
+            maskedNight = false,
+            done = p.step,
+            total = p.total,
+            pendingSeats = pending,
+            limitSeconds = decisionSeconds,
+        )
+    }
+
+    // 白天并发阶段（放逐投票 / 警长投票 / 上警报名 / 退水）：展示实时落票进度与尚未落票座位
+    if (p.seats.isNotEmpty()) {
+        val label = when (p.phase) {
+            Phase.DAY_VOTE -> "放逐投票进行中"
+            Phase.DAY_SHERIFF_VOTE -> "警长投票进行中"
+            Phase.DAY_SHERIFF_SIGNUP -> "上警报名进行中"
+            Phase.DAY_SHERIFF_WITHDRAW -> "退水决策进行中"
+            else -> "${p.phase.displayName}进行中"
+        }
+        return UIWerewolfWaiting(
+            key = "day$momentDay-${p.phase.name}-batch-${p.note.orEmpty()}",
+            actionLabel = label,
+            done = p.step,
+            total = p.total,
+            pendingSeats = p.seats.sorted(),
+            limitSeconds = decisionSeconds,
+        )
+    }
+
+    // 白天单人思考（发言 / 遗言 / 开枪 / 警长定序）
+    val targetSeat = actorSeat ?: return null
+    val speaker = game?.players?.firstOrNull { it.seat == targetSeat }
+    val label = when {
+        p.note == "警长定发言方向" -> "正在决定发言顺序"
+        p.phase == Phase.HUNTER_SHOOT -> "正在抉择是否开枪"
+        p.phase == Phase.DAY_LAST_WORDS -> "正在整理遗言"
+        else -> "正在组织语言"
+    }
+    return UIWerewolfWaiting(
+        key = "day$momentDay-${p.phase.name}-$targetSeat-${p.note.orEmpty()}-${p.step}",
+        seat = targetSeat,
+        speaker = speaker?.name,
+        avatarPath = speaker?.id?.let { avatars[it] },
+        actionLabel = label,
+        done = p.step,
+        total = p.total,
+        limitSeconds = decisionSeconds,
     )
 }
 

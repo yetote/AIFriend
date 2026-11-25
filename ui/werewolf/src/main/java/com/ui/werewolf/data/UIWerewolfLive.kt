@@ -397,7 +397,33 @@ enum class UIWerewolfDirection(val label: String) {
  * 这四件事都在这里，界面不做任何推断——尤其是「轮到谁」，判断依据是 `phase` 加本人身份，
  * 界面不去猜提示词里写了什么。
  */
-/** 一次「请求失败、等人重发」的展示数据。 */
+/**
+ * 牌桌底部「正在等待 AI」的实时状态快照，由映射层按视角严格裁剪后下发。
+ *
+ * 信息差边界：
+ * - 白天单人发言：给出正在思考的座位号与昵称；
+ * - 白天并发阶段（放逐投票 / 警长投票 / 上警报名 / 退水）：给出已完成数、总数与尚未落票座位；
+ * - 夜间游玩模式（非本人回合、非狼队夜聊）：**绝不暴露**当前行动角色、座位号或人数，
+ *   `maskedNight = true`、`seat = null`、`pendingSeats = emptyList()`，且 `key` 整夜恒定，
+ *   连通过秒表重置反推夜间阶段切换的侧信道都彻底封死。
+ */
+data class UIWerewolfWaiting(
+    /** 步级唯一键，变化时界面秒表归零重计。夜间遮罩时按天固定，整夜不重置。 */
+    val key: String,
+    val seat: Int? = null,
+    val speaker: String? = null,
+    val avatarPath: String? = null,
+    val actionLabel: String,
+    val maskedNight: Boolean = false,
+    val done: Int = 0,
+    val total: Int = 0,
+    val pendingSeats: List<Int> = emptyList(),
+    /** 当前阶段思考上限（秒），0 表示不设限。 */
+    val limitSeconds: Int = 0,
+)
+
+/**
+ * 一次「请求失败、等人重发」的展示数据。 */
 data class UIWerewolfRetry(
     /** 已经翻成中文的失败原因，含座位名，例如「3 号小咪：请求过于频繁，被上游限流（429）」。 */
     val message: String,
@@ -433,6 +459,10 @@ data class UIWerewolfLive(
      * 朗读的处理都不一样。可见性在这里已经过滤过，隐私阶段不会漏出来。
      */
     val streaming: UIWerewolfStreaming? = null,
+    /**
+     * 当前正在等待 AI 思考/投票的实时状态（按视角严格裁剪，夜间游玩模式绝不泄露座次与阶段）。
+     */
+    val waiting: UIWerewolfWaiting? = null,
     /** 你的座位。观战为 null。 */
     val selfSeat: Int? = null,
     /** 你的身份，例如「女巫」。观战时为 null。 */

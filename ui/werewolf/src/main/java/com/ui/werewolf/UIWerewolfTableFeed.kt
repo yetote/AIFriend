@@ -26,6 +26,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -49,6 +50,8 @@ import com.ui.werewolf.data.tableBubbleStyle
 import com.ui.werewolf.data.UIWerewolfLive
 import com.ui.werewolf.data.UIWerewolfSeatLive
 import com.ui.werewolf.data.UIWerewolfStreaming
+import com.ui.werewolf.data.UIWerewolfWaiting
+import kotlinx.coroutines.delay
 
 /**
  * 流式发言每长出这么多字就往下贴一次底。
@@ -96,6 +99,16 @@ internal fun resolveStreaming(
     return held
 }
 
+internal fun resolveFeedStreaming(
+    live: UIWerewolfLive,
+    allowed: UIWerewolfStreaming?,
+    pinned: UIWerewolfStreaming?,
+): UIWerewolfStreaming? =
+    // 深度思考阶段 streaming 已建立但 text 仍为空；此时交给 WaitingCard 展示秒表与微状态，
+    // 直到正文真正吐出第一个字再无缝切入逐字 StreamingLine。
+    resolveStreaming(live, allowed, pinned)
+        ?.takeIf { it.text.isNotBlank() || live.waiting == null }
+
 @Composable
 internal fun Feed(
     live: UIWerewolfLive,
@@ -108,9 +121,7 @@ internal fun Feed(
     val listState = rememberLazyListState()
     // 轮到某位 AI 时：
     // - 他已经在开口，就让半句话本身占着末尾（StreamingLine）；
-    // - 还没有任何输出（投票、夜间决策这种返回 JSON 的步骤），退回三个点。
-    // 别看三个点不起眼：一轮八个人要等一分多钟，中间没有任何东西在动的话，
-    // 界面看着就是卡死的
+    // - 还没有任何输出（投票、夜间决策、或深度思考尚未吐正文），由 WaitingCard 展示秒表、微状态或并发进度。
     //
     // 两种「正在发生」都必须等喇叭空下来（!speechBusy）：念 A 的时候引擎已经在生成 B 了，
     // 这时冒出 B 的名字或半句话，就是用户说的「下一个人对话框弹出来又消失」。
@@ -121,8 +132,13 @@ internal fun Feed(
     // 否则上一阶段没落库的半句话会飘到新阶段的牌桌上。
     var pinned by remember(live.day, live.phaseLabel) { mutableStateOf<UIWerewolfStreaming?>(null) }
     SideEffect { if (allowed != null) pinned = allowed }
-    val streaming = resolveStreaming(live, allowed, pinned)
-    val thinkingSeat = if (live.running && live.turn == null && streaming == null && !live.speechBusy) {
+    val streaming = resolveFeedStreaming(live, allowed, pinned)
+    val waiting = if (live.running && live.turn == null && streaming == null && !live.speechBusy) {
+        live.waiting
+    } else {
+        null
+    }
+    val thinkingSeat = if (waiting == null && live.running && live.turn == null && streaming == null && !live.speechBusy) {
         live.seats.firstOrNull { it.active }
     } else {
         null
@@ -130,8 +146,8 @@ internal fun Feed(
     // 长发言会超出一屏，光靠「开始说话」滚一次不够。按字数分段滚：
     // 每 60 字贴一次底，既跟得上，又不会每个增量都触发一次滚动
     val streamBucket = (streaming?.text?.length ?: 0) / STREAM_SCROLL_CHARS
-    LaunchedEffect(live.lines.size, thinkingSeat?.seat, streaming?.seat, streamBucket) {
-        val extra = if (thinkingSeat != null || streaming != null) 1 else 0
+    LaunchedEffect(live.lines.size, waiting?.key, waiting?.done, thinkingSeat?.seat, streaming?.seat, streamBucket) {
+        val extra = if (waiting != null || thinkingSeat != null || streaming != null) 1 else 0
         val last = live.lines.lastIndex + extra
         if (last >= 0) {
             // 贴底用瞬时滚动：流式每几秒就来一次，动画排起队来反而永远追不上
@@ -139,7 +155,7 @@ internal fun Feed(
         }
     }
 
-    if (live.lines.isEmpty() && thinkingSeat == null && streaming == null) {
+    if (live.lines.isEmpty() && waiting == null && thinkingSeat == null && streaming == null) {
         Box(modifier = modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
             Text(
                 text = "还没开始，\n等第一位开口",
@@ -177,11 +193,196 @@ internal fun Feed(
                     dimColor = dimColor
                 )
             }
+        } else if (waiting != null) {
+            item(key = "waiting") {
+                WaitingCard(
+                    waiting = waiting,
+                    night = night,
+                    textColor = textColor,
+                    dimColor = dimColor,
+                )
+            }
         } else if (thinkingSeat != null) {
             item(key = "thinking") {
                 ThinkingLine(seat = thinkingSeat, night = night, dimColor = dimColor)
             }
         }
+    }
+}
+
+/**
+ * 升级版等待卡片：实时秒表 + 时间推进微状态 + 白天并发投票实时落票进度。
+ *
+ * 严格遵循映射层裁剪：
+ * - [UIWerewolfWaiting.maskedNight] 为 true 时只显示夜间中性氛围文案与连续计时，绝不显示座位或人数；
+ * - 白天并发阶段实时展示「已完成 X/Y」进度条与仍在纠结的座位号；
+ * - 单人思考阶段展示头像、秒表与按秒数推进的微状态，缓解干等焦躁感。
+ */
+@Composable
+internal fun WaitingCard(
+    waiting: UIWerewolfWaiting,
+    night: Boolean,
+    textColor: Color,
+    dimColor: Color,
+) {
+    var elapsedSeconds by remember(waiting.key) { mutableIntStateOf(0) }
+    LaunchedEffect(waiting.key) {
+        val started = System.currentTimeMillis()
+        while (true) {
+            elapsedSeconds = ((System.currentTimeMillis() - started) / 1000L).toInt()
+            delay(500L)
+        }
+    }
+    // 夜间遮罩态跨多个隐藏子阶段连续计时，不套用单步时限的 80% 警告变红，避免误报超时也不泄露步界
+    val stressed = !waiting.maskedNight &&
+        waiting.limitSeconds > 0 &&
+        elapsedSeconds * 100 >= waiting.limitSeconds * 80
+    val accent = if (night) Color(0xFFE5B869) else SelfBlue
+    val timerColor = when {
+        stressed && night -> Color(0xFFFFB4B0)
+        stressed -> FateRed
+        else -> accent
+    }
+    val timerLabel = if (waiting.limitSeconds > 0 && !waiting.maskedNight) {
+        "${elapsedSeconds}s / ${waiting.limitSeconds}s"
+    } else {
+        "${elapsedSeconds}s"
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (night) Color(0x781E1815) else Color(0xCCFFFDF9))
+            .border(0.75.dp, if (night) NightStroke else DayStroke, RoundedCornerShape(14.dp))
+            .padding(horizontal = 11.dp, vertical = 9.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (waiting.seat != null && !waiting.maskedNight) {
+                UIAvatar(
+                    name = waiting.speaker ?: "${waiting.seat}",
+                    avatarPath = waiting.avatarPath,
+                    size = 24.dp,
+                    shape = CircleShape,
+                    modifier = Modifier.alpha(0.9f),
+                )
+                Spacer(Modifier.width(8.dp))
+            } else {
+                ThinkingDot(color = accent)
+                Spacer(Modifier.width(8.dp))
+            }
+            val title = when {
+                waiting.maskedNight -> waiting.actionLabel
+                waiting.seat != null -> "${waiting.seat} 号${waiting.actionLabel}"
+                else -> waiting.actionLabel
+            }
+            Text(
+                text = title,
+                modifier = Modifier.weight(1f),
+                fontSize = FsName,
+                fontWeight = FontWeight.Medium,
+                color = textColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = timerLabel,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = timerColor,
+            )
+        }
+
+        // 并发阶段进度条 + 仍在纠结的座位名单（夜间遮罩时 total == 0、pendingSeats 为空，绝不显示）
+        if (!waiting.maskedNight && waiting.seat == null && (waiting.total > 1 || waiting.pendingSeats.isNotEmpty())) {
+            val fraction = (waiting.done.toFloat() / waiting.total.toFloat()).coerceIn(0f, 1f)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(5.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(if (night) NightControlFill else DayControlFill),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(fraction)
+                            .height(5.dp)
+                            .clip(RoundedCornerShape(50))
+                            .background(accent),
+                    )
+                }
+                Text(
+                    text = "${waiting.done}/${waiting.total}",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = dimColor,
+                )
+            }
+            if (waiting.pendingSeats.isNotEmpty()) {
+                val preview = if (waiting.pendingSeats.size <= 5) {
+                    waiting.pendingSeats.joinToString("、") { "${it}号" }
+                } else {
+                    waiting.pendingSeats.take(5).joinToString("、") { "${it}号" } + " 等 ${waiting.pendingSeats.size} 人"
+                }
+                Text(
+                    text = "思考中：$preview",
+                    fontSize = FsMeta,
+                    color = dimColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        } else {
+            // 随等待时长自然推进的微状态文案（纯时间驱动，绝不读取任何私有角色或推理内容）
+            val microStatus = waitingMicroStatus(waiting, elapsedSeconds)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    text = microStatus,
+                    fontSize = FsMeta,
+                    color = dimColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (waiting.seat != null && !waiting.maskedNight) {
+                    ThinkingDot(color = accent)
+                }
+            }
+        }
+    }
+}
+
+internal fun waitingMicroStatus(waiting: UIWerewolfWaiting, elapsedSeconds: Int): String {
+    if (waiting.maskedNight) {
+        return when {
+            elapsedSeconds < 8 -> "天黑请闭眼，静待黎明…"
+            elapsedSeconds < 20 -> "夜色沉静，暗流正在涌动…"
+            else -> "深思熟虑中，很快即将天亮…"
+        }
+    }
+    return when {
+        waiting.actionLabel.contains("密谈") -> when {
+            elapsedSeconds < 8 -> "正在评估刀口与白天分工…"
+            else -> "正在权衡狼队战术…"
+        }
+        waiting.actionLabel.contains("开枪") -> "正在权衡最后一枪带走谁…"
+        waiting.actionLabel.contains("发言顺序") -> "正在斟酌警左/警右/死左/死右…"
+        elapsedSeconds < 5 -> "正在梳理场上信息…"
+        elapsedSeconds < 12 -> "正在核对发言与票型…"
+        elapsedSeconds < 22 -> "正在推演身份与狼坑…"
+        else -> "正在深度推演发言策略…"
     }
 }
 
