@@ -531,22 +531,39 @@ data class WerewolfGame(
     fun canTransferBadge(seat: Int): Boolean =
         phase == Phase.DAY_LAST_WORDS && sheriffSeat == seat && !playerAt(seat).alive
 
-    /** 有资格投警长票的人：活着、且没上过警。 */
+    /** 尚未向全场公布的昨夜倒牌座位（有警长竞选时，昨夜死讯压在 [pendingDawn] 里等竞选结束再公布）。 */
+    val pendingDawnDeaths: Set<Int>
+        get() = pendingDawn?.deaths?.toSet().orEmpty()
+
+    /**
+     * 警长竞选期间有资格参与上警、发言、退水与警长投票的座位（存活玩家 + 死讯尚压在 [pendingDawn] 里的倒牌者）。
+     *
+     * 按线下标准规则「先竞选、后公布死讯」：公布死讯前全场不知道昨夜谁倒牌，
+     * 昨夜倒牌者照常参与竞选；竞选结束公布死讯后再倒牌、留遗言或移交警徽。
+     */
+    val sheriffEligibleSeats: List<Int>
+        get() {
+            val held = pendingDawnDeaths
+            if (held.isEmpty()) return aliveSeats
+            return players.filter { it.alive || it.seat in held }.map { it.seat }
+        }
+
+    /** 有资格投警长票的人：本轮可参与竞选、且没上过警。 */
     val sheriffVoters: List<Int>
-        get() = aliveSeats.filter { it !in sheriffRunners }
+        get() = sheriffEligibleSeats.filter { it !in sheriffRunners }
 
     /**
      * **本轮**警长投票有票的座位。
      *
      * 首轮只有警下能投（[sheriffVoters]）；平票 PK 后按网易狼人杀的规则改成
-     * **PK 台上的人不投，其余所有存活玩家都能投**——包括上过警但没进 PK 的人。
+     * **PK 台上的人不投，其余所有本轮在场玩家都能投**——包括上过警但没进 PK 的人。
      * 这是用户拍板的新口径，和首轮的「上警就不能投」是两回事，别混用。
      */
     val sheriffVoteVoters: List<Int>
         get() = if (sheriffRound <= 1) {
             sheriffVoters
         } else {
-            aliveSeats.filter { it !in sheriffCandidates }
+            sheriffEligibleSeats.filter { it !in sheriffCandidates }
         }
 
     // ---------------------------------------------------------------------
@@ -868,7 +885,7 @@ data class WerewolfGame(
      */
     fun signUpSheriff(runners: Set<Int>): WerewolfGame {
         require(phase == Phase.DAY_SHERIFF_SIGNUP) { "当前不是上警阶段：$phase" }
-        require(runners.all { it in aliveSeats }) { "只有存活玩家能上警：$runners" }
+        require(runners.all { it in sheriffEligibleSeats }) { "只有本轮可参与竞选的玩家能上警：$runners" }
         val candidates = runners.sorted()
         val base = copy(
             sheriffRunners = candidates,
@@ -1519,11 +1536,19 @@ data class WerewolfGame(
      */
     private fun afterSheriffElection(): WerewolfGame {
         // 竞选结束，现在可以公布昨夜的死讯了（见 [pendingDawn]）。
-        val announced = copy(
+        var announced = copy(
             sheriffCandidates = emptyList(),
             sheriffRunners = emptyList(),
             sheriffElectionDone = true,
         ).publishDawnIfHeld()
+        // 线下标准规则「先竞选、后公布死讯」：昨夜倒牌者若恰好当选警长，
+        // 公布死讯后必须进入遗言/交徽流程（尤其是第 2 天顺延竞选时，原本第 2 夜死者不在 pendingLastWords 里）。
+        val electedDeadSheriff = announced.sheriffSeat?.takeIf { !announced.playerAt(it).alive }
+        if (electedDeadSheriff != null && electedDeadSheriff !in announced.pendingLastWords) {
+            announced = announced.copy(
+                pendingLastWords = (announced.pendingLastWords + electedDeadSheriff).sorted(),
+            )
+        }
         return when {
             announced.pendingHunterSeat != null -> announced.copy(
                 phase = Phase.HUNTER_SHOOT,
@@ -1638,17 +1663,21 @@ data class WerewolfGame(
         // 详见 [badgeUndecided]。
         if (badgeUndecided) return null
 
-        val aliveGoodCount = players.count { it.alive && it.faction == Faction.GOOD }
+        val aliveGoodVoters = players.count {
+            it.alive && it.faction == Faction.GOOD && !(it.role == WerewolfRole.IDIOT && idiotRevealed)
+        }
 
         // 绑票比的是**票权**，不是人头。警长一票算 1.5（半点单位里是 3 而不是 2），
         // 活着的警长属于哪边，哪边就多半票：2 狼 2 好且警长是好人时是 4 点对 5 点，
         // 好人能把狼投出去。按人头比会在这里提前判负，那张 1.5 票白白浪费。
+        // 翻过牌的白痴已永久失去投票权（votingSeats 已将其排除），同样不计入好人票权。
         // 死警长的警徽归属未定，不算在任何一边——他要先在遗言里决定交给谁。
         val sheriff = aliveSheriffSeat
         val sheriffIsWolf = sheriff != null && playerAt(sheriff).faction == Faction.WEREWOLF
-        val sheriffIsGood = sheriff != null && playerAt(sheriff).faction == Faction.GOOD
+        val sheriffIsGood = sheriff != null && playerAt(sheriff).faction == Faction.GOOD &&
+            !(playerAt(sheriff).role == WerewolfRole.IDIOT && idiotRevealed)
         val wolfPoints = aliveWolfCount * 2 + if (sheriffIsWolf) 1 else 0
-        val goodPoints = aliveGoodCount * 2 + if (sheriffIsGood) 1 else 0
+        val goodPoints = aliveGoodVoters * 2 + if (sheriffIsGood) 1 else 0
         if (wolfPoints >= goodPoints) return Faction.WEREWOLF
 
         if (config.winRule == WinRule.SLAY_SIDE) {

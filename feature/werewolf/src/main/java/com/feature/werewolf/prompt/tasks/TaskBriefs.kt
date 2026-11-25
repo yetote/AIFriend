@@ -201,16 +201,21 @@ internal fun taskBrief(
                 }
             }
 
-            Phase.DAY_LAST_WORDS ->
+            Phase.DAY_LAST_WORDS -> {
+                val shootAfter = game.afterLastWordsPhase == Phase.HUNTER_SHOOT && game.pendingHunterSeat == seat
                 if (game.sheriffSeat == seat) {
                     if (player.deathCause == DeathCause.HUNTER_SHOOT) {
-                        append("你被猎人开枪带走，按规则无遗言，只需处理警徽：target 填移交的存活座位或 null（撕徽），reason 仅作简短记录。")
+                        append("你被猎人开枪带走，按规则无遗言，只需处理警徽：target 填移交的存活座位或 null（撕徽），reason 仅作内心记录不会公开显示。")
                     } else {
                         append("你已出局，请留 1-2 句遗言并处理警徽：target 填移交的存活座位或 null（撕徽），reason 将作为遗言公开。")
                     }
                 } else {
                     append("你已出局，请留 1-3 句遗言：给出具体怀疑座位与可核依据，帮活着的人少走弯路。")
                 }
+                if (shootAfter) {
+                    append("说完遗言后将进入你的开枪环节，现在先留遗言，真正开枪在下一步进行。")
+                }
+            }
 
             Phase.DAY_DISCUSSION -> {
                 append("第 ${game.day} 天白天讨论，轮到你发言。用 4-6 句中文说清你的判断与投票倾向。")

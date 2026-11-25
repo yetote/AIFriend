@@ -234,6 +234,8 @@ class WerewolfPromptTest {
         assertTrue(prompt.contains("共 8 人"))
         assertTrue(prompt.contains("昨夜还没公布"))
         assertTrue(prompt.contains("不要谈昨夜"))
+        // 预言家本人（3 号）的「还没查验过的存活玩家」也不得提前把尚未公布死讯的 4 号剔除
+        assertTrue("预言家未验名单不应提前剔除 pendingDawn 死者 4 号：$prompt", prompt.contains("4 号"))
 
         val announced = dawn.copy(pendingDawn = null)
         assertFalse(WerewolfPrompt.systemPrompt(announced, seat = 3).contains("昨夜还没公布"))
@@ -251,6 +253,47 @@ class WerewolfPromptTest {
         assertTrue(guardPrompt.contains("守救同归"))
         assertTrue(guardPrompt.contains("上警只是举手报名"))
         assertTrue(guardPrompt.contains("双爆"))
+        assertTrue(guardPrompt.contains("不能投自己"))
+        assertTrue(guardPrompt.contains("PK 发言后不再退水"))
+        assertTrue(guardPrompt.contains("先遗言、再开枪"))
+
+        // 狼王局明确自刀/被刀与自爆均不能开枪；熊局明确座位首尾成环
+        val kingRoles = listOf(
+            WerewolfRole.WEREWOLF_KING, WerewolfRole.WEREWOLF, WerewolfRole.SEER,
+            WerewolfRole.WITCH, WerewolfRole.HUNTER, WerewolfRole.BEAR,
+            WerewolfRole.VILLAGER, WerewolfRole.VILLAGER,
+        )
+        val kingBearGame = WerewolfGame.withRoles(
+            WerewolfConfig(composition = kingRoles.groupingBy { it }.eachCount(), hasSheriff = true),
+            (1..8).map { RosterEntry("p$it", "${it}号") },
+            kingRoles,
+        )
+        val kingPrompt = WerewolfPrompt.systemPrompt(kingBearGame, seat = 1)
+        assertTrue(kingPrompt.contains("自刀/被刀"))
+        assertTrue(kingPrompt.contains("自爆"))
+        val bearPrompt = WerewolfPrompt.systemPrompt(kingBearGame, seat = 6)
+        assertTrue(bearPrompt.contains("1 号与最大号互为邻座"))
+
+        // 被放逐猎人进遗言阶段时，任务提示需明确「说完遗言再开枪」
+        val exiledHunter = kingBearGame.copy(
+            phase = Phase.DAY_LAST_WORDS,
+            pendingLastWords = listOf(5),
+            pendingHunterSeat = 5,
+            afterLastWordsPhase = Phase.HUNTER_SHOOT,
+        )
+        assertTrue(WerewolfPrompt.task(exiledHunter, seat = 5).contains("说完遗言后将进入你的开枪环节"))
+
+        // 被枪杀警长交警徽时，提示词与导演实现一致：reason 仅作内心记录、不公开显示
+        val shotSheriffGame = kingBearGame.copy(
+            phase = Phase.DAY_LAST_WORDS,
+            sheriffSeat = 3,
+            players = kingBearGame.players.map {
+                if (it.seat == 3) it.copy(alive = false, deathCause = com.feature.werewolf.game.DeathCause.HUNTER_SHOOT) else it
+            },
+        )
+        val badgeSpec = com.feature.werewolf.decision.WerewolfDecisions.badgeTransfer(shotSheriffGame, seat = 3)
+        assertTrue(badgeSpec.instruction.contains("不会公开显示或朗读"))
+        assertFalse(badgeSpec.instruction.contains("作为你的最后一句话显示"))
 
         // boardBrief 不再重复一遍警长流程
         val board = WerewolfPrompt.boardBrief(gameWithGuard().config)

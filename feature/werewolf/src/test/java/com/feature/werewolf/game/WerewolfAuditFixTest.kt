@@ -218,9 +218,9 @@ class WerewolfAuditFixTest {
         mode = mode.wolfVote(mapOf(1 to 7, 2 to 7, 3 to 7)).seerCheck(1).witchActSettled(heal = false)
 
         val voting = mode.signUpSheriff(setOf(1, 4)).beginSheriffVote()
-        // 警下 3:3 平票，1 号和 4 号进 PK
+        // 警下含首夜死讯尚未公布的 7 号：3:3 平票（7 号弃票），1 号和 4 号进 PK
         val pk = voting.castSheriffVotes(
-            mapOf(2 to 1, 3 to 1, 5 to 1, 6 to 4, 8 to 4, 9 to 4),
+            mapOf(2 to 1, 3 to 1, 5 to 1, 6 to 4, 7 to null, 8 to 4, 9 to 4),
         )
         assertEquals(2, pk.sheriffRound)
         assertEquals(listOf(1, 4), pk.sheriffCandidates)
@@ -246,10 +246,10 @@ class WerewolfAuditFixTest {
         mode = mode.wolfVote(mapOf(1 to 8, 2 to 8, 3 to 8)).seerCheck(2).witchActSettled(heal = false)
         assertEquals(Phase.DAY_SHERIFF_SIGNUP, mode.phase)
 
-        // 第二天重新上警，2 号和 4 号平票进 PK，2 号（狼）在 PK 发言里爆
+        // 第二天重新上警（含尚未公布死讯的 8 号），2 号和 4 号平票进 PK，2 号（狼）在 PK 发言里爆
         val voting = mode.signUpSheriff(setOf(2, 4)).beginSheriffVote()
         val pk = voting.castSheriffVotes(
-            mapOf(3 to 2, 5 to 2, 6 to 4, 9 to 4),
+            mapOf(3 to 2, 5 to 2, 6 to 4, 8 to null, 9 to 4),
         )
         assertEquals(2, pk.sheriffRound)
 

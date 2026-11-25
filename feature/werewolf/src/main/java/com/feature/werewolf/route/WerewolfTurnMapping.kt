@@ -83,15 +83,21 @@ internal fun buildTurn(
             hint = "退了这局就拿不到警徽，也不会有警长票（上过警本来就不投）",
         )
 
-        Phase.DAY_SHERIFF_VOTE -> UIWerewolfTurn(
-            kind = UIWerewolfTurnKind.VOTE,
-            seat = humanSeat,
-            title = "投票选警长",
-            hint = if (game.sheriffRound > 1) "PK 后重投" else "只能投还在竞选的人（退水的不算）",
-            targets = others.filter { it.seat in game.sheriffCandidates },
-            canAbstain = true,
-            abstainLabel = "弃票",
-        )
+        Phase.DAY_SHERIFF_VOTE -> {
+            // 竞选期间死讯尚未公布：昨夜倒牌但已上警的候选人照常可被投，不能用 alivePlayers 漏掉他
+            val candidateTargets = game.players
+                .filter { it.seat != humanSeat && it.seat in game.sheriffCandidates }
+                .map { UIWerewolfTarget(seat = it.seat, name = it.name) }
+            UIWerewolfTurn(
+                kind = UIWerewolfTurnKind.VOTE,
+                seat = humanSeat,
+                title = "投票选警长",
+                hint = if (game.sheriffRound > 1) "PK 后重投" else "只能投还在竞选的人（退水的不算）",
+                targets = candidateTargets,
+                canAbstain = true,
+                abstainLabel = "弃票",
+            )
+        }
 
         Phase.DAY_LAST_WORDS -> if (game.sheriffSeat == humanSeat) {
             // 警长的出局处理要同时交代警徽。用 SEAT 面板：选一个人就是交给他，

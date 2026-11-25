@@ -11,7 +11,7 @@ internal object BearKit : RoleKit {
     override val roles = setOf(WerewolfRole.BEAR)
 
     override fun rules(role: WerewolfRole): List<String> = listOf(
-        "熊是好人神职，夜里不行动。每天天亮时只要熊还活着、左右邻座有存活狼人，" +
+        "熊是好人神职，夜里不行动。座位首尾成环（1 号与最大号互为邻座），每天天亮时只要熊还活着、左右邻座有存活狼人，" +
             "上帝就会公开宣布熊在咆哮；没咆哮不代表邻座一定都是好人，熊死了也不会咆哮。"
     )
 
@@ -20,7 +20,7 @@ internal object BearKit : RoleKit {
 
     override fun notes(game: WerewolfGame, seat: Int, style: WerewolfPromptStyle): List<String> {
         val lines = mutableListOf(
-            "你是熊：夜里不行动。天亮时只要你活着、左右邻座有存活狼人，" +
+            "你是熊：夜里不行动。座位首尾成环（1 号与最大号互为邻座），天亮时只要你活着、左右邻座有存活狼人，" +
                 "上帝就会公开宣布你咆哮。这是所有人都能听到的线索，不是你的私聊。",
         )
         // 「不用急着自报身份」是藏身诱导：跳不跳、什么时候跳是这张牌的自由度，

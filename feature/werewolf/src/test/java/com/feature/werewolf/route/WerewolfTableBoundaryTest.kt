@@ -389,5 +389,50 @@ class WerewolfTableBoundaryTest {
             autoSpeak = false,
         ).waiting
         assertNull("轮到人类操作时不展示 AI 等待卡", humanTurnWaiting)
+
+        // 4. 警长定发言方向即使进度用 seats=[3] 传递，也必须落进单人「正在决定发言顺序」分支而非并发投票条
+        val legacyDirWaiting = WerewolfUiState(
+            table = base.copy(game = base.game.copy(day = 2, phase = Phase.DAY_DISCUSSION)),
+            running = true,
+            progress = WerewolfProgress(day = 2, phase = Phase.DAY_DISCUSSION, step = 0, total = 7, seats = listOf(3), note = "警长定发言方向"),
+        ).toLive(humanSeat = 7, turn = null, avatars = emptyMap(), autoSpeak = false, decisionSeconds = 60).waiting
+        assertNotNull(legacyDirWaiting)
+        assertEquals(3, legacyDirWaiting!!.seat)
+        assertEquals("正在决定发言顺序", legacyDirWaiting.actionLabel)
+        assertTrue(legacyDirWaiting.pendingSeats.isEmpty())
+    }
+
+    @Test
+    fun `先竞选后公布死讯期间，游玩模式牌桌不提前剧透昨夜倒牌且允许投给昨夜倒牌候选人`() {
+        val base = sampleTable()
+        // 模拟第 1 天警长竞选，6 号昨夜倒牌但死讯压在 pendingDawn 尚未公布，且 6 号上警参选
+        val pendingGame = base.game.copy(
+            day = 1,
+            phase = Phase.DAY_SHERIFF_VOTE,
+            sheriffSeat = null,
+            sheriffElectionDone = false,
+            sheriffRunners = listOf(3, 6),
+            sheriffCandidates = listOf(3, 6),
+            pendingDawn = com.feature.werewolf.game.PendingDawn(day = 1, deaths = listOf(6)),
+        )
+        val table = WerewolfTable(game = pendingGame, transcript = emptyList())
+        val state = WerewolfUiState(table = table, running = true)
+
+        // 游玩模式（7 号平民）：6 号在牌桌上必须仍显示为存活、无死因徽标
+        val playerLive = state.toLive(
+            humanSeat = 7,
+            turn = HumanTurn(systemPrompt = "", messages = emptyList(), jsonMode = true, phase = Phase.DAY_SHERIFF_VOTE.name),
+            avatars = emptyMap(),
+            autoSpeak = false,
+        )
+        val seat6Player = playerLive.seats.first { it.seat == 6 }
+        assertTrue("死讯未公布前游玩模式必须保持存活态防剧透", seat6Player.alive)
+        assertNull("死讯未公布前游玩模式不得提前显示死因", seat6Player.fate)
+        val turnTargets = playerLive.turn!!.targets.map { it.seat }
+        assertTrue("未公布死讯的 6 号上警候选人必须可被人类投警长票", 6 in turnTargets)
+
+        // 上帝观战模式：照常可见真实状态
+        val godLive = state.toLive(humanSeat = null, turn = null, avatars = emptyMap(), autoSpeak = false)
+        assertFalse(godLive.seats.first { it.seat == 6 }.alive)
     }
 }

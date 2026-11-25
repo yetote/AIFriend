@@ -73,6 +73,33 @@ class WerewolfSheriffTest {
         // 遗言已经排好队，但必须等竞选结束才轮到死者说话——
         // 先遗言等于让死人的指控直接影响警长投票，那张票还不用负责
         assertEquals(listOf(7), mode.pendingLastWords)
+        assertTrue("死讯未公布前，首夜倒牌的 7 号照常有资格参与上警", 7 in mode.sheriffEligibleSeats)
+
+        // 首夜倒牌的 7 号正常上警并当选警长：公布死讯后立即进入遗言交徽
+        val elected = mode.signUpSheriff(setOf(4, 7)).beginSheriffVote()
+            .castSheriffVotes(mapOf(1 to 7, 2 to 7, 3 to 7, 5 to 7, 6 to 4, 8 to 4, 9 to 4))
+        assertEquals(7, elected.sheriffSeat)
+        assertNull("竞选结束后死讯已公布", elected.pendingDawn)
+        assertEquals(Phase.DAY_LAST_WORDS, elected.phase)
+        assertTrue("当选后已倒牌的 7 号必须移交或撕掉警徽", elected.canTransferBadge(7))
+    }
+
+    @Test
+    fun `第 2 天顺延竞选时，第 2 夜倒牌者若当选警长仍能进入交徽流程`() {
+        var mode = game()
+        // 第 1 夜刀 7 号 → 第 1 天竞选 1 号自爆顺延
+        mode = mode.wolfVote(mapOf(1 to 7, 2 to 7, 3 to 7)).seerCheck(1).witchActSettled(heal = false)
+        mode = mode.signUpSheriff(setOf(1, 4)).wolfExplode(1).finishLastWords().beginWolfVote()
+        // 第 2 夜刀 5 号（女巫）：正常第 2 夜死者无遗言，但此时警徽顺延到第 2 天重新竞选
+        mode = mode.wolfVote(mapOf(1 to 5, 2 to 5, 3 to 5)).seerCheck(2).witchActSettled(heal = false)
+        assertEquals(Phase.DAY_SHERIFF_SIGNUP, mode.phase)
+        assertTrue("第 2 夜倒牌未公布死讯的 5 号照常能上警", 5 in mode.sheriffEligibleSeats)
+
+        val elected = mode.signUpSheriff(setOf(5))
+        assertEquals(5, elected.sheriffSeat)
+        assertEquals(Phase.DAY_LAST_WORDS, elected.phase)
+        assertEquals("倒牌当选警长必须排入交徽队列", listOf(5), elected.pendingLastWords)
+        assertTrue(elected.canTransferBadge(5))
     }
 
     @Test

@@ -22,7 +22,9 @@ internal object SeerKit : RoleKit {
             }
         }
         val checked = game.seerChecks.map { it.targetSeat }.toSet()
-        val unknown = game.aliveSeats.filter { it != seat && it !in checked }
+        // 死讯压在 pendingDawn 里尚未公布时，不能提前把昨夜死者从「存活玩家」里删掉，避免警上剧透死讯
+        val visibleAlive = if (game.pendingDawn != null) game.sheriffEligibleSeats else game.aliveSeats
+        val unknown = visibleAlive.filter { it != seat && it !in checked }
         if (unknown.isNotEmpty()) {
             lines += "还没查验过的存活玩家：" + seatsText(unknown)
         }

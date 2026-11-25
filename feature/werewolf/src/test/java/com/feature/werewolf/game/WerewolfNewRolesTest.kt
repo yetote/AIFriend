@@ -256,4 +256,39 @@ private fun WerewolfGame.atWolfVote(): WerewolfGame =
             )
         }
     }
+
+    @Test
+    fun `翻牌白痴失去投票权，绑票判定按实际票权不再计入好人票`() {
+        // 12 人白痴局：1-4 狼、5 预、6 女、7 猎、8 白痴、9-12 民。
+        // 残局剩 1 号狼、2 号狼 vs 8 号翻牌白痴（0 票）+ 9 号平民（1 票），
+        // 实际票权 2 vs 1，狼已绑票——放逐 10 号平民后应直接判狼胜，不能把翻牌白痴当 1 票拖局。
+        val base = game(fool12)
+        val endgame = base.copy(
+            day = 4,
+            phase = Phase.DAY_VOTE,
+            idiotRevealed = true,
+            players = base.players.map { p ->
+                if (p.seat in setOf(1, 2, 8, 9, 10)) p
+                else p.copy(alive = false, deathCause = DeathCause.WOLF_KILL, deathDay = 2)
+            },
+        )
+        // 放逐 10 号平民后，场上只剩 1、2 号狼（2 票）vs 9 号民（1 票）+ 8 号翻牌白痴（0 票）
+        val exiled10 = endgame.castVotes(mapOf(1 to 10, 2 to 10, 9 to 10, 10 to 1))
+        assertEquals("翻牌白痴无票权，狼 2 票压过好人 1 票应直接绑票获胜", Faction.WEREWOLF, exiled10.winner)
+        assertEquals(Phase.FINISHED, exiled10.phase)
+
+        // 若是 1 狼警长（1.5 票）vs 1 民（1 票）+ 1 翻牌白痴（0 票），实际票权 1.5 > 1 也应直接绑票狼胜
+        val oneWolfSheriff = base.copy(
+            day = 5,
+            phase = Phase.DAY_VOTE,
+            idiotRevealed = true,
+            sheriffSeat = 1,
+            players = base.players.map { p ->
+                if (p.seat in setOf(1, 8, 9, 10)) p
+                else p.copy(alive = false, deathCause = DeathCause.WOLF_KILL, deathDay = 2)
+            },
+        )
+        val exiledBySheriff = oneWolfSheriff.castVotes(mapOf(1 to 10, 9 to 10, 10 to 1))
+        assertEquals("1 狼警长 1.5 票压过 1 民 1 票（翻牌白痴 0 票）应直接绑票狼胜", Faction.WEREWOLF, exiledBySheriff.winner)
+    }
 }

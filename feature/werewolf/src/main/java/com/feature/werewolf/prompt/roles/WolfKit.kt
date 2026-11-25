@@ -21,9 +21,9 @@ internal object WolfKit : RoleKit {
 
     override fun rules(role: WerewolfRole): List<String> = when (role) {
         WerewolfRole.WEREWOLF_KING -> listOf(
-            "狼王是狼人：夜里照常参与商议和下刀；白天被投票放逐时可以开枪带走一个人，" +
+            "狼王是狼人：夜里照常参与商议和下刀；**仅在白天被投票放逐时**可以开枪带走一个人，" +
                 "那一枪即使在狼队已经全灭后也照样有效，可能直接改写胜负。" +
-                "狼王被毒死或被猎人带走时不能开枪。"
+                "狼王被毒死、被猎人带走、**狼队自刀/被刀或自爆出局时均不能开枪**。"
         )
 
         else -> emptyList()
@@ -51,7 +51,8 @@ internal object WolfKit : RoleKit {
         val lines = mutableListOf<String>()
         val king = game.playerAt(seat).role == WerewolfRole.WEREWOLF_KING
         if (king) {
-            lines += "你是狼王：夜里和普通狼一样行动，白天被投票放逐时可以开枪带走一个人。" +
+            lines += "你是狼王：夜里和普通狼一样行动，**仅在白天被投票放逐时**可以开枪带走一个人" +
+                "（自刀/被刀、自爆、被毒或被猎人带走均不能开枪）。" +
                 "那一枪即使在队友已经全灭之后也有效。"
             if (guided) lines += "真到了那一枪的局面，别轻易放弃。"
         }

@@ -633,7 +633,7 @@ class WerewolfDirector(
                 phase = Phase.DAY_DISCUSSION,
                 step = 0,
                 total = game.aliveSeats.size,
-                seats = listOf(sheriff),
+                seat = sheriff,
                 note = "警长定发言方向",
             )
         )
@@ -666,9 +666,11 @@ class WerewolfDirector(
         val game = table.game
         if (game.phase != Phase.DAY_SHERIFF_SIGNUP) return table
 
+        // 线下标准规则「先竞选、后公布死讯」：昨夜倒牌但尚未公布死讯的玩家照常参与上警报名。
+        val eligible = game.sheriffEligibleSeats
         val outcomes = windowedAsync(
-            game.aliveSeats,
-            slowLane = slowestSeat(game.aliveSeats),
+            eligible,
+            slowLane = slowestSeat(eligible),
             onTick = { done, total, pending ->
                 onProgress(
                     WerewolfProgress(
@@ -681,7 +683,7 @@ class WerewolfDirector(
                 )
             },
         ) { seat -> seat to askSheriffSignup(table, seat) }
-        onProgress(WerewolfProgress(game.day, Phase.DAY_SHERIFF_SIGNUP, game.aliveSeats.size, game.aliveSeats.size))
+        onProgress(WerewolfProgress(game.day, Phase.DAY_SHERIFF_SIGNUP, eligible.size, eligible.size))
 
         val runners = outcomes.filter { (seat, outcome) -> outcome.value.target == seat }
             .map { it.first }
@@ -939,6 +941,7 @@ class WerewolfDirector(
                         seat = seat,
                         kind = MessageKind.SPEECH,
                         text = if (silent) head else head + outcome.value.reason,
+                        reasoning = outcome.reasoning,
                         usage = outcome.usage,
                     )
                 )
@@ -1348,13 +1351,18 @@ class WerewolfDirector(
 
     private suspend fun askBadge(table: WerewolfTable, seat: Int): StructuredOutcome<VoteChoice> {
         val game = table.game
+        val shot = game.playerAt(seat).deathCause == DeathCause.HUNTER_SHOOT
         return ask(
             table = table,
             seat = seat,
             spec = WerewolfDecisions.badgeTransfer(game, seat, free = promptStyle == WerewolfPromptStyle.FREE),
             // 兜底撕掉警徽，而不是随便找个人接手：交错的代价比没有警长大得多
             fallback = { VoteChoice(target = null, reason = "我来不及交代了。") },
-            task = "请在遗言里交代警徽交给谁。",
+            task = if (shot) {
+                "你被开枪带走、没有遗言，请直接决定警徽交给谁或撕掉。"
+            } else {
+                "请在遗言里交代警徽交给谁。"
+            },
         )
     }
 

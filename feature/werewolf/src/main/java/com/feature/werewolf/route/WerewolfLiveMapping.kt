@@ -162,10 +162,15 @@ internal fun WerewolfUiState.toLive(
         emptyMap()
     }
 
+    // 警长竞选期间死讯尚未公布（pendingDawn != null）：游玩模式下不得提前把昨夜倒牌者画成出局，
+    // 否则警长还没选完就剧透谁昨晚死了；上帝观战/终局视角照常可见真实状态。
+    val hiddenDawnDead = if (!reveal) game?.pendingDawnDeaths.orEmpty() else emptySet()
+
     val seats = game?.players?.map { player ->
         // 翻过牌的白痴身份是公开的：牌桌上必须给所有人看见，
         // 否则会留下一个「没有身份标记却还活着」的座位，读起来自相矛盾
         val known = reveal || (player.role == WerewolfRole.IDIOT && game.idiotRevealed)
+        val hideDeath = player.seat in hiddenDawnDead
         UIWerewolfSeatLive(
             seat = player.seat,
             name = player.name,
@@ -173,15 +178,19 @@ internal fun WerewolfUiState.toLive(
             // 人座是 "human"，界面据此不显示；AI 座显示存档里记下的原局模型
             model = player.model.takeIf { it != "human" }.orEmpty(),
             isSelf = player.seat == humanSeat,
-            alive = player.alive,
+            alive = player.alive || hideDeath,
             // 参与中的局不暴露刀/毒：那是 AI 玩家拿不到的私有信息。
             // 只给一个中性的「夜」，让「他死了」这件事照常可见。
             // 观战和已结束才显示真实死因——那时复盘本来就该看清。
-            fate = player.deathCause?.toFate()?.let { fate ->
-                if (!reveal && (fate == UIWerewolfFate.WOLF_KILL || fate == UIWerewolfFate.WITCH_POISON)) {
-                    UIWerewolfFate.NIGHT
-                } else {
-                    fate
+            fate = if (hideDeath) {
+                null
+            } else {
+                player.deathCause?.toFate()?.let { fate ->
+                    if (!reveal && (fate == UIWerewolfFate.WOLF_KILL || fate == UIWerewolfFate.WITCH_POISON)) {
+                        UIWerewolfFate.NIGHT
+                    } else {
+                        fate
+                    }
                 }
             },
             roleLabel = if (known) player.role.displayName else null,
@@ -466,8 +475,9 @@ private fun buildWaiting(
         )
     }
 
-    // 白天并发阶段（放逐投票 / 警长投票 / 上警报名 / 退水）：展示实时落票进度与尚未落票座位
-    if (p.seats.isNotEmpty()) {
+    // 白天并发阶段（放逐投票 / 警长投票 / 上警报名 / 退水）：展示实时落票进度与尚未落票座位。
+    // 「警长定发言方向」属于单人决策，兜底兼容 seats=[sheriff] 写法，不走并发投票进度条。
+    if (p.seats.isNotEmpty() && p.note != "警长定发言方向") {
         val label = when (p.phase) {
             Phase.DAY_VOTE -> "放逐投票进行中"
             Phase.DAY_SHERIFF_VOTE -> "警长投票进行中"
@@ -486,7 +496,9 @@ private fun buildWaiting(
     }
 
     // 白天单人思考（发言 / 遗言 / 开枪 / 警长定序）
-    val targetSeat = actorSeat ?: return null
+    val targetSeat = actorSeat
+        ?: p.seats.singleOrNull()?.takeIf { p.note == "警长定发言方向" }
+        ?: return null
     val speaker = game?.players?.firstOrNull { it.seat == targetSeat }
     val label = when {
         p.note == "警长定发言方向" -> "正在决定发言顺序"
