@@ -328,6 +328,7 @@ fun UIWerewolfTableScreen(
                     dimColor = dimColor,
                     surface = surface,
                     seats = live.seats,
+                    manualMarks = if (!live.spectating && !live.finished) manualMarks else emptyMap(),
                     draftText = if (night) nightDraft else dayDraft,
                     onDraftChange = { updated ->
                         if (night) nightDraft = updated else dayDraft = updated

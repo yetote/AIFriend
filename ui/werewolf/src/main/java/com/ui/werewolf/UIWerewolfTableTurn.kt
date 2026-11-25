@@ -42,6 +42,7 @@ import com.ui.common.theme.UIFieldFill
 import com.ui.common.theme.UIRadiusCard
 import com.ui.common.theme.UIRadiusControl
 import com.ui.common.theme.UIShadowSoft
+import com.ui.werewolf.data.UIWerewolfPlayerMark
 import com.ui.werewolf.data.UIWerewolfSeatLive
 import com.ui.werewolf.data.UIWerewolfTarget
 import com.ui.werewolf.data.UIWerewolfTurn
@@ -64,6 +65,8 @@ internal fun TurnPanel(
     surface: Color,
     /** 牌桌上的全部座位，给选人弹窗与快捷选号用（头像、存活、死因）。 */
     seats: List<UIWerewolfSeatLive> = emptyList(),
+    /** 游玩模式下玩家自己贴的私密记号，透传给选人弹窗方便核对（纯本地笔记，无信息泄露）。 */
+    manualMarks: Map<Int, UIWerewolfPlayerMark> = emptyMap(),
     /** 提前在等待期写好的发言草稿；传非 null 时直接回填并双向同步，发出后由这里清空。 */
     draftText: String? = null,
     onDraftChange: ((String) -> Unit)? = null,
@@ -143,6 +146,7 @@ internal fun TurnPanel(
                 turn = turn,
                 day = day,
                 seats = seats,
+                manualMarks = manualMarks,
                 textColor = textColor,
                 dimColor = dimColor,
                 night = night,
@@ -156,6 +160,7 @@ internal fun TurnPanel(
                 turn = turn,
                 day = day,
                 seats = seats,
+                manualMarks = manualMarks,
                 textColor = textColor,
                 dimColor = dimColor,
                 night = night,
@@ -167,6 +172,7 @@ internal fun TurnPanel(
                 turn = turn,
                 day = day,
                 seats = seats,
+                manualMarks = manualMarks,
                 textColor = textColor,
                 dimColor = dimColor,
                 night = night,
@@ -268,6 +274,7 @@ private fun PickTarget(
     turn: UIWerewolfTurn,
     day: Int,
     seats: List<UIWerewolfSeatLive>,
+    manualMarks: Map<Int, UIWerewolfPlayerMark> = emptyMap(),
     textColor: Color,
     dimColor: Color,
     night: Boolean,
@@ -339,6 +346,7 @@ private fun PickTarget(
             textColor = textColor,
             dimColor = dimColor,
             night = night,
+            manualMarks = manualMarks,
             onPick = onPick,
             abstainLabel = if (onAbstain != null) turn.abstainLabel ?: "不做" else null,
             onAbstain = onAbstain,
@@ -832,6 +840,7 @@ internal fun WitchPanel(
     turn: UIWerewolfTurn,
     day: Int,
     seats: List<UIWerewolfSeatLive>,
+    manualMarks: Map<Int, UIWerewolfPlayerMark> = emptyMap(),
     textColor: Color,
     dimColor: Color,
     night: Boolean,
@@ -850,6 +859,7 @@ internal fun WitchPanel(
             textColor = textColor,
             dimColor = dimColor,
             night = night,
+            manualMarks = manualMarks,
             onPick = { seat -> onWitch(false, seat) },
             abstainLabel = "算了",
             onAbstain = null,
