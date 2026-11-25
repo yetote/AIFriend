@@ -48,6 +48,19 @@ import com.ui.common.theme.UIShadowSoft
 import com.ui.werewolf.data.UIWerewolfSeatLive
 import com.ui.werewolf.data.UIWerewolfVerdict
 
+/** 选目标弹窗的两次点击确认状态转移：首次点选加框、换点别人切框、再点同一座位才确认。 */
+internal sealed interface TargetTapOutcome {
+    data class Selected(val seat: Int) : TargetTapOutcome
+    data class Confirmed(val seat: Int) : TargetTapOutcome
+}
+
+internal fun resolveTargetTap(currentSelected: Int?, tappedSeat: Int): TargetTapOutcome =
+    if (currentSelected == tappedSeat) {
+        TargetTapOutcome.Confirmed(tappedSeat)
+    } else {
+        TargetTapOutcome.Selected(tappedSeat)
+    }
+
 @Composable
 internal fun TargetPickDialog(
     title: String,
@@ -62,7 +75,8 @@ internal fun TargetPickDialog(
     onAbstain: (() -> Unit)?,
     onDismiss: () -> Unit,
 ) {
-    var pressed by rememberSaveable { mutableStateOf<Int?>(null) }
+    // 两次点击防误触：第一次点只高亮加粗边框选中目标，第二次点同一座位才真正提交
+    var selected by rememberSaveable { mutableStateOf<Int?>(null) }
     val dialogBg = if (night) Color(0xF71A1513) else UIGlassSurfaceStrong
     val dialogBorder = if (night) Color(0x30F5E8D8) else UIGlassStroke
     val separator = if (night) Color(0x22F5E8D8) else UISeparator
@@ -122,15 +136,20 @@ internal fun TargetPickDialog(
                             TargetSeatCard(
                                 seat = seat,
                                 enabled = seat.seat in pickable,
-                                isPressed = pressed == seat.seat,
+                                isSelected = selected == seat.seat,
+                                selectAccent = accent,
                                 textColor = textColor,
                                 dimColor = dimColor,
                                 night = night,
                                 modifier = Modifier.weight(1f),
                                 onClick = {
-                                    pressed = seat.seat
-                                    onPick(seat.seat)
-                                    onDismiss()
+                                    when (val outcome = resolveTargetTap(selected, seat.seat)) {
+                                        is TargetTapOutcome.Selected -> selected = outcome.seat
+                                        is TargetTapOutcome.Confirmed -> {
+                                            onPick(outcome.seat)
+                                            onDismiss()
+                                        }
+                                    }
                                 },
                             )
                         }
@@ -138,6 +157,21 @@ internal fun TargetPickDialog(
                     }
                 }
             }
+
+            // 固定一行防误触提示，不引起弹窗高度跳动
+            val selectedSeat = selected?.let { s -> ordered.firstOrNull { it.seat == s } }
+            Text(
+                text = if (selectedSeat != null) {
+                    "已选中 ${selectedSeat.seat} 号「${selectedSeat.name}」，再次点击该座位确认"
+                } else {
+                    "第一次点击选中目标，再次点击同一座位确认"
+                },
+                fontSize = 12.sp,
+                fontWeight = if (selectedSeat != null) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (selectedSeat != null) accent else dimColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
 
             TargetDialogActions(
                 night = night,
@@ -236,7 +270,8 @@ private fun TargetDialogActions(
 private fun TargetSeatCard(
     seat: UIWerewolfSeatLive,
     enabled: Boolean,
-    isPressed: Boolean,
+    isSelected: Boolean,
+    selectAccent: Color,
     textColor: Color,
     dimColor: Color,
     night: Boolean,
@@ -247,19 +282,20 @@ private fun TargetSeatCard(
     val cardBg by animateColorAsState(
         when {
             !enabled -> if (night) Color(0x0CF5E8D8) else UIAtelierSand.copy(alpha = 0.55f)
-            isPressed -> accent.copy(alpha = if (night) 0.34f else 0.22f)
-            else -> accent.copy(alpha = if (night) 0.16f else 0.08f)
+            isSelected -> selectAccent.copy(alpha = if (night) 0.24f else 0.14f)
+            else -> accent.copy(alpha = if (night) 0.10f else 0.05f)
         },
         label = "seat-card-bg",
     )
     val borderColor by animateColorAsState(
         when {
             !enabled -> if (night) Color(0x18F5E8D8) else UIGlassStroke
-            isPressed -> accent
-            else -> accent.copy(alpha = if (night) 0.50f else 0.34f)
+            isSelected -> selectAccent
+            else -> accent.copy(alpha = if (night) 0.30f else 0.22f)
         },
         label = "seat-card-border",
     )
+    val borderWidth = if (isSelected) 2.2.dp else 0.8.dp
     val rimColor = if (night) Color(0xFF1A1513) else Color(0xFFFFFDF9)
     val cardShape = RoundedCornerShape(14.dp)
 
@@ -267,7 +303,7 @@ private fun TargetSeatCard(
         modifier = modifier
             .clip(cardShape)
             .background(cardBg)
-            .border(1.dp, borderColor, cardShape)
+            .border(borderWidth, borderColor, cardShape)
             .then(if (enabled) Modifier.clickable { onClick() } else Modifier)
             .padding(vertical = 10.dp, horizontal = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -286,8 +322,11 @@ private fun TargetSeatCard(
                 modifier = Modifier
                     .alpha(if (seat.alive) 1f else 0.32f)
                     .then(
-                        if (enabled) Modifier.border(1.8.dp, accent, avatarShape)
-                        else Modifier.border(0.8.dp, borderColor, avatarShape)
+                        when {
+                            isSelected -> Modifier.border(2.dp, selectAccent, avatarShape)
+                            enabled -> Modifier.border(1.2.dp, accent.copy(alpha = 0.65f), avatarShape)
+                            else -> Modifier.border(0.8.dp, borderColor, avatarShape)
+                        }
                     ),
             )
             Box(
@@ -295,7 +334,13 @@ private fun TargetSeatCard(
                     .align(Alignment.TopStart)
                     .size(19.dp)
                     .clip(CircleShape)
-                    .background(if (enabled) SelfBlue else Color(0xFF8C8277))
+                    .background(
+                        when {
+                            isSelected -> selectAccent
+                            enabled -> SelfBlue
+                            else -> Color(0xFF8C8277)
+                        }
+                    )
                     .border(1.2.dp, rimColor, CircleShape)
                     .alpha(if (seat.alive) 1f else 0.55f),
                 contentAlignment = Alignment.Center,
@@ -369,18 +414,19 @@ private fun TargetSeatCard(
             fontSize = FsName,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            fontWeight = if (enabled) FontWeight.SemiBold else FontWeight.Normal,
+            fontWeight = if (isSelected || enabled) FontWeight.SemiBold else FontWeight.Normal,
             color = when {
                 !enabled -> dimColor.copy(alpha = 0.52f)
+                isSelected -> selectAccent
                 !seat.alive -> dimColor.copy(alpha = 0.68f)
                 else -> textColor
             },
         )
         Text(
-            text = seat.fate?.short ?: "",
+            text = if (isSelected) "再点确认" else (seat.fate?.short ?: ""),
             fontSize = FsBadge,
-            fontWeight = FontWeight.Medium,
-            color = FateRed,
+            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+            color = if (isSelected) selectAccent else FateRed,
         )
     }
 }
