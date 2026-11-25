@@ -14,10 +14,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.core.ai.model.Friend
+import com.core.ai.probe.ApiCheck
+import com.core.ai.probe.ApiCheckState
+import com.core.ai.probe.formatProbeElapsed
 import com.feature.agent.contract.AgentScreen
 import com.feature.agent.route.AgentRoute
 import com.feature.home.contract.HomeScreen
@@ -25,17 +27,17 @@ import com.feature.home.vm.HomeViewModel
 import com.feature.room.contract.RoomScreen
 import com.feature.room.route.RoomRoute
 import com.feature.werewolf.route.WerewolfRoute
+import com.ui.agent.data.UIFriendListData
+import com.ui.agent.data.UIFriendProbeState
 import com.ui.common.UIAvatarCropDialog
 import com.ui.common.UIGroupMember
-import com.ui.home.UIFriendPage
-import com.ui.agent.data.UIFriendListData
-import com.ui.room.data.UIRoomData
 import com.ui.common.data.getRandomColor
+import com.ui.home.UIFriendPage
+import com.ui.room.data.UIRoomData
 
 @Composable
 fun HomeRoute(viewModel: HomeViewModel = viewModel()) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val context = LocalContext.current
 
     var userCropUri by remember { mutableStateOf<Uri?>(null) }
     val userAvatarPicker = rememberLauncherForActivityResult(
@@ -70,7 +72,9 @@ fun HomeRoute(viewModel: HomeViewModel = viewModel()) {
     Box(modifier = Modifier.fillMaxSize()) {
         when (state.screen) {
             HomeScreen.List -> UIFriendPage(
-                list = state.visibleFriends.map { it.toUiModel() },
+                list = state.visibleFriends.map { friend ->
+                    friend.toUiModel(state.apiChecks[friend.id])
+                },
                 createdCount = state.friends.size,
                 messageCount = state.messageCount,
                 activeCount = state.activeCount,
@@ -103,7 +107,17 @@ fun HomeRoute(viewModel: HomeViewModel = viewModel()) {
                 onEditFriend = { viewModel.startEditFriend(it) },
                 onPickUserAvatar = pickUserAvatar,
                 onOpenSettings = viewModel::openSettings,
-                onOpenWerewolf = viewModel::openWerewolf
+                onOpenWerewolf = viewModel::openWerewolf,
+                isProbing = state.isProbing,
+                probeCompleted = state.probeProgress.completed,
+                probeTotal = state.probeProgress.total,
+                probedCount = state.probedCount,
+                aliveCount = state.aliveCount,
+                failedCount = state.failedCount,
+                onProbeAll = { viewModel.probeAllFriends(force = true) },
+                onProbeFailed = viewModel::probeFailedFriends,
+                onProbeFriend = viewModel::probeFriend,
+                onCancelProbe = viewModel::cancelProbe,
             )
 
             HomeScreen.Create -> AgentRoute(
@@ -161,14 +175,30 @@ fun HomeRoute(viewModel: HomeViewModel = viewModel()) {
     }
 }
 
-private fun Friend.toUiModel(): UIFriendListData = UIFriendListData(    id = id,
-    name = name,
-    modelTag = model,
-    role = role.ifBlank { "AI 好友" },
-    source = company.ifBlank { brand },
-    usageCount = if (messages.isEmpty()) "尚未开始对话" else "${messages.size} 条消息",
-    avatarBgColor = getRandomColor(name),
-    avatarTextColor = Color(0xFF374151),
-    isOnline = true,
-    avatarPath = avatarPath
-)
+private fun Friend.toUiModel(check: ApiCheck?): UIFriendListData {
+    val probeState = when (check?.state) {
+        ApiCheckState.OK -> UIFriendProbeState.OK
+        ApiCheckState.CHECKING -> UIFriendProbeState.CHECKING
+        ApiCheckState.FAILED -> UIFriendProbeState.FAILED
+        null -> UIFriendProbeState.IDLE
+    }
+    return UIFriendListData(
+        id = id,
+        name = name,
+        modelTag = model,
+        role = role.ifBlank { "AI 好友" },
+        source = company.ifBlank { brand },
+        usageCount = if (messages.isEmpty()) "尚未开始对话" else "${messages.size} 条消息",
+        avatarBgColor = getRandomColor(name),
+        avatarTextColor = Color(0xFF374151),
+        isOnline = probeState == UIFriendProbeState.OK,
+        avatarPath = avatarPath,
+        probeState = probeState,
+        probeLatency = if (probeState == UIFriendProbeState.OK) {
+            check?.elapsedMs?.let(::formatProbeElapsed)
+        } else {
+            null
+        },
+        probeError = if (probeState == UIFriendProbeState.FAILED) check?.message else null,
+    )
+}

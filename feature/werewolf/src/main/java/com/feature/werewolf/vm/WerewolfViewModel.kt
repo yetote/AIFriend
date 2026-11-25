@@ -9,8 +9,7 @@ import com.core.ai.entity.IAI
 import com.core.ai.factory.AIFactory
 import com.core.ai.model.Friend
 import com.core.ai.model.toFriend
-import com.core.ai.probe.ApiProbeResult
-import com.core.ai.probe.probe
+import com.core.ai.probe.FriendProbeStore
 import com.core.repository.storage.AIProviderSettings
 import com.core.repository.settings.TTSProviderCatalog
 import com.core.repository.storage.FriendRepository
@@ -60,13 +59,11 @@ import com.ui.werewolf.data.UIWerewolfPromptState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
@@ -74,8 +71,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import java.util.UUID
@@ -452,21 +447,13 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
         _recast.value = null
     }
 
-    /** 好友 id → 那个模型的连通状况。只存内存，不进存档。 */
+    /** 好友 id → 那个模型的连通状况，与首页好友列表共用 [FriendProbeStore]。 */
     private val _apiChecks = MutableStateFlow<Map<String, ApiCheck>>(emptyMap())
     val apiChecks: StateFlow<Map<String, ApiCheck>> = _apiChecks.asStateFlow()
 
     /** 这一轮检测有没有跑完。配置页据此把「检测连接」变成「检测中」。 */
     private val _verifying = MutableStateFlow(false)
     val verifying: StateFlow<Boolean> = _verifying.asStateFlow()
-
-    /**
-     * 保证同一时刻只有一轮探活在跑。
-     *
-     * 用户完全可能在检测还没回来时又点一次，或者点完检测直接去点开局；
-     * 不串行化就会出现两拨请求、结果互相覆盖，红绿乱跳。
-     */
-    private val probeLock = Mutex()
 
     /**
      * 正在打的那一局的驱动协程。
@@ -483,6 +470,18 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
 
     init {
         refresh()
+
+        // 实时订阅全局探活中心：在首页探活过的好友，进狼人杀选人页立刻带出绿/红状态，
+        // 切到搜索式时自动切到搜索式前提的探活通道，互不串台。
+        combine(_friends, FriendProbeStore.checks, _promptStyle) { friends, snapshot, style ->
+            FriendProbeStore.resolveForFriends(
+                friends = friends,
+                webSearch = style == WerewolfPromptStyle.SEARCH,
+                snapshot = snapshot,
+            )
+        }
+            .onEach { _apiChecks.value = it }
+            .launchIn(viewModelScope)
 
         viewModelScope.launch { runCatching { werewolfSettings.autoSpeak.collect { speechPlayer.applyPreference(it) } } }
         viewModelScope.launch { runCatching { werewolfSettings.showThinking.collect { _showThinking.value = it } } }
@@ -1417,83 +1416,37 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
     }
 
     /**
-     * 跑一轮探活并把结果写进 [apiChecks]，返回「是否全部通过」。
+     * 跑一轮探活并把结果同步进 [apiChecks]，返回「是否全部通过」。
      *
-     * 已通过且还新鲜的结果会被跳过（见 [planProbes]），所以反复调用不会反复花钱。
+     * 实际请求与去重缓存委托给进程内共享的 [FriendProbeStore]：
+     * 首页好友列表刚刚探活通过的模型在十分钟内、同一前提下直接跳过，不必每次开局重复等待。
      */
-    private suspend fun runProbe(chosen: List<Friend>, force: Boolean, webSearch: Boolean): Boolean = probeLock.withLock {
-        if (chosen.isEmpty()) return@withLock true
-
-        // 每次检测前重读一次凭证：用户完全可能刚在设置页换了 Key，
-        // 内存快照里还是旧的，测出来的红点会让他以为新 Key 也不行
-        withContext(Dispatchers.IO) { runCatching { providerSettings.load() } }
-
-        val tasks = planProbes(
-            targets = chosen.toProbeTargets(),
-            known = _apiChecks.value,
-            force = force,
-            now = System.currentTimeMillis(),
-            webSearch = webSearch,
-        )
-        if (tasks.isEmpty()) return@withLock true
-
+    private suspend fun runProbe(chosen: List<Friend>, force: Boolean, webSearch: Boolean): Boolean {
+        if (chosen.isEmpty()) return true
         _verifying.value = true
-        try {
-            // 先点亮成「检测中」：点了按钮界面毫无变化，用户会以为没点上，然后再点一次
-            _apiChecks.update { current ->
-                current + tasks.flatMap { it.friendIds }.associateWith {
-                    ApiCheck(state = ApiCheckState.CHECKING)
-                }
-            }
-
-            // AI 实例在这里一次性取好：aiFor 内部是普通 MutableMap，
-            // 放到并发分支里去建会有竞争，而建实例本身并不慢
-            val ais = tasks.associateWith { task ->
-                runCatching { aiFor(task.brand) }.getOrNull()
-            }
-
-            val results = coroutineScope {
-                tasks.map { task ->
-                    async {
-                        val ai = ais[task]
-                        val result = if (ai == null) {
-                            ApiProbeResult(ok = false, elapsedMs = 0, message = "暂不支持的厂商：${task.brand}")
-                        } else {
-                            ai.probe(task.model, webSearch = webSearch)
-                        }
-                        task to result
-                    }
-                }.awaitAll()
-            }
-
-            val at = System.currentTimeMillis()
-            _apiChecks.update { current ->
-                current + results.flatMap { (task, result) ->
-                    // 同组座位共享一个结果：它们背后是同一个厂商、同一个模型、同一把 Key
-                    task.friendIds.map { id ->
-                        id to ApiCheck(
-                            state = if (result.ok) ApiCheckState.OK else ApiCheckState.FAILED,
-                            message = result.message,
-                            elapsedMs = result.elapsedMs,
-                            at = at,
-                            // 结论挂上前提：搜索式测出来的绿，不能拿去给普通探活复用，
-                            // 反过来也一样
-                            webSearch = webSearch,
-                            searchUnsupported = result.searchUnsupported,
-                        )
-                    }
-                }
-            }
-            results.all { it.second.ok }
-        } catch (cancelled: CancellationException) {
-            // 退出页面时要把「检测中」擦掉，否则下次进来那几个座位会永远转圈
-            _apiChecks.update { current ->
-                current.filterValues { it.state != ApiCheckState.CHECKING }
-            }
-            throw cancelled
+        return try {
+            val allOk = FriendProbeStore.probe(
+                friends = chosen,
+                force = force,
+                webSearch = webSearch,
+                loadCredentials = {
+                    withContext(Dispatchers.IO) { runCatching { providerSettings.load() } }
+                },
+                aiFor = { brand -> aiFor(brand) },
+            )
+            syncApiChecks(extra = chosen, webSearch = webSearch)
+            allOk
         } finally {
             _verifying.value = false
         }
+    }
+
+    private fun syncApiChecks(
+        extra: List<Friend> = emptyList(),
+        webSearch: Boolean = probeRequiresSearch(),
+    ) {
+        val all = (_friends.value + extra).distinctBy { it.id }
+        _apiChecks.value = FriendProbeStore.resolveForFriends(all, webSearch = webSearch)
     }
 
     // ---------------------------------------------------------------------

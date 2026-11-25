@@ -112,7 +112,17 @@ fun UIFriendPage(
     onTogglePin: (String) -> Unit = {},
     onPickUserAvatar: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
-    onOpenWerewolf: () -> Unit = {}
+    onOpenWerewolf: () -> Unit = {},
+    isProbing: Boolean = false,
+    probeCompleted: Int = 0,
+    probeTotal: Int = 0,
+    probedCount: Int = 0,
+    aliveCount: Int = 0,
+    failedCount: Int = 0,
+    onProbeAll: () -> Unit = {},
+    onProbeFailed: () -> Unit = {},
+    onProbeFriend: (String) -> Unit = {},
+    onCancelProbe: () -> Unit = {},
 ) {
     var pendingFriendAction by remember { mutableStateOf<UIFriendListData?>(null) }
     var pendingRoomAction by remember { mutableStateOf<UIRoomData?>(null) }
@@ -151,11 +161,14 @@ fun UIFriendPage(
                 )
                 Spacer(Modifier.height(10.dp))
                 UIFriendCrewStatusCard(
-                    onlineCount = createdCount,
+                    onlineCount = aliveCount,
                     title = createdCount,
                     activeCount = activeCount,
                     messageCount = messageCount,
-                    mostActive = mostActive
+                    mostActive = mostActive,
+                    probedCount = probedCount,
+                    aliveCount = aliveCount,
+                    failedCount = failedCount,
                 )
             }
 
@@ -174,7 +187,16 @@ fun UIFriendPage(
                 searchText = searchText,
                 onSearchTextChange = onSearchTextChange,
                 onCreateClick = onCreateClick,
-                showSearchBar = false
+                showSearchBar = false,
+                isProbing = isProbing,
+                probeCompleted = probeCompleted,
+                probeTotal = probeTotal,
+                probedCount = probedCount,
+                aliveCount = aliveCount,
+                failedCount = failedCount,
+                onProbeClick = onProbeAll,
+                onCancelProbe = onCancelProbe,
+                onRetryFailedClick = onProbeFailed,
             )
             Spacer(Modifier.height(4.dp))
             if (list.isEmpty()) {
@@ -183,12 +205,15 @@ fun UIFriendPage(
                 UIFriendCrewList(
                     data = list,
                     onItemClick = onFriendClick,
-                    onItemLongClick = { pendingFriendAction = it }
+                    onItemLongClick = { pendingFriendAction = it },
+                    isProbing = isProbing,
+                    onProbeFriend = { onProbeFriend(it.id) },
+                    onProbeAll = onProbeAll,
                 )
             }
             Spacer(Modifier.height(14.dp))
             Text(
-                text = "长按好友可编辑或删除 · 长按聊天室可置顶或删除",
+                text = "点右侧状态标签可单独探活 · 长按好友可探活、编辑或删除",
                 modifier = Modifier.fillMaxWidth(),
                 textAlign = TextAlign.Center,
                 fontSize = 11.5.sp,
@@ -201,6 +226,10 @@ fun UIFriendPage(
     pendingFriendAction?.let { friend ->
         FriendActionsDialog(
             friendName = friend.name,
+            onProbe = {
+                pendingFriendAction = null
+                onProbeFriend(friend.id)
+            },
             onEdit = {
                 pendingFriendAction = null
                 onEditFriend(friend.id)
@@ -623,6 +652,7 @@ private fun RoomSection(
 @Composable
 private fun FriendActionsDialog(
     friendName: String,
+    onProbe: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onDismiss: () -> Unit
@@ -631,6 +661,7 @@ private fun FriendActionsDialog(
         title = friendName,
         onDismiss = onDismiss,
         items = listOf(
+            UIActionSheetItem(label = "探活检测", onClick = onProbe),
             UIActionSheetItem(label = "编辑资料", onClick = onEdit),
             UIActionSheetItem(label = "删除好友", destructive = true, onClick = onDelete)
         )

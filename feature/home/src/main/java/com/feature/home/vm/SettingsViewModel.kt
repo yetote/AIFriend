@@ -7,6 +7,7 @@ import com.core.ai.model.ModelPrices
 import com.core.ai.model.OpenAIModelResponse
 import com.core.ai.model.VoiceCatalog
 import com.core.ai.model.toSelectableChatModelsWithPrices
+import com.core.ai.probe.FriendProbeStore
 import com.core.common.BaseViewModel
 import com.core.repository.ApiConfig
 import com.core.repository.WebRepository
@@ -286,6 +287,7 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
                 return@launch
             }
             val previousNames = AIProviderCatalog.byId(id)?.aliases.orEmpty() + oldName
+            FriendProbeStore.invalidateBrands(previousNames + name)
             val friends = withContext(Dispatchers.IO) { friendRepository.load() }
             friends.filter { it.brand in previousNames }.forEach { friend ->
                 withContext(Dispatchers.IO) {
@@ -302,10 +304,14 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
     /** 删除自定义接口；已保存的 Key 一起清掉。 */
     fun deleteCustom(id: String) {
         viewModelScope.launch {
+            val provider = AIProviderCatalog.byId(id)
             val ok = withContext(Dispatchers.IO) { settings.custom.remove(id) }
             if (!ok) {
                 _state.value = _state.value.copy(error = "删除失败，请重试")
                 return@launch
+            }
+            if (provider != null) {
+                FriendProbeStore.invalidateBrands(listOf(provider.name) + provider.aliases)
             }
             saved = saved - id
             modelCache.remove(id)
@@ -331,8 +337,12 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
 
     fun clearKey() {
         val providerId = _state.value.selectedProviderId
+        val provider = AIProviderCatalog.byId(providerId)
         viewModelScope.launch {
             withContext(Dispatchers.IO) { settings.clear(providerId) }
+            if (provider != null) {
+                FriendProbeStore.invalidateBrands(listOf(provider.name) + provider.aliases)
+            }
             saved = saved - providerId
             modelCache.remove(providerId)
             pricedCache.remove(providerId)
@@ -514,6 +524,7 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
             return
         }
         saved = saved + (provider.id to credential)
+        FriendProbeStore.invalidateBrands(listOf(provider.name) + provider.aliases)
         modelCache[provider.id] = models
         pricedCache[provider.id] = priced
 

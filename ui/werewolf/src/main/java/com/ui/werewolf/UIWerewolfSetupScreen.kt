@@ -388,9 +388,9 @@ fun UIWerewolfSetupScreen(
                                     friend = friend,
                                     checked = checked,
                                     enabled = enabled,
-                                    // 没选中的人不显示检测结果：一列红点会让人以为整页都在报错，
-                                    // 而真正要关心的是「这一局坐上桌的那几个」
-                                    check = if (checked) apiChecks[friend.id] else null,
+                                    // 所有好友都展示已有探活结论（含首页刚探完的共享缓存），
+                                    // 选人前一眼就能看清哪些活着、哪些挂了，不必盲选后再撞墙
+                                    check = apiChecks[friend.id],
                                     // 联网能力是静态的，选不选他都得说：这行标记不随检测结果消失，
                                     // 所以用户不必等自检跑完才知道自家模型搜不了
                                     showNoSearch = searchStyle && !friend.supportsWebSearch,
@@ -1253,7 +1253,7 @@ private fun FriendRow(
                 )
                 if (check != null && check.state != UIWerewolfApiState.IDLE) {
                     Spacer(Modifier.width(6.dp))
-                    CheckTag(state = check.state)
+                    CheckTag(state = check.state, elapsedMs = check.elapsedMs)
                 }
             }
 
@@ -1336,9 +1336,17 @@ private fun FriendRow(
  * 竖着排，屏幕上看到的是「已 / 连 / 通」三个字叠起来。宁可省略号，也不要竖排。
  */
 @Composable
-private fun CheckTag(state: UIWerewolfApiState) {
+private fun CheckTag(state: UIWerewolfApiState, elapsedMs: Long? = null) {
     val label = when (state) {
-        UIWerewolfApiState.OK -> "已连通"
+        UIWerewolfApiState.OK -> {
+            if (elapsedMs != null) {
+                val safe = elapsedMs.coerceAtLeast(0L)
+                val time = if (safe < 1_000L) "${safe}ms" else String.format(java.util.Locale.US, "%.1fs", safe / 1000.0)
+                "已连通 · $time"
+            } else {
+                "已连通"
+            }
+        }
         UIWerewolfApiState.CHECKING -> "检测中"
         else -> "连不上"
     }

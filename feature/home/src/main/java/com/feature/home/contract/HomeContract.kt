@@ -1,6 +1,9 @@
 package com.feature.home.contract
 
 import com.core.ai.model.Friend
+import com.core.ai.probe.ApiCheck
+import com.core.ai.probe.ApiCheckState
+import com.core.ai.probe.ProbeProgress
 import com.feature.room.model.Room
 
 /** 单 Activity 内的页面状态，导航由 HomeRoute 持有。 */
@@ -24,7 +27,11 @@ data class HomeUiState(
     val rooms: List<Room> = emptyList(),
     val userAvatarPath: String? = null,
     val search: String = "",
-    val screen: HomeScreen = HomeScreen.List
+    val screen: HomeScreen = HomeScreen.List,
+    /** 好友 id → 普通对话连通性探活结果，与狼人杀开局页共用进程内缓存。 */
+    val apiChecks: Map<String, ApiCheck> = emptyMap(),
+    /** 当前一轮批量探活进度（按「厂商 + 模型」去重后的任务数）。 */
+    val probeProgress: ProbeProgress = ProbeProgress(),
 ) {
     val visibleFriends: List<Friend>
         get() = if (search.isBlank()) {
@@ -34,7 +41,8 @@ data class HomeUiState(
                 friend.name.contains(search, ignoreCase = true) ||
                     friend.role.contains(search, ignoreCase = true) ||
                     friend.company.contains(search, ignoreCase = true) ||
-                    friend.brand.contains(search, ignoreCase = true)
+                    friend.brand.contains(search, ignoreCase = true) ||
+                    friend.model.contains(search, ignoreCase = true)
             }
         }
 
@@ -44,6 +52,21 @@ data class HomeUiState(
         get() = friends.maxByOrNull { it.messages.size }
             ?.takeIf { it.messages.isNotEmpty() }
             ?.name ?: "-"
+
+    val aliveCount: Int
+        get() = friends.count { apiChecks[it.id]?.state == ApiCheckState.OK }
+
+    val failedCount: Int
+        get() = friends.count { apiChecks[it.id]?.state == ApiCheckState.FAILED }
+
+    val probedCount: Int
+        get() = friends.count {
+            val state = apiChecks[it.id]?.state
+            state == ApiCheckState.OK || state == ApiCheckState.FAILED
+        }
+
+    val isProbing: Boolean
+        get() = probeProgress.active || apiChecks.values.any { it.state == ApiCheckState.CHECKING }
 
     /** 置顶优先，其余按创建时间升序。 */
     val sortedRooms: List<Room>

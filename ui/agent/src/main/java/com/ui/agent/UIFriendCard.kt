@@ -1,7 +1,6 @@
 package com.ui.agent
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,6 +29,7 @@ import com.core.common.theme.zeroPaddingStyle
 import com.ui.common.theme.UIAtelierBrass
 import com.ui.common.theme.UIAtelierJade
 import com.ui.common.theme.UIFriendBarItemMetaColor
+import com.ui.common.theme.UIFriendBarRed
 import com.ui.common.theme.UIFriendBarTitleColor
 import com.ui.common.theme.UIGlassStroke
 import com.ui.common.theme.UIGlassSurfaceStrong
@@ -39,7 +39,7 @@ import com.ui.common.theme.uiCard
 
 /**
  * 精炼的单行工坊状态脉搏条（Studio Telemetry Ribbon）。
- * 替代过去占用整屏三分之一高度的巨型深色统计盒，把首屏空间还给真正的聊天室与智能体。
+ * 完成探活后第一栏自动切为「探活可用 X/N」，未探活前展示「活跃 / N」。
  */
 @Composable
 fun UIFriendCrewStatusCard(
@@ -47,7 +47,10 @@ fun UIFriendCrewStatusCard(
     title: Int = 0,
     activeCount: Int = 0,
     messageCount: Int = 0,
-    mostActive: String = "-"
+    mostActive: String = "-",
+    probedCount: Int = 0,
+    aliveCount: Int = 0,
+    failedCount: Int = 0,
 ) {
     Row(
         modifier = Modifier
@@ -63,12 +66,21 @@ fun UIFriendCrewStatusCard(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        TelemetryStat(
-            dotColor = UIAtelierJade,
-            value = activeCount.toKString(),
-            label = "活跃 / ${title.toKString()}",
-            modifier = Modifier.weight(1f)
-        )
+        if (probedCount > 0) {
+            TelemetryStat(
+                dotColor = if (aliveCount > 0) UIAtelierJade else UIFriendBarRed,
+                value = "$aliveCount / $title",
+                label = if (failedCount > 0) "可用 · $failedCount 异常" else "探活可用",
+                modifier = Modifier.weight(1.1f)
+            )
+        } else {
+            TelemetryStat(
+                dotColor = UIAtelierJade,
+                value = activeCount.toKString(),
+                label = "活跃 / ${title.toKString()}",
+                modifier = Modifier.weight(1f)
+            )
+        }
         Box(
             modifier = Modifier
                 .width(1.dp)
@@ -91,7 +103,7 @@ fun UIFriendCrewStatusCard(
             dotColor = UIAtelierBrass,
             value = mostActive,
             label = "最常聊",
-            modifier = Modifier.weight(1.1f)
+            modifier = Modifier.weight(1.05f)
         )
     }
 }
@@ -150,7 +162,10 @@ private fun UIFriendCrewStatusCardPreview() {
             title = 8,
             activeCount = 5,
             messageCount = 1240,
-            mostActive = "小谋"
+            mostActive = "小谋",
+            probedCount = 8,
+            aliveCount = 6,
+            failedCount = 2
         )
     }
 }
