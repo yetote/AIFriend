@@ -26,6 +26,8 @@ data class UIWerewolfReview(
      * null 表示这一局没写设定，或者存档太旧（v10 及以前不记这一段）。
      */
     val customPrompt: String? = null,
+    /** 本局第 1 夜随机抽到的狼队开局风向卡（仅引导式首夜狼聊生效，旧档或自由式为 null）。 */
+    val wolfStyleCard: String? = null,
     /** 按阵营分好组的底牌。 */
     val groups: List<UIWerewolfRoleGroup> = emptyList(),
     /** 逐日票型，按天正序。 */

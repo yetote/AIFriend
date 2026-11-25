@@ -36,6 +36,12 @@ object WerewolfMarkdown {
             append("\n")
         }
 
+        review.wolfStyleCard?.let { card ->
+            append("\n## 本局狼队开局风向\n\n")
+            quote(card.trim())
+            append("\n")
+        }
+
         if (review.groups.isNotEmpty()) {
             append("\n## 底牌\n")
             review.groups.forEach { group ->

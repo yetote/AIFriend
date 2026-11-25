@@ -129,9 +129,15 @@ fun UIWerewolfReviewScreen(
     // 「上帝视角」默认关闭：狼人夜聊、查验这些当时只有个别人看得到的内容，
     // 需要玩家主动打开。默认摊开的话，「原来那一夜他们商量的是这个」就没得发现了。
     var godView by rememberSaveable { mutableStateOf(false) }
-    // 这一天在当前视角下有没有可读的内容。只有密谈的一天在关掉上帝视角时不占位置，
-    // 否则会留下一张点开也空空的卡片
-    val dialogueDays = review.dialogues.filter { godView || it.open.isNotEmpty() }
+    // 对话区按座位筛选（null = 全部；非空 = 只看该座位的发言与行动）
+    var filterSeat by rememberSaveable { mutableStateOf<Int?>(null) }
+    val allSeats = review.groups.flatMap { it.members }.sortedBy { it.seat }
+    // 这一天在当前视角+筛选下有没有可读的内容。
+    val dialogueDays = review.dialogues.mapNotNull { day ->
+        val base = if (godView) day.lines else day.open
+        val filtered = if (filterSeat == null) base else base.filter { it.seat == filterSeat }
+        if (filtered.isEmpty()) null else day to filtered
+    }
     val hasSecret = review.dialogues.any { it.hasSecret }
 
     UIGradientBackground(modifier = Modifier.pageInsetsTop()) {
@@ -172,6 +178,11 @@ fun UIWerewolfReviewScreen(
                     item { PromptCard(prompt) }
                 }
 
+                // 第 1 夜抽到的狼队开局风向卡（终局复盘全部公开）
+                review.wolfStyleCard?.let { card ->
+                    item { WolfStyleReviewCard(card) }
+                }
+
                 item { SectionTitle(title = "底牌", hint = "全部公开") }
                 review.groups.forEach { group ->
                     item(key = "group-${group.title}") { RoleGroupCard(group) }
@@ -209,9 +220,23 @@ fun UIWerewolfReviewScreen(
                             onToggleGodView = { godView = it },
                         )
                     }
-                    dialogueDays.forEach { day ->
-                        item(key = "dialogue-${day.day}") {
-                            DialogueDayCard(day = day, showSecret = godView)
+                    if (allSeats.isNotEmpty()) {
+                        item {
+                            SeatFilterRow(
+                                seats = allSeats,
+                                selectedSeat = filterSeat,
+                                onSelect = { filterSeat = it },
+                            )
+                        }
+                    }
+                    dialogueDays.forEach { (day, filteredLines) ->
+                        item(key = "dialogue-${day.day}-${filterSeat ?: 0}") {
+                            DialogueDayCard(
+                                day = day,
+                                lines = filteredLines,
+                                showSecret = godView,
+                                defaultExpanded = filterSeat != null,
+                            )
                         }
                     }
                 }
@@ -1063,15 +1088,16 @@ private fun DialogueHeader(
 }
 
 /**
- * 一天的对话。默认收起。
- *
- * 一局十二人局有几十上百句，全摊开会让复盘页长得没法翻；而对话又是「想起来再去看」的东西，
- * 不是第一眼要看的结论。收起时把条数写在标题上，玩家能判断值不值得点开。
+ * 一天的对话。默认收起；按座位筛选时自动展开，方便连贯查看某位玩家全场的逻辑。
  */
 @Composable
-private fun DialogueDayCard(day: UIWerewolfDialogueDay, showSecret: Boolean) {
-    var expanded by rememberSaveable(day.day) { mutableStateOf(false) }
-    val lines = if (showSecret) day.lines else day.open
+private fun DialogueDayCard(
+    day: UIWerewolfDialogueDay,
+    lines: List<UIWerewolfSpeechLine>,
+    showSecret: Boolean,
+    defaultExpanded: Boolean = false,
+) {
+    var expanded by rememberSaveable(day.day, defaultExpanded) { mutableStateOf(defaultExpanded) }
 
     Column(
         modifier = Modifier
@@ -1126,6 +1152,95 @@ private fun DialogueDayCard(day: UIWerewolfDialogueDay, showSecret: Boolean) {
             lines.forEach { line -> DialogueLine(line) }
         }
     }
+}
+
+@Composable
+private fun WolfStyleReviewCard(card: String) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .uiCard(shape = RoundedCornerShape(UIRadiusCard), elevation = 4.dp)
+            .padding(horizontal = 14.dp, vertical = 11.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(width = 3.dp, height = 12.dp)
+                    .background(WolfRed, RoundedCornerShape(2.dp))
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = "本局狼队开局风向卡",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = WolfRed,
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = "首夜随机启发",
+                fontSize = 10.sp,
+                color = ReviewDim,
+            )
+        }
+        Text(
+            text = card,
+            fontSize = 12.sp,
+            lineHeight = 17.sp,
+            color = ReviewBody,
+        )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SeatFilterRow(
+    seats: List<UIWerewolfRevealedSeat>,
+    selectedSeat: Int?,
+    onSelect: (Int?) -> Unit,
+) {
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        SeatFilterPill(
+            label = "全部",
+            selected = selectedSeat == null,
+            onClick = { onSelect(null) },
+        )
+        seats.forEach { seat ->
+            SeatFilterPill(
+                label = "${seat.seat}号",
+                selected = selectedSeat == seat.seat,
+                onClick = { onSelect(if (selectedSeat == seat.seat) null else seat.seat) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun SeatFilterPill(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Text(
+        text = label,
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(if (selected) Color(0x1A2F5DA8) else UIFieldFill)
+            .border(
+                0.6.dp,
+                if (selected) GodBlue.copy(alpha = 0.5f) else Color.Transparent,
+                RoundedCornerShape(50),
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+        fontSize = 11.sp,
+        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+        color = if (selected) GodBlue else ReviewDim,
+    )
 }
 
 /**

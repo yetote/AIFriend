@@ -11,6 +11,52 @@ data class UIWerewolfCheck(
 )
 
 /**
+ * 女巫本人的药水本。
+ *
+ * 严格隔离：只给参与局的**女巫本人**，其余身份与上帝观战均为 null。
+ */
+data class UIWerewolfWitchNotebook(
+    val antidoteAvailable: Boolean,
+    val poisonAvailable: Boolean,
+    /** 例如「第1夜救5号」，未使用为 null。 */
+    val healedSummary: String? = null,
+    /** 例如「第2夜毒8号」，未使用为 null。 */
+    val poisonedSummary: String? = null,
+)
+
+/**
+ * 守卫本人的守护本。
+ *
+ * 严格隔离：只给参与局的**守卫本人**，其余身份与上帝观战均为 null。
+ */
+data class UIWerewolfGuardNotebook(
+    /** 历夜守护记录，例如 ["第1夜 空守", "第2夜 守3号"]。 */
+    val records: List<String> = emptyList(),
+    /** 下一轮不能连守的座位号，无限制为 null。 */
+    val cannotGuardNextSeat: Int? = null,
+)
+
+/**
+ * 游玩模式下玩家手动给座位贴的私密身份记号。
+ *
+ * 纯界面本地笔记，既不进 AI 上下文，也不代表真实底牌；上帝观战模式不显示。
+ */
+enum class UIWerewolfPlayerMark(
+    val short: String,
+    val label: String,
+    val hostile: Boolean = false,
+) {
+    GOOD("好", "好人"),
+    SEER("预", "预言家"),
+    WITCH("女", "女巫"),
+    HUNTER("猎", "猎人"),
+    GUARD("守", "守卫"),
+    VILLAGER("民", "平民"),
+    SUSPECT("疑", "存疑", hostile = true),
+    WOLF("狼", "狼人", hostile = true),
+}
+
+/**
  * 预言家查一个座位的结论。
  *
  * 只挂在**被验的那个座位**上，让「3 号是狼」这件事直接长在 3 号头像下面，
@@ -86,6 +132,12 @@ data class UIWerewolfSeatLive(
      * 白天连「不能投自己人」都做不到。
      */
     val isWolfMate: Boolean = false,
+    /**
+     * 该座位 AI 当前的私密狼坑本（心证笔记）。
+     *
+     * **严格隔离**：仅在观战上帝视角或对局已结束时下发；游玩模式恒为 null，绝不泄露给人类玩家。
+     */
+    val beliefNote: String? = null,
 )
 
 /**
@@ -200,6 +252,7 @@ data class UIWerewolfBallotCard(
 /** 牌桌上的一条记录。 */
 data class UIWerewolfLine(
     val index: Int,
+    val day: Int = 1,
     val kind: UIWerewolfLineKind,
     val seat: Int? = null,
     val speaker: String? = null,
@@ -396,6 +449,28 @@ data class UIWerewolfLive(
      * 预言家白天报验人、对账，全靠这张小本子——它是这个身份最趁手的东西。
      */
     val selfChecks: List<UIWerewolfCheck> = emptyList(),
+    /**
+     * 女巫本人的药水本（解药/毒药余量与救毒记录）。
+     *
+     * 严格隔离：仅在参与局且本人是女巫时非 null，其他身份与上帝观战恒为 null。
+     */
+    val selfWitch: UIWerewolfWitchNotebook? = null,
+    /**
+     * 守卫本人的守护本（历夜守人记录与下夜禁连守提醒）。
+     *
+     * 严格隔离：仅在参与局且本人是守卫时非 null，其他身份与上帝观战恒为 null。
+     */
+    val selfGuard: UIWerewolfGuardNotebook? = null,
+    /**
+     * 实时公开台账（基于已公开且已播报到舞台的发言与唱票摘录，绝不含私有信息或未来剧透）。
+     */
+    val publicLedger: String = "",
+    /**
+     * 本局第 1 夜随机抽到的狼队开局风向卡。
+     *
+     * 严格隔离：仅在观战上帝视角、对局结束、或参与局本人是狼人时非 null；好人游玩模式恒为 null。
+     */
+    val wolfStyleCard: String? = null,
     /** 纯观战：看的是上帝视角，别人的身份和狼人夜聊都可见。 */
     val spectating: Boolean = false,
     /** 轮到你时的操作面板。null 表示现在不归你。 */

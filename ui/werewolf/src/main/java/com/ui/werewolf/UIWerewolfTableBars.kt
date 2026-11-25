@@ -126,6 +126,143 @@ internal fun SeerCheckBar(
 }
 
 /**
+ * 女巫的药水本：常驻在自己身份条下方，一目了然解药/毒药状态与使用对象。
+ *
+ * 严格隔离：映射层只在参与局且本人是女巫时填充 [UIWerewolfLive.selfWitch]，其余视角恒为 null。
+ */
+@Composable
+internal fun WitchNotebookBar(
+    live: UIWerewolfLive,
+    night: Boolean,
+    textColor: Color,
+    dimColor: Color,
+) {
+    val notebook = live.selfWitch ?: return
+    val healAccent = if (night) SeerTealNight else HealGreen
+    val poisonAccent = if (night) Color(0xFFC8A6FF) else PoisonPurple
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp)
+            .padding(bottom = 6.dp)
+            .horizontalScroll(rememberScrollState()),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            text = "药水本",
+            modifier = Modifier
+                .clip(RoundedCornerShape(50))
+                .background(healAccent.copy(alpha = if (night) 0.22f else 0.12f))
+                .border(0.6.dp, healAccent.copy(alpha = if (night) 0.42f else 0.28f), RoundedCornerShape(50))
+                .padding(horizontal = 9.dp, vertical = 3.dp),
+            fontSize = FsMeta,
+            fontWeight = FontWeight.SemiBold,
+            color = healAccent,
+        )
+        NotebookPill(
+            dotColor = if (notebook.antidoteAvailable) healAccent else dimColor,
+            label = if (notebook.antidoteAvailable) "解药 还在" else "解药 已用${notebook.healedSummary?.let { "（$it）" }.orEmpty()}",
+            night = night,
+            textColor = if (notebook.antidoteAvailable) textColor else dimColor,
+        )
+        NotebookPill(
+            dotColor = if (notebook.poisonAvailable) poisonAccent else dimColor,
+            label = if (notebook.poisonAvailable) "毒药 还在" else "毒药 已用${notebook.poisonedSummary?.let { "（$it）" }.orEmpty()}",
+            night = night,
+            textColor = if (notebook.poisonAvailable) textColor else dimColor,
+        )
+    }
+}
+
+/**
+ * 守卫的守护本：常驻展示历夜守护记录与「下夜不可连守」提示。
+ *
+ * 严格隔离：映射层只在参与局且本人是守卫时填充 [UIWerewolfLive.selfGuard]，其余视角恒为 null。
+ */
+@Composable
+internal fun GuardNotebookBar(
+    live: UIWerewolfLive,
+    night: Boolean,
+    textColor: Color,
+    dimColor: Color,
+) {
+    val notebook = live.selfGuard ?: return
+    if (notebook.records.isEmpty() && notebook.cannotGuardNextSeat == null) return
+    val guardAccent = if (night) SelfBlueNight else SelfBlue
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp)
+            .padding(bottom = 6.dp)
+            .horizontalScroll(rememberScrollState()),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            text = "守护本",
+            modifier = Modifier
+                .clip(RoundedCornerShape(50))
+                .background(guardAccent.copy(alpha = if (night) 0.22f else 0.12f))
+                .border(0.6.dp, guardAccent.copy(alpha = if (night) 0.42f else 0.28f), RoundedCornerShape(50))
+                .padding(horizontal = 9.dp, vertical = 3.dp),
+            fontSize = FsMeta,
+            fontWeight = FontWeight.SemiBold,
+            color = guardAccent,
+        )
+        notebook.cannotGuardNextSeat?.let { blocked ->
+            NotebookPill(
+                dotColor = VoteRed,
+                label = "下夜禁连守 ${blocked}号",
+                night = night,
+                textColor = if (night) Color(0xFFFFA59E) else VoteRed,
+            )
+        }
+        notebook.records.forEach { record ->
+            NotebookPill(
+                dotColor = guardAccent,
+                label = record,
+                night = night,
+                textColor = textColor,
+            )
+        }
+    }
+}
+
+@Composable
+private fun NotebookPill(
+    dotColor: Color,
+    label: String,
+    night: Boolean,
+    textColor: Color,
+) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(if (night) NightControlFill else Color(0xCCFFFFFF))
+            .border(0.6.dp, dotColor.copy(alpha = if (night) 0.45f else 0.30f), RoundedCornerShape(50))
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(6.dp)
+                .clip(CircleShape)
+                .background(dotColor)
+        )
+        Text(
+            text = label,
+            fontSize = FsMeta,
+            fontWeight = FontWeight.Medium,
+            color = textColor,
+        )
+    }
+}
+
+/**
  * 自绘顶栏而不是用 `UITopBar`：全局那个组件写死了浅色文字，夜里会直接看不见。
  * 为了一个页面去改公共组件不划算，也不该让公共组件背上主题分支。
  */
@@ -140,6 +277,8 @@ internal fun TableTopBar(
     autoSpeak: Boolean,
     speechReady: Boolean,
     showThinking: Boolean,
+    /** 打开「公开台账」速查弹窗。传 null 就不画按钮。 */
+    onOpenLedger: (() -> Unit)? = null,
     /** 传 null 就不画「思考」开关（观战、复盘演出里没有意义）。 */
     onToggleThinking: (() -> Unit)?,
     /** 传 null 就不画设置入口（复盘演出、已结束的局改了也没用）。 */
@@ -194,8 +333,25 @@ internal fun TableTopBar(
             }
         }
         if (spectating) {
-            Tag(text = "上帝视角", night = night, color = if (night) SelfBlueNight else SelfBlue)
-            Spacer(Modifier.width(8.dp))
+            Tag(text = "上帝", night = night, color = if (night) SelfBlueNight else SelfBlue)
+            Spacer(Modifier.width(6.dp))
+        }
+        // 公开台账：把 AI 每轮都在看的公开硬记录（对跳/验人/警徽流/银水/票型对账）搬给玩家 1 秒速查
+        if (onOpenLedger != null) {
+            val ledgerTint = if (night) SeerTealNight else SeerTeal
+            Text(
+                text = "台账",
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(ledgerTint.copy(alpha = if (night) 0.24f else 0.12f))
+                    .border(0.7.dp, ledgerTint.copy(alpha = if (night) 0.45f else 0.30f), RoundedCornerShape(50))
+                    .clickable(onClick = onOpenLedger)
+                    .padding(horizontal = 9.dp, vertical = 4.dp),
+                fontSize = FsMeta,
+                fontWeight = FontWeight.SemiBold,
+                color = ledgerTint,
+            )
+            Spacer(Modifier.width(6.dp))
         }
         // 自爆：白天发言环节才出现，一旦出现就是真能爆。放在「思考」左边，
         // 因为它是这一屏唯一不可撤销的动作，不该和开关们混在一起看。

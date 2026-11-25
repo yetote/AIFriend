@@ -25,6 +25,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
@@ -42,6 +43,7 @@ import com.ui.common.theme.UIIosDialog
 import com.ui.common.theme.UIRadiusControl
 import com.ui.werewolf.data.UIWerewolfDirection
 import com.ui.werewolf.data.UIWerewolfLive
+import com.ui.werewolf.data.UIWerewolfPlayerMark
 import com.ui.werewolf.data.UIWerewolfRetry
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.animation.core.animateFloatAsState
@@ -135,6 +137,14 @@ fun UIWerewolfTableScreen(
     // 座位头像在窗口里的位置。思考气泡要挂在头像头顶，得知道它在哪。
     val seatAnchors = remember { mutableStateMapOf<Int, Offset>() }
 
+    // 游玩模式下玩家手动给座位贴的私密身份记号：按本局座位名单做 key，换局自动清空，局内昼夜切换保留
+    val seatRosterKey = remember(live.seats) { live.seats.map { it.seat to it.name } }
+    val manualMarks = remember(seatRosterKey) { mutableStateMapOf<Int, UIWerewolfPlayerMark>() }
+    // 点击侧边座位头像查看档案与历史发言
+    var inspectingSeat by remember { mutableStateOf<Int?>(null) }
+    // 顶栏「台账」一键速查弹窗
+    var showLedger by remember { mutableStateOf(false) }
+
     // 自爆确认。不可撤销，点一下不直接执行。
     val explodeAction = onExplode?.takeIf { live.canExplode }
     var confirmExplode by remember { mutableStateOf(false) }
@@ -172,6 +182,11 @@ fun UIWerewolfTableScreen(
                 autoSpeak = live.autoSpeak,
                 speechReady = live.speechReady,
                 showThinking = live.showThinking,
+                onOpenLedger = if (live.publicLedger.isNotBlank() || live.wolfStyleCard != null) {
+                    { showLedger = true }
+                } else {
+                    null
+                },
                 // 观战和演出都不给这个开关：观战本来就能看思考（上帝视角），
                 // 演出放的是已经打完的局，开着它只会让人以为还能操作什么
                 onToggleThinking = onToggleThinking
@@ -192,9 +207,21 @@ fun UIWerewolfTableScreen(
                 dimColor = dimColor
             )
 
-            // 预言家的验人本：常驻在自己身份条下面，白天报验人时一眼就有。
-            // 别的身份这一条是空的，界面上什么都不会多出来。
+            // 预言家的验人本 / 女巫的药水本 / 守卫的守护本：常驻在自己身份条下面，
+            // 各自只在参与局且本人是对应身份时非空，别的视角完全不占空间。
             SeerCheckBar(
+                live = live,
+                night = night,
+                textColor = textColor,
+                dimColor = dimColor
+            )
+            WitchNotebookBar(
+                live = live,
+                night = night,
+                textColor = textColor,
+                dimColor = dimColor
+            )
+            GuardNotebookBar(
                 live = live,
                 night = night,
                 textColor = textColor,
@@ -249,6 +276,8 @@ fun UIWerewolfTableScreen(
                 dimColor = dimColor,
                 surface = surface,
                 anchors = seatAnchors,
+                manualMarks = manualMarks,
+                onSeatClick = { inspectingSeat = it },
                 modifier = Modifier.weight(1f)
             )
 
@@ -330,12 +359,52 @@ fun UIWerewolfTableScreen(
             )
         }
 
+        // 关键公开事件短横幅（天亮死讯/平安夜/自爆/猎人开枪/警长当选）：不吃触控、2.2 秒自动收起
+        KeyEventBanner(
+            lines = live.lines,
+            night = night,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .pageInsetsTop()
+                .padding(top = 56.dp),
+        )
+
         // 过场画在最上层，但不吃触摸：1.4 秒里用户可能正要点「发言」，
         // 拦一下只会让人觉得界面卡了
         DayNightTransition(
             night = live.night,
             finished = live.finished
         )
+
+        // 点击座位头像弹出的玩家档案 + 手动贴标签 + 只看 TA 发言
+        inspectingSeat?.let { target ->
+            val targetSeat = live.seats.firstOrNull { it.seat == target }
+            if (targetSeat != null) {
+                SeatDossierDialog(
+                    seat = targetSeat,
+                    live = live,
+                    night = night,
+                    textColor = textColor,
+                    dimColor = dimColor,
+                    manualMark = manualMarks[target],
+                    onSetMark = { mark ->
+                        if (mark == null) manualMarks.remove(target) else manualMarks[target] = mark
+                    },
+                    onDismiss = { inspectingSeat = null },
+                )
+            }
+        }
+
+        // 顶栏「台账」一键速查弹窗
+        if (showLedger) {
+            PublicLedgerDialog(
+                live = live,
+                night = night,
+                textColor = textColor,
+                dimColor = dimColor,
+                onDismiss = { showLedger = false },
+            )
+        }
 
         // 自爆确认画在过场之上：万一正好在天黑转场那 1.4 秒里点了，也不能被盖掉
         if (confirmExplode) {

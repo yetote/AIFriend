@@ -119,6 +119,8 @@ internal fun TurnPanel(
         when (turn.kind) {
             UIWerewolfTurnKind.SPEECH -> SpeechInput(
                 night = night,
+                seats = seats,
+                selfSeat = turn.seat,
                 textColor = textColor,
                 dimColor = dimColor,
                 onSubmit = onSpeech
@@ -343,6 +345,8 @@ private fun PickTarget(
 @Composable
 internal fun SpeechInput(
     night: Boolean,
+    seats: List<UIWerewolfSeatLive> = emptyList(),
+    selfSeat: Int? = null,
     textColor: Color,
     dimColor: Color,
     onSubmit: (String) -> Unit,
@@ -350,57 +354,119 @@ internal fun SpeechInput(
     var text by rememberSaveable { mutableStateOf("") }
     val fieldFill = if (night) NightControlFill else DayControlFill
     val fieldBorder = if (night) NightControlBorder else DayControlBorder
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(
+    val quickSeats = seats.filter { it.alive && it.seat != selfSeat }.sortedBy { it.seat }
+    val quickWords = if (night) {
+        listOf("今晚刀", "我跳预言家", "我打冲锋", "我打倒钩", "别分票")
+    } else {
+        listOf("金水", "查杀", "银水", "警徽流", "站边", "归票", "今天出", "认民", "过")
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // 快捷选号 + 高频术语胶囊：纯公开信息（存活座位号 + 通用术语），手机少敲一半字
+        Row(
             modifier = Modifier
-                .weight(1f)
-                .clip(RoundedCornerShape(UIRadiusControl))
-                .background(fieldFill)
-                .border(0.8.dp, fieldBorder, RoundedCornerShape(UIRadiusControl))
-                .padding(horizontal = 13.dp, vertical = 11.dp)
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (text.isEmpty()) {
-                Text(
-                    text = "说点什么，其他人会据此投票",
-                    fontSize = 13.5.sp,
-                    color = dimColor.copy(alpha = 0.8f)
+            quickSeats.forEach { s ->
+                QuickInsertChip(
+                    label = "${s.seat}号",
+                    night = night,
+                    textColor = textColor,
+                    onClick = { text = appendQuickToken(text, "${s.seat}号") },
                 )
             }
-            BasicTextField(
-                value = text,
-                onValueChange = { text = it },
-                modifier = Modifier.fillMaxWidth(),
-                textStyle = TextStyle(fontSize = 15.sp, color = textColor),
-                cursorBrush = SolidColor(if (night) SelfBlueNight else SelfBlue),
-                maxLines = 4
-            )
-        }
-        Spacer(Modifier.width(8.dp))
-        val enabled = text.isNotBlank()
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(UIRadiusControl))
-                .background(if (enabled) UIActionBrush else Brush.linearGradient(listOf(
-                    fieldFill, fieldFill
-                )))
-                .then(
-                    if (!enabled) Modifier.border(0.8.dp, fieldBorder, RoundedCornerShape(UIRadiusControl))
-                    else Modifier
+            quickWords.forEach { word ->
+                QuickInsertChip(
+                    label = word,
+                    night = night,
+                    textColor = dimColor,
+                    onClick = { text = appendQuickToken(text, word) },
                 )
-                .clickable(enabled = enabled) {
-                    onSubmit(text.trim())
-                    text = ""
+            }
+        }
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(UIRadiusControl))
+                    .background(fieldFill)
+                    .border(0.8.dp, fieldBorder, RoundedCornerShape(UIRadiusControl))
+                    .padding(horizontal = 13.dp, vertical = 11.dp)
+            ) {
+                if (text.isEmpty()) {
+                    Text(
+                        text = "说点什么，其他人会据此投票",
+                        fontSize = 13.5.sp,
+                        color = dimColor.copy(alpha = 0.8f)
+                    )
                 }
-                .padding(horizontal = 18.dp, vertical = 11.dp)
-        ) {
-            Text(
-                text = "发言",
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = if (enabled) Color.White else dimColor
-            )
+                BasicTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    textStyle = TextStyle(fontSize = 15.sp, color = textColor),
+                    cursorBrush = SolidColor(if (night) SelfBlueNight else SelfBlue),
+                    maxLines = 4
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            val enabled = text.isNotBlank()
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(UIRadiusControl))
+                    .background(if (enabled) UIActionBrush else Brush.linearGradient(listOf(
+                        fieldFill, fieldFill
+                    )))
+                    .then(
+                        if (!enabled) Modifier.border(0.8.dp, fieldBorder, RoundedCornerShape(UIRadiusControl))
+                        else Modifier
+                    )
+                    .clickable(enabled = enabled) {
+                        onSubmit(text.trim())
+                        text = ""
+                    }
+                    .padding(horizontal = 18.dp, vertical = 11.dp)
+            ) {
+                Text(
+                    text = "发言",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (enabled) Color.White else dimColor
+                )
+            }
         }
     }
+}
+
+@Composable
+private fun QuickInsertChip(
+    label: String,
+    night: Boolean,
+    textColor: Color,
+    onClick: () -> Unit,
+) {
+    Text(
+        text = label,
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(if (night) NightControlFill else DayControlFill)
+            .border(0.6.dp, if (night) NightControlBorder else DayControlBorder, RoundedCornerShape(50))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 9.dp, vertical = 4.dp),
+        fontSize = FsMeta,
+        fontWeight = FontWeight.Medium,
+        color = textColor,
+        maxLines = 1,
+    )
+}
+
+private fun appendQuickToken(current: String, token: String): String {
+    if (current.isBlank()) return token
+    return current + token
 }
 
 @Composable

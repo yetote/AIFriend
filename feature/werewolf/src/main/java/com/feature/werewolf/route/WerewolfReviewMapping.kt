@@ -330,6 +330,7 @@ internal fun WerewolfUiState.toReview(
         selfLine = selfLine,
         // 这一局生效的玩家设定。旧档没记这一段，为 null，复盘页就不显示那一块
         customPrompt = customPrompt?.takeIf { it.isNotBlank() },
+        wolfStyleCard = game.wolfStyleSeed?.takeIf { it.isNotBlank() },
         groups = groups,
         days = days,
         nights = nights,

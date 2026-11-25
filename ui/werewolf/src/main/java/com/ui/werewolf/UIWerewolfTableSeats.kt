@@ -9,6 +9,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -41,6 +42,7 @@ import androidx.compose.ui.unit.sp
 import com.ui.common.UIAvatar
 import com.ui.common.theme.UIFieldFill
 import com.ui.werewolf.data.UIWerewolfLive
+import com.ui.werewolf.data.UIWerewolfPlayerMark
 import com.ui.werewolf.data.UIWerewolfSeatLive
 import com.ui.werewolf.data.UIWerewolfVerdict
 import com.ui.werewolf.data.shortModelLabel
@@ -66,6 +68,10 @@ internal fun SeatColumns(
     surface: Color,
     /** 座位头像在窗口里的位置。思考气泡要挂在它头顶，得知道它在哪。 */
     anchors: MutableMap<Int, Offset>,
+    /** 游玩模式下玩家手动给座位贴的私密记号；上帝观战不展示。 */
+    manualMarks: Map<Int, UIWerewolfPlayerMark> = emptyMap(),
+    /** 点击座位头像查看该座位档案与历史发言。 */
+    onSeatClick: ((Int) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     // 座位号升序排一次再分栏。引擎给的是按座位排好的，但这里不依赖那个隐式约定
@@ -75,6 +81,7 @@ internal fun SeatColumns(
     val half = (ordered.size + 1) / 2
     val left = remember(ordered) { ordered.take(half) }
     val right = remember(ordered) { ordered.drop(half) }
+    val activeMarks = if (!live.spectating && !live.finished && live.replay == null) manualMarks else emptyMap()
 
     Row(modifier = modifier.fillMaxWidth()) {
         SeatColumn(
@@ -83,6 +90,8 @@ internal fun SeatColumns(
             textColor = textColor,
             dimColor = dimColor,
             anchors = anchors,
+            manualMarks = activeMarks,
+            onSeatClick = onSeatClick,
             modifier = Modifier.width(COLUMN_WIDTH).fillMaxHeight()
         )
 
@@ -106,6 +115,8 @@ internal fun SeatColumns(
             textColor = textColor,
             dimColor = dimColor,
             anchors = anchors,
+            manualMarks = activeMarks,
+            onSeatClick = onSeatClick,
             modifier = Modifier.width(COLUMN_WIDTH).fillMaxHeight()
         )
     }
@@ -133,6 +144,8 @@ internal fun SeatColumn(
     textColor: Color,
     dimColor: Color,
     anchors: MutableMap<Int, Offset>,
+    manualMarks: Map<Int, UIWerewolfPlayerMark> = emptyMap(),
+    onSeatClick: ((Int) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -151,6 +164,8 @@ internal fun SeatColumn(
                     night = night,
                     textColor = textColor,
                     dimColor = dimColor,
+                    manualMark = manualMarks[seat.seat],
+                    onClick = onSeatClick?.let { cb -> { cb(seat.seat) } },
                     onAnchor = { offset -> anchors[seat.seat] = offset }
                 )
             }
@@ -173,11 +188,17 @@ internal fun SeatTile(
     night: Boolean,
     textColor: Color,
     dimColor: Color,
+    manualMark: UIWerewolfPlayerMark? = null,
+    onClick: (() -> Unit)? = null,
     /** 头像中心在窗口里的位置。思考气泡挂在它头顶。 */
     onAnchor: (Offset) -> Unit,
 ) {
     Column(
-        modifier = Modifier.width(COLUMN_WIDTH),
+        modifier = Modifier
+            .width(COLUMN_WIDTH)
+            .clip(RoundedCornerShape(10.dp))
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(vertical = 2.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
@@ -335,6 +356,7 @@ internal fun SeatTile(
 
             // 狼队友：戴在头像右上角，和左上的警徽、右下的票数各占一角。
             // 只在本人是狼时出现——那是已经知道的事，不标反而要靠猜。
+            // 非狼队友位置空着，正好用来挂游玩模式下玩家手动贴的身份记号（纯本地笔记）。
             if (seat.isWolfMate) {
                 Box(
                     modifier = Modifier
@@ -346,6 +368,23 @@ internal fun SeatTile(
                 ) {
                     Text(
                         text = "狼",
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
+            } else if (manualMark != null) {
+                val markBg = if (manualMark.hostile) FateRed else if (night) SeerTealNight else SeerTeal
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .size(16.dp)
+                        .background(markBg, CircleShape)
+                        .border(1.2.dp, badgeRim, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = manualMark.short,
                         fontSize = 8.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White

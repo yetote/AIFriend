@@ -4,13 +4,16 @@ package com.feature.werewolf.route
 
 import com.feature.werewolf.engine.HumanTurn
 import com.feature.werewolf.engine.MessageKind
+import com.feature.werewolf.engine.PublicLedger
 import com.feature.werewolf.engine.TurnKind
 import com.feature.werewolf.engine.TurnTimeout
 import com.feature.werewolf.engine.WerewolfMessage
 import com.feature.werewolf.engine.WerewolfProgress
+import com.feature.werewolf.engine.WerewolfTable
 import com.feature.werewolf.engine.WerewolfUiState
 import com.feature.werewolf.game.DeathCause
 import com.feature.werewolf.game.Phase
+import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfPlayer
 import com.feature.werewolf.game.WerewolfRole
 import com.ui.werewolf.data.UIWerewolfBallot
@@ -18,6 +21,7 @@ import com.ui.werewolf.data.UIWerewolfBallotCard
 import com.ui.werewolf.data.UIWerewolfBallotTally
 import com.ui.werewolf.data.UIWerewolfCheck
 import com.ui.werewolf.data.UIWerewolfFate
+import com.ui.werewolf.data.UIWerewolfGuardNotebook
 import com.ui.werewolf.data.UIWerewolfLine
 import com.ui.werewolf.data.UIWerewolfLineKind
 import com.ui.werewolf.data.UIWerewolfLive
@@ -26,6 +30,7 @@ import com.ui.werewolf.data.UIWerewolfSeatLive
 import com.ui.werewolf.data.UIWerewolfStreaming
 import com.ui.werewolf.data.UITokenUsage
 import com.ui.werewolf.data.UIWerewolfVerdict
+import com.ui.werewolf.data.UIWerewolfWitchNotebook
 
 /**
  * 狼人杀的入口。
@@ -196,6 +201,9 @@ internal fun WerewolfUiState.toLive(
             // 竞选进行中、尚未选出警长时，标出此刻仍在警上的候选人（退水后自动消失）
             sheriffCandidate = game.sheriffSeat == null && player.seat in game.sheriffCandidates,
             isWolfMate = player.seat in wolfMateSeats,
+            // 私密狼坑本（AI 心证笔记）严格只在观战上帝视角或对局已结束时下发；
+            // 参与中的游玩局恒为 null，杜绝人类玩家借座位卡偷看 AI 内心判断。
+            beliefNote = if (reveal) game.beliefNotes[player.seat]?.takeIf { it.isNotBlank() } else null,
         )
     }.orEmpty()
 
@@ -209,6 +217,7 @@ internal fun WerewolfUiState.toLive(
         val sheriffRoster = if (game != null) buildSheriffRoster(message, game, humanSeat) else null
         UIWerewolfLine(
             index = index,
+            day = message.day,
             kind = if (sheriffRoster != null) UIWerewolfLineKind.SHERIFF_ROSTER else lineKindOf(message),
             seat = message.seat,
             speaker = speaker?.name,
@@ -227,6 +236,33 @@ internal fun WerewolfUiState.toLive(
             },
             sheriffRoster = sheriffRoster,
         )
+    }
+
+    // 公开台账：严格只喂「已过朗读闸门且 isPublic == true」的公开消息，
+    // 历史事件仅留昨日及以前（当天退水由已披露发言本身识别），彻底杜绝时间/视角双重剧透。
+    val publicLedger = if (table != null) {
+        buildStagePublicLedger(table, revealed, moment.day)
+    } else {
+        ""
+    }
+
+    // 女巫药水本 & 守卫守护本：严格只在参与局且本人是对应身份时下发，其余视角恒为 null。
+    val selfWitch = if (!reveal && me?.role == WerewolfRole.WITCH) {
+        buildWitchNotebook(game)
+    } else {
+        null
+    }
+    val selfGuard = if (!reveal && me?.role == WerewolfRole.GUARD) {
+        buildGuardNotebook(table, game, humanSeat)
+    } else {
+        null
+    }
+
+    // 狼队开局风向卡：仅上帝观战/终局、或参与局本人是狼人时可见；好人游玩模式严格为 null。
+    val wolfStyleCard = if (reveal || me?.role?.isWerewolf == true) {
+        game?.wolfStyleSeed?.takeIf { it.isNotBlank() }
+    } else {
+        null
     }
 
     // 此刻正在逐字说的一段话。四道闸门缺一不可：
@@ -321,6 +357,10 @@ internal fun WerewolfUiState.toLive(
         } else {
             emptyList()
         },
+        selfWitch = selfWitch,
+        selfGuard = selfGuard,
+        publicLedger = publicLedger,
+        wolfStyleCard = wolfStyleCard,
         spectating = humanSeat == null,
         turn = if (game != null) buildTurn(game, humanSeat, me, turn) else null,
         // 自爆按钮比 turn 宽一档：别人说话时就能点。状态机是唯一判据
@@ -342,6 +382,83 @@ internal fun WerewolfUiState.toLive(
         thinkingSpeechSeconds = speechSeconds,
         timeoutNotice = timeoutNotice,
         timeoutAt = timeoutAt,
+    )
+}
+
+/**
+ * 基于「已过朗读闸门且公开」的消息生成公开台账，确保时间与视角零剧透。
+ */
+private fun buildStagePublicLedger(
+    table: WerewolfTable,
+    revealed: Int,
+    stageDay: Int,
+): String {
+    val count = if (revealed == Int.MAX_VALUE) {
+        table.transcript.size
+    } else {
+        (revealed + 1).coerceIn(0, table.transcript.size)
+    }
+    val publicEmerged = table.transcript.take(count).filter { it.isPublic }
+    if (publicEmerged.isEmpty()) return ""
+    val snapshot = table.copy(
+        game = table.game.copy(
+            history = table.game.history.filter { it.day < stageDay },
+        ),
+        transcript = publicEmerged,
+    )
+    return PublicLedger.of(snapshot)
+}
+
+private fun buildWitchNotebook(game: WerewolfGame): UIWerewolfWitchNotebook {
+    val settledHeal = game.nights.firstOrNull { it.healed }
+        ?.let { night -> "第${night.day}夜救${night.wolfTarget ?: "?"}号" }
+    val pendingHeal = if (settledHeal == null && game.witch.nightHeal) {
+        "第${game.day}夜救${game.tonightVictim ?: "?"}号"
+    } else {
+        null
+    }
+    val settledPoison = game.nights.firstOrNull { it.poisonTarget != null }
+        ?.let { night -> "第${night.day}夜毒${night.poisonTarget}号" }
+    val pendingPoison = if (settledPoison == null && game.witch.nightPoison != null) {
+        "第${game.day}夜毒${game.witch.nightPoison}号"
+    } else {
+        null
+    }
+    return UIWerewolfWitchNotebook(
+        antidoteAvailable = game.witch.antidoteAvailable,
+        poisonAvailable = game.witch.poisonAvailable,
+        healedSummary = settledHeal ?: pendingHeal,
+        poisonedSummary = settledPoison ?: pendingPoison,
+    )
+}
+
+private fun buildGuardNotebook(
+    table: WerewolfTable,
+    game: WerewolfGame,
+    humanSeat: Int,
+): UIWerewolfGuardNotebook {
+    val settled = game.nights.sortedBy { it.day }.map { night ->
+        val action = night.guarded?.let { "守${it}号" } ?: "空守"
+        "第${night.day}夜 $action"
+    }
+    val hasTonightSettled = game.nights.any { it.day == game.day }
+    val actedTonight = !hasTonightSettled && table.transcript.any {
+        it.day == game.day && it.phase == Phase.NIGHT_GUARD && it.seat == humanSeat
+    }
+    val records = if (actedTonight) {
+        val action = game.tonightGuardedSeat?.let { "守${it}号" } ?: "空守"
+        settled + "第${game.day}夜 $action"
+    } else {
+        settled
+    }
+    val cannotGuardNextSeat = when {
+        game.phase == Phase.NIGHT_GUARD || (game.phase == Phase.NIGHT_PENDING && !actedTonight) ->
+            game.lastGuardedSeat
+        else -> game.tonightGuardedSeat
+    }
+    return UIWerewolfGuardNotebook(
+        records = records,
+        cannotGuardNextSeat = cannotGuardNextSeat,
     )
 }
 

@@ -2,7 +2,9 @@ package com.feature.werewolf.route
 
 // 回放帧 → 牌桌的映射。与 toLive 分开：演出只认已经播到的那一帧，绝不看终局。
 
+import com.feature.werewolf.engine.PublicLedger
 import com.feature.werewolf.vm.WerewolfReplay
+import com.ui.werewolf.data.UIWerewolfFate
 import com.ui.werewolf.data.UIWerewolfLine
 import com.ui.werewolf.data.UIWerewolfLive
 import com.ui.werewolf.data.UIWerewolfReplay
@@ -52,17 +54,29 @@ internal fun WerewolfReplay.toLive(
             model = player.model.takeIf { it != "human" }.orEmpty(),
             isSelf = player.seat == humanSeat,
             alive = !out,
-            // 死因是终局才知道的事（刀还是毒），和出局这个事实分开看：
-            // 出局名单跟着进度走，死因只在身份公开时有意义
-            fate = if (out) player.deathCause?.toFate() else null,
+            // 死因是终局才知道的事（刀还是毒），非上帝视角下同样收窄为中性的「夜」，
+            // 避免普通视角回放提前泄露出谁是被毒的。
+            fate = if (out) {
+                player.deathCause?.toFate()?.let { f ->
+                    if (!godView && (f == UIWerewolfFate.WOLF_KILL || f == UIWerewolfFate.WITCH_POISON)) {
+                        UIWerewolfFate.NIGHT
+                    } else {
+                        f
+                    }
+                }
+            } else {
+                null
+            },
             // 身份只在上帝视角下写在脸上。普通视角里那一局当时就是不知道，
             // 演出一遍却提前标出来，等于把「猜身份」这个玩法直接删掉
             roleLabel = if (godView) player.role.displayName else null,
-            wolf = player.role.isWerewolf,
+            wolf = godView && player.role.isWerewolf,
             active = speakingSeat != null && speakingSeat == player.seat,
             votes = null,
             sheriff = sheriffSeat == player.seat,
             sheriffCandidate = sheriffSeat == null && player.seat in sheriffCandidates,
+            // 回放中 game.beliefNotes 是终局快照，不在演出里提前展示，避免剧透后续天数
+            beliefNote = null,
         )
     }
 
@@ -72,6 +86,7 @@ internal fun WerewolfReplay.toLive(
         val sheriffRoster = buildSheriffRoster(message, game, humanSeat)
         UIWerewolfLine(
             index = index,
+            day = message.day,
             kind = if (sheriffRoster != null) {
                 com.ui.werewolf.data.UIWerewolfLineKind.SHERIFF_ROSTER
             } else {
@@ -86,6 +101,14 @@ internal fun WerewolfReplay.toLive(
             sheriffRoster = sheriffRoster,
         )
     }
+
+    // 复盘演出的公开台账只喂当前游标以前已播放的公开消息，绝不剧透后面的天数
+    val publicLedger = PublicLedger.of(
+        table.copy(
+            game = game.copy(history = game.history.filter { it.day < day }),
+            transcript = shown.map { it.message }.filter { it.isPublic },
+        )
+    )
 
     val total = frames.size
     val position = (cursor + 1).coerceIn(0, total)
@@ -105,6 +128,8 @@ internal fun WerewolfReplay.toLive(
         selfSeat = humanSeat,
         selfRoleLabel = me?.role?.displayName,
         selfFactionLabel = me?.role?.faction?.displayName,
+        publicLedger = publicLedger,
+        wolfStyleCard = if (godView) game.wolfStyleSeed?.takeIf { it.isNotBlank() } else null,
         // 上帝视角在演出里就是「上帝视角」这个标签本身，和观战是同一件事
         spectating = godView,
         turn = null,
