@@ -48,39 +48,39 @@ import androidx.compose.ui.graphics.lerp
 // 白天的天色是浅蓝到暖沙，夜里的天色是墨蓝，而**山脊的形状两个时段完全一样**：
 // 玩家白天记住的地形，到夜里还是那个轮廓，「天色变了、地方没变」。
 // 两张互不相干的背景虽然更省事，但会让人觉得每回合换了一个场地。
-internal val DaySkyTop = Color(0xFFDFECFC)
+internal val DaySkyTop = Color(0xFFE8E0D1)
 
-internal val DaySkyMid = Color(0xFFF3F7FE)
+internal val DaySkyMid = Color(0xFFF3ECE0)
 
-internal val DaySkyLow = Color(0xFFFCF4E6)
+internal val DaySkyLow = Color(0xFFFAF4E8)
 
-internal val NightSkyTop = Color(0xFF070C18)
+internal val NightSkyTop = Color(0xFF0D0A09)
 
-internal val NightSkyMid = Color(0xFF0C1529)
+internal val NightSkyMid = Color(0xFF16110F)
 
-internal val NightSkyLow = Color(0xFF172540)
+internal val NightSkyLow = Color(0xFF241B17)
 
-internal val DaySun = Color(0xFFFFCA6A)
+internal val DaySun = Color(0xFFEEC169)
 
-internal val DayRidgeFar = Color(0xFF7B938A)
+internal val DayRidgeFar = Color(0xFF8B8374)
 
-internal val DayRidgeNear = Color(0xFF5A736A)
+internal val DayRidgeNear = Color(0xFF6B6456)
 
-internal val NightRidgeFar = Color(0xFF0C1424)
+internal val NightRidgeFar = Color(0xFF140F0D)
 
-internal val NightRidgeNear = Color(0xFF060A13)
+internal val NightRidgeNear = Color(0xFF0A0807)
 
-internal val MoonLight = Color(0xFFD5E1FF)
+internal val MoonLight = Color(0xFFEAD09E)
 
-internal val WindowGlow = Color(0xFFFFC46B)
+internal val WindowGlow = Color(0xFFFFC162)
 
-internal val SunCore = Color(0xFFFFC94D)
+internal val SunCore = Color(0xFFF2BE54)
 
-internal val SunGlow = Color(0xFFFFB020)
+internal val SunGlow = Color(0xFFE69F2E)
 
-internal val MoonCore = Color(0xFFF3EAD3)
+internal val MoonCore = Color(0xFFF8E9C8)
 
-internal val MoonGlow = Color(0xFFCBD6F5)
+internal val MoonGlow = Color(0xFFE4C995)
 
 /**
  * 星星的位置：横向比例、纵向比例、半径（dp）。
@@ -190,8 +190,8 @@ internal fun DayNightTransition(
             val center = Offset(cx, cy)
 
             if (showingNight) {
-                // 入夜：深蓝压下来，星星一起亮
-                drawRect(Color(0xFF050A14).copy(alpha = 0.5f * veil))
+                // 入夜：暖炭夜幕压下来，星光与古铜月牙亮起
+                drawRect(Color(0xFF0B0807).copy(alpha = 0.54f * veil))
                 STARS.forEach { (fx, fy, density) ->
                     drawCircle(
                         color = Color(0xFFFFF6DA).copy(alpha = 0.8f * veil),

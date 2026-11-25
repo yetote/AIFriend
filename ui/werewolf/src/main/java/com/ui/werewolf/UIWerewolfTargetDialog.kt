@@ -69,8 +69,8 @@ internal fun TargetPickDialog(
     onDismiss: () -> Unit,
 ) {
     var pressed by rememberSaveable { mutableStateOf<Int?>(null) }
-    val dialogBg = if (night) Color(0xF5151E32) else UIGlassSurfaceStrong
-    val dialogBorder = if (night) Color(0x2EFFFFFF) else UIGlassStroke
+    val dialogBg = if (night) Color(0xF51A1513) else UIGlassSurfaceStrong
+    val dialogBorder = if (night) Color(0x30F5E8D8) else UIGlassStroke
     val dialogShape = RoundedCornerShape(UIRadiusSheet)
 
     Dialog(
@@ -267,7 +267,7 @@ private fun TargetSeatCard(
         },
         label = "seat-card-border",
     )
-    val rimColor = if (night) Color(0xFF151E32) else Color.White
+    val rimColor = if (night) Color(0xFF1A1513) else Color(0xFFFFFDF9)
 
     Column(
         modifier = modifier

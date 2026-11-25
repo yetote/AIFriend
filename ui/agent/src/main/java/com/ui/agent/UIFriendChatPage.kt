@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.sp
 import com.core.ai.model.ChatMessage
 import com.core.ai.model.TokenUsage
 import com.ui.common.theme.UIActionBrush
+import com.ui.common.theme.UIAtelierSand
 import com.ui.common.theme.UIBlobBlue
 import com.ui.common.theme.UIBubbleUserBrush
 import com.ui.common.theme.UIChatErrorBg
@@ -179,30 +180,24 @@ fun UIFriendChatPage(
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(top = 56.dp),
+                                .padding(top = 36.dp, start = 12.dp, end = 12.dp)
+                                .uiCard(shape = RoundedCornerShape(UIRadiusCard), elevation = 2.dp)
+                                .padding(horizontal = 22.dp, vertical = 28.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(64.dp)
-                                    .clip(CircleShape)
-                                    .background(UIGlassSurfaceStrong)
-                                    .border(0.5.dp, UIGlassStroke, CircleShape),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                UIAvatar(
-                                    name = friendName,
-                                    avatarPath = avatarPath,
-                                    size = 56.dp,
-                                    shape = CircleShape
-                                )
-                            }
-                            Spacer(Modifier.height(16.dp))
+                            UIAvatar(
+                                name = friendName,
+                                avatarPath = avatarPath,
+                                size = 62.dp,
+                                shape = RoundedCornerShape(18.dp),
+                                modifier = Modifier.border(1.dp, UIGlassStroke, RoundedCornerShape(18.dp))
+                            )
+                            Spacer(Modifier.height(14.dp))
                             Text(
-                                text = "和「$friendName」打个招呼吧",
+                                text = "和「$friendName」聊聊吧",
                                 textAlign = TextAlign.Center,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
                                 color = UIFriendBarTitleColor
                             )
                             if (role.isNotBlank()) {
@@ -210,7 +205,8 @@ fun UIFriendChatPage(
                                 Text(
                                     text = role,
                                     textAlign = TextAlign.Center,
-                                    fontSize = 13.sp,
+                                    fontSize = 12.5.sp,
+                                    lineHeight = 18.sp,
                                     color = UIFriendBarItemMetaColor
                                 )
                             }
@@ -275,8 +271,8 @@ private fun ChatTopBar(
     ) {
         Box(
             modifier = Modifier
-                .size(36.dp)
-                .uiControl(shape = CircleShape, color = UIGlassSurfaceStrong)
+                .size(38.dp)
+                .uiControl(shape = RoundedCornerShape(12.dp), color = UIGlassSurfaceStrong)
                 .clickable(onClick = onBack),
             contentAlignment = Alignment.Center
         ) {
@@ -291,19 +287,18 @@ private fun ChatTopBar(
         UIAvatar(
             name = friendName,
             avatarPath = avatarPath,
-            size = 40.dp,
-            shape = CircleShape,
-            modifier = Modifier.clickable { onAvatarClick() }
+            size = 38.dp,
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier
+                .border(1.dp, UIGlassStroke, RoundedCornerShape(12.dp))
+                .clickable { onAvatarClick() }
         )
         Spacer(Modifier.width(10.dp))
-        // 名字 + 角色。weight 表示「标签量完之后剩下的宽度都给你」，
-        // 标签自己有上限，所以这里不会被挤到 0；再加上 maxLines=1 + 省略号，
-        // 长名字是收尾打点，不是被拉变形。
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = friendName,
                 fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = FontWeight.Bold,
                 color = UIFriendBarTitleColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -311,30 +306,27 @@ private fun ChatTopBar(
             if (role.isNotBlank()) {
                 Text(
                     text = role,
-                    fontSize = 12.sp,
+                    fontSize = 11.5.sp,
                     color = UIFriendBarItemMetaColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
             }
         }
-        // 模型标签：和列表一样只取最后一段，并限宽。
-        // 顶栏比列表更吃紧（头像 + 返回 + 名字 + 角色），
-        // 聚合平台的 id 原样摆进来会把角色名挤没。
         val tag = shortModelTag(model)
         if (tag.isNotEmpty()) {
             Spacer(Modifier.width(8.dp))
             Box(
                 modifier = Modifier
                     .widthIn(max = CHAT_TAG_MAX_WIDTH)
-                    .clip(RoundedCornerShape(50))
+                    .clip(RoundedCornerShape(8.dp))
                     .background(UIFriendBarTagBgBlue)
-                    .padding(horizontal = 10.dp, vertical = 5.dp)
+                    .padding(horizontal = 9.dp, vertical = 4.dp)
             ) {
                 Text(
                     text = tag,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium,
+                    fontSize = 10.5.sp,
+                    fontWeight = FontWeight.SemiBold,
                     color = UIFriendBarTagTextBlue,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -364,11 +356,11 @@ private fun MessageBubble(
                 name = friendName,
                 avatarPath = avatarPath,
                 size = 34.dp,
-                shape = CircleShape
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.border(1.dp, UIGlassStroke, RoundedCornerShape(10.dp))
             )
             Spacer(Modifier.width(8.dp))
         }
-        // 形状只算一次：shadow / clip / border 共用同一个，避免某一处漏掉「尾巴角」
         val bubbleShape = RoundedCornerShape(
             topStart = UIRadiusBubble,
             topEnd = UIRadiusBubble,
@@ -377,9 +369,9 @@ private fun MessageBubble(
         )
         Box(
             modifier = Modifier
-                .widthIn(max = 268.dp)
+                .widthIn(max = 280.dp)
                 .shadow(
-                    elevation = 6.dp,
+                    elevation = if (isUser) 4.dp else 2.dp,
                     shape = bubbleShape,
                     clip = false,
                     ambientColor = UIShadowSoft,
@@ -392,19 +384,15 @@ private fun MessageBubble(
                     } else {
                         Modifier
                             .background(UIGlassSurfaceStrong)
-                            .border(0.5.dp, UIGlassStroke, bubbleShape)
+                            .border(1.dp, UIGlassStroke, bubbleShape)
                     }
                 )
-                .padding(horizontal = 14.dp, vertical = 10.dp)
+                .padding(horizontal = 14.dp, vertical = 11.dp)
         ) {
             Column {
-                // 思考过程放在正文上方，折叠起来。展开时是灰字，一眼能看出
-                // 「这是他想的」而不是「他对我说的」
                 message.reasoning?.takeIf { it.isNotBlank() }?.let { reasoning ->
                     ReasoningBlock(
                         reasoning = reasoning,
-                        // 只想了还没开始说的时候默认展开：这时候用户除了思考
-                        // 没有别的可看，收起来就只剩一个空气泡
                         expandedByDefault = streaming && message.content.isBlank(),
                         thinking = streaming && message.content.isBlank(),
                         usage = message.usage,
@@ -419,7 +407,7 @@ private fun MessageBubble(
                             text = message.content,
                             fontSize = 15.sp,
                             lineHeight = 22.sp,
-                            color = Color.White
+                            color = Color(0xFFFFFBF4)
                         )
                     } else {
                         UIMarkdownText(
@@ -431,7 +419,6 @@ private fun MessageBubble(
                         )
                     }
                 } else if (message.reasoning.isNullOrBlank()) {
-                    // 既没正文也还没收到思考内容：至少让气泡里有点东西在动
                     Text(
                         text = "…",
                         fontSize = 15.sp,
@@ -446,7 +433,8 @@ private fun MessageBubble(
                 name = "我",
                 avatarPath = userAvatarPath,
                 size = 34.dp,
-                shape = CircleShape
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.border(1.dp, UIGlassStroke, RoundedCornerShape(10.dp))
             )
         }
     }
@@ -467,8 +455,8 @@ private fun ReasoningBlock(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
-            .background(UIFieldFill)
-            .border(0.6.dp, UIGlassStroke, RoundedCornerShape(10.dp))
+            .background(UIAtelierSand.copy(alpha = 0.65f))
+            .border(0.75.dp, UIGlassStroke, RoundedCornerShape(10.dp))
             .padding(horizontal = 10.dp, vertical = 8.dp)
     ) {
         Row(
@@ -477,10 +465,17 @@ private fun ReasoningBlock(
                 .clickable { expanded = !expanded },
             verticalAlignment = Alignment.CenterVertically
         ) {
+            Box(
+                modifier = Modifier
+                    .size(width = 3.dp, height = 11.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(UIFriendBarTagTextBlue)
+            )
+            Spacer(Modifier.width(6.dp))
             Text(
                 text = if (thinking) "正在思考…" else "思考过程",
                 fontSize = 11.sp,
-                fontWeight = FontWeight.Medium,
+                fontWeight = FontWeight.SemiBold,
                 color = UIFriendBarItemMetaColor
             )
             Spacer(Modifier.weight(1f))
@@ -495,6 +490,7 @@ private fun ReasoningBlock(
             Text(
                 text = if (expanded) "收起" else "展开",
                 fontSize = 10.sp,
+                fontWeight = FontWeight.Medium,
                 color = UIFriendBarTagTextBlue
             )
         }
@@ -579,28 +575,25 @@ private fun ChatInputBar(
     val buttonEnabled = showStop || canSend
 
     Row(
-        // 不再用整条通栏白底：改成浮在渐变上的圆角玻璃条，和页面里其他卡片用同一套语言
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .padding(horizontal = 12.dp, vertical = 8.dp)
             .uiCard(
                 shape = RoundedCornerShape(UIRadiusCard),
-                color = UIGlassBar,
-                elevation = 12.dp
+                color = UIGlassSurfaceStrong,
+                elevation = 5.dp
             )
-            .padding(horizontal = 10.dp, vertical = 6.dp),
+            .padding(horizontal = 10.dp, vertical = 7.dp),
         verticalAlignment = Alignment.Bottom
     ) {
         Box(
             modifier = Modifier
                 .weight(1f)
-                // 外层已经是白卡，内层改成浅灰凹陷胶囊，输入区才和卡片分得开
-                .clip(RoundedCornerShape(UIRadiusBubble))
-                .background(UIFieldFill)
-                .border(0.5.dp, UIGlassStroke, RoundedCornerShape(UIRadiusBubble))
-                // 与发送按钮共用基准高度：单行时严格等高
+                .clip(RoundedCornerShape(14.dp))
+                .background(UIAtelierSand.copy(alpha = 0.72f))
+                .border(0.8.dp, UIGlassStroke, RoundedCornerShape(14.dp))
                 .heightIn(min = UIComposerHeight)
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(horizontal = 14.dp, vertical = 9.dp),
             contentAlignment = Alignment.CenterStart
         ) {
             if (input.isEmpty()) {
@@ -621,23 +614,23 @@ private fun ChatInputBar(
             )
         }
         Spacer(Modifier.width(8.dp))
+        val btnShape = RoundedCornerShape(14.dp)
         Box(
             modifier = Modifier
-                // 与输入框共用基准高度，单行时严格等高
                 .size(UIComposerHeight)
                 .shadow(
-                    elevation = if (buttonEnabled) 8.dp else 0.dp,
-                    shape = CircleShape,
+                    elevation = if (buttonEnabled) 6.dp else 0.dp,
+                    shape = btnShape,
                     clip = false,
                     ambientColor = UIBlobBlue,
                     spotColor = UIBlobBlue
                 )
-                .clip(CircleShape)
+                .clip(btnShape)
                 .then(
                     when {
                         showStop -> Modifier.background(UIFriendBarRed)
                         canSend -> Modifier.background(UIActionBrush)
-                        else -> Modifier.background(UIChatSendDisabled.copy(alpha = 0.6f))
+                        else -> Modifier.background(UIChatSendDisabled.copy(alpha = 0.65f))
                     }
                 )
                 .clickable(enabled = buttonEnabled) { if (showStop) onStop() else onSend() },

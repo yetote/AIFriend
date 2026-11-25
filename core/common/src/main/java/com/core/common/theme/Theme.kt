@@ -8,7 +8,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
 
-
 val CompactTypography = Typography(
     bodyLarge = TextStyle(
         platformStyle = PlatformTextStyle(includeFontPadding = false)
@@ -18,22 +17,29 @@ val CompactTypography = Typography(
     )
 )
 
-/** 全站基础色板：瓷白墨韵 + 暮靛星辉，清透浅底配深邃靛紫主色。 */
+/**
+ * 全站基础色板：宣纸朱砂（Warm Editorial Atelier）。
+ * 暖宣纸画布 + 浓墨黑棕正文 + 朱砂暖陶主强调 + 松石绿 / 赤印红语义色。
+ */
 private val AIFriendColorScheme = lightColorScheme(
-    primary = Color(0xFF4338CA),
+    primary = Color(0xFFC84B2A),
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFEEF2FF),
-    onPrimaryContainer = Color(0xFF312E81),
-    secondary = Color(0xFF6366F1),
+    primaryContainer = Color(0xFFF9EAE3),
+    onPrimaryContainer = Color(0xFF7A2812),
+    secondary = Color(0xFF1F7A5A),
     onSecondary = Color.White,
-    background = Color(0xFFF6F7FB),
-    onBackground = Color(0xFF0F172A),
-    surface = Color(0xFFFFFFFF),
-    onSurface = Color(0xFF0F172A),
-    surfaceVariant = Color(0xFFEDF1F8),
-    onSurfaceVariant = Color(0xFF475569),
-    outline = Color(0xFFCBD5E1),
-    error = Color(0xFFE11D48),
+    secondaryContainer = Color(0xFFE5F3ED),
+    onSecondaryContainer = Color(0xFF114B36),
+    tertiary = Color(0xFFB87A1F),
+    onTertiary = Color.White,
+    background = Color(0xFFF4EFE6),
+    onBackground = Color(0xFF171411),
+    surface = Color(0xFFFFFDF9),
+    onSurface = Color(0xFF171411),
+    surfaceVariant = Color(0xFFEDE7DC),
+    onSurfaceVariant = Color(0xFF5A524A),
+    outline = Color(0xFFDAD1C3),
+    error = Color(0xFFC2302B),
     onError = Color.White
 )
 

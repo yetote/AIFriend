@@ -55,7 +55,7 @@ internal fun UIWerewolfExportDialog(
         actions = {
             UIDialogButtons(
                 confirmText = "取消",
-                confirmColor = Color(0xFF9AA4B2),
+                confirmColor = Color(0xFF8C8277),
                 onConfirm = onDismiss,
                 cancelText = null,
             )
@@ -119,5 +119,5 @@ private fun ExportOption(
 }
 
 // 和复盘页同一套灰阶（那边是 private 常量，两处改一边就会看起来像两个应用）
-private val ExportTitle = Color(0xFF1B2230)
-private val ExportDim = Color(0xFF7C8496)
+private val ExportTitle = Color(0xFF171411)
+private val ExportDim = Color(0xFF7B7166)

@@ -221,7 +221,7 @@ private fun HeaderCard(
                 name = friendName,
                 avatarPath = avatarPath,
                 size = 88.dp,
-                shape = CircleShape,
+                shape = RoundedCornerShape(24.dp),
                 modifier = Modifier.clickable { onChangeAvatar() }
             )
             // 小相机角标：暗示这块能点，否则纯头像看不出来
@@ -423,9 +423,9 @@ private fun BalanceBlock(state: UIBalanceState?, onRefresh: () -> Unit) {
 @Composable
 private fun balanceToneColor(tone: UIBalanceTone): Color = when (tone) {
     UIBalanceTone.Normal -> UIFriendBarTitleColor
-    UIBalanceTone.Low -> Color(0xFFD9822B)
+    UIBalanceTone.Low -> Color(0xFFB87A1F)
     UIBalanceTone.Empty -> UIFriendBarRed
-    UIBalanceTone.Unlimited -> Color(0xFF1E8C7F)
+    UIBalanceTone.Unlimited -> Color(0xFF1F7A5A)
 }
 
 private fun formatBalanceTime(millis: Long): String =

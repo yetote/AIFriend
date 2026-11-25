@@ -194,7 +194,7 @@ internal fun SeatTile(
                 },
             contentAlignment = Alignment.Center,
         ) {
-            val activeGlowColor = if (night) Color(0xFF7FA8FF) else Color(0xFF4B84FF)
+            val activeGlowColor = if (night) Color(0xFFE5B869) else Color(0xFFC84B2A)
             if (seat.active) {
                 // 正在发言/正在行动的人要有动静，静止的牌桌看不出轮到谁。
                 // 两层：贴着头像的呼吸光说「是这个人」，往外扩的涟漪说「他正在出声」。

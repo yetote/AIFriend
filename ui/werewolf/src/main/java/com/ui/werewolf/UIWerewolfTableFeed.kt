@@ -261,8 +261,8 @@ internal fun ThinkingLine(seat: UIWerewolfSeatLive, night: Boolean, dimColor: Co
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .background(if (night) Color(0x5C162238) else Color(0xA6FFFFFF))
-            .border(0.7.dp, if (night) NightStroke else DayStroke, RoundedCornerShape(14.dp))
+            .background(if (night) Color(0x701E1815) else Color(0xC2FFFDF9))
+            .border(0.75.dp, if (night) NightStroke else DayStroke, RoundedCornerShape(14.dp))
             .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -300,7 +300,7 @@ internal fun LineRow(
         UIWerewolfLineKind.DIVINE -> {
             // 播报是居中的系统宣告：两侧极细淡线 + 毛玻璃胶囊底
             val style = tableBubbleStyle(UIWerewolfBubbleKind.BROADCAST, night)
-            val dividerColor = if (night) Color(0x22FFFFFF) else Color(0x181B2B45)
+            val dividerColor = if (night) Color(0x28F5E8D8) else Color(0x1E241C14)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()

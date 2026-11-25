@@ -29,9 +29,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 
 /**
- * iOS 风格弹窗：大圆角、白色毛玻璃卡片、胶囊按钮。
- *
- * 替换 Material 的 AlertDialog，保持和全站一致的圆角与投影。
+ * 宣纸编辑风格弹窗：暖象牙实底卡片 + 1dp 暖石细框 + 高对比操作按钮。
  */
 @Composable
 fun UIIosDialog(
@@ -39,8 +37,7 @@ fun UIIosDialog(
     onDismiss: () -> Unit,
     subtitle: String? = null,
     dismissible: Boolean = true,
-    /** 卡片最大宽度。选座位这类要摊开内容的弹窗可以放宽；默认 340dp 保持全站风格。 */
-    maxWidth: Dp = 340.dp,
+    maxWidth: Dp = 344.dp,
     actions: @Composable ColumnScope.() -> Unit,
     content: @Composable ColumnScope.() -> Unit = {}
 ) {
@@ -55,23 +52,24 @@ fun UIIosDialog(
             modifier = Modifier
                 .widthIn(max = maxWidth)
                 .fillMaxWidth()
-                .uiCard(shape = RoundedCornerShape(UIRadiusSheet), elevation = 24.dp)
-                .padding(horizontal = 20.dp, vertical = 20.dp),
+                .uiCard(shape = RoundedCornerShape(UIRadiusSheet), elevation = 18.dp)
+                .padding(horizontal = 22.dp, vertical = 22.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
                     text = title,
                     fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = (-0.2).sp,
                     color = UIFriendBarTitleColor
                 )
                 if (subtitle != null) {
                     Text(
                         text = subtitle,
-                        fontSize = 12.sp,
-                        lineHeight = 17.sp,
-                        color = UIFriendBarItemMetaColor
+                        fontSize = 12.5.sp,
+                        lineHeight = 18.sp,
+                        color = UIFriendBarSubtitleColor
                     )
                 }
             }
@@ -88,7 +86,7 @@ data class UIActionSheetItem(
     val onClick: () -> Unit
 )
 
-/** iOS 风格底部动作面板，用于长按菜单。 */
+/** 宣纸风格动作菜单，用于长按快捷操作。 */
 @Composable
 fun UIActionSheet(
     title: String,
@@ -98,19 +96,20 @@ fun UIActionSheet(
     Dialog(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
-                .widthIn(max = 340.dp)
+                .widthIn(max = 336.dp)
                 .fillMaxWidth()
-                .uiCard(shape = RoundedCornerShape(UIRadiusSheet), elevation = 24.dp),
+                .uiCard(shape = RoundedCornerShape(UIRadiusSheet), elevation = 18.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
                 text = title,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 16.dp),
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Medium,
-                color = UIFriendBarItemMetaColor,
+                    .background(UIAtelierSand.copy(alpha = 0.55f))
+                    .padding(horizontal = 20.dp, vertical = 14.dp),
+                fontSize = 12.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = UIFriendBarSubtitleColor,
                 textAlign = TextAlign.Center,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -118,7 +117,7 @@ fun UIActionSheet(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(0.5.dp)
+                    .height(0.75.dp)
                     .background(UISeparator)
             )
             items.forEach { item ->
@@ -134,15 +133,15 @@ fun UIActionSheet(
                 ) {
                     Text(
                         text = item.label,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium,
+                        fontSize = 15.5.sp,
+                        fontWeight = FontWeight.SemiBold,
                         color = if (item.destructive) UIFriendBarRed else UIFriendBarTitleColor
                     )
                 }
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(0.5.dp)
+                        .height(0.75.dp)
                         .background(UISeparator)
                 )
             }
@@ -155,16 +154,17 @@ fun UIActionSheet(
             ) {
                 Text(
                     text = "取消",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = UIFriendBarSubtitleColor
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = UIFriendBarItemMetaColor
                 )
             }
         }
     }
 }
 
-/** 弹窗底部按钮行：左灰右彩，等宽。 */@Composable
+/** 弹窗底部按钮行：左暖砂取消、右朱砂或语义实心确认，等宽利落。 */
+@Composable
 fun UIDialogButtons(
     confirmText: String,
     onConfirm: () -> Unit,
@@ -186,7 +186,7 @@ fun UIDialogButtons(
                     .height(44.dp)
                     .uiControl(
                         shape = RoundedCornerShape(UIRadiusControl),
-                        color = UIFieldFill,
+                        color = UIAtelierSand,
                         borderColor = UIGlassStroke
                     )
                     .clickable { onCancel() },
@@ -194,7 +194,7 @@ fun UIDialogButtons(
             ) {
                 Text(
                     text = cancelText,
-                    fontSize = 15.sp,
+                    fontSize = 14.5.sp,
                     fontWeight = FontWeight.Medium,
                     color = UIFriendBarSubtitleColor
                 )
@@ -220,7 +220,7 @@ fun UIDialogButtons(
         ) {
             Text(
                 text = confirmText,
-                fontSize = 15.sp,
+                fontSize = 14.5.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = Color.White
             )

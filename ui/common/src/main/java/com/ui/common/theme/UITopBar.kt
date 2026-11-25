@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Icon
@@ -23,10 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * 二级页面的通栏顶栏。
- *
- * 留空让极光渐变画布透上来，左侧以圆形轻玻璃胶囊承载返回按钮，
- * 底部仅用 0.5dp hairline 交代内容起点，与全站卡片语言保持一致。
+ * 二级页面顶栏：宣纸通栏 + 左侧方圆触感返回键 + 紧凑标题 + 极细底线。
  */
 @Composable
 fun UITopBar(
@@ -39,13 +36,13 @@ fun UITopBar(
         modifier = modifier
             .fillMaxWidth()
             .uiHairlineBottom()
-            .padding(horizontal = 14.dp, vertical = 10.dp),
+            .padding(horizontal = 16.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
             modifier = Modifier
-                .size(36.dp)
-                .uiControl(shape = CircleShape, color = UIGlassSurfaceStrong)
+                .size(38.dp)
+                .uiControl(shape = RoundedCornerShape(12.dp), color = UIGlassSurfaceStrong)
                 .clickable(onClick = onBack),
             contentAlignment = Alignment.Center
         ) {
@@ -60,8 +57,9 @@ fun UITopBar(
         Text(
             text = title,
             modifier = Modifier.weight(1f),
-            fontSize = 17.sp,
+            fontSize = 18.sp,
             fontWeight = FontWeight.Bold,
+            letterSpacing = (-0.2).sp,
             color = UIFriendBarTitleColor,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis

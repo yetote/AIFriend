@@ -228,7 +228,7 @@ fun UIRoomCreateScreen(
                                     name = friend.name,
                                     avatarPath = friend.avatarPath,
                                     size = 40.dp,
-                                    shape = CircleShape
+                                    shape = RoundedCornerShape(12.dp)
                                 )
                                 Spacer(Modifier.width(12.dp))
                                 Column(modifier = Modifier.weight(1f)) {
@@ -346,7 +346,7 @@ private fun LabeledField(
             modifier = Modifier
                 .fillMaxWidth()
                 .uiControl(
-                    shape = RoundedCornerShape(if (singleLine) 50.dp else UIRadiusControl),
+                    shape = RoundedCornerShape(UIRadiusControl),
                     color = UIGlassSurfaceStrong
                 )
                 .padding(horizontal = 14.dp, vertical = if (singleLine) 12.dp else 10.dp)

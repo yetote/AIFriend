@@ -56,6 +56,8 @@ import com.ui.common.pageInsetsBottom
 import com.ui.common.pageInsetsTop
 import com.ui.common.theme.UIBlobBlue
 import com.ui.common.theme.UIActionBrush
+import com.ui.common.theme.UIAtelierInk
+import com.ui.common.theme.UIAtelierSand
 import com.ui.common.theme.UIFieldFill
 import com.ui.common.theme.UIFriendBarCreateButtonText
 import com.ui.common.theme.UIFriendBarItemSubtitleColor
@@ -94,7 +96,7 @@ import com.ui.werewolf.data.UIWerewolfTurnLimit
  * 单独定一个而不是复用主题色：主题里没有「成功」这个语义色，
  * 而且这个绿只在检测结果上出现一次，放进公共主题反而会诱导别处乱用。
  */
-private val ConnectedGreen = Color(0xFF2E9E6B)
+private val ConnectedGreen = Color(0xFF1F7A5A)
 
 /**
  * 开局配置页。
@@ -767,7 +769,8 @@ private fun SetupTabRow(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(UIRadiusTab))
-            .background(UIFriendBarTabUnselectedBg.copy(alpha = 0.6f))
+            .background(UIAtelierSand)
+            .border(1.dp, UIGlassStroke, RoundedCornerShape(UIRadiusTab))
             .padding(3.dp),
         horizontalArrangement = Arrangement.spacedBy(3.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -780,9 +783,7 @@ private fun SetupTabRow(
                     .clip(RoundedCornerShape(UIRadiusTab - 3.dp))
                     .then(
                         if (isSelected) {
-                            Modifier
-                                .shadow(3.dp, RoundedCornerShape(UIRadiusTab - 3.dp), clip = false)
-                                .background(UIGlassSurfaceStrong)
+                            Modifier.background(UIAtelierInk)
                         } else {
                             Modifier
                         }
@@ -795,8 +796,8 @@ private fun SetupTabRow(
                     text = title,
                     style = TextStyle(
                         fontSize = 13.sp,
-                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                        color = if (isSelected) UIFriendBarTitleColor else UIFriendBarTabUnselectedText,
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                        color = if (isSelected) UIGlassSurfaceStrong else UIFriendBarTabUnselectedText,
                     )
                 )
             }

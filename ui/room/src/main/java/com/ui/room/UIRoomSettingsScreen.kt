@@ -732,10 +732,10 @@ private fun SettingSwitchRow(
                 checkedThumbColor = Color.White,
                 checkedTrackColor = UIFriendBarTagTextBlue,
                 uncheckedThumbColor = Color.White,
-                uncheckedTrackColor = Color(0xFFD7DCE5),
+                uncheckedTrackColor = Color(0xFFD2C9BC),
                 uncheckedBorderColor = Color.Transparent,
-                disabledCheckedTrackColor = Color(0xFFB9C6DD),
-                disabledUncheckedTrackColor = Color(0xFFE3E7EE)
+                disabledCheckedTrackColor = Color(0xFFE0B4A4),
+                disabledUncheckedTrackColor = Color(0xFFE5DFD5)
             )
         )
     }

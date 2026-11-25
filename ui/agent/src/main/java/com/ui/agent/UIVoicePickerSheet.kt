@@ -149,7 +149,7 @@ fun UIVoicePickerSheet(
                     .padding(horizontal = 20.dp)
                     .uiControl(
                         shape = RoundedCornerShape(UIRadiusControl),
-                        color = Color(0xFFF4F6FA)
+                        color = Color(0xFFEFEAE0)
                     )
                     .padding(horizontal = 12.dp, vertical = 10.dp)
             ) {
@@ -329,7 +329,7 @@ private fun VoiceRow(
             modifier = Modifier
                 .size(16.dp)
                 .background(
-                    if (selected) UIFriendBarTagTextBlue else Color(0xFFE6EAF2),
+                    if (selected) UIFriendBarTagTextBlue else Color(0xFFE4DDD0),
                     CircleShape
                 )
         )
@@ -404,7 +404,7 @@ private fun CustomVoiceRow(
                         .weight(1f)
                         .uiControl(
                             shape = RoundedCornerShape(UIRadiusControl),
-                            color = Color(0xFFF4F6FA)
+                            color = Color(0xFFEFEAE0)
                         )
                         .padding(horizontal = 12.dp, vertical = 10.dp)
                 ) {

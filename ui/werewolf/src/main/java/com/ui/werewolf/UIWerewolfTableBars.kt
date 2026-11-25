@@ -163,7 +163,7 @@ internal fun TableTopBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(if (night) Color(0x52090F1D) else Color(0x7AFFFFFF))
+            .background(if (night) Color(0x66120E0C) else Color(0x88FAF6EE))
             .uiHairlineBottom(if (night) NightStroke else DayStroke)
             .padding(horizontal = 4.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -296,8 +296,8 @@ internal fun SelfBar(
             .fillMaxWidth()
             .padding(horizontal = 14.dp, vertical = 6.dp)
             .clip(RoundedCornerShape(14.dp))
-            .background(if (night) Color(0x7016223A) else Color(0xBAFFFFFF))
-            .border(0.7.dp, if (night) NightStroke else DayStroke, RoundedCornerShape(14.dp))
+            .background(if (night) Color(0x851E1815) else Color(0xCCFFFDF9))
+            .border(0.8.dp, if (night) NightStroke else DayStroke, RoundedCornerShape(14.dp))
             .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)

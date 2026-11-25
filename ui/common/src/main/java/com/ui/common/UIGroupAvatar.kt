@@ -142,6 +142,6 @@ private fun EmptyGroupCell(size: Dp) {
 }
 
 /** 成员之间的缝，透出来的就是这层颜色。 */
-private val UIGroupAvatarGap = Color(0xFFFDFDFF)
+private val UIGroupAvatarGap = Color(0xFFFFFDF9)
 private val UIGroupAvatarGapWidth = 1.5.dp
-private val UIGroupAvatarTextColor = Color(0xFF374151)
+private val UIGroupAvatarTextColor = Color(0xFF26201B)

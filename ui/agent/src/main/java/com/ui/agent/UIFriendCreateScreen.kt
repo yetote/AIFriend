@@ -69,12 +69,18 @@ import com.ui.agent.data.UIProvider
 import com.ui.agent.data.UIReadyTts
 import com.ui.agent.data.UIPriceTone
 import com.ui.common.theme.UIActionBrush
+import com.ui.common.theme.UIAtelierBrass
+import com.ui.common.theme.UIAtelierJade
+import com.ui.common.theme.UIAtelierSand
 import com.ui.common.theme.UIBlobBlue
+import com.ui.common.theme.UIChatSendDisabled
 import com.ui.common.theme.UIFriendBarCreateButtonText
 import com.ui.common.theme.UIFriendBarItemMetaColor
+import com.ui.common.theme.UIFriendBarRed
 import com.ui.common.theme.UIFriendBarTagBgBlue
 import com.ui.common.theme.UIFriendBarTagTextBlue
 import com.ui.common.theme.UIFriendBarTitleColor
+import com.ui.common.theme.UIGlassSurfaceStrong
 import com.ui.common.theme.UIGradientBackground
 import com.ui.common.theme.UIRadiusCard
 import com.ui.common.theme.UIRadiusControl
@@ -237,7 +243,7 @@ fun UIFriendCreateScreen(
                         name = name.ifBlank { "新" },
                         avatarPath = initialAvatarPath,
                         size = 68.dp,
-                        shape = CircleShape,
+                        shape = RoundedCornerShape(18.dp),
                         imageBitmap = avatarBitmap,
                         modifier = Modifier.clickable {
                             avatarPicker.launch(
@@ -376,7 +382,7 @@ fun UIFriendCreateScreen(
                                 checkedThumbColor = Color.White,
                                 checkedTrackColor = UIFriendBarTagTextBlue,
                                 uncheckedThumbColor = Color.White,
-                                uncheckedTrackColor = Color(0xFFD7DCE5),
+                                uncheckedTrackColor = UIChatSendDisabled,
                                 uncheckedBorderColor = Color.Transparent
                             )
                         )
@@ -423,8 +429,8 @@ fun UIFriendCreateScreen(
                                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                                 color = if (selected) Color.White else UIFriendBarTitleColor,
                                 modifier = Modifier
-                                    .clip(RoundedCornerShape(50))
-                                    .background(if (selected) UIActionBrush else SolidColor(Color(0xFFEEF1F6)))
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (selected) UIActionBrush else SolidColor(UIAtelierSand))
                                     // 切换服务时清掉旧音色：各家音色 id 不通用，留着会合成失败。
                                     .clickable {
                                         if (ttsConfigId != option.id) {
@@ -453,7 +459,7 @@ fun UIFriendCreateScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(UIRadiusControl))
-                            .background(Color(0xFFEEF1F6))
+                            .background(UIAtelierSand)
                             .clickable { pickingVoice = true }
                             .padding(start = 14.dp, end = 8.dp, top = 9.dp, bottom = 9.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -500,7 +506,7 @@ fun UIFriendCreateScreen(
                             text = previewError,
                             fontSize = 11.5.sp,
                             lineHeight = 16.sp,
-                            color = Color(0xFFD14343)
+                            color = UIFriendBarRed
                         )
                     }
                 }
@@ -670,20 +676,20 @@ fun UIFriendCreateScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(50.dp)
+                        .height(48.dp)
                         .shadow(
-                            elevation = if (canSubmit) 10.dp else 0.dp,
-                            shape = RoundedCornerShape(50),
+                            elevation = if (canSubmit) 8.dp else 0.dp,
+                            shape = RoundedCornerShape(UIRadiusControl),
                             clip = false,
                             ambientColor = UIBlobBlue,
                             spotColor = UIBlobBlue
                         )
-                        .clip(RoundedCornerShape(50))
+                        .clip(RoundedCornerShape(UIRadiusControl))
                         .then(
                             if (canSubmit) {
                                 Modifier.background(UIActionBrush)
                             } else {
-                                Modifier.background(Color(0xFFC3CBD9))
+                                Modifier.background(UIChatSendDisabled)
                             }
                         )
                         .clickable(enabled = canSubmit) {
@@ -827,7 +833,7 @@ private fun ProviderChip(
         modifier = modifier
             .uiControl(
                 shape = RoundedCornerShape(UIRadiusControl),
-                color = if (selected) UIFriendBarTagBgBlue else Color.White.copy(alpha = 0.92f)
+                color = if (selected) UIFriendBarTagBgBlue else UIGlassSurfaceStrong
             )
             .clickable { onClick() }
             .padding(horizontal = 14.dp, vertical = 11.dp)
@@ -1136,9 +1142,9 @@ private fun PriceFootnote(
 
 /** 按价格档位给文字上色，不用比数字也能看出便宜还是贵。 */
 private fun priceToneColor(tone: UIPriceTone?): Color = when (tone) {
-    UIPriceTone.CHEAP -> Color(0xFF0F9D58)
+    UIPriceTone.CHEAP -> UIAtelierJade
     UIPriceTone.NORMAL -> UIFriendBarItemMetaColor
-    UIPriceTone.EXPENSIVE -> Color(0xFFD97706)
+    UIPriceTone.EXPENSIVE -> UIAtelierBrass
     null -> UIFriendBarItemMetaColor
 }
 
@@ -1169,10 +1175,10 @@ private fun LabeledInput(
             modifier = Modifier
                 .fillMaxWidth()
                 .uiControl(
-                    shape = RoundedCornerShape(if (singleLine) 50.dp else UIRadiusControl),
-                    color = Color.White.copy(alpha = 0.92f)
+                    shape = RoundedCornerShape(UIRadiusControl),
+                    color = UIGlassSurfaceStrong
                 )
-                .padding(horizontal = 16.dp, vertical = 13.dp)
+                .padding(horizontal = 15.dp, vertical = 13.dp)
         ) {
             if (value.isEmpty()) {
                 Text(

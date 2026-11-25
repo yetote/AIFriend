@@ -149,12 +149,13 @@ private fun TtsSection(
             modifier = Modifier
                 .fillMaxWidth()
                 .uiCard(
-                    shape = RoundedCornerShape(UIRadiusCard),
-                    color = if (selected) UIFriendBarTagBgBlue.copy(alpha = 0.55f) else Color(0xF8FFFFFF),
-                    borderColor = if (selected) UIFriendBarCreateButtonText.copy(alpha = 0.45f) else UIGlassStroke
+                    shape = RoundedCornerShape(16.dp),
+                    color = if (selected) UIFriendBarTagBgBlue.copy(alpha = 0.7f) else Color(0xFFFFFDF9),
+                    borderColor = if (selected) UIFriendBarCreateButtonText.copy(alpha = 0.55f) else UIGlassStroke,
+                    elevation = 2.dp
                 )
                 .clickable { onProviderSelect(provider.id) }
-                .padding(horizontal = 14.dp, vertical = 10.dp),
+                .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {

@@ -124,7 +124,7 @@ fun UIPersonaPickerSheet(
                     .padding(horizontal = 20.dp)
                     .uiControl(
                         shape = RoundedCornerShape(UIRadiusControl),
-                        color = Color(0xFFF4F6FA)
+                        color = Color(0xFFEFEAE0)
                     )
                     .padding(horizontal = 12.dp, vertical = 10.dp)
             ) {

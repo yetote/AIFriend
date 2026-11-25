@@ -42,6 +42,8 @@ import com.core.persona.PersonaCategory
 import com.ui.agent.data.UIProvider
 import com.ui.agent.data.UIReadyTts
 import com.ui.common.theme.UIActionBrush
+import com.ui.common.theme.UIAtelierSand
+import com.ui.common.theme.UIChatSendDisabled
 import com.ui.common.theme.UIFriendBarItemMetaColor
 import com.ui.common.theme.UIFriendBarTagTextBlue
 import com.ui.common.theme.UIFriendBarTitleColor
@@ -297,8 +299,8 @@ fun UIBatchCreateSheet(
                     .fillMaxWidth()
                     .padding(horizontal = 20.dp)
                     .height(48.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(if (canCreate) UIActionBrush else SolidColor(Color(0xFFC3CBD9)))
+                    .clip(RoundedCornerShape(UIRadiusControl))
+                    .background(if (canCreate) UIActionBrush else SolidColor(UIChatSendDisabled))
                     .clickable(enabled = canCreate) {
                         val created = onCreate(
                             count,
@@ -337,9 +339,10 @@ private fun BatchSwitch(
         enabled = enabled,
         colors = SwitchDefaults.colors(
             checkedThumbColor = Color.White,
-            checkedTrackColor = SwitchDefaults.colors().checkedTrackColor,
+            checkedTrackColor = UIFriendBarTagTextBlue,
             uncheckedThumbColor = Color.White,
-            uncheckedTrackColor = Color(0xFFC3CBD9)
+            uncheckedTrackColor = UIChatSendDisabled,
+            uncheckedBorderColor = Color.Transparent
         )
     )
 }
@@ -369,7 +372,7 @@ private fun StepButton(label: String, enabled: Boolean, onClick: () -> Unit) {
         modifier = Modifier
             .size(32.dp)
             .clip(CircleShape)
-            .background(if (enabled) Color(0xFFEEF1F6) else Color(0xFFF4F6F9))
+            .background(if (enabled) UIAtelierSand else UIAtelierSand.copy(alpha = 0.5f))
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
@@ -377,7 +380,7 @@ private fun StepButton(label: String, enabled: Boolean, onClick: () -> Unit) {
             text = label,
             fontSize = 16.sp,
             fontWeight = FontWeight.SemiBold,
-            color = if (enabled) UIFriendBarTitleColor else Color(0xFFC3CBD9)
+            color = if (enabled) UIFriendBarTitleColor else UIChatSendDisabled
         )
     }
 }
@@ -392,7 +395,7 @@ private fun BatchChip(label: String, selected: Boolean, onClick: () -> Unit) {
         color = if (selected) Color.White else UIFriendBarTitleColor,
         modifier = Modifier
             .clip(RoundedCornerShape(UIRadiusControl))
-            .background(if (selected) UIActionBrush else SolidColor(Color(0xFFEEF1F6)))
+            .background(if (selected) UIActionBrush else SolidColor(UIAtelierSand))
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 7.dp)
     )

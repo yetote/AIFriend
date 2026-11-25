@@ -198,9 +198,9 @@ internal fun ThinkingBubble(
     // 思考气泡不透底：框里是成段推理，背后就是座位和山影，
     // 半透明会把字吃掉，还显得脏。牌桌其他气泡透出去是为了「浮在桌上」，
     // 这一个的职责是「读得清」，两码事。
-    val fill = if (night) Color(0xFF221D2E) else Color(0xFFFFFEFB)
-    val border = if (night) Color(0x4DA894FF) else Color(0x336B4BD9)
-    val textColor = if (night) Color(0xFFE6EAF3) else Color(0xFF3A4152)
+    val fill = if (night) Color(0xFF231D1A) else Color(0xFFFFFDF9)
+    val border = if (night) Color(0x59E5B869) else Color(0x45B87A1F)
+    val textColor = if (night) Color(0xFFF3ECE2) else Color(0xFF2A241E)
 
     // 秒表在界面这侧跑，不跟引擎走：引擎只在有数据到达时推一次，
     // 而「模型一声不吭地干等」恰恰是最需要看到秒数的时刻——那一整段时间引擎是静默的。
@@ -218,9 +218,9 @@ internal fun ThinkingBubble(
     val stressed = limitSeconds > 0 && elapsedSeconds * 100 >= limitSeconds * 80
     val spentColor = when {
         stressed && night -> Color(0xFFFFB4B0)
-        stressed -> Color(0xFFC0392B)
-        night -> Color(0xFFA894FF)
-        else -> Color(0xFF6B4BD9)
+        stressed -> Color(0xFFC2302B)
+        night -> Color(0xFFE5B869)
+        else -> Color(0xFFC84B2A)
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -298,8 +298,8 @@ internal fun ThinkingBubble(
                     elevation = if (night) 12.dp else 10.dp,
                     shape = bubbleShape,
                     clip = false,
-                    ambientColor = if (night) Color(0x66000000) else Color(0x286B4BD9),
-                    spotColor = if (night) Color(0x66000000) else Color(0x286B4BD9),
+                    ambientColor = if (night) Color(0x66000000) else Color(0x28C84B2A),
+                    spotColor = if (night) Color(0x66000000) else Color(0x28C84B2A),
                 )
                 .clip(bubbleShape)
                 .background(fill)
@@ -318,7 +318,7 @@ internal fun ThinkingBubble(
                 .padding(horizontal = 10.dp, vertical = 7.dp)
         ) {
             Column {
-                val accent = if (night) Color(0xFFA894FF) else Color(0xFF6B4BD9)
+                val accent = if (night) Color(0xFFE5B869) else Color(0xFFC84B2A)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,

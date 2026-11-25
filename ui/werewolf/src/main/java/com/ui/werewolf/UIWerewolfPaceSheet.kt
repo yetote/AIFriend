@@ -109,7 +109,7 @@ fun UIWerewolfPaceSheet(
                 .fillMaxWidth()
                 .heightIn(max = 640.dp)
                 .clip(sheetShape)
-                .background(Color(0xFFF6F8FC))
+                .background(Color(0xFFF5F0E7))
                 .border(
                     width = 1.dp,
                     color = UIGlassStroke,
@@ -137,7 +137,7 @@ fun UIWerewolfPaceSheet(
                     .padding(bottom = 10.dp)
                     .size(width = 36.dp, height = 4.dp)
                     .clip(CircleShape)
-                    .background(Color(0x261B2B45))
+                    .background(Color(0x2E241C14))
             )
 
             Row(

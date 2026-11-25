@@ -1,41 +1,36 @@
 @file:OptIn(ExperimentalFoundationApi::class)
 
 package com.ui.home
-import com.ui.agent.UIFriendCrewList
-import com.ui.agent.UIFriendCrewStatusCard
-import com.ui.agent.UIFriendCreate
-import com.ui.agent.UIFriendBar
-import com.ui.common.pageInsetsBottom
-import com.ui.common.pageInsetsTop
-import com.ui.common.UIAvatar
-import com.ui.common.UIGroupAvatar
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Group
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -47,36 +42,54 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathOperation
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ui.agent.UIFriendBar
+import com.ui.agent.UIFriendCreate
+import com.ui.agent.UIFriendCrewList
+import com.ui.agent.UIFriendCrewStatusCard
+import com.ui.agent.UIFriendSearchBar
 import com.ui.agent.data.UIFriendListData
-import com.ui.room.data.UIRoomData
+import com.ui.common.UIAvatar
+import com.ui.common.UIGroupAvatar
+import com.ui.common.pageInsetsBottom
+import com.ui.common.pageInsetsTop
 import com.ui.common.theme.UIActionBrush
-import com.ui.common.theme.UIBlobBlue
 import com.ui.common.theme.UIActionSheet
 import com.ui.common.theme.UIActionSheetItem
+import com.ui.common.theme.UIAtelierBrass
+import com.ui.common.theme.UIAtelierBrassBg
+import com.ui.common.theme.UIAtelierJade
+import com.ui.common.theme.UIAtelierJadeBg
+import com.ui.common.theme.UIAtelierSand
+import com.ui.common.theme.UIBlobBlue
 import com.ui.common.theme.UIDialogButtons
-import com.ui.common.theme.UIIosDialog
-import com.ui.common.theme.UIGradientBackground
-import com.ui.common.theme.UIHeroBrush
-import com.ui.common.theme.UIRadiusCard
-import com.ui.common.theme.UIRadiusControl
-import com.ui.common.theme.UIWerewolfHeroBrush
-import com.ui.common.theme.uiCard
 import com.ui.common.theme.UIFriendBarCreateButtonBg
 import com.ui.common.theme.UIFriendBarCreateButtonText
 import com.ui.common.theme.UIFriendBarItemMetaColor
 import com.ui.common.theme.UIFriendBarRed
 import com.ui.common.theme.UIFriendBarSubtitleColor
-import com.ui.common.theme.UIFriendBarTitleColor
 import com.ui.common.theme.UIFriendBarTitleColor2
-import androidx.compose.foundation.border
-import androidx.compose.foundation.shape.CircleShape
+import com.ui.common.theme.UIGlassStroke
+import com.ui.common.theme.UIGlassSurfaceStrong
+import com.ui.common.theme.UIGradientBackground
+import com.ui.common.theme.UIIosDialog
+import com.ui.common.theme.UIRadiusCard
+import com.ui.common.theme.UIRadiusControl
+import com.ui.common.theme.UIWerewolfHeroBrush
+import com.ui.common.theme.uiCard
+import com.ui.room.data.UIRoomData
 
 @Composable
 fun UIFriendPage(
@@ -110,7 +123,6 @@ fun UIFriendPage(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                // 底部安全区作为滚动内容的一部分，键盘弹出时只增加一次底部空间
                 .pageInsetsBottom()
         ) {
             UIFriendBar(
@@ -119,14 +131,34 @@ fun UIFriendPage(
                 onAvatarClick = onPickUserAvatar,
                 onSettingsClick = onOpenSettings
             )
-            Spacer(Modifier.height(16.dp))
-            UIFriendCrewStatusCard(
-                onlineCount = createdCount,
-                title = createdCount,
-                activeCount = activeCount,
-                messageCount = messageCount,
-                mostActive = mostActive
+
+            // 搜索框置顶：打开首页第一眼就能搜好友 / 聊天室 / 模型
+            UIFriendSearchBar(
+                value = searchText,
+                onValueChange = onSearchTextChange,
+                modifier = Modifier.padding(horizontal = 16.dp)
             )
+
+            // 搜索为空时展示 Bento 指令台与脉搏条；正在搜索时自动收起，直达搜索结果
+            if (searchText.isBlank()) {
+                Spacer(Modifier.height(14.dp))
+                BentoCommandDeck(
+                    createdCount = createdCount,
+                    roomCount = rooms.size,
+                    onOpenWerewolf = onOpenWerewolf,
+                    onCreateFriend = onCreateClick,
+                    onCreateRoom = onCreateRoom
+                )
+                Spacer(Modifier.height(10.dp))
+                UIFriendCrewStatusCard(
+                    onlineCount = createdCount,
+                    title = createdCount,
+                    activeCount = activeCount,
+                    messageCount = messageCount,
+                    mostActive = mostActive
+                )
+            }
+
             Spacer(Modifier.height(18.dp))
             RoomSection(
                 rooms = rooms,
@@ -135,16 +167,16 @@ fun UIFriendPage(
                 onRoomClick = onRoomClick,
                 onRoomLongClick = { pendingRoomAction = it }
             )
-            Spacer(Modifier.height(18.dp))
-            WerewolfEntry(onClick = onOpenWerewolf)
+
             Spacer(Modifier.height(18.dp))
             UIFriendCreate(
                 createdCount = createdCount,
                 searchText = searchText,
                 onSearchTextChange = onSearchTextChange,
-                onCreateClick = onCreateClick
+                onCreateClick = onCreateClick,
+                showSearchBar = false
             )
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(4.dp))
             if (list.isEmpty()) {
                 EmptyFriends(hasSearch = searchText.isNotBlank(), onCreateClick = onCreateClick)
             } else {
@@ -154,12 +186,12 @@ fun UIFriendPage(
                     onItemLongClick = { pendingFriendAction = it }
                 )
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(14.dp))
             Text(
-                text = "长按好友可编辑或删除，长按聊天室可删除",
+                text = "长按好友可编辑或删除 · 长按聊天室可置顶或删除",
                 modifier = Modifier.fillMaxWidth(),
                 textAlign = TextAlign.Center,
-                fontSize = 12.sp,
+                fontSize = 11.5.sp,
                 color = UIFriendBarItemMetaColor
             )
             Spacer(Modifier.height(24.dp))
@@ -218,117 +250,220 @@ fun UIFriendPage(
 }
 
 /**
- * 狼人杀入口。
- *
- * 用深色卡片而不是又一条「+ 新建」：它和聊天室不是同一类操作——
- * 聊天室是「把问题问给几个人」，狼人杀是「让几个人互相骗」，值得一块独立的分量。
+ * 首页非对称双栏 Bento 指令台：
+ * 左侧 58% 烛影曜石「狼人杀剧场」主卡 + 右侧 42% 叠放「新建好友 / 新建群聊」快捷砖。
  */
 @Composable
-private fun WerewolfEntry(onClick: () -> Unit) {
-    Box(
+private fun BentoCommandDeck(
+    createdCount: Int,
+    roomCount: Int,
+    onOpenWerewolf: () -> Unit,
+    onCreateFriend: () -> Unit,
+    onCreateRoom: () -> Unit
+) {
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
-            .shadow(
-                16.dp,
-                RoundedCornerShape(UIRadiusCard),
-                clip = false,
-                ambientColor = Color(0x334E1930),
-                spotColor = Color(0x334E1930)
+            .height(IntrinsicSize.Min),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        WerewolfBentoCard(
+            onClick = onOpenWerewolf,
+            modifier = Modifier
+                .weight(1.25f)
+                .fillMaxHeight()
+        )
+        Column(
+            modifier = Modifier.weight(0.95f),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            QuickBentoTile(
+                icon = Icons.Default.Add,
+                iconBg = UIFriendBarCreateButtonBg,
+                iconTint = UIFriendBarCreateButtonText,
+                title = "新建好友",
+                subtitle = "已有 $createdCount 位角色",
+                onClick = onCreateFriend,
+                modifier = Modifier.fillMaxWidth()
             )
-            .clip(RoundedCornerShape(UIRadiusCard))
+            QuickBentoTile(
+                icon = Icons.Default.Group,
+                iconBg = UIAtelierJadeBg,
+                iconTint = UIAtelierJade,
+                title = "新建群聊",
+                subtitle = if (roomCount > 0) "$roomCount 间讨论室" else "多人同席畅聊",
+                onClick = onCreateRoom,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
+}
+
+@Composable
+private fun WerewolfBentoCard(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val shape = RoundedCornerShape(UIRadiusCard)
+    Box(
+        modifier = modifier
+            .shadow(
+                elevation = 10.dp,
+                shape = shape,
+                clip = false,
+                ambientColor = Color(0x382A1614),
+                spotColor = Color(0x382A1614)
+            )
+            .clip(shape)
             .background(UIWerewolfHeroBrush)
-            .border(0.75.dp, Color(0x3DFDE68A), RoundedCornerShape(UIRadiusCard))
+            .border(1.dp, Color(0x4DE5B869), shape)
             .clickable { onClick() }
     ) {
-        // 右上角微弱月辉光晕：暗夜推理的氛围点缀
-        Box(
+        // 右上角绘一弯古铜金月牙与暗红烛辉，与牌桌夜幕美学一脉相承
+        Canvas(
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .size(120.dp)
-                .background(
-                    Brush.radialGradient(
-                        listOf(Color(0x33F59E0B), Color(0x14E11D48), Color.Transparent)
-                    )
-                )
-        )
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 16.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .size(110.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(
-                        Brush.linearGradient(
-                            listOf(Color(0x3DF59E0B), Color(0x2AE11D48))
-                        )
-                    )
-                    .border(1.dp, Color(0x66FDE68A), CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "狼",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFFFEF3C7)
-                )
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(Color(0x38E5B869), Color(0x18C84B2A), Color.Transparent),
+                    center = Offset(size.width * 0.72f, size.height * 0.28f),
+                    radius = size.width * 0.65f
+                ),
+                radius = size.width * 0.65f,
+                center = Offset(size.width * 0.72f, size.height * 0.28f)
+            )
+            val moonCenter = Offset(size.width * 0.74f, size.height * 0.28f)
+            val r = 13.dp.toPx()
+            val disc = Path().apply { addOval(Rect(moonCenter, r)) }
+            val bite = Path().apply {
+                addOval(Rect(Offset(moonCenter.x + r * 0.52f, moonCenter.y - r * 0.36f), r * 0.92f))
             }
-            Spacer(Modifier.width(14.dp))
-            Column(modifier = Modifier.weight(1f)) {
+            disc.op(disc, bite, PathOperation.Difference)
+            drawPath(disc, color = Color(0xCCFFECC6))
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 15.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                 Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(Color(0x28E5B869))
+                        .border(0.6.dp, Color(0x4DE5B869), RoundedCornerShape(50))
+                        .padding(horizontal = 8.dp, vertical = 2.5.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
-                    Text(
-                        text = "狼人杀剧场",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
+                    Box(
+                        modifier = Modifier
+                            .size(5.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFE5B869))
                     )
                     Text(
-                        text = "NIGHT",
-                        fontSize = 9.sp,
+                        text = "6–12 人局",
+                        fontSize = 9.5.sp,
                         fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.8.sp,
-                        color = Color(0xFFFDE68A),
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(50))
-                            .background(Color(0x28F59E0B))
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                        letterSpacing = 0.4.sp,
+                        color = Color(0xFFF6D99C)
                     )
                 }
-                Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "挑几位好友围一桌，亲历逻辑博弈与暗夜推理",
-                    fontSize = 12.sp,
-                    color = Color.White.copy(alpha = 0.76f)
+                    text = "狼人杀剧场",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = Color(0xFFFFFBF4)
+                )
+                Text(
+                    text = "AI 围桌推理与博弈\n支持观战或亲身入局",
+                    fontSize = 11.5.sp,
+                    lineHeight = 16.sp,
+                    color = Color(0xFFDCD0C4)
                 )
             }
-            Spacer(Modifier.width(10.dp))
+
+            Spacer(Modifier.height(10.dp))
+
             Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(50))
-                    .background(Color(0xFFFDF8EE))
-                    .padding(start = 13.dp, end = 9.dp, top = 7.dp, bottom = 7.dp),
+                    .background(Color(0xFFFFFDF9))
+                    .padding(start = 11.dp, end = 7.dp, top = 5.5.dp, bottom = 5.5.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "开局",
-                    fontSize = 13.sp,
+                    text = "进入剧场",
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF2B1633)
+                    color = Color(0xFF2A1614)
                 )
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                     contentDescription = null,
-                    tint = Color(0xFF2B1633),
-                    modifier = Modifier.size(16.dp)
+                    tint = Color(0xFFC84B2A),
+                    modifier = Modifier.size(15.dp)
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun QuickBentoTile(
+    icon: ImageVector,
+    iconBg: Color,
+    iconTint: Color,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .uiCard(shape = RoundedCornerShape(18.dp), elevation = 2.dp)
+            .clickable { onClick() }
+            .padding(horizontal = 12.dp, vertical = 13.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(iconBg),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = title,
+                tint = iconTint,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+        Spacer(Modifier.width(9.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                color = UIFriendBarTitleColor2,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = subtitle,
+                fontSize = 10.5.sp,
+                color = UIFriendBarItemMetaColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }
@@ -352,20 +487,37 @@ private fun RoomSection(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "聊天室",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = UIFriendBarTitleColor2
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "聊天室",
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = UIFriendBarTitleColor2
+                )
+                if (rooms.isNotEmpty()) {
+                    Text(
+                        text = "${rooms.size}",
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(UIAtelierSand)
+                            .padding(horizontal = 7.dp, vertical = 2.dp),
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = UIFriendBarItemMetaColor
+                    )
+                }
+            }
             Text(
                 text = "+ 新建",
                 modifier = Modifier
-                    .clip(RoundedCornerShape(50))
+                    .clip(RoundedCornerShape(UIRadiusControl))
                     .background(UIFriendBarCreateButtonBg)
                     .clickable { onCreateRoom() }
-                    .padding(horizontal = 14.dp, vertical = 7.dp),
-                fontSize = 13.sp,
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                fontSize = 12.5.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = UIFriendBarCreateButtonText
             )
@@ -374,17 +526,18 @@ private fun RoomSection(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .uiCard(shape = RoundedCornerShape(UIRadiusControl), elevation = 4.dp)
+                    .uiCard(shape = RoundedCornerShape(16.dp), elevation = 2.dp)
                     .clickable(enabled = !hasSearch) { onCreateRoom() }
-                    .padding(horizontal = 14.dp, vertical = 13.dp)
+                    .padding(horizontal = 15.dp, vertical = 14.dp)
             ) {
                 Text(
                     text = if (hasSearch) {
                         "没有匹配的聊天室"
                     } else {
-                        "把多位好友拉进同一房间，一次提问、各自作答"
+                        "拉多位 AI 好友进同一间房，支持独立作答、讨论接话与共享纪要"
                     },
-                    fontSize = 13.sp,
+                    fontSize = 12.5.sp,
+                    lineHeight = 18.sp,
                     color = UIFriendBarItemMetaColor
                 )
             }
@@ -394,50 +547,71 @@ private fun RoomSection(
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 rooms.forEach { room ->
-                    Column(
+                    Row(
                         modifier = Modifier
+                            .widthIn(min = 166.dp, max = 224.dp)
                             .uiCard(
-                                shape = RoundedCornerShape(UIRadiusControl),
-                                elevation = 6.dp
+                                shape = RoundedCornerShape(16.dp),
+                                color = UIGlassSurfaceStrong,
+                                borderColor = if (room.pinned) UIAtelierBrass.copy(alpha = 0.45f) else UIGlassStroke,
+                                elevation = 2.dp
                             )
                             .combinedClickable(
                                 onClick = { onRoomClick(room) },
                                 onLongClick = { onRoomLongClick(room) }
                             )
-                            .padding(horizontal = 14.dp, vertical = 12.dp)
+                            .padding(horizontal = 12.dp, vertical = 11.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            // 房间自己设了头像就用头像；否则用成员头像拼成群头像。
-                            // 36dp 是拼图的下限：2x2 时每格约 17dp，再小成员脸就糊成一团了。
-                            if (room.avatarPath != null) {
-                                UIAvatar(
-                                    name = room.name,
-                                    avatarPath = room.avatarPath,
-                                    size = 36.dp,
-                                    shape = CircleShape
-                                )
-                            } else {
-                                UIGroupAvatar(members = room.memberAvatars, size = 36.dp)
-                            }
-                            Spacer(Modifier.width(10.dp))
-                            Column {
+                        if (room.avatarPath != null) {
+                            UIAvatar(
+                                name = room.name,
+                                avatarPath = room.avatarPath,
+                                size = 40.dp,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                        } else {
+                            UIGroupAvatar(
+                                members = room.memberAvatars,
+                                size = 40.dp,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f, fill = false)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
                                 Text(
                                     text = room.name,
                                     fontSize = 14.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = UIFriendBarTitleColor2
+                                    fontWeight = FontWeight.Bold,
+                                    color = UIFriendBarTitleColor2,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false)
                                 )
-                                Spacer(Modifier.height(3.dp))
-                                Text(
-                                    text = if (room.pinned) {
-                                        "置顶 · ${room.memberCount} 位好友"
-                                    } else {
-                                        "${room.memberCount} 位好友"
-                                    },
-                                    fontSize = 11.sp,
-                                    color = UIFriendBarItemMetaColor
-                                )
+                                if (room.pinned) {
+                                    Text(
+                                        text = "置顶",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = UIAtelierBrass,
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(5.dp))
+                                            .background(UIAtelierBrassBg)
+                                            .padding(horizontal = 5.dp, vertical = 1.dp)
+                                    )
+                                }
                             }
+                            Spacer(Modifier.height(3.dp))
+                            Text(
+                                text = "${room.memberCount} 位成员",
+                                fontSize = 11.sp,
+                                color = UIFriendBarItemMetaColor,
+                                maxLines = 1
+                            )
                         }
                     }
                 }
@@ -490,13 +664,13 @@ private fun EmptyFriends(hasSearch: Boolean, onCreateClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp)
-            .uiCard(shape = RoundedCornerShape(UIRadiusCard), elevation = 6.dp)
-            .padding(horizontal = 24.dp, vertical = 30.dp),
+            .uiCard(shape = RoundedCornerShape(UIRadiusCard), elevation = 2.dp)
+            .padding(horizontal = 24.dp, vertical = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
         Text(
-            text = if (hasSearch) "没有找到匹配的智能体" else "还没有 AI 好友",
+            text = if (hasSearch) "没有找到匹配的智能体" else "工坊里还没有 AI 好友",
             fontSize = 16.sp,
             fontWeight = FontWeight.Bold,
             color = UIFriendBarTitleColor2
@@ -504,21 +678,22 @@ private fun EmptyFriends(hasSearch: Boolean, onCreateClick: () -> Unit) {
         Spacer(Modifier.height(8.dp))
         Text(
             text = if (hasSearch) {
-                "换个关键词试试"
+                "换个关键词试试，或清空顶部搜索栏"
             } else {
-                "创建一个好友，给它一个名字、一个角色，选一个模型，然后开始聊天"
+                "为它选一个模型、写一段人设，即可随时开启 1 对 1 对话、多人群聊或狼人杀对局"
             },
-            fontSize = 13.sp,
+            fontSize = 12.5.sp,
+            lineHeight = 19.sp,
             color = UIFriendBarSubtitleColor,
             textAlign = TextAlign.Center
         )
         if (!hasSearch) {
             Spacer(Modifier.height(20.dp))
             Text(
-                text = "+ 创建 AI 好友",
+                text = "+ 创建第一位 AI 好友",
                 modifier = Modifier
-                    .shadow(8.dp, RoundedCornerShape(50), clip = false, ambientColor = UIBlobBlue, spotColor = UIBlobBlue)
-                    .clip(RoundedCornerShape(50))
+                    .shadow(6.dp, RoundedCornerShape(UIRadiusControl), clip = false, ambientColor = UIBlobBlue, spotColor = UIBlobBlue)
+                    .clip(RoundedCornerShape(UIRadiusControl))
                     .background(UIActionBrush)
                     .clickable { onCreateClick() }
                     .padding(horizontal = 22.dp, vertical = 11.dp),
@@ -539,9 +714,9 @@ private fun PUIFriendPage() {
                 "Echo",
                 "GPT-4o",
                 "产品策略顾问",
-                "墨刀",
+                "OpenAI",
                 "本月 3,841 次",
-                Color(0xFFF3F4F6),
+                Color(0xFFEED9B7),
                 Color(0xFF4B5563)
             ),
             UIFriendListData(
@@ -550,44 +725,8 @@ private fun PUIFriendPage() {
                 "创意灵感助手",
                 "阿里云",
                 "本月 2,970 次",
-                Color(0xFFDBEAFE),
+                Color(0xFFC8E0D4),
                 Color(0xFF1E40AF)
-            ),
-            UIFriendListData(
-                "Nova",
-                "GPT-4o",
-                "用户研究分析师",
-                "OpenAI",
-                "本月 2,412 次",
-                Color(0xFFD1FAE5),
-                Color(0xFF065F46)
-            ),
-            UIFriendListData(
-                "Kora",
-                "Gemini 1.5",
-                "品牌文案专家",
-                "Google",
-                "本月 1,901 次",
-                Color(0xFFECFDF5),
-                Color(0xFF047857)
-            ),
-            UIFriendListData(
-                "Atlas",
-                "Claude 3.5",
-                "项目执行搭档",
-                "Anthropic",
-                "本月 1,286 次",
-                Color(0xFFFEF3C7),
-                Color(0xFF92400E)
-            ),
-            UIFriendListData(
-                "Lumen",
-                "Doubao",
-                "内容校对助手",
-                "字节跳动",
-                "尚未启用",
-                Color(0xFFE5E7EB),
-                Color(0xFF374151)
             )
         )
     }

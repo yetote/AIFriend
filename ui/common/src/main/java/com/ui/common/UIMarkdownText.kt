@@ -317,7 +317,7 @@ fun UIMarkdownText(
         }
     }
     val onDark = color.luminance() > 0.5f
-    val inlineCodeBg = if (onDark) Color.White.copy(alpha = 0.14f) else Color(0x1417203A)
+    val inlineCodeBg = if (onDark) Color.White.copy(alpha = 0.14f) else Color(0x16241C14)
 
     if (blocks.size == 1 && blocks[0] is MdBlock.Prose) {
         val prose = blocks[0] as MdBlock.Prose
@@ -371,10 +371,10 @@ private fun MarkdownCodeBlock(
     code: String,
     onDark: Boolean,
 ) {
-    val bg = if (onDark) Color(0x38080D1C) else Color(0xFF151C32)
-    val border = if (onDark) Color.White.copy(alpha = 0.16f) else Color(0xFF283457)
-    val labelColor = Color(0xFF9EB0D8)
-    val codeColor = Color(0xFFEAF0FF)
+    val bg = if (onDark) Color(0x4014100D) else Color(0xFF1D1916)
+    val border = if (onDark) Color(0x2EF5EDE1) else Color(0xFF332B24)
+    val labelColor = Color(0xFFE5B869)
+    val codeColor = Color(0xFFF5EFE6)
     val shape = RoundedCornerShape(10.dp)
 
     Column(

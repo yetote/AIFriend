@@ -578,13 +578,14 @@ private fun ProviderRow(
         modifier = Modifier
             .fillMaxWidth()
             .uiCard(
-                shape = RoundedCornerShape(UIRadiusCard),
-                color = if (selected) UIFriendBarTagBgBlue.copy(alpha = 0.55f) else UIGlassSurfaceStrong,
+                shape = RoundedCornerShape(16.dp),
+                color = if (selected) UIFriendBarTagBgBlue.copy(alpha = 0.7f) else UIGlassSurfaceStrong,
                 borderColor = if (selected) {
-                    UIFriendBarCreateButtonText.copy(alpha = 0.45f)
+                    UIFriendBarCreateButtonText.copy(alpha = 0.55f)
                 } else {
                     UIGlassStroke
-                }
+                },
+                elevation = 2.dp
             )
             .clickable { onClick() }
             .padding(horizontal = 14.dp, vertical = 13.dp),
@@ -864,9 +865,9 @@ private fun ModelList(
 
 /** 价格档位对应的颜色，和创建页保持一致。 */
 private fun settingsPriceToneColor(tone: UIPriceTone?): Color = when (tone) {
-    UIPriceTone.CHEAP -> Color(0xFF0F9D58)
+    UIPriceTone.CHEAP -> Color(0xFF1F7A5A)
     UIPriceTone.NORMAL -> UIFriendBarItemMetaColor
-    UIPriceTone.EXPENSIVE -> Color(0xFFD97706)
+    UIPriceTone.EXPENSIVE -> Color(0xFFB87A1F)
     null -> UIFriendBarItemMetaColor
 }
 

@@ -29,7 +29,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.PlatformTextStyle
@@ -39,128 +38,46 @@ import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.ui.common.theme.UIActionBrush
-import com.ui.common.theme.UIBlobBlue
-import com.ui.common.theme.UIGlassSurfaceStrong
-import com.ui.common.theme.uiControl
+import com.ui.common.theme.UIAtelierSand
+import com.ui.common.theme.UIFriendBarCreateButtonBg
+import com.ui.common.theme.UIFriendBarCreateButtonText
 import com.ui.common.theme.UIFriendBarItemMetaColor
 import com.ui.common.theme.UIFriendBarTagTextBlue
 import com.ui.common.theme.UIFriendBarTitleColor2
+import com.ui.common.theme.UIGlassStroke
+import com.ui.common.theme.UIGlassSurfaceStrong
+import com.ui.common.theme.UIRadiusControl
+import com.ui.common.theme.uiControl
 
-
+/**
+ * 首页搜索栏（独立可复用）：置顶后用户无需翻过半屏即可快速检索好友、聊天室或模型。
+ */
 @Composable
-fun UIFriendCreate(
-    modifier: Modifier = Modifier,
-    createdCount: Int = 0,
-    searchText: String = "",
-    onSearchTextChange: (String) -> Unit = {},
-    onCreateClick: () -> Unit = {}
-) {
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp) // 使用 spacedBy 设置上下两块的间距
-    ) {
-        // --- 上半部分：标题区与创建按钮 ---
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // 左侧：标题 + 副标题
-            Column {
-                Text(
-                    text = "全部智能体",
-                    style = TextStyle(
-                        fontSize = 19.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = UIFriendBarTitleColor2,
-                        platformStyle = PlatformTextStyle(includeFontPadding = false),
-                        lineHeightStyle = LineHeightStyle(
-                            alignment = LineHeightStyle.Alignment.Center,
-                            trim = LineHeightStyle.Trim.Both
-                        )
-                    )
-                )
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                Text(
-                    text = "$createdCount 个已创建",
-                    style = TextStyle(
-                        fontSize = 13.sp,
-                        color = UIFriendBarItemMetaColor,
-                        platformStyle = PlatformTextStyle(includeFontPadding = false),
-                        lineHeightStyle = LineHeightStyle(
-                            alignment = LineHeightStyle.Alignment.Center,
-                            trim = LineHeightStyle.Trim.Both
-                        )
-                    )
-                )
-            }
-
-            // 右侧：“+ 创建”按钮
-            Row(
-                modifier = Modifier
-                    .shadow(8.dp, RoundedCornerShape(50), clip = false, ambientColor = UIBlobBlue, spotColor = UIBlobBlue)
-                    .clip(RoundedCornerShape(50))
-                    .background(UIActionBrush)
-                    .clickable { onCreateClick() }
-                    .padding(horizontal = 18.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(5.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = "创建",
-                    tint = Color.White,
-                    modifier = Modifier.size(16.dp)
-                )
-                Text(
-                    text = "创建",
-                    style = TextStyle(
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color.White,
-                        platformStyle = PlatformTextStyle(includeFontPadding = false)
-                    )
-                )
-            }
-        }
-
-        // --- 下半部分：搜索输入框 ---
-        CustomSearchBar(
-            value = searchText,
-            onValueChange = onSearchTextChange,
-            placeholder = "搜索昵称、角色、公司或聊天室"
-        )
-    }
-}
-
-// 自定义圆角搜索输入框组件
-@Composable
-private fun CustomSearchBar(
+fun UIFriendSearchBar(
     value: String,
     onValueChange: (String) -> Unit,
-    placeholder: String,
+    placeholder: String = "搜索好友、角色、聊天室或模型…",
     modifier: Modifier = Modifier
 ) {
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(46.dp)
-            .uiControl(shape = RoundedCornerShape(50), color = UIGlassSurfaceStrong)
-            .padding(horizontal = 16.dp),
+            .height(44.dp)
+            .uiControl(
+                shape = RoundedCornerShape(14.dp),
+                color = UIGlassSurfaceStrong,
+                borderColor = UIGlassStroke
+            )
+            .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
             imageVector = Icons.Default.Search,
             contentDescription = null,
             tint = UIFriendBarItemMetaColor,
-            modifier = Modifier.size(18.dp)
+            modifier = Modifier.size(17.dp)
         )
-        Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.width(9.dp))
         Box(
             modifier = Modifier.weight(1f),
             contentAlignment = Alignment.CenterStart
@@ -169,8 +86,8 @@ private fun CustomSearchBar(
                 Text(
                     text = placeholder,
                     style = TextStyle(
-                        fontSize = 14.sp,
-                        color = UIFriendBarItemMetaColor.copy(alpha = 0.75f),
+                        fontSize = 13.5.sp,
+                        color = UIFriendBarItemMetaColor.copy(alpha = 0.85f),
                         platformStyle = PlatformTextStyle(includeFontPadding = false)
                     )
                 )
@@ -195,7 +112,7 @@ private fun CustomSearchBar(
                 modifier = Modifier
                     .size(22.dp)
                     .clip(CircleShape)
-                    .background(UIFriendBarItemMetaColor.copy(alpha = 0.16f))
+                    .background(UIAtelierSand)
                     .clickable { onValueChange("") },
                 contentAlignment = Alignment.Center
             ) {
@@ -210,16 +127,108 @@ private fun CustomSearchBar(
     }
 }
 
+/**
+ * 全部智能体区块头（保留原签名兼容外部调用；首页现已将搜索栏上提，此处可选隐藏搜索框）。
+ */
+@Composable
+fun UIFriendCreate(
+    modifier: Modifier = Modifier,
+    createdCount: Int = 0,
+    searchText: String = "",
+    onSearchTextChange: (String) -> Unit = {},
+    onCreateClick: () -> Unit = {},
+    showSearchBar: Boolean = true
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "我的智能体",
+                    style = TextStyle(
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = UIFriendBarTitleColor2,
+                        platformStyle = PlatformTextStyle(includeFontPadding = false),
+                        lineHeightStyle = LineHeightStyle(
+                            alignment = LineHeightStyle.Alignment.Center,
+                            trim = LineHeightStyle.Trim.Both
+                        )
+                    )
+                )
+                Text(
+                    text = "$createdCount",
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(UIAtelierSand)
+                        .padding(horizontal = 7.dp, vertical = 2.dp),
+                    style = TextStyle(
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = UIFriendBarItemMetaColor,
+                        platformStyle = PlatformTextStyle(includeFontPadding = false)
+                    )
+                )
+            }
+
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(UIRadiusControl))
+                    .background(UIFriendBarCreateButtonBg)
+                    .clickable { onCreateClick() }
+                    .padding(horizontal = 12.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = "创建",
+                    tint = UIFriendBarCreateButtonText,
+                    modifier = Modifier.size(15.dp)
+                )
+                Text(
+                    text = "新建好友",
+                    style = TextStyle(
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = UIFriendBarCreateButtonText,
+                        platformStyle = PlatformTextStyle(includeFontPadding = false)
+                    )
+                )
+            }
+        }
+
+        if (showSearchBar) {
+            UIFriendSearchBar(
+                value = searchText,
+                onValueChange = onSearchTextChange
+            )
+        }
+    }
+}
+
 @Preview
 @Composable
 private fun PUIFriendCreate() {
     var query by remember { mutableStateOf("") }
 
-    Box(modifier = Modifier.background(Color(0xFFF7F9FC))) {
+    Box(modifier = Modifier.background(Color(0xFFF4EFE6))) {
         UIFriendCreate(
+            createdCount = 6,
             searchText = query,
             onSearchTextChange = { query = it },
-            onCreateClick = { /* 点击创建 */ }
+            onCreateClick = {}
         )
     }
 }

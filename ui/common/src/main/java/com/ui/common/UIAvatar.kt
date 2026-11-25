@@ -65,7 +65,7 @@ fun UIAvatar(
                 text = name.trim().take(1).ifEmpty { "?" },
                 fontSize = (size.value * 0.4f).sp,
                 fontWeight = FontWeight.Bold,
-                color = Color(0xFF374151)
+                color = Color(0xFF26201B)
             )
         }
     }

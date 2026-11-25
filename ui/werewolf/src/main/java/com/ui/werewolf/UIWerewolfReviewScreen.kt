@@ -81,16 +81,16 @@ import com.ui.werewolf.data.UITokenUsage
 // 不用来装饰。赢家横幅例外，那是整页唯一需要「一眼看到」的东西。
 // ---------------------------------------------------------------------------
 
-private val ReviewTitle = Color(0xFF0F172A)
-private val ReviewBody = Color(0xFF334155)
-private val ReviewDim = Color(0xFF64748B)
+private val ReviewTitle = Color(0xFF171411)
+private val ReviewBody = Color(0xFF3E362E)
+private val ReviewDim = Color(0xFF7B7166)
 
-private val WolfRed = Color(0xFFD92D4B)
-private val GodBlue = Color(0xFF4338CA)
-private val VillagerGray = Color(0xFF64748B)
+private val WolfRed = Color(0xFFC2302B)
+private val GodBlue = Color(0xFF2F5DA8)
+private val VillagerGray = Color(0xFF7B7166)
 
-private val WolfBanner = listOf(Color(0xFF180E1E), Color(0xFF5D192E))
-private val GoodBanner = listOf(Color(0xFF0F172A), Color(0xFF312E81))
+private val WolfBanner = listOf(Color(0xFF17100E), Color(0xFF5A1D19))
+private val GoodBanner = listOf(Color(0xFF171412), Color(0xFF283E66))
 
 /**
  * 复盘页。
@@ -490,8 +490,8 @@ private fun SelfStrip(line: String) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(UIRadiusControl))
-            .background(Color(0x142B5FD9))
-            .border(0.5.dp, Color(0x1F2B5FD9), RoundedCornerShape(UIRadiusControl))
+            .background(Color(0x142F5DA8))
+            .border(0.5.dp, Color(0x262F5DA8), RoundedCornerShape(UIRadiusControl))
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -530,8 +530,8 @@ private fun PromptCard(text: String) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(UIRadiusCard))
-            .background(Color.White)
-            .border(0.5.dp, Color(0x14202A46), RoundedCornerShape(UIRadiusCard))
+            .background(UIGlassSurfaceStrong)
+            .border(1.dp, UIGlassStroke, RoundedCornerShape(UIRadiusCard))
             .clickable { expanded = !expanded }
             .padding(horizontal = 14.dp, vertical = 11.dp)
     ) {

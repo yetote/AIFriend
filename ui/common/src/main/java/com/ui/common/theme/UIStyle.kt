@@ -5,15 +5,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.BlurredEdgeTreatment
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
@@ -24,71 +18,63 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
-/** 全站圆角体系：大气柔和的瓷白玻璃比例。 */
-val UIRadiusCard = 22.dp
-val UIRadiusSheet = 26.dp
-val UIRadiusBubble = 20.dp
-val UIRadiusBubbleTail = 6.dp
-val UIRadiusControl = 14.dp
-val UIRadiusTab = 14.dp
+/** 全站建筑感圆角体系：利落的方圆比例，取代臃肿的软糖大圆角。 */
+val UIRadiusCard = 20.dp
+val UIRadiusSheet = 24.dp
+val UIRadiusBubble = 18.dp
+val UIRadiusBubbleTail = 5.dp
+val UIRadiusControl = 12.dp
+val UIRadiusTab = 12.dp
 
-/** 玻璃层：通透瓷白，叠在极光渐变画布上具备细腻的空气感与边界。 */
-val UIGlassBar = Color(0xEEFFFFFF)
-val UIGlassSurface = Color(0xC8FFFFFF)
-val UIGlassSurfaceStrong = Color(0xF8FFFFFF)
-val UIGlassStroke = Color(0x160F172A)
-val UIGlassHighlight = Color(0xB3FFFFFF)
+/** 宣纸层与结构描边：实感纸面卡片 + 清晰 1dp 暖石细线，抛弃模糊灰白玻璃。 */
+val UIGlassBar = Color(0xF7FAF6EE)
+val UIGlassSurface = Color(0xFFF1ECE1)
+val UIGlassSurfaceStrong = Color(0xFFFFFDF9)
+val UIGlassStroke = Color(0x21241C14)
+val UIGlassHighlight = Color(0xCCFFFDF9)
 
-/** 输入框内胆：轻微下沉的冷雾底色，清晰区分可输入区域与卡片本体。 */
-val UIFieldFill = Color(0x0A0F172A)
+/** 输入框与内嵌区域底色：温润下沉的暖砂色调，与象牙卡片自然分层。 */
+val UIFieldFill = Color(0x0E241C14)
 
-/**
- * 输入条的基准高度：输入框和发送按钮共用。
- *
- * 两边都按内容自然撑开时，输入框会被字号和 padding 撑到 42dp 左右，
- * 而按钮是写死的另一个值，差一两 dp 就会看起来「差一点对不齐」。
- * 定一个常量让两边引用，才不会各算各的。
- *
- * 40dp 是单行输入条比较收的高度：再大整条输入区就显笨重，
- * 尤其外面还有卡片内边距和页面留白各一层。
- */
-val UIComposerHeight = 40.dp
+/** 输入条的基准高度：输入框和发送按钮严格等高对齐。 */
+val UIComposerHeight = 42.dp
 
-val UIShadowSoft = Color(0x160F172A)
-val UISeparator = Color(0x140F172A)
+val UIShadowSoft = Color(0x161F170F)
+val UISeparator = Color(0x14241C14)
 
-val UIGradientTop = Color(0xFFF8F9FD)
-val UIGradientMid = Color(0xFFF1F4FA)
-val UIGradientBottom = Color(0xFFE9EEF8)
+val UIGradientTop = Color(0xFFF8F5EE)
+val UIGradientMid = Color(0xFFF4EFE6)
+val UIGradientBottom = Color(0xFFECE5D8)
 
-val UIBlobBlue = Color(0x284F46E5)
-val UIBlobViolet = Color(0x207C3AED)
-private val UIBlobSky = Color(0x1C0EA5E9)
+/** 暖陶色投影与微光（保留原常量名兼容各模块引用）。 */
+val UIBlobBlue = Color(0x30C84B2A)
+val UIBlobViolet = Color(0x1FD4953B)
+private val UIWarmWash = Color(0x18D87B56)
+private val UIAmberWash = Color(0x14D4A048)
 
-/** 用户气泡渐变：暮靛星辉。 */
+/** 用户气泡渐变：浓墨炭棕，与暖象牙 AI 卡片形成杂志级高对比。 */
 val UIBubbleUserBrush = Brush.linearGradient(
-    listOf(Color(0xFF5B5CE6), Color(0xFF4338CA))
+    listOf(Color(0xFF28231E), Color(0xFF191512))
 )
 
-/** 主按钮渐变：暮靛星辉。 */
+/** 主按钮渐变：朱砂暖陶，克制而有温度的主行动锚点。 */
 val UIActionBrush = Brush.linearGradient(
-    listOf(Color(0xFF5B5CE6), Color(0xFF4338CA))
+    listOf(Color(0xFFD65836), Color(0xFFB83E1E))
 )
 
-/** Hero 卡片渐变：深邃黑曜石到暮夜靛蓝，自带丝绒光感。 */
+/** Hero / 暗色锚点卡渐变：深炭黑曜石到暖胡桃墨棕。 */
 val UIHeroBrush = Brush.linearGradient(
-    listOf(Color(0xFF0F172A), Color(0xFF1E294E), Color(0xFF312E81))
+    listOf(Color(0xFF191613), Color(0xFF251F1A), Color(0xFF2E241D))
 )
 
-/** 狼人杀特色入口渐变：暗夜绛紫到猩红月影，与日常助手卡拉开氛围。 */
+/** 狼人杀特色入口渐变：烛影曜石到绛红暗木，与古铜金月辉呼应。 */
 val UIWerewolfHeroBrush = Brush.linearGradient(
-    listOf(Color(0xFF151226), Color(0xFF2B1633), Color(0xFF4E1930))
+    listOf(Color(0xFF151110), Color(0xFF2A1614), Color(0xFF4A1D18))
 )
 
 /**
- * 全局极光画布：清透瓷白渐变 + 三团柔和弥散光晕。
- * 底色铺满整屏（含状态栏区域），传入的 modifier（通常是 insets）只作用于内容。
- * API 31 以下 blur 降级为无模糊，低透明度光晕依然柔和自然。
+ * 全局宣纸暖陶画布：干净温润的纸面渐变 + 极克制的双角暖光晕。
+ * 不再使用高糊大色块，让卡片边界、排版本身成为主角。
  */
 @Composable
 fun UIGradientBackground(
@@ -99,30 +85,27 @@ fun UIGradientBackground(
         modifier = Modifier
             .fillMaxSize()
             .background(Brush.verticalGradient(listOf(UIGradientTop, UIGradientMid, UIGradientBottom)))
+            .drawBehind {
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(UIWarmWash, Color.Transparent),
+                        center = Offset(size.width * 0.92f, size.height * 0.06f),
+                        radius = size.width * 0.72f
+                    ),
+                    radius = size.width * 0.72f,
+                    center = Offset(size.width * 0.92f, size.height * 0.06f)
+                )
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(UIAmberWash, Color.Transparent),
+                        center = Offset(size.width * 0.08f, size.height * 0.94f),
+                        radius = size.width * 0.65f
+                    ),
+                    radius = size.width * 0.65f,
+                    center = Offset(size.width * 0.08f, size.height * 0.94f)
+                )
+            }
     ) {
-        Box(
-            modifier = Modifier
-                .size(300.dp)
-                .offset(x = (-100).dp, y = (-50).dp)
-                .blur(100.dp, BlurredEdgeTreatment.Unbounded)
-                .background(UIBlobBlue, CircleShape)
-        )
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .size(220.dp)
-                .offset(x = 80.dp, y = 40.dp)
-                .blur(95.dp, BlurredEdgeTreatment.Unbounded)
-                .background(UIBlobSky, CircleShape)
-        )
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .size(320.dp)
-                .offset(x = 95.dp, y = 115.dp)
-                .blur(105.dp, BlurredEdgeTreatment.Unbounded)
-                .background(UIBlobViolet, CircleShape)
-        )
         Box(modifier = modifier.fillMaxSize()) {
             content()
         }
@@ -130,41 +113,33 @@ fun UIGradientBackground(
 }
 
 /**
- * 统一的卡片皮肤：外柔和投影 + 圆角裁切 + 瓷白底 + 精细描边。
- *
- * `.clip(shape)` 紧跟在 `shadow(..., clip = false)` 之后，既保住外发散投影，
- * 又让后续 `.clickable` 水波纹与内部色块严丝合缝地裁切在圆角之内。
+ * 统一的纸面卡片皮肤：轻投影 + 利落圆角 + 暖象牙实底 + 精细暖石描边。
  */
 fun Modifier.uiCard(
     shape: Shape = RoundedCornerShape(UIRadiusCard),
     color: Color = UIGlassSurfaceStrong,
     borderColor: Color = UIGlassStroke,
-    elevation: Dp = 10.dp
+    elevation: Dp = 3.dp
 ): Modifier = this
     .shadow(elevation, shape, clip = false, ambientColor = UIShadowSoft, spotColor = UIShadowSoft)
     .clip(shape)
     .background(color, shape)
-    .border(0.75.dp, borderColor, shape)
+    .border(1.dp, borderColor, shape)
 
-/** 控件级皮肤：更轻的投影，用于输入框、胶囊按钮与可点芯片。 */
+/** 控件级皮肤：用于输入框、方圆按钮与筛选芯片，触感紧凑利落。 */
 fun Modifier.uiControl(
     shape: Shape = RoundedCornerShape(UIRadiusControl),
     color: Color = UIGlassSurfaceStrong,
     borderColor: Color = UIGlassStroke
 ): Modifier = this
-    .shadow(4.dp, shape, clip = false, ambientColor = UIShadowSoft, spotColor = UIShadowSoft)
+    .shadow(1.5.dp, shape, clip = false, ambientColor = UIShadowSoft, spotColor = UIShadowSoft)
     .clip(shape)
     .background(color, shape)
-    .border(0.75.dp, borderColor, shape)
+    .border(1.dp, borderColor, shape)
 
-/**
- * 贴边栏的底部分割线。
- *
- * 通栏顶栏如果只是一块白底直接切到内容，边缘看起来像「被裁掉」而不是「到此为止」；
- * 补一条 0.5dp 极细线，边界就变成有意为之。用 drawBehind 画，不占布局高度。
- */
+/** 贴边栏的底部 0.75dp 建筑细线，用 drawBehind 绘制不占布局高度。 */
 fun Modifier.uiHairlineBottom(color: Color = UIGlassStroke): Modifier = drawBehind {
-    val stroke = 0.5.dp.toPx()
+    val stroke = 0.75.dp.toPx()
     drawLine(
         color = color,
         start = Offset(0f, size.height - stroke / 2f),

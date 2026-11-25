@@ -88,6 +88,7 @@ import androidx.compose.ui.unit.sp
 import com.ui.room.data.UIRoomMember
 import com.ui.room.data.UIRoomMessage
 import com.ui.common.theme.UIActionBrush
+import com.ui.common.theme.UIAtelierSand
 import com.ui.common.theme.UIBlobBlue
 import com.ui.common.theme.UIBubbleUserBrush
 import com.ui.common.theme.UIChatErrorBg
@@ -271,32 +272,38 @@ fun UIRoomChatPage(
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(top = 56.dp, start = 24.dp, end = 24.dp),
+                                    .padding(top = 36.dp, start = 12.dp, end = 12.dp)
+                                    .uiCard(shape = RoundedCornerShape(UIRadiusCard), elevation = 2.dp)
+                                    .padding(horizontal = 22.dp, vertical = 28.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
                                 Box(
                                     modifier = Modifier
-                                        .size(64.dp)
-                                        .clip(CircleShape)
-                                        .background(UIGlassSurfaceStrong)
-                                        .border(0.5.dp, UIGlassStroke, CircleShape),
+                                        .size(56.dp)
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(UIFriendBarTagBgBlue),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Text(text = "@", fontSize = 26.sp, color = UIFriendBarTagTextBlue)
+                                    Text(
+                                        text = "@",
+                                        fontSize = 26.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = UIFriendBarTagTextBlue
+                                    )
                                 }
-                                Spacer(Modifier.height(16.dp))
+                                Spacer(Modifier.height(14.dp))
                                 Text(
                                     text = "开始和 ${members.size} 位好友聊天",
                                     textAlign = TextAlign.Center,
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
                                     color = UIFriendBarTitleColor
                                 )
                                 Spacer(Modifier.height(6.dp))
                                 Text(
-                                    text = "输入 @ 可以只问某位成员，不 @ 则全员回答",
+                                    text = "输入 @ 可以只问某位成员，不 @ 则全员回答；支持在房间设置里开启讨论模式与共享纪要",
                                     textAlign = TextAlign.Center,
-                                    fontSize = 13.sp,
+                                    fontSize = 12.5.sp,
                                     lineHeight = 19.sp,
                                     color = UIFriendBarItemMetaColor
                                 )
@@ -567,8 +574,8 @@ private fun RoomTopBar(
     ) {
         Box(
             modifier = Modifier
-                .size(36.dp)
-                .uiControl(shape = CircleShape, color = UIGlassSurfaceStrong)
+                .size(38.dp)
+                .uiControl(shape = RoundedCornerShape(12.dp), color = UIGlassSurfaceStrong)
                 .clickable(onClick = onBack),
             contentAlignment = Alignment.Center
         ) {
@@ -580,15 +587,21 @@ private fun RoomTopBar(
             )
         }
         Spacer(Modifier.width(10.dp))
-        // 和首页卡片用同一套群头像：自己有头像优先，否则拼成员
         if (avatarPath != null) {
             UIAvatar(
                 name = roomName.ifBlank { "房间" },
                 avatarPath = avatarPath,
-                size = 38.dp
+                size = 38.dp,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.border(1.dp, UIGlassStroke, RoundedCornerShape(12.dp))
             )
         } else {
-            UIGroupAvatar(members = memberAvatars, size = 38.dp)
+            UIGroupAvatar(
+                members = memberAvatars,
+                size = 38.dp,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.border(1.dp, UIGlassStroke, RoundedCornerShape(12.dp))
+            )
         }
         Spacer(Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
@@ -729,7 +742,8 @@ private fun RoomMessageBubble(
                 name = message.senderName ?: "AI",
                 avatarPath = message.avatarPath,
                 size = 34.dp,
-                shape = CircleShape
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.border(1.dp, UIGlassStroke, RoundedCornerShape(10.dp))
             )
             Spacer(Modifier.width(8.dp))
         }
@@ -739,12 +753,12 @@ private fun RoomMessageBubble(
             if (!message.isUser) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(start = 6.dp, bottom = 4.dp)
+                    modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
                 ) {
                     Text(
                         text = message.senderName ?: "已移除",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium,
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.SemiBold,
                         color = UIFriendBarSubtitleColor
                     )
                     Spacer(Modifier.width(6.dp))
@@ -762,9 +776,6 @@ private fun RoomMessageBubble(
                     modifier = Modifier.padding(end = 6.dp, bottom = 3.dp)
                 )
             }
-            // 气泡形状只在这里算一次。原来 shadow / clip / border 各自手写一遍圆角，
-            // 结果 border 那处漏了「尾巴角」，按四角 20dp 画，裁切却是 6dp，
-            // 于是在气泡内侧左下角多出一条悬空的弧线。收成一个变量就不会再漏。
             val bubbleShape = RoundedCornerShape(
                 topStart = UIRadiusBubble,
                 topEnd = UIRadiusBubble,
@@ -773,9 +784,9 @@ private fun RoomMessageBubble(
             )
             Box(
                 modifier = Modifier
-                    .widthIn(max = 268.dp)
+                    .widthIn(max = 280.dp)
                     .shadow(
-                        elevation = 6.dp,
+                        elevation = if (message.isUser) 4.dp else 2.dp,
                         shape = bubbleShape,
                         clip = false,
                         ambientColor = UIShadowSoft,
@@ -789,16 +800,15 @@ private fun RoomMessageBubble(
                         } else {
                             Modifier
                                 .background(UIGlassSurfaceStrong)
-                                .border(0.5.dp, UIGlassStroke, bubbleShape)
+                                .border(1.dp, UIGlassStroke, bubbleShape)
                         }
                     )
-                    .padding(horizontal = 14.dp, vertical = 10.dp)
+                    .padding(horizontal = 14.dp, vertical = 11.dp)
             ) {
                 Column {
                     message.reasoning?.takeIf { it.isNotBlank() }?.let { reasoning ->
                         RoomReasoningBlock(
                             reasoning = reasoning,
-                            // 只想还没开始说时默认展开，否则气泡里除了折叠条什么都没有
                             expandedByDefault = message.isStreaming && message.content.isBlank(),
                             thinking = message.isStreaming && message.content.isBlank(),
                             tokenLabel = message.tokenLabel,
@@ -813,7 +823,7 @@ private fun RoomMessageBubble(
                                 text = message.content,
                                 fontSize = 15.sp,
                                 lineHeight = 22.sp,
-                                color = Color.White
+                                color = Color(0xFFFFFBF4)
                             )
                         } else {
                             UIMarkdownText(
@@ -840,7 +850,8 @@ private fun RoomMessageBubble(
                 name = "我",
                 avatarPath = userAvatarPath,
                 size = 34.dp,
-                shape = CircleShape
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.border(1.dp, UIGlassStroke, RoundedCornerShape(10.dp))
             )
         }
     }
@@ -860,7 +871,8 @@ private fun RoomReasoningBlock(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
-            .background(UIFieldFill)
+            .background(UIAtelierSand.copy(alpha = 0.65f))
+            .border(0.75.dp, UIGlassStroke, RoundedCornerShape(10.dp))
             .padding(horizontal = 10.dp, vertical = 8.dp)
     ) {
         Row(
@@ -869,10 +881,17 @@ private fun RoomReasoningBlock(
                 .clickable { expanded = !expanded },
             verticalAlignment = Alignment.CenterVertically
         ) {
+            Box(
+                modifier = Modifier
+                    .size(width = 3.dp, height = 11.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(UIFriendBarTagTextBlue)
+            )
+            Spacer(Modifier.width(6.dp))
             Text(
                 text = if (thinking) "正在思考…" else "思考过程",
                 fontSize = 11.sp,
-                fontWeight = FontWeight.Medium,
+                fontWeight = FontWeight.SemiBold,
                 color = UIFriendBarItemMetaColor
             )
             Spacer(Modifier.weight(1f))
@@ -887,6 +906,7 @@ private fun RoomReasoningBlock(
             Text(
                 text = if (expanded) "收起" else "展开",
                 fontSize = 10.sp,
+                fontWeight = FontWeight.Medium,
                 color = UIFriendBarTagTextBlue
             )
         }
@@ -1062,37 +1082,31 @@ private fun RoomInputBar(
     }
 
     Row(
-        // 不再用整条通栏白底：那是一块和聊天气泡、卡片体系无关的直角白墙。
-        // 改成浮在渐变上的圆角玻璃条，和页面里其他卡片用同一套语言（圆角 + 描边 + 柔和投影）。
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .padding(horizontal = 12.dp, vertical = 8.dp)
             .uiCard(
                 shape = RoundedCornerShape(UIRadiusCard),
-                color = UIGlassBar,
-                elevation = 12.dp
+                color = UIGlassSurfaceStrong,
+                elevation = 5.dp
             )
-            .padding(horizontal = 10.dp, vertical = 6.dp),
+            .padding(horizontal = 10.dp, vertical = 7.dp),
         verticalAlignment = Alignment.Bottom
     ) {
         Box(
             modifier = Modifier
                 .weight(1f)
-                // 外层已经是白卡，内层再压一块纯白 + 投影会糊成一片；
-                // 改成浅灰底的凹陷胶囊，输入区才和卡片分得开
-                .clip(RoundedCornerShape(UIRadiusBubble))
-                .background(UIFieldFill)
-                .border(0.5.dp, UIGlassStroke, RoundedCornerShape(UIRadiusBubble))
-                // 和发送按钮共用同一个基准高度：单行时两者严格等高，
-                // 多行时输入框自己长高，按钮仍对齐底部
+                .clip(RoundedCornerShape(14.dp))
+                .background(UIAtelierSand.copy(alpha = 0.72f))
+                .border(0.8.dp, UIGlassStroke, RoundedCornerShape(14.dp))
                 .heightIn(min = UIComposerHeight)
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(horizontal = 14.dp, vertical = 9.dp),
             contentAlignment = Alignment.CenterStart
         ) {
             if (input.isEmpty()) {
                 Text(
-                    text = "说点什么…",
-                    fontSize = 15.sp,
+                    text = "说点什么…（输入 @ 点名提问）",
+                    fontSize = 14.5.sp,
                     color = UIFriendBarItemMetaColor
                 )
             }
@@ -1126,23 +1140,23 @@ private fun RoomInputBar(
             )
         }
         Spacer(Modifier.width(8.dp))
+        val btnShape = RoundedCornerShape(14.dp)
         Box(
             modifier = Modifier
-                // 与输入框共用基准高度，单行时严格等高
                 .size(UIComposerHeight)
                 .shadow(
-                    elevation = if (canSend) 8.dp else 0.dp,
-                    shape = CircleShape,
+                    elevation = if (canSend) 6.dp else 0.dp,
+                    shape = btnShape,
                     clip = false,
                     ambientColor = UIBlobBlue,
                     spotColor = UIBlobBlue
                 )
-                .clip(CircleShape)
+                .clip(btnShape)
                 .then(
                     if (canSend) {
                         Modifier.background(UIActionBrush)
                     } else {
-                        Modifier.background(UIChatSendDisabled.copy(alpha = 0.6f))
+                        Modifier.background(UIChatSendDisabled.copy(alpha = 0.65f))
                     }
                 )
                 .clickable(enabled = canSend) { onSend() },

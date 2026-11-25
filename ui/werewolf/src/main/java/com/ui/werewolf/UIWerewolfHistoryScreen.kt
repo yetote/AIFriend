@@ -67,6 +67,7 @@ import com.ui.common.theme.UIRadiusCard
 import com.ui.common.theme.UIRadiusControl
 import com.ui.common.theme.UISeparator
 import com.ui.common.theme.UITopBar
+import com.ui.common.theme.UIWerewolfHeroBrush
 import com.ui.common.theme.uiCard
 import com.ui.werewolf.data.UIWerewolfNotice
 import com.ui.werewolf.data.UIWerewolfRecast
@@ -469,12 +470,11 @@ private fun ResumeCard(
                 spotColor = UIBlobBlue
             )
             .clip(cardShape)
-            .background(UIHeroBrush)
+            .background(UIWerewolfHeroBrush)
             .drawBehind {
-                // 右上角极淡光斑，模拟月华照在深蓝牌桌上的层次感
                 drawCircle(
                     brush = Brush.radialGradient(
-                        colors = listOf(Color(0x30FFFFFF), Color.Transparent),
+                        colors = listOf(Color(0x35E5B869), Color.Transparent),
                         center = Offset(size.width * 0.90f, size.height * 0.14f),
                         radius = size.width * 0.45f,
                     ),
@@ -482,7 +482,7 @@ private fun ResumeCard(
                     center = Offset(size.width * 0.90f, size.height * 0.14f),
                 )
             }
-            .border(0.8.dp, Color(0x38FFFFFF), cardShape)
+            .border(1.dp, Color(0x4AE5B869), cardShape)
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
