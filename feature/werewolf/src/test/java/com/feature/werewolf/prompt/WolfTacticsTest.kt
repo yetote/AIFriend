@@ -83,14 +83,21 @@ class WolfTacticsTest {
             roles = roles,
         )
 
-        val wolf = WerewolfPrompt.systemPrompt(game, seat = 1)
-        assertTrue("狼要看得到菜单", wolf.contains("倒钩狼"))
-        assertTrue("狼要看得到反水战术", wolf.contains("反水做身份"))
-        assertTrue("狼要看得到盗银水战术", wolf.contains("悍跳女巫盗银水"))
+        val chatGame = game.copy(phase = com.feature.werewolf.game.Phase.NIGHT_WOLF_CHAT)
+        val wolfChat = WerewolfPrompt.systemPrompt(chatGame, seat = 1)
+        assertTrue("狼队夜聊要看得到菜单", wolfChat.contains("倒钩狼"))
+        assertTrue("狼队夜聊要看得到反水战术", wolfChat.contains("反水做身份"))
+        assertTrue("狼队夜聊要看得到盗银水战术", wolfChat.contains("悍跳女巫盗银水"))
+
+        val wolfKnife = WerewolfPrompt.systemPrompt(game.copy(phase = com.feature.werewolf.game.Phase.NIGHT_WOLF), seat = 1)
+        assertFalse("定刀阶段商议已结束，不再注入 11 套战术菜单省 token", wolfKnife.contains("【狼队打法菜单】"))
+
+        val wolfDay = WerewolfPrompt.systemPrompt(game.copy(phase = com.feature.werewolf.game.Phase.DAY_DISCUSSION), seat = 1)
+        assertFalse("白天也不再注入战术菜单", wolfDay.contains("【狼队打法菜单】"))
 
         // 好人看到「倒钩」就等于被告知狼队在分角色，这条必须在狼那一段里
         (4..10).forEach { seat ->
-            val good = WerewolfPrompt.systemPrompt(game, seat)
+            val good = WerewolfPrompt.systemPrompt(chatGame, seat)
             assertFalse("$seat 号不该看到狼队打法", good.contains("倒钩狼"))
             assertFalse("$seat 号不该看到反水战术", good.contains("反水做身份"))
             assertFalse("$seat 号不该看到盗银水战术", good.contains("悍跳女巫盗银水"))

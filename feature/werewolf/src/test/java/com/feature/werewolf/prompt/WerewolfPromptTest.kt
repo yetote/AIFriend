@@ -337,16 +337,34 @@ class WerewolfPromptTest {
         assertFalse("白天不该倾倒 11 套狼队打法菜单", wolfSignup.contains("【狼队打法菜单】"))
         assertFalse("白天不该倾倒夜间守卫博弈", wolfSignup.contains("【和守卫博弈】"))
 
-        // 夜间依然提供完整战术菜单、守卫博弈与公平屠边账
-        val wolfNight = WerewolfPrompt.systemPrompt(
-            gameWithGuard().copy(phase = Phase.NIGHT_WOLF_CHAT),
+        // 夜间商议（NIGHT_WOLF_CHAT）给战术菜单；定刀阶段（NIGHT_WOLF）不再重复塞 11 套战术省 token
+        val wolfChat = WerewolfPrompt.systemPrompt(
+            gameWithGuard().copy(phase = Phase.NIGHT_WOLF_CHAT, nightHead = 1),
             seat = 1,
         )
-        assertTrue("夜聊要给狼队打法菜单", wolfNight.contains("【狼队打法菜单】"))
-        assertTrue("夜聊要给守卫博弈", wolfNight.contains("【和守卫博弈】"))
-        assertTrue("夜聊要给公平屠边账", wolfNight.contains("【屠边账"))
-        // 暗牌公平性：屠边账绝不偷看死人秘密底牌报出「平民这边更近：再打 X 刀」
-        assertFalse("屠边账不该偷看暗牌替狼算精确剩余刀数", wolfNight.contains("再打 2 刀就能打穿"))
+        assertTrue("夜聊要给狼队打法菜单", wolfChat.contains("【狼队打法菜单】"))
+        assertTrue("夜聊要给守卫博弈", wolfChat.contains("【和守卫博弈】"))
+        assertTrue("夜聊要给公平屠边账", wolfChat.contains("【屠边账"))
+        assertFalse("屠边账不该偷看暗牌替狼算精确剩余刀数", wolfChat.contains("再打 2 刀就能打穿"))
+
+        val wolfKnife = WerewolfPrompt.systemPrompt(
+            gameWithGuard().copy(phase = Phase.NIGHT_WOLF),
+            seat = 1,
+        )
+        assertFalse("定刀阶段不需要 11 套战术菜单", wolfKnife.contains("【狼队打法菜单】"))
+        assertTrue("定刀阶段仍保留守卫博弈与公平屠边账", wolfKnife.contains("【和守卫博弈】") && wolfKnife.contains("【屠边账"))
+
+        // 双向警徽流 + 盘狼坑 + 警上发金水退水警报 + 4 狼经典配比
+        val seerDay = WerewolfPrompt.systemPrompt(gameWithGuard().copy(phase = Phase.DAY_DISCUSSION), seat = 3)
+        assertTrue("预言家教双向警徽流", seerDay.contains("双向警徽流"))
+        assertTrue("白天读人教盘齐全部狼坑", seerDay.contains("盘齐全部狼坑"))
+        assertTrue("移交警徽决策提醒预言家按双向警徽流传递验人", WerewolfDecisions.badgeTransfer(gameWithGuard(), seat = 3).instruction.contains("双向警徽流"))
+
+        val guard12Chat = WerewolfPrompt.systemPrompt(
+            deal(WerewolfBoards.configOf(WerewolfBoards.GUARD_12)).copy(phase = Phase.NIGHT_WOLF_CHAT, nightHead = 1),
+            seat = 1,
+        )
+        assertTrue("多人狼队头狼有经典配比建议", guard12Chat.contains("1 悍跳 + 1 冲锋 + 1-2 倒钩/深水"))
     }
 
     @Test

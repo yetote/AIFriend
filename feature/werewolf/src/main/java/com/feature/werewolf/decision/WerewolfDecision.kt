@@ -337,10 +337,15 @@ object WerewolfDecisions {
         } else {
             "reason 会被当成你的遗言公开说出来，用 1-2 句中文交代你的判断。"
         }
+        val seerFlowHint = if (!free && game.playerAt(seat).role == WerewolfRole.SEER) {
+            "如果你提前约定过双向警徽流，请严格按约定移交或撕掉警徽，把最新查验结果传递给好人。"
+        } else {
+            ""
+        }
         return StructuredSpec(
             instruction = lead + "输出 {\"target\": 座位号或 null, \"reason\": \"一句话理由\"}。" +
                 "target 是你把警徽交给的人，只能从 ${list(valid)} 中选；" +
-                "想撕掉警徽（谁也不给）就填 null。" + tail +
+                "想撕掉警徽（谁也不给）就填 null。" + tail + seerFlowHint +
                 if (free) "" else "注意：把警徽交给一个可能是狼的人，比撕掉更糟。",
             serializer = VoteChoice.serializer(),
             validate = { it.target == null || it.target in valid },

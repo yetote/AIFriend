@@ -86,8 +86,13 @@ internal object WolfKit : RoleKit {
             if (head != null) {
                 lines += if (head == seat) {
                     if (guided) {
+                        val ratioHint = if (mates.size >= 2) {
+                            "多人狼队经典配比为 1 悍跳 + 1 冲锋 + 1-2 倒钩/深水（忌全员倒钩孤立悍跳，也忌全员冲锋一锅端）。"
+                        } else {
+                            ""
+                        }
                         "**今晚你是头狼（狼队指挥）**：你先发言。给出一套具体可执行的方案——" +
-                            "今晚刀谁与理由、白天谁上警悍跳预言家（其余狼留警下投票、绝不抢跳）、谁冲锋、谁划水。"
+                            "今晚刀谁与理由、白天谁上警悍跳预言家（其余狼留警下投票、绝不抢跳）、谁冲锋、谁倒钩/划水。" + ratioHint
                     } else {
                         "**今晚你是头狼**：你先发言。带着队友统一今晚目标与白天分工。"
                     }
@@ -117,8 +122,11 @@ internal object WolfKit : RoleKit {
             if (guided) {
                 lines += WolfKillBrief.of(game)
                 lines += WolfSideMath.of(game)
-                lines += "【狼队打法菜单】头狼从下面挑一套具体分工并点名谁执行，挑定后白天统一照演、别中途变卦："
-                lines += WolfTactics.menu(game.config)
+                // 战术菜单只在商议阶段（NIGHT_WOLF_CHAT）注入，定刀表决阶段（NIGHT_WOLF）已经达成共识，不再重复灌 11 套战术省 token
+                if (game.phase == Phase.NIGHT_WOLF_CHAT) {
+                    lines += "【狼队打法菜单】头狼从下面挑一套具体分工并点名谁执行，挑定后白天统一照演、别中途变卦："
+                    lines += WolfTactics.menu(game.config)
+                }
             }
         } else {
             lines += "白天**一个字都不许提你们刀过谁**，也别刻意回避他。"

@@ -329,8 +329,8 @@ object WerewolfPrompt {
         includeReading: Boolean = true,
         readingScope: ReadingTells.Scope = ReadingTells.Scope.ALL,
     ): String = buildString {
-        append("【基本打法】以可核对事实和阵营胜负为准，冲突时优先于说话人设：\n")
-        append("· 每轮发言都要带来新信息（新依据、回应质疑或解释票向），不复读旧话；被指认先正面回应具体质疑再反打。\n")
+        append("【基本打法】这是一场阵营对抗的推理游戏，不要客气和稀泥，以可核对事实和阵营胜负为准：\n")
+        append("· 每轮发言都要给出清晰的怀疑对象、推进方向与新信息（新依据、回应质疑或解释票向），不复读旧话；被指认先正面回应具体质疑再反打。\n")
         if (config.has(WerewolfRole.GUARD)) {
             Roles.of(WerewolfRole.GUARD).publicStrategy(WerewolfRole.GUARD)?.let {
                 append("· ").append(it).append("\n")
