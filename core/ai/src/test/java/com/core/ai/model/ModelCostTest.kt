@@ -43,6 +43,9 @@ class ModelCostTest {
         assertEquals(ModelCost.LIGHT, ModelCosts.fromName("qwen3.8-flash"))
         assertEquals(ModelCost.LIGHT, ModelCosts.fromName("mimo-v2.6-flash"))
         assertEquals(ModelCost.LIGHT, ModelCosts.fromName("glm-4.7-flash"))
+        assertEquals(ModelCost.LIGHT, ModelCosts.fromName("gemini-3.5-flash-lite"))
+        assertEquals(ModelCost.LIGHT, ModelCosts.fromName("gemma-4-31b-it"))
+        assertEquals(ModelCost.LIGHT, ModelCosts.fromName("gemma-4-26b-a4b-it"))
     }
 
     @Test

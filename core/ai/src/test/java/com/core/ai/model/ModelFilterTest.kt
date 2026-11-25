@@ -60,13 +60,19 @@ class ModelFilterTest {
     }
 
     @Test
-    fun `gemini strips models prefix and drops embeddings`() {
+    fun `gemini strips models prefix, keeps gemma-4, and drops non-chat models`() {
         val raw = """
             {
               "object": "list",
               "data": [
                 {"id": "models/gemini-2.5-flash", "object": "model"},
                 {"id": "models/gemini-2.5-pro", "object": "model"},
+                {"id": "models/gemini-3.5-flash-lite", "object": "model"},
+                {"id": "models/gemini-4-hydrogen", "object": "model"},
+                {"id": "models/gemma-4-31b-it", "object": "model"},
+                {"id": "models/gemma-4-26b-a4b-it", "object": "model"},
+                {"id": "models/gemma-3-27b-it", "object": "model"},
+                {"id": "models/gemini-decision-1", "object": "model"},
                 {"id": "models/text-embedding-004", "object": "model"},
                 {"id": "models/gemini-embedding-001", "object": "model"},
                 {"id": "models/gemini-3.8-live", "object": "model"},
@@ -78,8 +84,15 @@ class ModelFilterTest {
         val response = json.decodeFromString<GeminiModelResponse>(raw)
 
         assertEquals(
-            listOf("gemini-2.5-flash", "gemini-2.5-pro"),
-            response.geminiModelList.toChatModelIds()
+            listOf(
+                "gemini-2.5-flash",
+                "gemini-2.5-pro",
+                "gemini-3.5-flash-lite",
+                "gemini-4-hydrogen",
+                "gemma-4-31b-it",
+                "gemma-4-26b-a4b-it",
+            ),
+            response.toChatModelIds()
         )
     }
 }

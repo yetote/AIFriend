@@ -111,7 +111,7 @@ object ModelCosts {
      * 这类词放进「免费池」，用户关了付费开关照样会花钱。
      */
     private val BUDGET_MARKS = setOf(
-        "flash", "lite", "mini", "nano", "small", "air", "tiny",
+        "flash", "lite", "mini", "nano", "small", "air", "tiny", "gemma",
         "极速", "轻量"
     )
 }

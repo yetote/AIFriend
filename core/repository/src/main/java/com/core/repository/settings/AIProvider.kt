@@ -292,13 +292,21 @@ object AIProviderCatalog {
     val Gemini = AIProvider(
         id = "gemini",
         name = "Gemini",
-        description = "Google Gemini，走 OpenAI 兼容层",
+        description = "Google AI Studio（Gemini / Gemma 4），走 OpenAI 兼容层",
         baseUrl = URL_GEMINI,
         consoleUrl = "https://aistudio.google.com/app/apikey",
-        fallbackModels = listOf("gemini-3.8-flash", "gemini-3.7-flash", "gemini-flash-latest"),
+        fallbackModels = listOf(
+            "gemini-3.5-flash-lite",
+            "gemini-3.1-flash-lite",
+            "gemini-3.8-flash",
+            "gemini-4-hydrogen",
+            "gemma-4-31b-it",
+            "gemma-4-26b-a4b-it",
+            "gemini-flash-latest",
+        ),
         company = "Google",
-        thinkingSwitchable = false,
-        ownModelPrefixes = listOf("gemini"),
+        thinkingSwitchable = true,
+        ownModelPrefixes = listOf("gemini", "gemma"),
     )
 
     // ---------- 聚合平台 ----------

@@ -79,7 +79,7 @@ private val NON_CHAT_MARKERS = listOf(
 /** 明显是对话模型的标记，用来在拿不准时保留而不是误删。 */
 private val CHAT_MARKERS = listOf(
     "chat", "instruct", "deepseek", "qwen", "glm", "kimi", "moonshot",
-    "gpt", "claude", "gemini", "llama", "mistral", "yi-", "minimax",
+    "gpt", "claude", "gemini", "gemma", "llama", "mistral", "yi-", "minimax",
     "internlm", "baichuan", "doubao", "hunyuan", "step-", "spark"
 )
 

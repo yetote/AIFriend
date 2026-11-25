@@ -435,20 +435,34 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
             val result = WebRepository.instance.getModel<OpenAIModelResponse>(config)
 
             result.onSuccess { response ->
-                // 聚合平台的价格分两路：OpenRouter 在模型上自带 pricing，
-                // 硅基流动没有，靠内置快照补。查不到的留 null，不编价。
-                val priced = response.modelList
-                    .toSelectableChatModelsWithPrices()
-                    .map { model ->
-                        val price = model.price ?: ModelPrices.lookup(provider.id, model.id)
-                        val currency = ModelPrices.currencyOf(provider.id)
-                        UISettingsModel(
-                            id = model.id,
-                            price = price?.format(currency),
-                            tone = price?.tier(currency)?.toUITone(),
-                            bands = price?.bandLabels(currency).orEmpty()
-                        )
-                    }
+                val priced = if (provider.id == AIProviderCatalog.Gemini.id) {
+                    // Gemini 的 /v1beta/openai/models 返回带 models/ 前缀的 id，且混着 Live / Omni /
+                    // TTS / Decisions API 等非对话模型；与 AIGemini 共用同一套过滤规则，并放行 Gemma 4。
+                    com.core.ai.model.GeminiModelResponse(
+                        geminiModelList = response.modelList.map {
+                            com.core.ai.model.GeminiModel(
+                                id = it.id,
+                                type = it.type,
+                                ownedBy = it.ownedBy,
+                            )
+                        }
+                    ).toChatModelIds().map { UISettingsModel(id = it) }
+                } else {
+                    // 聚合平台的价格分两路：OpenRouter 在模型上自带 pricing，
+                    // 硅基流动没有，靠内置快照补。查不到的留 null，不编价。
+                    response.modelList
+                        .toSelectableChatModelsWithPrices()
+                        .map { model ->
+                            val price = model.price ?: ModelPrices.lookup(provider.id, model.id)
+                            val currency = ModelPrices.currencyOf(provider.id)
+                            UISettingsModel(
+                                id = model.id,
+                                price = price?.format(currency),
+                                tone = price?.tier(currency)?.toUITone(),
+                                bands = price?.bandLabels(currency).orEmpty()
+                            )
+                        }
+                }
 
                 val models = priced.map { it.id }.ifEmpty { provider.fallbackModels }
 
