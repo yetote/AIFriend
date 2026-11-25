@@ -73,10 +73,21 @@ object RoundBoard {
                 } else {
                     append("本轮第 ").append(index + 1).append(" 个发言。")
                     if (spoken.isNotEmpty()) {
-                        append("前面 ").append(spoken.joinToString("-")).append(" 已经说过。\n")
-                    } else {
-                        append("\n")
+                        append("前面 ").append(spoken.joinToString("-")).append(" 已经说过。")
                     }
+                    val onceHint = when (game.phase) {
+                        Phase.DAY_DISCUSSION ->
+                            "本轮每人仅发言一次，你说完即流转下一位，投票前不会再轮回给你补充或插话（别说「等别人说完我再补充」）。"
+                        Phase.DAY_SHERIFF_SPEECH ->
+                            "本轮每人仅发言一次，你说完即流转下一位，退水与警长投票前不会再轮回给你补充或插话。"
+                        Phase.NIGHT_WOLF_CHAT ->
+                            "本轮夜聊每人仅发言一次，你说完即流转下一位队友（除非狼刀平票加商），请一次性把刀口与白天分工说清楚。"
+                        Phase.DAY_LAST_WORDS ->
+                            "遗言仅有这一次机会，说完即离场。"
+                        else ->
+                            "本轮每人仅发言一次，说完即流转下一位，不会再轮回给你补充。"
+                    }
+                    append(onceHint).append("\n")
                 }
             }
         }

@@ -128,4 +128,34 @@ class RoundBoardTest {
         // 不给就一点都不能有：复盘、测试的提示词必须还是原样
         assertTrue(!WerewolfPrompt.systemPrompt(game, seat = 6).contains("【每轮记录】"))
     }
+
+    @Test
+    fun `全局规则与每轮记录均明确一轮每人仅发言一次且不可插话`() {
+        val withSheriff = atDiscussion()
+        val promptSheriff = WerewolfPrompt.systemPrompt(
+            withSheriff,
+            seat = 6,
+            roundBoard = RoundBoard.of(withSheriff, seat = 6),
+        )
+        assertTrue(promptSheriff.contains("每人仅限发言一次"))
+        assertTrue(promptSheriff.contains("不可插话"))
+        assertTrue(promptSheriff.contains("本轮每人仅发言一次"))
+        assertTrue(promptSheriff.contains("投票前不会再轮回给你补充或插话"))
+
+        val noSheriffGame = WerewolfGame.withRoles(
+            WerewolfConfig(hasSheriff = false),
+            roster(8),
+            roles,
+        ).copy(phase = Phase.DAY_DISCUSSION)
+        val promptNoSheriff = WerewolfPrompt.systemPrompt(noSheriffGame, seat = 3)
+        assertTrue(promptNoSheriff.contains("每人仅限发言一次"))
+        assertTrue(promptNoSheriff.contains("不可插话"))
+
+        val sheriffSpeech = game().copy(phase = Phase.DAY_SHERIFF_SPEECH, sheriffCandidates = listOf(3, 5))
+        assertTrue(RoundBoard.of(sheriffSpeech, seat = 3).contains("退水与警长投票前不会再轮回给你补充或插话"))
+
+        val wolfChat = game().copy(phase = Phase.NIGHT_WOLF_CHAT, nightHead = 2)
+        assertTrue(RoundBoard.of(wolfChat, seat = 1).contains("本轮夜聊每人仅发言一次"))
+        assertEquals("", RoundBoard.of(wolfChat, seat = 3))
+    }
 }
