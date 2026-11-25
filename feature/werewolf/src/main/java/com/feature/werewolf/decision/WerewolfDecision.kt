@@ -132,7 +132,7 @@ object WerewolfDecisions {
         return StructuredSpec(
             instruction = "输出 {\"target\": 座位号, \"reason\": \"一句话理由\", \"note\": \"可选心证笔记\"}。" +
                 "target 必须是今晚要查验的人，只能从 ${list(candidates)} 中选，不能选自己。" +
-                "reason 用一句中文说明你的判断依据。" + BELIEF_NOTE_HINT,
+                INNER_REASON_HINT + BELIEF_NOTE_HINT,
             serializer = SeatChoice.serializer(),
             validate = { it.target in candidates },
         )
@@ -217,6 +217,7 @@ object WerewolfDecisions {
         val valid = candidates.filter { it in game.votingSeats }
         return StructuredSpec(
             instruction = "输出 {\"target\": 座位号或 null, \"reason\": \"一句话理由\", \"note\": \"可选心证笔记\"}。" +
+                "本步只投票不发言、所有人同时暗投互不可见。" +
                 "target 是你要投的人，只能从 ${list(valid)} 中选。" +
                 "**有明确怀疑就必须投出去**：弃票浪费好人唯一武器，「不想得罪人」「再看看」不是理由。" +
                 "但**完全分不清时宁可弃票，也别无理由乱投**——乱投的人第二天讲不清站边依据，" +
@@ -273,6 +274,7 @@ object WerewolfDecisions {
         }
         return StructuredSpec(
             instruction = "输出 {\"target\": 座位号或 null, \"reason\": \"一句话理由\", \"note\": \"可选心证笔记\"}。" +
+                "本步只投票不发言、所有人同时暗投互不可见。" +
                 "target 是你要选为警长的人，只能从 ${list(valid)} 中选；实在不想选就填 null。" +
                 who + INNER_REASON_HINT + BELIEF_NOTE_HINT,
             serializer = VoteChoice.serializer(),
@@ -323,7 +325,7 @@ object WerewolfDecisions {
         return StructuredSpec(
             instruction = "输出 {\"target\": 座位号或 null, \"reason\": \"一句话理由\"}。" +
                 "target 是你要带走的人，只能从 ${list(valid)} 中选；不想开枪就填 null。" +
-                "reason 用一句中文说明你的理由。",
+                INNER_REASON_HINT,
             serializer = VoteChoice.serializer(),
             validate = { it.target == null || it.target in valid },
         )

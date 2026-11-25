@@ -131,7 +131,12 @@ class RoundBoardTest {
 
     @Test
     fun `全局规则与每轮记录均明确一轮每人仅发言一次且不可插话`() {
-        val withSheriff = atDiscussion()
+        val withSheriff = WerewolfGame.withRoles(
+            WerewolfConfig(hasSheriff = true),
+            roster(8),
+            roles,
+        ).copy(phase = Phase.DAY_DISCUSSION, sheriffSeat = 2)
+            .setSpeechDirection(SpeechDirection.SHERIFF_LEFT)
         val promptSheriff = WerewolfPrompt.systemPrompt(
             withSheriff,
             seat = 6,
@@ -139,6 +144,9 @@ class RoundBoardTest {
         )
         assertTrue(promptSheriff.contains("每人仅限发言一次"))
         assertTrue(promptSheriff.contains("不可插话"))
+        assertTrue(promptSheriff.contains("【静默决策】"))
+        assertTrue(promptSheriff.contains("只操作不发言"))
+        assertTrue(promptSheriff.contains("同时暗投、落票前互不可见"))
         assertTrue(promptSheriff.contains("本轮每人仅发言一次"))
         assertTrue(promptSheriff.contains("投票前不会再轮回给你补充或插话"))
 
@@ -150,6 +158,8 @@ class RoundBoardTest {
         val promptNoSheriff = WerewolfPrompt.systemPrompt(noSheriffGame, seat = 3)
         assertTrue(promptNoSheriff.contains("每人仅限发言一次"))
         assertTrue(promptNoSheriff.contains("不可插话"))
+        assertTrue(promptNoSheriff.contains("【静默决策】"))
+        assertTrue(promptNoSheriff.contains("只投票不发言"))
 
         val sheriffSpeech = game().copy(phase = Phase.DAY_SHERIFF_SPEECH, sheriffCandidates = listOf(3, 5))
         assertTrue(RoundBoard.of(sheriffSpeech, seat = 3).contains("退水与警长投票前不会再轮回给你补充或插话"))

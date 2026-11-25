@@ -307,4 +307,18 @@ class WerewolfDecisionTest {
         assertTrue(spec.validate(DirectionChoice(direction = "警右")))
         assertFalse("瞎填的标签也不认", spec.validate(DirectionChoice(direction = "斜着来")))
     }
+
+    @Test
+    fun `投票与静默决策提示词明确只操作不发言且内心理由无人听见`() {
+        val g = game()
+        val voteSpec = WerewolfDecisions.vote(g, g.aliveSeats)
+        assertTrue(voteSpec.instruction.contains("只投票不发言"))
+        assertTrue(voteSpec.instruction.contains("同时暗投"))
+
+        val seerSpec = WerewolfDecisions.seerCheck(g, seat = 3)
+        assertTrue(seerSpec.instruction.contains("没人听见"))
+
+        val hunterSpec = WerewolfDecisions.hunterShoot(g)
+        assertTrue(hunterSpec.instruction.contains("没人听见"))
+    }
 }
