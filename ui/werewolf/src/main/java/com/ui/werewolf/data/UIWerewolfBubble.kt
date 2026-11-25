@@ -12,6 +12,9 @@ enum class UIWerewolfBubbleKind(val label: String) {
     /** 唱票卡：一轮投票结束后的公开票型。 */
     BALLOT("记票"),
 
+    /** 上警名单卡：警长竞选的警上 / 警下座位气泡列表。 */
+    SHERIFF_ROSTER("上警"),
+
     /** 夜间队内沟通：狼人夜聊、神职的夜间行动。 */
     SECRET("密谈"),
 
@@ -50,6 +53,9 @@ fun tableBubbleStyle(kind: UIWerewolfBubbleKind, night: Boolean): UIWerewolfBubb
         UIWerewolfBubbleKind.BALLOT ->
             if (night) Color(0x901B212E) else Color(0xDCF3F5FA)
 
+        UIWerewolfBubbleKind.SHERIFF_ROSTER ->
+            if (night) Color(0x8C2A2016) else Color(0xE0FCF5E8)
+
         UIWerewolfBubbleKind.SECRET ->
             if (night) Color(0x4D322048) else Color(0x207D56D8)
 
@@ -72,6 +78,8 @@ fun tableBubbleStyle(kind: UIWerewolfBubbleKind, night: Boolean): UIWerewolfBubb
             if (night) Color(0x6CE5B552) else Color(0x4AB87A1F)
         UIWerewolfBubbleKind.BALLOT ->
             if (night) Color(0x598AB4F8) else Color(0x3D2F5DA8)
+        UIWerewolfBubbleKind.SHERIFF_ROSTER ->
+            if (night) Color(0x66E5B869) else Color(0x4DD4722A)
         UIWerewolfBubbleKind.SECRET ->
             if (night) Color(0x6CB494FF) else Color(0x427D56D8)
         UIWerewolfBubbleKind.INNER ->
@@ -110,6 +118,12 @@ fun bubbleStyle(kind: UIWerewolfBubbleKind, night: Boolean): UIWerewolfBubbleSty
             UIWerewolfBubbleStyle(Color(0x144B86E8), Color(0x2E8AB4F8), Color(0xFF8AB4F8), "记票")
         } else {
             UIWerewolfBubbleStyle(Color(0x0D2F5DA8), Color(0x242F5DA8), Color(0xFF2F5DA8), "记票")
+        }
+
+        UIWerewolfBubbleKind.SHERIFF_ROSTER -> if (night) {
+            UIWerewolfBubbleStyle(Color(0x24D4722A), Color(0x4DE5B869), Color(0xFFF0B45A), "上警")
+        } else {
+            UIWerewolfBubbleStyle(Color(0x18D4722A), Color(0x3DD4722A), Color(0xFFB85B1B), "上警")
         }
 
         UIWerewolfBubbleKind.INNER -> if (night) {

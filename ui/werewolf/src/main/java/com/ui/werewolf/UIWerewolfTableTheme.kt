@@ -66,6 +66,9 @@ internal val VoteRed = Color(0xFFD1483E)
 /** 警徽古铜金。 */
 internal val SheriffGold = Color(0xFFD0982E)
 
+/** 警上竞选候选人琥珀橙，与已当选警徽古铜金、狼队赤红清晰区分。 */
+internal val SheriffCandidateAmber = Color(0xFFD4722A)
+
 /** 女巫解药（松石绿）与毒药（绛紫）语义色。 */
 internal val HealGreen = Color(0xFF1F8763)
 

@@ -325,6 +325,28 @@ private fun TargetSeatCard(
                     )
                 }
             }
+            if (seat.sheriff || seat.sheriffCandidate) {
+                val badgeBg = if (seat.sheriff) SheriffGold else SheriffCandidateAmber
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .clip(RoundedCornerShape(50))
+                        .background(badgeBg)
+                        .border(1.2.dp, rimColor, RoundedCornerShape(50))
+                        .padding(horizontal = if (seat.sheriff) 4.dp else 3.5.dp, vertical = 1.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = if (seat.sheriff) "警" else "警上",
+                        fontSize = 7.5.sp,
+                        lineHeight = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        softWrap = false,
+                        maxLines = 1,
+                    )
+                }
+            }
             seat.seerVerdict?.let { verdict ->
                 Box(
                     modifier = Modifier

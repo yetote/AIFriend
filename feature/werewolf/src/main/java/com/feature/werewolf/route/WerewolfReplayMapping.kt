@@ -39,6 +39,7 @@ internal fun WerewolfReplay.toLive(
     val phase = stage?.phase ?: game.phase
     val deadSeats = stage?.deadSeats.orEmpty()
     val sheriffSeat = stage?.sheriffSeat
+    val sheriffCandidates = stage?.sheriffCandidates.orEmpty()
     val me = game.players.firstOrNull { it.seat == humanSeat }
 
     val seats = game.players.map { player ->
@@ -61,21 +62,28 @@ internal fun WerewolfReplay.toLive(
             active = speakingSeat != null && speakingSeat == player.seat,
             votes = null,
             sheriff = sheriffSeat == player.seat,
+            sheriffCandidate = sheriffSeat == null && player.seat in sheriffCandidates,
         )
     }
 
     val lines = shown.mapIndexed { index, frame ->
         val message = frame.message
         val speaker = message.seat?.let { seat -> game.players.firstOrNull { it.seat == seat } }
+        val sheriffRoster = buildSheriffRoster(message, game, humanSeat)
         UIWerewolfLine(
             index = index,
-            kind = lineKindOf(message),
+            kind = if (sheriffRoster != null) {
+                com.ui.werewolf.data.UIWerewolfLineKind.SHERIFF_ROSTER
+            } else {
+                lineKindOf(message)
+            },
             seat = message.seat,
             speaker = speaker?.name,
             avatarPath = speaker?.id?.let { avatars[it] },
             text = message.text,
             innerLabel = innerLabelOf(message),
             secret = !message.isPublic,
+            sheriffRoster = sheriffRoster,
         )
     }
 

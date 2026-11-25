@@ -73,6 +73,12 @@ data class UIWerewolfSeatLive(
      */
     val sheriff: Boolean = false,
     /**
+     * 这个座位此刻正在警上竞选警长（尚未退水、且尚未选出警长）。
+     *
+     * 公开信息：退水后自动消失，警长当选后由 [sheriff] 接棒。
+     */
+    val sheriffCandidate: Boolean = false,
+    /**
      * 这个座位是「你」的狼队友。
      *
      * 只在你本人是狼时才会有 true——那不是剧透，而是你本来就有的信息
@@ -117,6 +123,9 @@ enum class UIWerewolfLineKind {
     /** 唱票卡：一轮投票结束后公开的全场票型。视觉上是一张卡，不朗读。 */
     BALLOT,
 
+    /** 上警名单卡：警长竞选的警上 / 警下座位气泡列表。 */
+    SHERIFF_ROSTER,
+
     /** 说出口的发言（白天发言、狼人夜聊）。 */
     SPEECH,
 
@@ -150,6 +159,19 @@ enum class UIWerewolfLineKind {
     /** 只有这个视角看得见的话（狼人夜聊）。 */
     PRIVATE,
 }
+
+/** 上警名单卡里的一枚座位气泡。 */
+data class UIWerewolfRosterSeat(
+    val seat: Int,
+    val name: String,
+    val isSelf: Boolean = false,
+)
+
+/** 上警名单卡的完整内容：警上竞选人与警下投票人。 */
+data class UIWerewolfSheriffRoster(
+    val runners: List<UIWerewolfRosterSeat>,
+    val offPodium: List<UIWerewolfRosterSeat> = emptyList(),
+)
 
 /** 唱票卡里的一张票：谁投给了谁。targetSeat 为 null 是弃票。 */
 data class UIWerewolfBallot(
@@ -189,6 +211,8 @@ data class UIWerewolfLine(
     val secret: Boolean = false,
     /** 唱票卡数据。只有 [UIWerewolfLineKind.BALLOT] 才非 null。 */
     val ballot: UIWerewolfBallotCard? = null,
+    /** 上警名单气泡卡数据。只有 [UIWerewolfLineKind.SHERIFF_ROSTER] 才非 null。 */
+    val sheriffRoster: UIWerewolfSheriffRoster? = null,
 )
 
 /**

@@ -193,6 +193,8 @@ internal fun WerewolfUiState.toLive(
             votes = voteCounts[player.seat],
             // 警长是公开身份，牌桌上必须一直挂着——它是「谁的一票值 1.5」的唯一提示
             sheriff = game.sheriffSeat == player.seat,
+            // 竞选进行中、尚未选出警长时，标出此刻仍在警上的候选人（退水后自动消失）
+            sheriffCandidate = game.sheriffSeat == null && player.seat in game.sheriffCandidates,
             isWolfMate = player.seat in wolfMateSeats,
         )
     }.orEmpty()
@@ -204,9 +206,10 @@ internal fun WerewolfUiState.toLive(
 
     val lines = visible.mapIndexed { index, message ->
         val speaker = message.seat?.let { seat -> game?.players?.firstOrNull { it.seat == seat } }
+        val sheriffRoster = if (game != null) buildSheriffRoster(message, game, humanSeat) else null
         UIWerewolfLine(
             index = index,
-            kind = lineKindOf(message),
+            kind = if (sheriffRoster != null) UIWerewolfLineKind.SHERIFF_ROSTER else lineKindOf(message),
             seat = message.seat,
             speaker = speaker?.name,
             avatarPath = speaker?.id?.let { avatars[it] },
@@ -222,6 +225,7 @@ internal fun WerewolfUiState.toLive(
                     title = if (message.phase == Phase.DAY_SHERIFF_VOTE) "警长投票" else "放逐投票",
                 )
             },
+            sheriffRoster = sheriffRoster,
         )
     }
 
@@ -561,4 +565,72 @@ internal fun DeathCause.toFate(): UIWerewolfFate = when (this) {
     DeathCause.EXILE -> UIWerewolfFate.EXILE
     DeathCause.HUNTER_SHOOT -> UIWerewolfFate.HUNTER_SHOOT
     DeathCause.SELF_EXPLODE -> UIWerewolfFate.SELF_EXPLODE
+}
+
+private val SHERIFF_SEAT_NUMBER = Regex("""\d+""")
+
+/**
+ * 把上警报名的系统播报（「上警的是 1、4、5 号」）还原成结构化的上警名单卡数据，
+ * 供牌桌记录流与演出回放渲染「警上竞选 + 警下投票」座位气泡列表。
+ *
+ * 优先读 [com.feature.werewolf.game.GameEvent.SheriffSignup]；老存档或单测构造的播报
+ * 若历史里没对应事件，则从播报文案兜底解析座位号。
+ */
+internal fun buildSheriffRoster(
+    message: WerewolfMessage,
+    game: com.feature.werewolf.game.WerewolfGame,
+    humanSeat: Int?,
+): com.ui.werewolf.data.UIWerewolfSheriffRoster? {
+    if (message.kind != MessageKind.DIVINE) return null
+    if (message.phase != Phase.DAY_SHERIFF_SIGNUP) return null
+    if (!message.text.contains("上警的是")) return null
+
+    val runnerSeats = game.history
+        .filterIsInstance<com.feature.werewolf.game.GameEvent.SheriffSignup>()
+        .firstOrNull { it.day == message.day }
+        ?.runners
+        ?: SHERIFF_SEAT_NUMBER.findAll(message.text.substringAfter("上警的是"))
+            .mapNotNull { it.value.toIntOrNull() }
+            .toList()
+    if (runnerSeats.isEmpty()) return null
+
+    val runnerSet = runnerSeats.toSet()
+    val playersBySeat = game.players.associateBy { it.seat }
+
+    // 上警发生在当天死讯公布之前，所以只有「此前天数已出局」的座位不参与当天报名
+    val deadBeforeDay = buildSet {
+        game.history.forEach { event ->
+            if (event.day >= message.day) return@forEach
+            when (event) {
+                is com.feature.werewolf.game.GameEvent.Dawn -> addAll(event.deadSeats)
+                is com.feature.werewolf.game.GameEvent.Exiled -> add(event.seat)
+                is com.feature.werewolf.game.GameEvent.WolfExploded -> add(event.seat)
+                is com.feature.werewolf.game.GameEvent.HunterShot -> event.targetSeat?.let { add(it) }
+                else -> Unit
+            }
+        }
+    }
+
+    fun toRosterSeat(seat: Int): com.ui.werewolf.data.UIWerewolfRosterSeat {
+        val name = playersBySeat[seat]?.name ?: "${seat}号"
+        return com.ui.werewolf.data.UIWerewolfRosterSeat(
+            seat = seat,
+            name = name,
+            isSelf = seat == humanSeat,
+        )
+    }
+
+    val runners = runnerSeats.distinct().sorted().map(::toRosterSeat)
+    val offPodium = game.players
+        .asSequence()
+        .map { it.seat }
+        .filter { it !in runnerSet && it !in deadBeforeDay }
+        .sorted()
+        .map(::toRosterSeat)
+        .toList()
+
+    return com.ui.werewolf.data.UIWerewolfSheriffRoster(
+        runners = runners,
+        offPodium = offPodium,
+    )
 }

@@ -247,12 +247,13 @@ internal fun SeatTile(
                 seat.isSelf -> if (night) SelfBlueNight else SelfBlue
                 seat.active -> activeGlowColor
                 seat.sheriff && seat.alive -> SheriffGold.copy(alpha = 0.85f)
+                seat.sheriffCandidate && seat.alive -> SheriffCandidateAmber.copy(alpha = 0.82f)
                 seat.alive -> if (night) Color(0x38FFFFFF) else Color(0x22FFFFFF)
                 else -> Color.Transparent
             }
             val ringWidth = when {
                 seat.isSelf || seat.active -> 2.dp
-                seat.sheriff && seat.alive -> 1.5.dp
+                (seat.sheriff || seat.sheriffCandidate) && seat.alive -> 1.5.dp
                 else -> 1.dp
             }
             val badgeRim = if (night) NightSurface else Color.White
@@ -292,8 +293,7 @@ internal fun SeatTile(
                 }
             }
 
-            // 警徽：戴在头像左上角。它和右下角的票数不会打架，
-            // 而「1.5 票」这件事只有靠这个标记才能当场读出来
+            // 警徽 / 警上标志：戴在头像左上角，两者互斥（警长选出后警上标志自动消失）。
             if (seat.sheriff) {
                 Box(
                     modifier = Modifier
@@ -308,6 +308,27 @@ internal fun SeatTile(
                         fontSize = 8.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
+                    )
+                }
+            } else if (seat.sheriffCandidate) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .offset(x = (-4).dp, y = (-2).dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(SheriffCandidateAmber)
+                        .border(1.2.dp, badgeRim, RoundedCornerShape(50))
+                        .padding(horizontal = 4.dp, vertical = 1.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "警上",
+                        fontSize = 7.5.sp,
+                        lineHeight = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        softWrap = false,
+                        maxLines = 1,
                     )
                 }
             }

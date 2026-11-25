@@ -297,10 +297,20 @@ internal fun LineRow(
             BallotCardRow(card = card, night = night, textColor = textColor, dimColor = dimColor)
         } ?: Unit
 
+        UIWerewolfLineKind.SHERIFF_ROSTER -> line.sheriffRoster?.let { roster ->
+            SheriffRosterCardRow(
+                roster = roster,
+                night = night,
+                textColor = textColor,
+                dimColor = dimColor,
+            )
+        } ?: Unit
+
         UIWerewolfLineKind.DIVINE -> {
-            // 播报是居中的系统宣告：两侧极细淡线 + 毛玻璃胶囊底
+            // 播报是居中的系统宣告：两侧短细线 + 圆角卡片底（多行时也不变形成怪椭圆）
             val style = tableBubbleStyle(UIWerewolfBubbleKind.BROADCAST, night)
             val dividerColor = if (night) Color(0x28F5E8D8) else Color(0x1E241C14)
+            val pillShape = RoundedCornerShape(12.dp)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -310,18 +320,19 @@ internal fun LineRow(
             ) {
                 Box(
                     modifier = Modifier
-                        .weight(1f)
+                        .width(14.dp)
                         .height(0.6.dp)
                         .background(dividerColor)
                 )
                 Text(
                     text = line.text,
                     modifier = Modifier
-                        .padding(horizontal = 8.dp)
-                        .clip(RoundedCornerShape(50))
+                        .weight(1f, fill = false)
+                        .padding(horizontal = 7.dp)
+                        .clip(pillShape)
                         .background(style.fill)
-                        .border(0.6.dp, style.border, RoundedCornerShape(50))
-                        .padding(horizontal = 11.dp, vertical = 4.dp),
+                        .border(0.6.dp, style.border, pillShape)
+                        .padding(horizontal = 11.dp, vertical = 5.dp),
                     fontSize = FsMeta,
                     fontWeight = FontWeight.Medium,
                     color = dimColor,
@@ -330,7 +341,7 @@ internal fun LineRow(
                 )
                 Box(
                     modifier = Modifier
-                        .weight(1f)
+                        .width(14.dp)
                         .height(0.6.dp)
                         .background(dividerColor)
                 )
@@ -738,6 +749,152 @@ private fun TargetVotesRow(
                     fontWeight = FontWeight.Medium,
                     color = if (abstain) dimColor.copy(alpha = 0.85f) else textColor,
                 )
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 上警名单卡
+// ---------------------------------------------------------------------------
+
+/**
+ * 警长竞选名单卡：与唱票卡同系的结构化卡片，把「谁在警上竞选 / 谁在警下握有警长票」
+ * 做成一目了然的座位气泡列表，替代过去一整屏十几条「我上警」废话或挤成一团的灰字。
+ */
+@Composable
+internal fun SheriffRosterCardRow(
+    roster: com.ui.werewolf.data.UIWerewolfSheriffRoster,
+    night: Boolean,
+    textColor: Color,
+    dimColor: Color,
+) {
+    val style = tableBubbleStyle(UIWerewolfBubbleKind.SHERIFF_ROSTER, night)
+    val shape = RoundedCornerShape(14.dp)
+    val sectionBg = if (night) Color(0x14FFFFFF) else Color(0x8CFFFFFF)
+    val runnerChipBg = if (night) Color(0x36D4722A) else Color(0x1FD4722A)
+    val runnerChipBorder = if (night) Color(0x66F0B45A) else Color(0x4DD4722A)
+    val runnerChipText = if (night) Color(0xFFF7D59C) else Color(0xFF9C4710)
+    val selfAccent = if (night) SelfBlueNight else SelfBlue
+    val offChipBg = if (night) Color(0x18FFFFFF) else Color(0x10241C14)
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp)
+            .clip(shape)
+            .background(style.fill)
+            .border(0.9.dp, style.border, shape)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            BubbleTag(text = style.tag, accent = style.accent)
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = "警长竞选名单",
+                fontSize = FsName,
+                fontWeight = FontWeight.SemiBold,
+                color = textColor,
+                modifier = Modifier.weight(1f, fill = false),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = "${roster.runners.size} 人上警",
+                fontSize = FsMeta,
+                fontWeight = FontWeight.Medium,
+                color = style.accent,
+            )
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .background(sectionBg)
+                .padding(horizontal = 9.dp, vertical = 7.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                text = "警上竞选（${roster.runners.size}）",
+                fontSize = 10.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = style.accent,
+            )
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                verticalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+                roster.runners.forEach { seat ->
+                    val chipShape = RoundedCornerShape(50)
+                    val bg = if (seat.isSelf) selfAccent.copy(alpha = if (night) 0.28f else 0.14f) else runnerChipBg
+                    val bd = if (seat.isSelf) selfAccent.copy(alpha = 0.65f) else runnerChipBorder
+                    val fg = if (seat.isSelf) selfAccent else runnerChipText
+                    Text(
+                        text = "${seat.seat}号 ${seat.name}",
+                        modifier = Modifier
+                            .clip(chipShape)
+                            .background(bg)
+                            .border(0.75.dp, bd, chipShape)
+                            .padding(horizontal = 7.dp, vertical = 2.5.dp),
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = fg,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+
+        if (roster.offPodium.isNotEmpty()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(sectionBg)
+                    .padding(horizontal = 9.dp, vertical = 7.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    text = "警下投票（${roster.offPodium.size}）",
+                    fontSize = 10.5.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = dimColor,
+                )
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    verticalArrangement = Arrangement.spacedBy(5.dp),
+                ) {
+                    roster.offPodium.forEach { seat ->
+                        val chipShape = RoundedCornerShape(50)
+                        val bg = if (seat.isSelf) selfAccent.copy(alpha = if (night) 0.24f else 0.12f) else offChipBg
+                        val fg = if (seat.isSelf) selfAccent else dimColor
+                        Text(
+                            text = "${seat.seat}号 ${seat.name}",
+                            modifier = Modifier
+                                .clip(chipShape)
+                                .background(bg)
+                                .then(
+                                    if (seat.isSelf) {
+                                        Modifier.border(0.75.dp, selfAccent.copy(alpha = 0.5f), chipShape)
+                                    } else {
+                                        Modifier
+                                    }
+                                )
+                                .padding(horizontal = 7.dp, vertical = 2.dp),
+                            fontSize = 10.5.sp,
+                            fontWeight = if (seat.isSelf) FontWeight.SemiBold else FontWeight.Medium,
+                            color = fg,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
             }
         }
     }

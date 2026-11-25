@@ -23,6 +23,8 @@ data class ReplayFrame(
     val deadSeats: Set<Int>,
     /** 到这一帧为止警徽在谁手上。null = 还没选出来 / 已经作废。 */
     val sheriffSeat: Int?,
+    /** 到这一帧为止仍在警上竞选的候选座位（退水或选出警长后自动移除）。 */
+    val sheriffCandidates: Set<Int> = emptySet(),
     /** 这条消息在这个视角下要不要发声（内心活动永远不读）。 */
     val speakable: Boolean,
 )
@@ -45,6 +47,7 @@ object ReplayTimeline {
         var cursor = 0
         var dead = emptySet<Int>()
         var sheriff: Int? = null
+        var sheriffCandidates = emptySet<Int>()
 
         fun apply(event: GameEvent) {
             when (event) {
@@ -52,12 +55,20 @@ object ReplayTimeline {
                 is GameEvent.Exiled -> dead = dead + event.seat
                 is GameEvent.WolfExploded -> dead = dead + event.seat
                 is GameEvent.HunterShot -> event.targetSeat?.let { dead = dead + it }
-                is GameEvent.SheriffElected -> sheriff = event.seat
-                is GameEvent.SheriffVacant -> sheriff = null
-                // 顺延不改警徽：本来就没选出来，接着挂着
-                is GameEvent.SheriffPostponed -> Unit
+                is GameEvent.SheriffSignup -> sheriffCandidates = event.runners.toSet()
+                is GameEvent.SheriffWithdrawn -> sheriffCandidates = sheriffCandidates - event.seats.toSet()
+                is GameEvent.SheriffPk -> sheriffCandidates = event.seats.toSet()
+                is GameEvent.SheriffElected -> {
+                    sheriff = event.seat
+                    sheriffCandidates = emptySet()
+                }
+                is GameEvent.SheriffVacant -> {
+                    sheriff = null
+                    sheriffCandidates = emptySet()
+                }
+                // 顺延不改警徽，但当天竞选已中止，警上标志清空等次日重报
+                is GameEvent.SheriffPostponed -> sheriffCandidates = emptySet()
                 is GameEvent.SheriffBadgePassed -> sheriff = event.toSeat
-                // 报名、PK、白痴翻牌、熊咆哮、结束都只影响播报文案，不改变座位状态的这两项
                 else -> Unit
             }
         }
@@ -87,6 +98,7 @@ object ReplayTimeline {
                 phase = message.phase,
                 deadSeats = dead,
                 sheriffSeat = sheriff,
+                sheriffCandidates = sheriffCandidates,
                 speakable = SpeechFilter.speakable(
                     isPublicSpeech = message.kind.isSpokenOutLoud && message.isPublic,
                     speakerSeat = message.seat,
