@@ -605,12 +605,16 @@ class WerewolfDirector(
                 reasoning = text.reasoning,
                 usage = text.usage,
             )
+            // 先把刚说完的完整发言立刻推上牌桌，再去做狼队插爆判断：
+            // 否则插爆询问期间牌桌还冻在半句话光标「▌」上，体感上像整局卡死。
+            onTranscript(current)
             // 这一句如果点了某只狼的名，被点到的可以先插爆——白天就此结束，
             // 后面的人不该再被叫起来说话（循环开头的阶段检查会兜住）。
-            current = current.watchExplode(seat, text.text)
-            // 说完一个就推一次。下一位要看到的上下文里已经有这句（current 已带），
-            // 界面拿到的也是同一份，不存在「显示的和模型看到的不是一回事」
-            onTranscript(current)
+            val afterWatch = current.watchExplode(seat, text.text)
+            if (afterWatch !== current) {
+                current = afterWatch
+                onTranscript(current)
+            }
         }
         return current
     }
@@ -736,9 +740,13 @@ class WerewolfDirector(
                 reasoning = text.reasoning,
                 usage = text.usage,
             )
-            // 竞选发言里被点名也一样：可以当场插爆，把这场选举炸掉。
-            current = current.watchExplode(seat, text.text)
             onTranscript(current)
+            // 竞选发言里被点名也一样：可以当场插爆，把这场选举炸掉。
+            val afterWatch = current.watchExplode(seat, text.text)
+            if (afterWatch !== current) {
+                current = afterWatch
+                onTranscript(current)
+            }
         }
 
         // 中途自爆的话阶段已经变了，这里不能再往下推进。
@@ -2175,11 +2183,33 @@ class WerewolfDirector(
         val candidates = now.aliveWolves()
             .map { it.seat }
             .filter { it != speaker && ExplodeWatch.shouldAsk(now, it, speech) }
-        for (seat in candidates) {
-            val decision = askExplodeNow(this, seat, speaker, speech)
-            if (!decision.value.explode) continue
+        if (candidates.isEmpty()) return this
+
+        // 多只 AI 狼并发询问（每只自带 8 秒上限），最坏耗时从 N×8s 压缩到 ≤8s，
+        // 避免点名狼队时牌桌卡住二三十秒；按座位升序取第一位决定自爆的狼保证结果确定性。
+        val (humanCandidates, aiCandidates) = candidates.partition { agents[it]?.ai is HumanSeatAI }
+        val aiHit = if (aiCandidates.isNotEmpty()) {
+            coroutineScope {
+                aiCandidates.map { seat ->
+                    async { seat to askExplodeNow(this@watchExplode, seat, speaker, speech) }
+                }.awaitAll()
+            }.firstOrNull { (_, decision) -> decision.value.explode }
+        } else {
+            null
+        }
+        if (aiHit != null) {
+            val (seat, decision) = aiHit
             // 这笔账要跟着自爆那条记录走：插爆判断关着深度思考，没有思维链可留，
             // 复盘里那格「思考」正好摊开它当时算的收益。
+            return recordExplode(
+                seat,
+                reasoning = explodeNote(decision.value),
+                usage = decision.usage,
+            )
+        }
+        for (seat in humanCandidates) {
+            val decision = askExplodeNow(this, seat, speaker, speech)
+            if (!decision.value.explode) continue
             return recordExplode(
                 seat,
                 reasoning = explodeNote(decision.value),

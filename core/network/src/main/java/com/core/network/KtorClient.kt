@@ -30,7 +30,9 @@ import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.utils.io.readUTF8Line
 import kotlinx.serialization.json.Json
+import okhttp3.ConnectionPool
 import java.net.SocketTimeoutException
+import java.util.concurrent.TimeUnit
 
 /**
  * 全应用的时间上限，集中在这里改，别散落在各个调用点。
@@ -67,12 +69,34 @@ object NetTimeouts {
      * 真的五分钟一个字节都没有，基本可以认定对面已经断了。
      */
     const val STREAM_IDLE_MS = 300_000L
+
+    /**
+     * OkHttp HTTP/2 心跳间隔。
+     * 移动网络或 VPN 下，空闲或静默的长连接常被 NAT 悄无声息回收（不发 TCP FIN/RST）；
+     * 开启 20 秒 HTTP/2 PING 探活后，僵死连接会在 ~20 秒内自动熔断并重建，不再死等 5-8 分钟。
+     */
+    const val HTTP2_PING_MS = 20_000L
+
+    /**
+     * 流式请求因超时失败后，关掉深度思考补发一次性兜底请求的上限（45 秒）。
+     * 避免在流式已经等满超时后，再叠加一次 8 分钟 ONESHOT_MS 造成十几分钟连环卡死。
+     */
+    const val TIMEOUT_FALLBACK_MS = 45_000L
 }
 
 class KtorClient {
+    private val okHttpConnectionPool = ConnectionPool()
+
     // 必须用 OkHttp 引擎：Android 引擎（HttpURLConnection）不支持 WebSocket，
     // 讯飞在线合成的 wss 流式接口会直接抛 "Engine doesn't support WebSocketCapability"。
     val client = HttpClient(OkHttp) {
+        engine {
+            config {
+                connectionPool(okHttpConnectionPool)
+                pingInterval(NetTimeouts.HTTP2_PING_MS, TimeUnit.MILLISECONDS)
+                retryOnConnectionFailure(true)
+            }
+        }
         expectSuccess = true
         install(ContentNegotiation) {
             json(Json {
@@ -177,12 +201,18 @@ class KtorClient {
      * 这里不吞异常：HTTP 状态错误由 [client] 的校验器统一翻译，读取中断直接往上抛，
      * 上层据此区分「说完了」和「被切断了」。
      */
+    /** 清空空闲连接池：流式请求超时后丢弃可能已半开僵死的底层连接，迫使重试走新连接。 */
+    fun evictIdleConnections() {
+        okHttpConnectionPool.evictAll()
+    }
+
     suspend fun streamPost(
         url: String,
         body: Any,
         headers: Map<String, String>,
         onLine: suspend (String) -> Unit
     ) {
+        Log.d(LOG_TAG, "SSE 请求发出 $url")
         client.preparePost(url) {
             contentType(ContentType.Application.Json)
             setBody(body)

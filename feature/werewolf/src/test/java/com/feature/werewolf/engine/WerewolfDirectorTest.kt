@@ -1922,6 +1922,73 @@ class WerewolfDirectorTest {
         )
     }
 
+    @Test
+    fun `发言说完先上屏再并发问多只狼是否插爆，不串行卡死牌桌`() = runBlocking {
+        // 3 只活狼（1、2、3 号）都被 4 号发言触发插爆检查，每只狼模拟 250ms 网络延迟；
+        // 验证：
+        // 1. 3 只狼确实都收到了插爆询问；
+        // 2. 进入狼队插爆询问时，4 号的发言已经通过 onTranscript 推送上屏；
+        // 3. 3 只狼并发执行，总耗时远小于串行 3×250ms=750ms。
+        var transcriptCountWhenWatchStarted = 0
+        var latestTranscriptSize = 0
+        val watchCalls = java.util.concurrent.atomic.AtomicInteger(0)
+        val slowWolf: () -> IAI = {
+            object : IAI {
+                override suspend fun requestModel() = Unit
+                override var modelSet: MutableSet<String> = mutableSetOf()
+                override var brandName: String = "测试"
+                override var company: String = "测试"
+
+                override suspend fun chat(
+                    messages: List<ChatMessage>,
+                    model: String,
+                    systemPrompt: String?,
+                    enableThinking: Boolean,
+                    jsonMode: Boolean,
+                    webSearch: Boolean,
+                ): String {
+                    if (jsonMode && systemPrompt.orEmpty().contains("自爆")) {
+                        watchCalls.incrementAndGet()
+                        if (transcriptCountWhenWatchStarted == 0) {
+                            transcriptCountWhenWatchStarted = latestTranscriptSize
+                        }
+                        delay(250)
+                        return """{"gain":"换不到什么","explode":false,"reason":"不爆"}"""
+                    }
+                    return "我先听听大家发言。"
+                }
+
+                @Deprecated("测试用不到")
+                override suspend fun chat(message: String, model: String): String =
+                    chat(listOf(ChatMessage.user(message)), model)
+            }
+        }
+        val ais: Map<Int, IAI> = (1..9).associateWith { seat ->
+            when (seat) {
+                1, 2, 3 -> slowWolf()
+                4 -> ScriptedAI(listOf("今天必须投 1 号！"))
+                else -> AutoAI()
+            }
+        }
+        val director = WerewolfDirector(
+            agents = ais.mapValues { SeatAgent(it.value, "test-model") },
+            onTranscript = { snapshot -> latestTranscriptSize = snapshot.transcript.size },
+        )
+        val table = WerewolfTable(
+            standard9()
+                .copy(phase = Phase.DAY_DISCUSSION, sheriffSeat = 9)
+                .setSpeechDirection(SpeechDirection.SHERIFF_LEFT)
+        )
+
+        val started = System.currentTimeMillis()
+        director.discussion(table)
+        val elapsed = System.currentTimeMillis() - started
+
+        assertEquals("3 只活狼都应收到插爆询问", 3, watchCalls.get())
+        assertTrue("进入插爆询问前 4 号发言必须已通过 onTranscript 推上牌桌", transcriptCountWhenWatchStarted >= 4)
+        assertTrue("3 只狼各 250ms 并发询问应在 200~650ms 内完成，实际 ${elapsed}ms", elapsed in 200L..649L)
+    }
+
     // ------------------------------------------------------------------
     // 夜间三路并发（R3）
     // ------------------------------------------------------------------

@@ -35,6 +35,11 @@ class WebRepository {
         httpClient.streamPost(config.chatUrl, body, config.headers, onLine)
     }
 
+    /** 清理底层的空闲连接池，超时后避免复用已经半开僵死的 TCP/HTTP2 连接。 */
+    fun evictIdleConnections() {
+        httpClient.evictIdleConnections()
+    }
+
     /**
      * 抓一个网页的原始文本。
      *

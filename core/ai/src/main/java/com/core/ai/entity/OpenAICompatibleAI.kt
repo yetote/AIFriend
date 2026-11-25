@@ -14,11 +14,13 @@ import com.core.ai.model.StreamOptions
 import com.core.ai.model.TokenCounter
 import com.core.ai.model.TokenUsage
 import com.core.ai.model.WebSearchOptions
+import com.core.network.NetTimeouts
 import com.core.repository.ApiConfig
 import com.core.repository.WebRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * OpenAI Chat Completions 协议的公共实现：
@@ -153,14 +155,29 @@ abstract class OpenAICompatibleAI(
                 // 流式 + 联网的组合比一次性更脆（有的厂商在服务端搜索期间直接断流或 400）。
                 // 带搜索再失败一次就把搜索摘掉重试：少查一次远好过整段发言失败——
                 // 发言失败会在这张牌上留下一个空回合，用户看到的是「它突然不说话了」。
+                //
+                // 若流式本身已经因为超时失败：先清掉可能半开僵死的空闲连接池，且非流式降级只给
+                // TIMEOUT_FALLBACK_MS（45 秒）上限；若依然无响应则抛回原超时异常让上层立刻兜底，
+                // 绝不叠加再死等 8 分钟 ONESHOT_MS。
+                if (degradedByTimeout) {
+                    WebRepository.instance.evictIdleConnections()
+                }
+                suspend fun attemptFallback(useSearch: Boolean): ChatReply {
+                    if (!degradedByTimeout) {
+                        return chatWithUsage(messages, model, systemPrompt, retryThinking, jsonMode, useSearch)
+                    }
+                    return withTimeoutOrNull(NetTimeouts.TIMEOUT_FALLBACK_MS) {
+                        chatWithUsage(messages, model, systemPrompt, retryThinking, jsonMode, useSearch)
+                    } ?: throw failure
+                }
                 val reply = runCatching {
-                    chatWithUsage(messages, model, systemPrompt, retryThinking, jsonMode, webSearch)
+                    attemptFallback(webSearch)
                 }.getOrElse { error ->
                     if (error is CancellationException) throw error
                     // 只在「看起来是搜索冲突」时才摘：限流、5xx、断网跟联网无关，
                     // 摘掉搜索照样失败，还白丢一次检索（用户会以为搜索式从不搜）。
                     if (!webSearch || !error.looksLikeSearchConflict()) throw error
-                    chatWithUsage(messages, model, systemPrompt, retryThinking, jsonMode, webSearch = false)
+                    attemptFallback(useSearch = false)
                 }
                 send(
                     ChatDelta(
