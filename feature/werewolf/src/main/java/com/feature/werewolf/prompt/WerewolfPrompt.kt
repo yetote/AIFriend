@@ -1,167 +1,66 @@
 package com.feature.werewolf.prompt
 
+import com.feature.werewolf.game.DeathCause
 import com.feature.werewolf.game.GameEvent
 import com.feature.werewolf.game.Phase
 import com.feature.werewolf.game.WerewolfConfig
 import com.feature.werewolf.game.WerewolfGame
-import com.feature.werewolf.game.WerewolfRole
 import com.feature.werewolf.game.WerewolfPromptStyle
+import com.feature.werewolf.game.WerewolfRole
 import com.feature.werewolf.game.WerewolfSpeechLength
 import com.feature.werewolf.game.WerewolfTurnLimit
 import com.feature.werewolf.game.formatVotes
 import com.feature.werewolf.prompt.boards.Boards
 import com.feature.werewolf.prompt.roles.Roles
-import com.feature.werewolf.prompt.rules.darkCardBrief
-import com.feature.werewolf.prompt.rules.mutualProtectionBrief
 import com.feature.werewolf.prompt.rules.boardAndWinBrief
 import com.feature.werewolf.prompt.rules.rulesBrief
 import com.feature.werewolf.prompt.rules.terminologyBrief
 import com.feature.werewolf.prompt.tasks.taskBrief
 
 /**
- * 每个玩家的「入场提示词」。
+ * 狼人杀入场提示词拼装器（v2 清爽无冲突架构）。
  *
- * 这个类是整套编排里最容易被低估的一处。狼人杀的上下文没法像聊天室那样靠历史消息撑着，
- * 原因有两条：
- *
- * 1. **身份不能靠记忆。** 历史一旦按 token 预算裁剪，AI 就会忘了自己是狼。这不是概率问题，
- *    进到第五天几乎必然发生。所以身份、队友、查验记录这些信息**每一轮都重新拼一遍**，
- *    不依赖任何历史还能不能留在上下文里。
- * 2. **私有信息不能靠过滤。** 谁的队友是谁、验过谁是什么结果，这些只能出现在当事人手里。
- *    把私有信息写进 system 而公共播报写进 user，边界就落在数据结构上，而不是靠调用方记得过滤。
- *
- * 拼装顺序也是设计过的：**人设 → 身份 → 规则 → 公开局势与历史 → 私有信息 → 本轮任务**。
- * 身份放前面保证一眼看到；私有信息放在长历史之后，是因为历史可能有几十行，放在中间会被冲淡；
- * 本轮任务放最后，紧贴模型要输出的东西。
- *
- * ## 内容放在哪
- *
- * 这个文件只做**拼装**，具体的话分在四个地方，加板子或加身份时不用改这里：
- * - `rules/GameRules.kt`：所有人共用的规则（胜负、绑票、投票、遗言、自爆）；
- * - `roles/`：**按身份**，一个身份一个 `XxxKit`——机制、白天打法、私有简报、收尾叮嘱；
- * - `boards/`：**按板子**，一张板子一个 `XxxBoard`——几狼几神几民、打哪边更省刀、容错几次；
- * - `tasks/TaskBriefs.kt`：**按阶段**——这一步要做什么。
- *
- * 为什么按身份、不把所有东西按板子铺开：板子只是身份的集合，同一份守卫规则
- * 要出现在三张板子里，按板子写就是抄三遍、改一漏二。板子上真正独有的只剩
- * 「人数结构」这一层，那才是 `boards/` 该管的事。
+ * 严格五层分层，每条规则与事实只出现一次，按阶段按需注入：
+ * 1. 人设、牌风与座位身份；
+ * 2. 本局硬规则与板子角色机制（消除警长规则双份重复）；
+ * 3. 本阶段推理准则（警上只给警上准则、白天讨论给 6 条精炼硬准则、投票给精简核对表、夜间零白天噪音）；
+ * 4. 公开局势 + 净化后的公开台账 + 每轮记录板；
+ * 5. 私有事实与角色策略 + 残局挡刀 + 身份×阶段任务 + 时限/字数 + 带安全护栏的玩家自定义设定。
  */
 object WerewolfPrompt {
 
-    /**
-     * 拼出一份完整的 system prompt。
-     *
-     * @param persona 好友人设（`Friend.prompt`）。只放「性格与说话风格」，不要把 `Friend.systemPrompt`
-     *   整段塞进来——那里有「你是用户的 AI 好友」之类的措辞，会让模型以为自己还在陪用户聊天。
-     */
     fun systemPrompt(
         game: WerewolfGame,
         seat: Int,
         persona: String? = null,
-        /**
-         * 用户自定义的补充设定（全局 + 当前板子拼在一起）。
-         *
-         * 放在**最后**：后写的优先，用户想微调策略时，这段能压过内置的默认打法。
-         * 但它进不了公共播报、也不进 transcript——只在这一个座位的 system prompt 里，
-         * 信息隔离不受影响。
-         */
         custom: String? = null,
-        /**
-         * 本局每一步的时限（来自 [WerewolfTurnLimit]）。
-         *
-         * 告诉模型自己有多少时间，是为了让它**自己把结论前置**：不说的话，它按
-         * 聊天习惯先铺垫两三百字，真正有用的验人/查杀压在末尾，一到点被掐断就前功尽弃。
-         * 这里只写档位对应的秒数，不写谁已经被关了深度思考——那是运行时状态，
-         * 每轮都会变，写进去等于让模型反复收到自相矛盾的要求。
-         *
-         * 默认 null＝不注入，让调用方（如复盘、测试）在不需要时限的场合保持原样。
-         */
         limit: WerewolfTurnLimit? = null,
-        /**
-         * 提示词风格。默认 [WerewolfPromptStyle.GUIDED]＝现状，所有老测试与存档行为不变。
-         *
-         * [WerewolfPromptStyle.FREE] 砍掉的是**打法**：读人框架、板型结论、狼队战术菜单、
-         * 身份作业、藏身诱导、残局挡刀都不给。规则（胜负、平票、遗言、自爆、警长、
-         * 每个身份的技能与限制）**照给**——那是事实不是答案，而且本局有几条不是标准局
-         * 先验（屠边、警长 1.5 票、守救同归、自爆当晚仍定刀），不给它就会拿网上的记忆
-         * 去推，推出来的结论整个是错的。私有信息与保密底线同样照旧。
-         *
-         * [WerewolfPromptStyle.SEARCH] 再砍一层：连规则细节也不给，只留
-         * **版型 + 胜负**（见 [boardAndWinBrief]），其余交给模型自己的知识或联网检索。
-         * 这一档的失效方式很明确——模型记错本局独有的规则（双爆吞警徽、自爆当夜仍定刀），
-         * 所以它是实验档；[webSearch] 为 false 时（厂商不支持联网）也不拦，
-         * 只是少一条「可以查」的许可。
-         */
         style: WerewolfPromptStyle = WerewolfPromptStyle.GUIDED,
-        /**
-         * 这一局的请求是否真的带上了联网检索开关（厂商支持且玩家选了搜索式）。
-         *
-         * 只在提示词里决定**要不要告诉模型它可以查**。不能靠 [style] 推：
-         * DeepSeek、Kimi 这类厂商的对话接口没有内置搜索，说了也白说，
-         * 模型反而会把「我记得」当成「我查过」，编得更理直气壮。
-         */
         webSearch: Boolean = false,
-        /**
-         * 这一局发言的目标长度（见 [WerewolfSpeechLength]）。默认 null＝不注入，
-         * 让不需要的场合（测试、复盘）保持原样。
-         *
-         * 和时限一样是环境约束：不说的话模型按聊天习惯写小作文，
-         * 被引擎裁掉的后半段里可能藏着关键判断。
-         */
         speechLength: WerewolfSpeechLength? = null,
-        /**
-         * 这一座位的打牌风格画像（见 [PlayerStyle]）。角色设定，不是打法教学，
-         * 引导式和自由式都注入。null 或关掉风格画像时不注入，老行为不变。
-         */
         playStyle: PlayerStyle? = null,
-        /**
-         * 跨天累积的公开台账（见 [com.feature.werewolf.engine.PublicLedger]）。
-         *
-         * 和 [publicSituation] 分工：那边是「发生了什么」，这边是「**谁说过什么能核对的话**」。
-         * 发言原文只喂今天 + 昨天，所以第 3 天起「谁跳的预言家、谁说了投 A 却投了 B」
-         * 靠这段才留得住。默认空＝不注入，测试与复盘不受影响。
-         */
         ledger: String? = null,
-        /**
-         * 每轮记录板（见 [com.feature.werewolf.engine.RoundBoard]）。
-         *
-         * 和 [ledger] 分工：台账是**跨天**的「谁说过什么能核对的话」，
-         * 记录板是**本轮**的「发言顺序 + 谁已经说过、谁还没说」。
-         *
-         * 不给的话模型只能猜轮次：会把还没开口的人当成已经表过态，
-         * 或者不知道自己排在第几个、说出「等 5 号说完我再补充」这种空话。
-         *
-         * 默认空＝不注入，测试与复盘不受影响。
-         */
         roundBoard: String? = null,
-        /**
-         * 要不要在引导式里带「从发言读人」那一大段。
-         *
-         * 夜里的决策（下刀 / 查验 / 用药）没有发言可读，带着它只是白烧几千字输入；
-         * 每次发言和白天投票仍需要它。默认 true 保持老行为，只有决策请求传 false。
-         */
         includeReading: Boolean = true,
-        /**
-         * 场景标记：白天投票类决策传 [ReadingTells.Scope.VOTE] 时，
-         * 用精简的【核对事实】替代长篇读人框架——判据一条不少，只是更短。
-         * 发言阶段与夜间用 [ReadingTells.Scope.ALL]（默认）。
-         */
         readingScope: ReadingTells.Scope = ReadingTells.Scope.ALL,
     ): String {
         val player = game.playerAt(seat)
+        // 警上竞选流程自动收窄为警上专属准则，不再塞整套白天讨论长文。
+        val effectiveScope = when {
+            readingScope == ReadingTells.Scope.VOTE -> ReadingTells.Scope.VOTE
+            game.phase.isSheriffPhase -> ReadingTells.Scope.SHERIFF
+            else -> readingScope
+        }
+
         return buildString {
             if (!persona.isNullOrBlank()) {
-                append(persona.trim())
-                append("\n\n")
+                append(persona.trim()).append("\n\n")
             }
-            // 风格画像紧贴陪伴人设之后：先告诉它平时什么语气，再告诉它打牌时怎么想，
-            // 并点明后者优先。没有这一段时，模型会把牌桌当成延续陪聊，只顾表演口头禅。
             playerStyleBrief(playStyle, game.config)?.let {
                 append(it).append("\n\n")
             }
             append("你正在玩一局狼人杀，全程用简体中文说话，一次只说自己的话。\n")
             append("你是 ").append(seat).append(" 号玩家「").append(player.name).append("」。\n")
-            // 狼人自己就是「狼人阵营」，再写一遍会变成「狼人（狼人阵营）」，读着别扭
             if (player.role == WerewolfRole.WEREWOLF) {
                 append("你的身份是狼人，这个身份只有你自己知道。\n\n")
             } else {
@@ -169,121 +68,72 @@ object WerewolfPrompt {
                     .append("（").append(player.faction.displayName).append("阵营），")
                     .append("这个身份只有你自己知道。\n\n")
             }
-            // 规则两种风格都给，只有**打法**分风格。
-            //
-            // 这里曾经把规则整段砍掉，理由是「标准局规则都在模型训练数据里，
-            // 文案越少它自己的打法空间越大」。实测站不住：本局有好几条规则不是
-            // 标准局先验——屠边还是屠城、警长一票算 1.5 票、守救同归、
-            // 自爆后当晚仍要参加定刀——模型按网上的记忆推，推出的结论整个是错的；
-            // 更常见的是它不知道**别人那张牌**能干什么（白痴翻牌不死、狼王被毒不能开枪），
-            // 推理全靠脑补，白天一本正经地把规则说错。
-            //
-            // 规则是**事实**，打法才是答案。自由式要砍的是后者（strategyBrief /
-            // playbook / 狼队战术菜单 / 板型结论都不再出现），不该连事实一起砍。
-            //
-            // 搜索式是唯一的例外：它把规则也交给模型（自己回忆或联网查），
-            // 只留查不到的**版型与胜负**。这是刻意下的赌注，不是又踩了一次老坑。
+
             if (style == WerewolfPromptStyle.SEARCH) {
                 append(boardAndWinBrief(game.config).trimEnd()).append("\n\n")
             } else {
-                append(rulesBrief(game.config)).append("\n\n")
+                append(rulesBrief(game.config).trimEnd()).append("\n\n")
                 append(boardBrief(game.config).trimEnd()).append("\n\n")
             }
-            // 引导式才给内置打法。自由式的核心就是「不给方法，只给事实和底线」——
-            // 读人框架、板型结论、狼队菜单都在 strategyBrief 里，整段不出现。
+
             if (style == WerewolfPromptStyle.GUIDED) {
                 append(
                     strategyBrief(
-                        game.config,
-                        player.role.isWerewolf,
-                        // 投票类决策用下面的【核对事实】替代长篇读人框架：
-                        // 投票时要把场上发言拿来核对，但不能连「怎么判断真假预言家」的
-                        // 判据一起砍掉——那正是 12 人局好人投错的原因。
-                        includeReading = includeReading && readingScope != ReadingTells.Scope.VOTE,
-                        readingScope = readingScope,
+                        config = game.config,
+                        isWolf = player.role.isWerewolf,
+                        includeReading = includeReading && effectiveScope != ReadingTells.Scope.VOTE,
+                        readingScope = effectiveScope,
                     ).trimEnd()
                 ).append("\n\n")
-                // 投票类决策：给一份精简但完整的核对判据（站边/验人/警徽流/票型/轮次/
-                // 翻牌反证/金水），比从长篇读人框架里挑几条更短，判断所需的一点不缺。
-                if (includeReading && readingScope == ReadingTells.Scope.VOTE) {
-                    append(factsBrief().trimEnd()).append("\n\n")
+                if (includeReading && effectiveScope == ReadingTells.Scope.VOTE) {
+                    append(factsBrief(game.config).trimEnd()).append("\n\n")
                 }
             } else {
-                // 自由式/搜索式砍掉的是打法倾向，不是「核对事实的能力」。
-                // 没有这一块，模型会把编造的心路当真、忽略翻牌硬反证、不知道先出谁——
-                // 那不是让强模型自由发挥，是让它瞎打。引导式已在 strategyBrief 里带了更完整版本。
-                append(factsBrief().trimEnd()).append("\n\n")
+                append(factsBrief(game.config).trimEnd()).append("\n\n")
             }
-            // 术语约定：引导式和自由式都给，它是语言约定，不是打法——
-            // 没理由让 AI 自造黑话、把词用反。搜索式不给：它连规则都自己查，
-            // 术语自然也该用自己的说法，提示词再补一段就失去这一档的意义了。
+
             if (style != WerewolfPromptStyle.SEARCH) {
                 append(terminologyBrief()).append("\n\n")
             }
-            // 搜索式唯一的附加许可。
-            //
-            // 措辞刻意**不留退路**：这一档的名字就是「自己查」，写「可以查也可以不查」
-            // 等于允许它一律凭记忆答——而它记错规则的概率远高于查一次的成本。
-            // 只提醒两件事：不许把「我查了一下」说出来（牌桌上没人查资料），
-            // 以及网上是通用打法、局面以本提示词给的记录为准。
+
             if (style == WerewolfPromptStyle.SEARCH && webSearch) {
-                append("本局你可以联网检索，而且**该查就查**：对规则、身份技能、术语或常见打法没把握时，")
-                append("先查再说，别拿记忆硬编——规则记错一条，后面整段推理都是歪的。")
-                append("查到的只当知识用，别把「我查了一下」说出来——牌桌上没人查资料。\n")
-                append("场上发生了什么以本提示词给的记录为准：网上讲的是通用打法，")
-                append("不适用于这一局的具体局面，别拿别人的模板套这一桌。\n\n")
+                append("本局你可以联网检索，对规则、身份技能或术语没把握时先查再说，但别在发言里提「我查了一下」。")
+                append("场上事实一律以本提示词记录为准。\n\n")
             }
+
             append(publicSituation(game).trimEnd()).append("\n\n")
-            // 台账紧跟在局势之后：它和「已经发生的事」是同一类材料（公开、可核对），
-            // 挨着放模型才会拿它当推理依据，而不是当成又一段背景资料。
             if (!ledger.isNullOrBlank()) {
                 append(ledger.trimEnd()).append("\n\n")
             }
-            // 每轮记录板紧跟台账：同样是「可核对的事实」，而且它回答的正是
-            // 本轮任务里的那个问题——现在该谁说、前面谁说过了。
             if (!roundBoard.isNullOrBlank()) {
                 append(roundBoard.trimEnd()).append("\n\n")
             }
-            append(privateBriefing(game, seat, style)).append("\n\n")
-            // 残局挡刀是打法，自由式不给——能不能靠穿神衣服晃狼，让它自己判断。
+            append(privateBriefing(game, seat, style).trimEnd()).append("\n\n")
+
             if (style == WerewolfPromptStyle.GUIDED) {
                 val bluff = GoodBluff.of(game, seat)
                 if (bluff.isNotEmpty()) {
                     append(bluff.joinToString("\n")).append("\n\n")
                 }
             }
+
             append(task(game, seat, style))
-            // 时限是环境约束不是打法，两种风格都给：不给模型会铺垫太长被掐断，
-            // 那就变成「测超时兜底」而不是「测它自己的判断」了。
+
             if (limit != null && limit != WerewolfTurnLimit.UNLIMITED) {
-                append("\n\n")
-                append(timeBudgetBrief(limit))
+                append("\n\n").append(timeBudgetBrief(limit))
             }
-            // 发言长度同样两种风格都给：它不是打法，是这一局「说多少」的约束。
             if (speechLength != null) {
-                append("\n\n")
-                append(speechLengthBrief(speechLength))
+                append("\n\n").append(speechLengthBrief(speechLength))
             }
-            // 用户自定义放最后：它是「玩家对这一局玩法的要求」，
-            // 位置太靠前会被后面固定的几段稀释掉，模型照着内置打法走就白改了。
             if (!custom.isNullOrBlank()) {
                 append("\n\n")
-                append("【本局额外设定（玩家写的，优先级高于上面所有默认打法）】\n")
+                append("【本局额外设定（玩家风格偏好；在不违背本阵营胜负目标、游戏硬规则与团队既定分工的前提下优先采纳）】\n")
                 append(custom.trim())
             }
         }
     }
 
-    /**
-     * 「要不要当场插爆」的判断简报。
-     *
-     * 刻意**不复用完整 system 提示词**：这个判断只需要身份、队友、刚那句话和判断标准，
-     * 几百 token 就够。套上完整提示词（规则＋板子＋打法＋局势）会让每句发言的附加成本
-     * 翻十倍，而它一天要问十几次。
-     *
-     * 只喂公开信息：刚说的那段话本来就是全场听见的。刀口、查验这些不进来——
-     * 判断「该不该爆」用不到它们，喂了只是多一条泄露路径。
-     */
+    /** 「要不要当场插爆」的精简判断简报。 */
     fun explodeWatchBrief(game: WerewolfGame, seat: Int, speaker: Int, speech: String): String = buildString {
         val player = game.playerAt(seat)
         val speakerPlayer = game.playerAt(speaker)
@@ -298,40 +148,19 @@ object WerewolfPrompt {
         }
         append("现在是第 ").append(game.day).append(" 天白天，")
         append(speakerPlayer.seat).append(" 号「").append(speakerPlayer.name).append("」刚说完一段话。\n")
-        // 规则要说全：「自爆还能参加今晚定刀」是本局独有的，不说它会以为爆完就彻底消失。
-        append("自爆＝你当场出局，这一天立刻结束、直接进入黑夜（没有投票，没有人被放逐）。" +
-            "今晚的狼队商议和定刀你仍然参加，定刀结束才离场。\n")
-        append("判断：这段话是否已经让你或队友今天的处境明显变差，值得用一条命换掉这个白天。\n")
-        // 只有这两条。原来写的「你已经被点破」被模型读成「被查杀就该爆」，
-        // 好人连辩都不用听，狼自己把命交出去。条件越少越不容易被套用。
-        append("默认**不自爆**。只在这两种情况下值得爆：" +
-            "① 夜里的战术需要吞掉这个白天（比如双爆吞警徽）；" +
-            "② 你再说下去会牵出队友。\n")
-        // 指控和判决必须分开写：被查杀恰恰是最该辩的时候。
-        append("**被查杀、被踩、被点名表水都不是理由**——那是一句指控，不是判决：" +
-            "你还能反跳、反咬他是悍跳狼，自爆等于当场替预言家作证。\n")
-        append("算不出这两条收益的自爆，就是白送一条命。\n")
+        append("自爆＝你当场出局，这一天立刻结束、直接入夜（无放逐）；今晚狼队商议和定刀你仍参加，定完离场。\n")
+        append("默认**不自爆**。只在这两种情况下值得爆：① 夜里战术需要吞掉这个白天/警徽（如双爆吞警徽）；② 再说下去会直接牵出队友。\n")
+        append("**被查杀、被踩、被点名表水都不是理由**——那是一句指控，不是判决：自爆等于当场替预言家作证。\n")
+        append("算不出明确收益的自爆就是白送一命。\n")
         append("刚那段话：「").append(speech.take(WATCH_SPEECH_CHARS)).append("」")
     }
 
-    /**
-     * 喂给判断的发言长度上限。
-     *
-     * 正常发言 200~400 字，600 字已经能把「谁要投谁」说完；再长的部分多半是
-     * 复述别人的话，对「该不该爆」没有增量信息，只会把每次判断的输入撑大。
-     */
     private const val WATCH_SPEECH_CHARS = 600
 
     // ---------------------------------------------------------------------
     // 公开局势
     // ---------------------------------------------------------------------
 
-    /**
-     * 已经公开过的死亡座位。
-     *
-     * 只认**播报过**的死讯：还没公布的不算（第一天死讯压在警长竞选之后）。
-     * 白痴翻牌不算死，所以 [GameEvent.IdiotRevealed] 不在列表里。
-     */
     private fun announcedDeadSeats(game: WerewolfGame): List<Int> = game.history
         .flatMap { event ->
             when (event) {
@@ -345,49 +174,32 @@ object WerewolfPrompt {
         .distinct()
         .sorted()
 
-    /** 所有人看到都一样的部分：天数、阶段、存活与出局、已经播报过的事。 */
     fun publicSituation(game: WerewolfGame): String = buildString {
         append("【当前局势】第 ").append(game.day).append(" 天 · ").append(game.phase.displayName).append("\n")
-        // 存活与出局都按**已经公开过的**事实算，不能直接读引擎状态：
-        // 第一天死讯要等警长竞选结束后才公布，而死掉的人已经不在 aliveSeats 里了——
-        // 「存活名单少一个人」本身就是死讯。直接读状态等于提前泄底。
         val announcedDead = announcedDeadSeats(game)
         val alive = game.players.map { it.seat }.filter { it !in announcedDead }
-        append("存活：").append(seatsText(alive))
-            .append("（共 ").append(alive.size).append(" 人）\n")
+        append("存活：").append(seatsText(alive)).append("（共 ").append(alive.size).append(" 人）\n")
         if (announcedDead.isNotEmpty()) {
             append("已出局：").append(seatsText(announcedDead)).append("\n")
         }
         if (game.config.hasSheriff) {
             val sheriff = game.aliveSheriffSeat
             append("警长：").append(
-                if (sheriff != null) {
-                    "$sheriff 号（票权 1.5 票，决定白天发言顺序）"
-                } else {
-                    "暂无（还没选出，或警徽已经流失）"
-                }
+                if (sheriff != null) "$sheriff 号（票权 1.5 票，决定白天发言顺序）"
+                else "暂无（还没选出，或警徽已经流失）"
             ).append("\n")
-            // 竞选期间「谁上警」是公开信息，也是投票的唯一依据，必须写进来
             if (game.sheriffRunners.isNotEmpty() && game.phase.isSheriffPhase) {
                 append("上警：").append(seatsText(game.sheriffRunners)).append("\n")
             }
         }
-        // 死讯还没公布（第一天：先竞选、后公布）时，任何人都不该谈昨夜。
-        //
-        // 狼人在这段时间是**知道刀口**的（他们自己动的手），一张嘴说出
-        // 「昨夜明明是平安夜」，等于当着全场承认「我知道昨晚有人被刀」——
-        // 真实案例：狼人警长的竞选发言里就是这么把自己暴露的。
         if (game.pendingDawn != null) {
-            append("\n【昨夜还没公布】昨夜的结果没人知道，**不要谈昨夜**：")
-            append("连「昨晚是平安夜」这种话都别说出口——你凭什么知道昨夜没死人？")
-            append("只说今天白天已经摆在台面上的东西。\n")
+            append("\n【昨夜还没公布】昨夜死讯尚未播报，**任何人都不要谈昨夜结果**（连「昨晚平安夜」都不许提）。只说今天台面上的事。\n")
         }
         append("\n【已经发生的事】\n")
         if (game.history.isEmpty()) {
             append("还没有任何播报，这是第一夜。")
             return@buildString
         }
-        // 更早的天数压成「一天一行」，最近 EXPANDED_DAYS 天保持逐条
         val expandedFrom = (game.day - EXPANDED_DAYS + 1).coerceAtLeast(1)
         val older = game.history.filter { it.day < expandedFrom }
         if (older.isNotEmpty()) {
@@ -400,76 +212,38 @@ object WerewolfPrompt {
             .forEach { append("· ").append(describe(it)).append("\n") }
     }
 
-    /**
-     * 历史里**逐条展开**的天数，更早的压成一天一行。
-     *
-     * 为什么不全部逐条：打到第六天，history 就有三四十条，铺开之后「第 1 天谁出局」
-     * 被推到三十行之外——这不是 token 问题，是注意力问题，跟我们特意把私有信息
-     * 放到历史之后是同一个理由。
-     *
-     * 为什么不全部压成一行：最近两天还要用来对质（昨天谁说了什么、谁投了谁），
-     * 压缩会丢掉「同一天里谁先说、谁后说」的时序，而那个时序本身是推理材料。
-     *
-     * 折叠**只发生在拼提示词这一步**：[WerewolfGame.history] 一条不动，
-     * 存档和复盘读的都是 history，所以压缩永远不会让对局记忆真的丢掉。
-     */
     private const val EXPANDED_DAYS = 2
 
-    /** 一天的事件压成一句，子句之间用「；」隔开。 */
     private fun summarize(events: List<GameEvent>): String =
         events.mapNotNull { brief(it) }.joinToString("；").ifEmpty { "没有需要记住的事" }
 
-    /**
-     * 摘要用的短句。返回 null 表示这件事**在折叠后不必再提**。
-     *
-     * 和 [describe] 分开而不是复用它：那份文案同时被编排层拿去写上帝消息，
-     * 改了它会连带改掉界面上的记录流。这里只服务于提示词。
-     */
     private fun brief(event: GameEvent): String? = when (event) {
         is GameEvent.Dawn ->
             if (event.isPeaceful) "夜里平安" else "夜里 ${seatsText(event.deadSeats)}出局"
-
         is GameEvent.Exiled -> "${event.seat} 号被放逐（${formatVotes(event.voteCount)} 票）"
         is GameEvent.NoExile -> "无人被放逐"
         is GameEvent.IdiotRevealed -> "${event.seat} 号翻牌是白痴，没有出局"
-
         is GameEvent.HunterShot -> if (event.targetSeat == null) {
             "${event.shooterLabel} ${event.hunterSeat} 号没开枪"
         } else {
             "${event.shooterLabel} ${event.hunterSeat} 号开枪带走 ${event.targetSeat} 号"
         }
-
-        // 提示词里的摘要同样不能带座位号：它进的是所有玩家的上下文，
-        // 点了号等于把「谁是熊」发给了每一只狼。熊自己知道自己是熊，不需要这一行。
         is GameEvent.BearRoar -> "熊在咆哮（左右邻座有狼）"
-
         is GameEvent.WolfExploded -> "${event.seat} 号狼人自爆，当天直接入夜"
-
         is GameEvent.SheriffSignup -> "上警的是 ${seatsText(event.runners)}"
-
         is GameEvent.SheriffElected -> when {
             event.votes > 0 -> "${event.seat} 号当选警长（${event.votes} 票）"
-            // 退水之后只剩一个人，和「只有一个人上警」是两件事，摘要里要分开
             event.note != null -> "${event.seat} 号自动当选警长（${event.note}）"
             else -> "${event.seat} 号自动当选警长"
         }
-
         is GameEvent.SheriffWithdrawn -> "${seatsText(event.seats)}退水，退出竞选"
-
         is GameEvent.SheriffVacant -> "没有警长（${event.reason}）"
-
         is GameEvent.SheriffPostponed -> "竞选被自爆打断，警徽顺延到明天再选"
-
-        // PK 是过程：平票这件事对结局没有额外后果，结果已经由 SheriffElected 或
-        // SheriffVacant 表达过了，折叠之后再留一行只是重复占位
         is GameEvent.SheriffPk -> null
-
         is GameEvent.SheriffBadgePassed ->
             if (event.toSeat == null) "警徽作废" else "警徽交给 ${event.toSeat} 号"
-
         is GameEvent.SpeechDirectionChosen ->
             "警长 ${event.seat} 号定了从${event.direction.displayName}起发言"
-
         is GameEvent.GameOver -> "${event.winner.displayName}阵营获胜"
     }
 
@@ -477,94 +251,49 @@ object WerewolfPrompt {
         get() = this == Phase.DAY_SHERIFF_SIGNUP || this == Phase.DAY_SHERIFF_SPEECH ||
             this == Phase.DAY_SHERIFF_WITHDRAW || this == Phase.DAY_SHERIFF_VOTE
 
-    /**
-     * 把一条公开事件写成一句话。
-     *
-     * 死亡只写座位号，不写身份——这是线下规则，也是信息隔离的一部分：
-     * 一旦把「3 号是猎人」写进播报，狼人就不用猜了。身份只有在 [GameEvent.GameOver] 之后才公开。
-     */
     fun describe(event: GameEvent): String = when (event) {
         is GameEvent.Dawn -> if (event.isPeaceful) {
             "第${event.day}天 天亮：平安夜，没有人出局"
         } else {
             "第${event.day}天 天亮：${seatsText(event.deadSeats)}出局"
         }
-
         is GameEvent.Exiled ->
             "第${event.day}天 投票：${event.seat} 号被放逐（${formatVotes(event.voteCount)} 票）"
-
-        is GameEvent.NoExile ->
-            "第${event.day}天 投票：无人被放逐"
-
+        is GameEvent.NoExile -> "第${event.day}天 投票：无人被放逐"
         is GameEvent.IdiotRevealed ->
             "第${event.day}天 投票：${event.seat} 号以 ${formatVotes(event.voteCount)} 票被投出，" +
                 "翻开是白痴，没有出局，此后失去投票权"
-
         is GameEvent.HunterShot -> if (event.targetSeat == null) {
             "第${event.day}天：${event.shooterLabel} ${event.hunterSeat} 号出局，没有开枪"
         } else {
             "第${event.day}天：${event.shooterLabel} ${event.hunterSeat} 号开枪带走了 ${event.targetSeat} 号"
         }
-
-        // 上帝播报只报「发生了什么」，不解释规则：规则在板子说明和模型提示词里
-        // 已经讲过一遍，写在播报里既占屏幕又是废话（玩家原话：「熊咆哮了」就够了）。
-        // 也**不能点名熊的座位**——熊是暗身份，念出「11 号在咆哮」等于当众宣布谁是熊，
-        // 狼人下一夜就先刀它（玩家原话：「那不直接把熊的号码点出来了么？」）。
-        is GameEvent.BearRoar ->
-            "第${event.day}天 天亮：熊在咆哮"
-
-        is GameEvent.WolfExploded ->
-            "第${event.day}天：${event.seat} 号狼人自爆，直接进入黑夜"
-
-        // 报名只报名单：理由属于竞选发言，两处都写就等于把同一件事说两遍
-        is GameEvent.SheriffSignup ->
-            "第${event.day}天：上警的是 ${seatsText(event.runners)}"
-
+        is GameEvent.BearRoar -> "第${event.day}天 天亮：熊在咆哮"
+        is GameEvent.WolfExploded -> "第${event.day}天：${event.seat} 号狼人自爆，直接进入黑夜"
+        is GameEvent.SheriffSignup -> "第${event.day}天：上警的是 ${seatsText(event.runners)}"
         is GameEvent.SheriffElected -> when {
             event.votes > 0 -> "第${event.day}天：${event.seat} 号当选警长（${event.votes} 票）"
             event.note != null -> "第${event.day}天：${event.note}，${event.seat} 号自动当选警长"
             else -> "第${event.day}天：只有 ${event.seat} 号上警，自动当选警长"
         }
-
-        is GameEvent.SheriffWithdrawn ->
-            "第${event.day}天：${seatsText(event.seats)}退水，退出竞选"
-
-        is GameEvent.SheriffVacant ->
-            "第${event.day}天：本局没有警长（${event.reason}）"
-
-        is GameEvent.SheriffPostponed ->
-            "第${event.day}天：${event.seat} 号自爆，警长竞选中止，警徽顺延到下一个白天"
-
-        is GameEvent.SheriffPk ->
-            "第${event.day}天：警长投票平票（${seatsText(event.seats)}），进入 PK 发言"
-
+        is GameEvent.SheriffWithdrawn -> "第${event.day}天：${seatsText(event.seats)}退水，退出竞选"
+        is GameEvent.SheriffVacant -> "第${event.day}天：本局没有警长（${event.reason}）"
+        is GameEvent.SheriffPostponed -> "第${event.day}天：${event.seat} 号自爆，警长竞选中止，警徽顺延到下一个白天"
+        is GameEvent.SheriffPk -> "第${event.day}天：警长投票平票（${seatsText(event.seats)}），进入 PK 发言"
         is GameEvent.SheriffBadgePassed -> if (event.toSeat == null) {
             "第${event.day}天：警长 ${event.fromSeat} 号出局，警徽没有交出，已作废"
         } else {
             "第${event.day}天：警长 ${event.fromSeat} 号把警徽交给 ${event.toSeat} 号"
         }
-
         is GameEvent.SpeechDirectionChosen ->
             "第${event.day}天：警长 ${event.seat} 号决定今天从${event.direction.displayName}起发言"
-
-        is GameEvent.GameOver ->
-            "游戏结束：${event.winner.displayName}阵营获胜"
+        is GameEvent.GameOver -> "游戏结束：${event.winner.displayName}阵营获胜"
     }
 
     // ---------------------------------------------------------------------
-    // 板子
+    // 板子与身份机制（不再重复警长规则）
     // ---------------------------------------------------------------------
 
-    /**
-     * 板子规则的出场顺序。
-     *
-     * 按「谁会改变夜里的结果」排：守卫最影响判断，狼王和白痴其次。顺序写死在这里，
-     * 而不是直接遍历 [WerewolfRole.entries]——枚举的声明顺序是代码组织，不该决定文案顺序。
-     *
-     * 女巫和猎人原来不在这张表里，因为它们的 `rules` 是空的（机制只写进了本人 notes）。
-     * 现在补上了公共机制：别人要靠它解释「死了为什么没开枪」「昨夜为什么没人死」，
-     * 所以必须进这张表，否则 `rules()` 写了也不会被拼进板子说明。
-     */
     private val RULE_ORDER = listOf(
         WerewolfRole.GUARD,
         WerewolfRole.WITCH,
@@ -574,24 +303,13 @@ object WerewolfPrompt {
         WerewolfRole.BEAR,
     )
 
-    /**
-     * 本局板子。
-     *
-     * 板子是**公开信息**：线下开局前所有人都知道今天打的是什么配置。不告诉模型，
-     * 它就会拿 8 人局的经验去推 12 人局——比如笃定场上只有三神，或者不知道有守卫。
-     *
-     * 内容来自两处：身份规则（`roles`，谁在场就说谁）和板子规则（`boards`，警长这类
-     * 不归任何身份的东西）。这里只负责按顺序拼起来。
-     */
     fun boardBrief(config: WerewolfConfig): String = buildString {
         append("【本局板子】").append(compositionText(config)).append("\n")
         RULE_ORDER.filter { config.has(it) }.forEach { role ->
             Roles.of(role).rules(role).forEach { append(it).append("\n") }
         }
-        Boards.sheriffRules(config).forEach { append(it).append("\n") }
     }
 
-    /** 配比一行串：「12 人局：4 狼人、预言家、……」。单个身份不报数，两种风格共用。 */
     private fun compositionText(config: WerewolfConfig): String =
         config.playerCount.toString() + " 人局：" + WerewolfRole.entries
             .mapNotNull { role ->
@@ -602,135 +320,51 @@ object WerewolfPrompt {
             .joinToString("、")
 
     // ---------------------------------------------------------------------
-    // 基本打法
+    // 基本打法与事实判据（零重复、按阶段注入）
     // ---------------------------------------------------------------------
 
-    /**
-     * 判断方法，而不是规则。
-     *
-     * [rulesBrief] 说的是「能做什么、怎么算赢」，这一层说的是「怎么判断谁像狼」。
-     * 缺了这一层，模型的发言完全由人设驱动，实测出现过三种灾难：
-     * 真预言家在警上、PK、白天把同一段话说了三遍；守卫第一天就当众解释
-     * 「我昨夜守了自己，所以是平安夜」；好人看到预言家对跳，只看谁语气更硬。
-     *
-     * 写死在这里而不是塞进每个角色的私有简报：**判断别人的方法是公共知识**，
-     * 平民、狼人、神职都用得上，而且必须一致——否则同一局里两个人用两套标准。
-     *
-     * 每条都尽量写成「可执行的动作」，不写「要理性分析」这种正确但没用的话。
-     *
-     * @param isWolf 板型打法里有一段只对狼有用（打哪边更省刀、要不要分头站边），
-     *   好人读到只会稀释自己的判断，所以按阵营分开。
-     */
     private fun strategyBrief(
         config: WerewolfConfig,
         isWolf: Boolean,
-        /**
-         * 要不要带「从发言读人」那一大段。
-         *
-         * 那段是**白天发言/投票**才用得上的分析框架；夜里的下刀、查验、用药是私密动作，
-         * 桌上没有发言可读，带着它只是白白占几千字输入。默认 true 保持老行为，
-         * 决策请求可以传 false 省 token——它自己的 instruction 会把合法目标写清楚。
-         */
         includeReading: Boolean = true,
-        /** 由 [systemPrompt] 透传；VOTE 场景下这里直接不注入读人框架，改用【核对事实】。 */
         readingScope: ReadingTells.Scope = ReadingTells.Scope.ALL,
     ): String = buildString {
-        append("【基本打法】以下和你的性格、说话风格无关，冲突时以这里为准：\n")
-        append("· 预言家每天开口第一件事，是报出前一晚验了谁、结果是好人还是狼人，然后才谈判断。")
-        append("跳过不报、只喊结论不报验人，在好人眼里就是悍跳。\n")
-        append("· 盘对跳第一看**能不能当场核对**：谁说的座位、票型、验人能被对着核，核不上的记死一笔；")
-        append("心路讲得再流畅也不算证据——首夜谁都能编。只有连续几天都报不出验人、")
-        append("或验的人专挑已被全场怀疑的，才该被盯上（第 1 天例外见下一条）。\n")
-        // 第 1 天只有一个验人记录，说人家「警徽流接不上」会把真预言家冤死。
-        // 实测一局 12 人：真预言家第 1 夜验的正好是当夜被刀的人，只报了一个人就被说成
-        // 「死无对证」，好人全票投他，狼人顺势拿到警徽——真预言家第一天就走了。
-        append("· **第 1 天只报了一个验人是正常的**，别因为他只报了一个就判他悍跳；")
-        append("验到死人只是运气不好（他自己也不知道对方会死），不是悍跳的证据。")
-        append("只有**验了活人还乱报、或者报不出自己验过的人**，那才是悍跳。\n")
-        append("· 狼给谁发金水都不亏，「被发金水」证明不了干净；反过来，给金水的人也没必要急着投。\n")
-        // 权威「有查杀走查杀」：第一天有查杀就在查杀和预言家里出，查杀位本身就是当天轮次。
-        // 之前写的「被查杀者不表水=狼」害死过真平民（9 号被悍跳查杀后反砸，被当狼票出）——
-        // 真被冤的人也可能气急、也可能反咬，表水态度不是验真假的第一依据。
-        append("· **有查杀走查杀**：第一天有查杀，就在查杀和报查杀的预言家里出，别拿外置位替代。" +
-            "这是为了防「狼查杀狼」做身份——所以哪怕被查杀的人聊得很炸，也先出他、两个预言家留一轮再定。" +
-            "**被查杀者表水态度只作参考，不是第一依据**：真被冤的人也可能气急反咬、也可能不擅自证，" +
-            "别因为「他没好好表水」就跳过查杀位去投别人——那正是悍跳狼查杀真好人想看到的结果。\n")
-        // 从发言读人的框架：上面几条是「验人/金水该不该信」的单点判断，
-        // 这里补成一套能贯穿整局的方法（心路、警徽流、保人、划水与冲锋的反面）。
-        // 放在单点判断之后、板型打法之前，先教「怎么读」，再给「这张板子读什么」。
-        // 夜里的决策请求用不上它（没有发言可读），传 includeReading=false 省几千字输入。
+        append("【基本打法】以可核对事实和阵营胜负为准，冲突时优先于说话人设：\n")
+        append("· 每轮发言都要带来新信息（新依据、回应质疑或解释票向），不复读旧话；被指认先正面回应具体质疑再反打。\n")
+        if (config.has(WerewolfRole.GUARD)) {
+            Roles.of(WerewolfRole.GUARD).publicStrategy(WerewolfRole.GUARD)?.let {
+                append("· ").append(it).append("\n")
+            }
+        }
         if (includeReading) {
-            ReadingTells.lines(config).forEach { append("· ").append(it).append("\n") }
+            ReadingTells.lines(config, readingScope).forEach { append("· ").append(it).append("\n") }
         }
-        append("· 神职不要主动报身份。")
-        // 只有守卫有这一句：别人守不守人跟好人无关，守卫自己却最容易一开口就交代守人路线。
-        Roles.of(WerewolfRole.GUARD).publicStrategy(WerewolfRole.GUARD)
-            ?.takeIf { config.has(WerewolfRole.GUARD) }
-            ?.let { append(it) }
-        append("猎人翻牌前报身份，等于给狼指路。\n")
-        append("· 每一轮都要带来新东西：新的怀疑对象、对别人刚说完那句话的回应、或对自己上一票的解释。")
-        append("结论没变就补理由或回应，**同一段判断说第二遍在别人眼里就是背词**。\n")
-        append("· 被指认时先正面回答对方的具体质疑，再反打。只喊「我是好人」「我逻辑自洽」没有用。\n")
-        append("· 投票前先看票型：谁发起的、谁跟得最快、谁在事后把自己摘干净。")
-        append("票型整齐不等于投对了人，一致跟票的人里一定有狼。\n")
-        append("· 出局时说遗言要给具体座位号和理由，别只交代「别投错」。\n")
-        // 真实案例：场上只剩 3 好 1 狼，三个好人里两个互相咬，狼人投了其中一个，
-        // 结果好人把好人投出去了，夜里再被刀一个就绑票输掉。
-        append("· **场上人已经不多了时，票必须砸在狼身上**：只剩两三个好人还活着的时候，" +
-            "投掉一个好人，夜里狼再刀一个就等于绑票——投好人等于帮狼杀人。\n")
-        append("· **跟着多数投票本身不是狼的证据**：警长归票之后，很多好人都会跟票。" +
-            "狼的特征是**带节奏、有自己的独立目标**，不是站得准。\n")
-        if (config.hasSheriff) {
-            append("· 第 1 天上警的人里如果只有一两个狼，等于白送警徽——" +
-                "**神职该上警就上警**：预言家必须上警报验人争警徽；" +
-                "其他神职也可上警诈身份或帮好人分担压力（不用在警上暴露真身份，听清局势再决定退水或竞选）。\n")
-        }
-
-        // 板型打法：由人数与阵营结构决定，模型自己数不出来，也不该靠猜。
         val board = Boards.text(config)
         board.common.forEach { append("· ").append(it).append("\n") }
         if (isWolf) board.wolves.forEach { append("· ").append(it).append("\n") }
     }
 
-    /**
-     * 判断所需的**事实判据**——不是打法，是「怎么核对局面」的硬规则。
-     *
-     * 自由式 / 搜索式砍掉的是「打法倾向」（怎么发言、怎么藏、狼队怎么配合），
-     * 但这些**可核对的事实**不能一起砍：没有它们，模型会把编造的心路当真、
-     * 把翻牌这种硬反证忽略、不知道该先出谁——那不是「自由」，是让它瞎打。
-     * 引导式已经在 [strategyBrief] 里带了更完整的版本，所以这里只给非引导档。
-     *
-     * 全部只做「对不对得上」的核对，不给「该说什么、该站哪边」的倾向。
-     */
-    private fun factsBrief(): String = buildString {
-        append("【核对事实】下面是可核对的硬判据，不是打法建议——拿不准时以这些为准：\n")
-        append("· **翻牌/开枪是硬反证**：预言家报的查杀对象被放逐后翻牌是神职、或开枪打死了报查杀的人，" +
-            "按座位就能核，报查杀的那个一定是假预言家；别拿「说话难听、警徽流改口」抵消它。\n")
-        append("· **验人信息前后改口是悍跳**：真预言家夜里验的结果确定，不会记错自己验了谁；" +
-            "先说验 9 号改口验 7 号、查杀改金水，基本是现编现补。\n")
-        append("· **能验算的理由才算理由**：首夜零信息，谁都能编心路；" +
-            "说「验 9 号因他是对角」要当场数座位（12 人局 1 号对角是 7 号，对不上就是编的）。\n")
-        append("· **警徽流看兑现**：说要验谁、后来是不是真验了；验过移除补新目标正常，" +
-            "报了却验证不出来（说验 2 查杀结果 2 翻牌猎人）才叫断裂；但好警徽流不等于真预言家，别单条定身份。\n")
-        append("· **票型对账**：谁说投 A 却投了 B、谁和谁互投或永远跟票；票是不会被话术污染的硬证据。\n")
-        append("· **放逐轮次**：查杀 > 对跳 > 行为不好 > 泛泛发言；有查杀走查杀（防狼查杀狼做身份），" +
-            "分票是狼人行为，判断不清宁可弃票也别无理由乱投。\n")
-        append("· **被发金水证明不了干净**：狼给谁发金水都不亏；同样，敢报查杀也不等于真，" +
-            "悍跳狼会故意查杀好人骗信任。\n")
+    /** 投票决策与自由式/搜索式专用的精简事实核对表（绝不含打法倾向）。 */
+    private fun factsBrief(config: WerewolfConfig): String = buildString {
+        append("【核对事实】拿不准时按以下可核硬判据判断：\n")
+        append("· **验人前后改口 = 假预**：真预言家不会记错自己验了谁；先报金水后打铁狼、改验人对象基本坐实假预。\n")
+        append("· **首夜零信息无心路**：第 1 天只报 1 验、验到死人、说不出心路全正常，只核座位等可验算理由；第 2 天起看警徽流是否兑现（改流与验过补新合法）。\n")
+        append("· **暗牌边界**：出局不翻牌，**猎人开枪只代表猎人个人怀疑，不等于验出对方是狼**。")
+        if (config.has(WerewolfRole.IDIOT)) {
+            append("白痴翻牌是硬反证（报他查杀者铁假）。")
+        }
+        if (config.has(WerewolfRole.WITCH)) {
+            append("**双死夜必是一刀一毒**，警长/跳预死在双死夜时须同时盘吃刀与吃毒两种可能。")
+        }
+        append("\n")
+        append("· **票型对账**：话投 A 实投 B、全程绑定冲票是硬证据；被发金水不证清白，敢报查杀也不等于真。\n")
+        append("· **警长票 vs 白天放逐**：警长票投综合最可信的真预（不因谁报查杀就盲投他）；白天放逐遵循 查杀 > 对跳 > 行为破绽，少分票，完全分不清宁可弃票。\n")
     }
 
     // ---------------------------------------------------------------------
-    // 私有信息
+    // 私有信息（按角色与阶段精确组装，删除「争到底」与「一刀切禁言」）
     // ---------------------------------------------------------------------
-    /**
-     * 只有本人知道的那些事。
-     *
-     * 每种身份各自不同，共同点是**绝不进公共播报**。狼队友必须知道彼此，否则没法配合；
-     * 预言家必须看到历史查验，否则每晚都在重复验同一个人。
-     *
-     * 内容全在 `roles/` 的各份 `XxxKit` 里：`notes` 是局面相关的私有信息，`playbook` 是身份作业。
-     * 这个函数只负责「按什么顺序拼」和「哪些是任何身份都可能碰上的事」。
-     */
+
     fun privateBriefing(
         game: WerewolfGame,
         seat: Int,
@@ -738,117 +372,79 @@ object WerewolfPrompt {
     ): String {
         val player = game.playerAt(seat)
         val kit = Roles.of(player.role)
+        val guided = style == WerewolfPromptStyle.GUIDED
 
         val lines = mutableListOf<String>()
-        // notes 是私有**事实**（队友是谁、验过谁、药还剩什么），不是打法——
-        // 自由式照样给：拿掉它模型就不知道自己是狼、不知道验人结果，游戏没法打。
         lines += kit.notes(game, seat, style)
-        // 身份专属打法。只给本人看，所以可以写得很具体——
-        // 公共打法（strategyBrief）解决「怎么判断」，这里解决「我这个身份该说什么」。
-        // 自由式不给：这是「内置答案」最集中的一层。
-        if (style == WerewolfPromptStyle.GUIDED) {
+        if (guided) {
             lines += kit.playbook(player.role, game.config)
         }
 
-        // 警长、竞选、遗言这三件事和身份无关，任何座位都可能碰上，所以放在身份之外。
-        // 尤其是「你是警长」——警长本身是公开身份，但**只有本人**需要知道自己的票权是 1.5。
         if (game.sheriffSeat == seat && game.phase != Phase.FINISHED) {
-            lines += "你是警长：你的一票算 1.5 票，每天讨论开始前由你选一次发言顺序——" +
-                "警左 / 警右（从你自己左手边 / 右手边起，你最后说，归票位），" +
-                "或者死左 / 死右（从昨夜死者左手边 / 右手边起，这时你不一定最后说）。"
-            lines +=
-                // 「交给错的人比撕掉更糟」是判断代打；徽给谁、撕不撕，警长自己定。
-                // 移交和遗言是两件事则是硬规则：被枪带走时说不了话但徽照样要处理。
-                (if (style == WerewolfPromptStyle.GUIDED) "你出局时要决定把警徽交给谁——交给错的人比撕掉更糟。"
-                else "你出局时要决定把警徽交给谁。") +
-                "警徽移交和遗言是两件事：被猎人一枪带走时你说不了话，但警徽照样要处理。"
+            lines += "你是警长：一票算 1.5 票，每天讨论前选一次发言顺序（警左/警右你最后归票，死左/死右从昨夜死者旁起）。"
+            lines += (if (guided) "你出局时要决定警徽归属——交给可能是狼的人比撕掉更糟。"
+            else "你出局时要决定把警徽交给谁或撕掉。") +
+                "被猎人开枪带走时虽无遗言，警徽照常处理。"
         }
+
         if (seat in game.sheriffCandidates && game.phase.isSheriffPhase) {
-            lines +=
-                // 「争到底」是打法指令；上过警首轮不能投警长票才是规则。
-                if (style == WerewolfPromptStyle.GUIDED) "你在竞选警长。上过警的人首轮不能投警长票，所以既然报了名就要争到底。"
-                else "你在竞选警长。上过警的人首轮不能投警长票。"
-        } else if (seat in game.sheriffRunners && game.phase == Phase.DAY_SHERIFF_VOTE && game.sheriffRound > 1) {
-            lines += "你首轮上过警但未进入本轮 PK，现在作为台外玩家拥有本轮 PK 的警长投票权。"
-        }
-        if (game.phase == Phase.DAY_LAST_WORDS && seat in game.pendingLastWords) {
-            lines += if (player.deathCause == com.feature.werewolf.game.DeathCause.HUNTER_SHOOT && game.sheriffSeat == seat) {
-                "你被开枪带走了，按规则没有遗言，但你必须处理警徽（移交给一名存活玩家，或者撕掉）。"
+            lines += if (!guided) {
+                "你在竞选警长。上过警的人首轮不能投警长票。"
             } else {
-                "你已经出局了，现在轮到你说遗言。遗言改不了结局，但会直接影响活着的人怎么投。"
+                when {
+                    player.role == WerewolfRole.SEER ->
+                        "你在竞选警长（上过警首轮不投警长票）。你是真预言家，尽量争取警徽、不要轻易退水。"
+                    player.role.isWerewolf ->
+                        "你在竞选警长（上过警首轮不投警长票）。按昨晚头狼分工执行：被安排悍跳就争到底不退水，非悍跳位别抢跳预言家、适时退水。"
+                    else ->
+                        "你在竞选警长（上过警首轮不投警长票）。你不是预言家：听完竞选发言若已有预言家对跳，应当主动退水把警徽留给真预。"
+                }
+            }
+        } else if (seat in game.sheriffRunners && game.phase == Phase.DAY_SHERIFF_VOTE && game.sheriffRound > 1) {
+            lines += "你首轮上过警但未进入本轮 PK，现在作为台外玩家拥有本轮 PK 警长投票权。"
+        }
+
+        if (game.phase == Phase.DAY_LAST_WORDS && seat in game.pendingLastWords) {
+            lines += if (player.deathCause == DeathCause.HUNTER_SHOOT && game.sheriffSeat == seat) {
+                "你被开枪带走，按规则无遗言，但必须处理警徽（移交或撕掉）。"
+            } else {
+                "你已出局，现在发表遗言，把有价值的判断留给活着的人。"
             }
         }
-        // 自爆狼还留在夜里的这一小段时间，是**本局独有的规则**，
-        // 不明说它会以为自己不能说话了，整夜一言不发。
+
         if (seat in game.ghostWolves) {
-            lines += "你白天已经自爆出局，但还没走：今晚的狼队商议和定刀你仍然参加，" +
-                "定刀一结束就立刻离场。天亮之后你不再发言，也不能再投票。"
+            lines += "你白天已自爆出局，但今晚狼队商议和定刀你仍参加，定完立刻彻底离场。"
         }
 
         return buildString {
             append("【只有你知道的事】\n")
             lines.forEach { append("· ").append(it).append("\n") }
-            // 「藏身份」收尾只在引导式给。它是**打法倾向**不是游戏规则：
-            // 猎人「身份不要主动说出来」、白痴「不要主动认领翻牌」这类话，
-            // 会把模型从头到尾按死在隐藏路线上——跳不跳、什么时候跳，
-            // 本来就是这张牌最核心的自由度。自由式把这个决定还给模型。
-            // 狼的保密红线不靠这句：notes 里那条「狼队内部的事一律不能出现在白天」
-            // 才是硬规则（说出来就自曝），自由式照给。
-            if (style == WerewolfPromptStyle.GUIDED) {
+            if (guided) {
                 kit.conceal(player.role)?.let { append(it) }
             }
         }
     }
 
-    // ---------------------------------------------------------------------
-    // 本轮任务
-    // ---------------------------------------------------------------------
-
-    /** 当前阶段要做什么。内容在 `tasks/TaskBriefs.kt`，这里只留入口。 */
     fun task(game: WerewolfGame, seat: Int, style: WerewolfPromptStyle = WerewolfPromptStyle.GUIDED): String =
         taskBrief(game, seat, style)
 
-    /**
-     * 时间预算的一段话。UNLIMITED 由调用方跳过，这里只处理有限的档位。
-     *
-     * 关键是**结论前置**：把验人、查杀、站边、目标座位号写在最前，理由随后。
-     * 这样就算真被掐断，丢的也只是后半段补充，核心判断已经落地。
-     * 不说这一句时，模型习惯先铺垫一大段再给结论，超时就什么都没剩。
-     */
     internal fun timeBudgetBrief(limit: WerewolfTurnLimit): String = buildString {
-        append("【时间预算】这一局你开口前想的时间大约 ")
-            .append(limit.decisionSeconds).append(" 秒")
+        append("【时间预算】开口前思考约 ").append(limit.decisionSeconds).append(" 秒")
         if (limit.speechSeconds > 0) {
-            append("，说的时间大约 ").append(limit.speechSeconds)
-                .append(" 秒（从你说出第一个字起算）")
+            append("，发言约 ").append(limit.speechSeconds).append(" 秒")
         } else {
             append("，说出口之后不限时间")
         }
-        append("。")
-        append("超时不会让游戏停下，但这一步会按兜底处理，并关掉你这一局的深度思考。")
-        append("所以**先把结论说出来**：验人结果、查杀、你站边谁、要投谁、目标座位号放最前面，")
-        append("理由和铺垫放在后面——哪怕说到一半被打断，关键判断也已经说出口了。")
-        append("别把所有可能性在心里过一遍再开口：想太久，说出来的往往不是更好的答案。")
+        append("。超时会按兜底处理并关掉你本局深度思考，所以**先把结论说出来**（验人、站边、目标座位放最前），理由放后面，别在心里反复纠结。")
     }
 
-    /**
-     * 发言长度的一段话。null 由调用方跳过，这里只处理确定的档位。
-     *
-     * 不只说上限：还告诉模型「为什么」——说清判断就收。只给一个数字，
-     * 模型会把它当成硬指标，为凑字数注水或者被掐时丢结论。
-     */
     internal fun speechLengthBrief(length: WerewolfSpeechLength): String = buildString {
         if (length.chars > 0) {
-            append("【发言长度】这一局你每次公开发言控制在约 ").append(length.chars)
-                .append(" 字以内（当前档：").append(length.label).append("）。")
-            append("说清你的判断和理由就收，不用凑字数，也别写成小作文——")
-            append("超出的部分会被直接截断，压在后面的结论会一起丢掉。")
+            append("【发言长度】公开发言控制在约 ").append(length.chars)
+                .append(" 字以内（当前档：").append(length.label).append("）。说清判断和依据就收，超出会被截断。")
         } else {
-            // 不限档：没有截断兜底，只能靠模型自觉——把「结论前置」抬高到第一位，
-            // 长发言里最重要的东西丢了比短发言更伤。
-            append("【发言长度】这一局你的发言不限字数（当前档：").append(length.label).append("）。")
-            append("但也别灌水：先把结论说出来，再展开论证；")
-            append("别人还要跟着你的话做判断，读不完的长篇等于没有发言。")
+            append("【发言长度】发言不限字数（当前档：").append(length.label)
+                .append("）。但别灌水，先把结论说出来再简明展开。")
         }
     }
 }

@@ -1,9 +1,10 @@
 package com.feature.werewolf.engine
 
 import com.feature.werewolf.game.Ballot
+import com.feature.werewolf.game.GameEvent
 import com.feature.werewolf.game.Phase
 import com.feature.werewolf.game.RosterEntry
-import com.feature.werewolf.game.WerewolfConfig
+import com.feature.werewolf.game.WerewolfBoards
 import com.feature.werewolf.game.WerewolfGame
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -14,29 +15,44 @@ import org.junit.Test
  * 公开台账的测试。
  *
  * 判据是**两个方向都不能错**：
- * - 该摘的没摘到 → 模型第 3 天开始又没材料，等于没做；
- * - 不该摘的摘进来（私有消息、否定句里的座位号）→ 台账变成误导，
- *   比没有更糟，因为它看起来像事实。
+ * - 该摘的没摘到 → 模型第 3 天开始缺材料，或者漏掉「我是真预言家」「验到 3 号是狼」；
+ * - 不该摘的摘进来（转述别人的验人、跨分号硬拼、非预言家讨论金水）→ 台账制造假证据污染全桌记忆。
  */
 class PublicLedgerTest {
 
-    private fun table(vararg messages: WerewolfMessage): WerewolfTable {
-        val roster = (1..8).map { RosterEntry("p$it", "玩家$it") }
-        return WerewolfTable(WerewolfGame.deal(WerewolfConfig(), roster), messages.toList())
+    private fun table(
+        vararg messages: WerewolfMessage,
+        history: List<GameEvent> = emptyList(),
+    ): WerewolfTable {
+        val roster = (1..12).map { RosterEntry("p$it", "玩家$it") }
+        val game = WerewolfGame.deal(WerewolfBoards.configOf(WerewolfBoards.GUARD_12), roster)
+            .copy(history = history)
+        return WerewolfTable(game, messages.toList())
     }
 
-    private fun speech(seat: Int, text: String, day: Int = 1, audience: Set<Int>? = null) =
-        WerewolfMessage(
-            day = day, phase = Phase.DAY_DISCUSSION, seat = seat,
-            kind = MessageKind.SPEECH, text = text, audience = audience,
-        )
-
-    private fun ballot(day: Int, vararg votes: Pair<Int, Int?>) = WerewolfMessage(
-        day = day, phase = Phase.DAY_VOTE, seat = null, kind = MessageKind.BALLOT, text = "唱票",
-        ballot = BallotCard(ballotList(votes)),
+    private fun speech(
+        seat: Int,
+        text: String,
+        day: Int = 1,
+        phase: Phase = Phase.DAY_DISCUSSION,
+        audience: Set<Int>? = null,
+    ) = WerewolfMessage(
+        day = day,
+        phase = phase,
+        seat = seat,
+        kind = MessageKind.SPEECH,
+        text = text,
+        audience = audience,
     )
 
-    private fun ballotList(votes: Array<out Pair<Int, Int?>>) = votes.map { Ballot(it.first, it.second) }
+    private fun ballot(day: Int, vararg votes: Pair<Int, Int?>) = WerewolfMessage(
+        day = day,
+        phase = Phase.DAY_VOTE,
+        seat = null,
+        kind = MessageKind.BALLOT,
+        text = "唱票",
+        ballot = BallotCard(votes.map { Ballot(it.first, it.second) }),
+    )
 
     @Test
     fun `摘出对跳与验人，并点明同一身份有几个人声称`() {
@@ -54,17 +70,62 @@ class PublicLedgerTest {
     }
 
     @Test
-    fun `票型对账要标出话和票不一致的人`() {
+    fun `兼容我是真预言家与验到X号是狼，绝不跨分号或转述伪造验人`() {
+        // 完整复现 12 人真实对局里的所有台账事故：
+        // 1. 2 号说「我是真预言家，首夜验的4号是好人」曾被漏抓；
+        // 2. 6 号说「验到3号是狼」曾被漏抓，随后「补验4号的心路；轮到自己被报查杀」被错拼成「6号验4号狼」；
+        // 3. 5 号、7 号、2 号转述别人验人曾全部被错记成自己验的；
+        // 4. 1 号退水并声明诈身份后必须标明已退水/撤回。
+        val text = PublicLedger.of(
+            table(
+                speech(1, "我是预言家，昨晚验的2号金水。", phase = Phase.DAY_SHERIFF_SPEECH),
+                speech(2, "我是真预言家，首夜验的4号是好人。", phase = Phase.DAY_SHERIFF_SPEECH),
+                speech(4, "我是预言家，昨天验的11号，好人，2号给我发金水，我反水立警。", phase = Phase.DAY_SHERIFF_SPEECH),
+                speech(6, "我是预言家，首夜按前置位顺位摸，验到3号是狼。", phase = Phase.DAY_SHERIFF_SPEECH),
+                speech(1, "我退水。", phase = Phase.DAY_SHERIFF_WITHDRAW),
+                speech(5, "配上 6 号跳预言家验 3 号是查杀，我这一票投 3 号。"),
+                speech(1, "你2号自己跳预言家，首夜报4号是金水，结果4号反水。我这一票投3号。"),
+                speech(6, "3号警上亲口说2号“只报结果我记一笔”，要2号下轮补验4号的心路；轮到自己被报查杀，他就反咬。我这一票投3号。"),
+                speech(7, "4号连票向都说不圆，我凭什么信他验11号那张金水。", day = 2),
+                speech(2, "刚才他还改口说自己验了8号是好人，这套逻辑前后完全接不上。", day = 2),
+                speech(1, "2号别往我身上扣预言家帽子，我警上跳预就是诈身份试悍跳的，早就退水了。", day = 2),
+                history = listOf(GameEvent.SheriffWithdrawn(day = 1, seats = listOf(1))),
+            )
+        )
+
+        // 四个真声称全都在
+        assertTrue("2 号的「我是真预言家」必须记入：$text", text.contains("2 号自称预言家"))
+        assertTrue("预言家有 4 个人声称：$text", text.contains("预言家有 4 个人声称"))
+        assertTrue("1 号要标注已退水/诈身份：$text", text.contains("1 号自称预言家（第 1 天，已退水/自称诈身份）"))
+
+        // 真实验人全都在
+        assertTrue("1 号验 2 好人：$text", text.contains("1 号称第 1 天验 2 号是好人"))
+        assertTrue("2 号验 4 好人：$text", text.contains("2 号称第 1 天验 4 号是好人"))
+        assertTrue("4 号验 11 好人：$text", text.contains("4 号称第 1 天验 11 号是好人"))
+        assertTrue("6 号验到 3 号是狼必须抓到：$text", text.contains("6 号称第 1 天验 3 号是狼人"))
+
+        // 所有转述与跨分号假证全部消灭
+        assertFalse("6 号绝不能被伪造验 4 号狼：$text", text.contains("6 号称第 1 天验 4 号"))
+        assertFalse("5 号没跳预，不能记成验 3 号：$text", text.contains("5 号称"))
+        assertFalse("7 号没跳预，不能记成验 11 号：$text", text.contains("7 号称"))
+        assertFalse("2 号转述别人验 8 号，不能记成 2 号验 8 号：$text", text.contains("2 号称第 2 天验 8 号"))
+        assertFalse("1 号转述 2 号报 4 号金水，不能记成 1 号验 4 号：$text", text.contains("1 号称第 1 天验 4 号"))
+    }
+
+    @Test
+    fun `票型对账要标出话和票不一致的人，并支持今天出X写法`() {
         val text = PublicLedger.of(
             table(
                 speech(1, "我这一票投 3 号。"),
                 speech(2, "我今天投 3 号。"),
-                ballot(1, 1 to 3, 2 to 5, 3 to null),
+                speech(4, "今天出2，明天出4后天出6。今天出2。"),
+                ballot(1, 1 to 3, 2 to 5, 3 to null, 4 to 8),
             )
         )
         assertTrue("说到做到", text.contains("1 号说投 3 号，实际投了 3 号"))
         assertTrue("说一套投一套", text.contains("2 号说投 3 号，实际投了 5 号  ← 话和票对不上"))
         assertTrue("弃票也是事实", text.contains("3 号投票前没说票向，实际弃票"))
+        assertTrue("「今天出2」算票向承诺且不把「明天出4」误当今天：$text", text.contains("4 号说投 2 号，实际投了 8 号  ← 话和票对不上"))
     }
 
     @Test
@@ -92,11 +153,15 @@ class PublicLedgerTest {
     }
 
     @Test
-    fun `假设句不算声称身份`() {
+    fun `假设句和引号里的转述不算声称身份`() {
         val text = PublicLedger.of(
-            table(speech(4, "如果我是预言家，我第一天就会验 1 号。今天先听大家的。"))
+            table(
+                speech(4, "如果我是预言家，我第一天就会验 1 号。今天先听大家的。"),
+                speech(5, "刚才 2 号喊「我是真预言家」，我觉得站不住。"),
+            )
         )
         assertFalse("打比方不能被记成对跳", text.contains("4 号自称预言家"))
+        assertFalse("引用别人原话不能记成本人声称", text.contains("5 号自称预言家"))
     }
 
     @Test

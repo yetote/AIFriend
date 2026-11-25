@@ -117,7 +117,27 @@ class OwnNightBriefTest {
         )
         val brief = director.ownNightBrief(table, seat = 4, today = 3)
 
-        assertTrue("必须提醒别直接说出来：$brief", brief.contains("别在白天"))
+        assertTrue("未决定起跳前提醒别直接泄露：$brief", brief.contains("别在白天"))
         assertTrue("必须提醒拿它修正站边和票：$brief", brief.contains("站边"))
+    }
+
+    @Test
+    fun `预言家与双药已空女巫不被昨夜判断堵嘴禁止报身份`() {
+        val seerTable = WerewolfTable(game()).append(
+            nightAct(day = 1, seat = 3, phase = Phase.NIGHT_SEER, text = "查验 1 号是狼人。")
+        )
+        val seerBrief = director.ownNightBrief(seerTable, seat = 3, today = 2)
+        assertFalse("预言家绝不该被禁止报验人：$seerBrief", seerBrief.contains("别报你验到了谁"))
+        assertFalse("预言家绝不该被禁止报身份：$seerBrief", seerBrief.contains("别报身份"))
+
+        val spentWitchGame = game().copy(
+            witch = com.feature.werewolf.game.WitchStock(antidoteAvailable = false, poisonAvailable = false),
+        )
+        val witchTable = WerewolfTable(spentWitchGame).append(
+            nightAct(day = 2, seat = 4, phase = Phase.NIGHT_WITCH, text = "我用毒药毒 1 号。")
+        )
+        val witchBrief = director.ownNightBrief(witchTable, seat = 4, today = 3)
+        assertTrue("双药已空女巫应允许公开女巫身份报清用药记录：$witchBrief", witchBrief.contains("公开女巫身份"))
+        assertFalse("双药已空女巫不该被要求藏到死：$witchBrief", witchBrief.contains("别报身份"))
     }
 }

@@ -707,11 +707,9 @@ class WerewolfDirector(
                 current,
                 seat,
                 task = if (pk) {
-                    "你和另一位候选人平票了，现在是 PK 发言。" +
-                        "说清楚为什么警下应该把票投给你，而不是另一位。"
+                    "你和另一位候选人平票了，现在是 PK 发言，请按本轮任务要求回应对方并争取警下选票。"
                 } else {
-                    "现在轮到你竞选发言。" +
-                        "用 2-3 句说清你的判断和当选后的思路，让警下愿意把票投给你。"
+                    "现在轮到你竞选发言，请按本轮任务要求发言。"
                 },
             )
             // 同上：先记账再发言，自爆翻夜后就不会把座位记进夜间名单。
@@ -1836,10 +1834,21 @@ class WerewolfDirector(
             .filter { it.day >= (today - 1).coerceAtLeast(1) }
             .takeLast(2)
         if (notes.isEmpty()) return ""
+        val game = table.game
+        val role = game.playerAt(seat).role
+        val guidance = when {
+            role == WerewolfRole.SEER ->
+                "下面这些是你夜里的查验思考：白天报验人时直接报清查验结果和合理理由，别照念系统格式，也别推翻自己已核实的信息。"
+            role == WerewolfRole.WITCH && !game.witch.antidoteAvailable && !game.witch.poisonAvailable ->
+                "下面这些是你夜里的用药与判断记录：你双药已空，白天保持昼夜逻辑一致，绝不推翻自己救过的银水或亲手毒死的人；需要自证或帮好人排坑时直接公开女巫身份报清用药记录。"
+            role == WerewolfRole.WITCH ->
+                "下面这些是你昨夜自己的判断：未决定起跳前别在白天泄露用药细节，但务必保持昼夜逻辑一致，用它修正你的站边和票；若决定跳女巫带队或自证，可公开报出银水与毒口。"
+            else ->
+                "下面这些是你昨夜自己想的事——未决定明跳前别在白天直接说出来（尤其别泄露守人路线），但别把已经想通的结论又推翻，白天用它修正站边和票。"
+        }
         return buildString {
             append("【你昨夜的判断】\n")
-            append("下面这些是你昨夜自己想的事——只有你知道，别在白天直接说出来（尤其别报身份、别报你验到了谁）。\n")
-            append("但别把已经想通的结论又推翻：昨夜据此做出的判断，白天用它修正站边和票。\n")
+            append(guidance).append("\n")
             notes.forEach { message ->
                 append("· ").append(message.phase.displayName).append("：")
                 append(message.text.replace('\n', ' ').take(NIGHT_NOTE_CHARS))
@@ -1890,28 +1899,71 @@ class WerewolfDirector(
      */
     private fun StringBuilder.appendMemoryAnchor(game: WerewolfGame, seat: Int) {
         val player = game.playerAt(seat)
-        if (!player.role.isWerewolf) return
-        val mates = game.wolves().filter { it.seat != seat }
-        append("【别忘了你是谁】你是 ").append(seat).append(" 号")
-        append(if (player.role == WerewolfRole.WEREWOLF_KING) "狼王" else "狼人").append("。")
-        if (mates.isEmpty()) {
-            append("这一局只有你一只狼，场上再没有你的同伙。\n\n")
-            return
-        }
-        append("你的狼队友是 ")
-        append(
-            mates.joinToString("、") { mate ->
-                "${mate.seat} 号「${mate.name}」" + when {
-                    mate.alive -> ""
-                    // 自爆的队友今晚还在：只写「已出局」会让活着的狼以为他没声了。
-                    mate.seat in game.ghostWolves -> "（已自爆，今晚还会跟你们一起商议、定刀，定完就离场）"
-                    else -> "（已出局）"
+        when {
+            player.role.isWerewolf -> {
+                val mates = game.wolves().filter { it.seat != seat }
+                append("【别忘了你是谁】你是 ").append(seat).append(" 号")
+                append(if (player.role == WerewolfRole.WEREWOLF_KING) "狼王" else "狼人").append("。")
+                if (mates.isEmpty()) {
+                    append("这一局只有你一只狼，场上再没有你的同伙。\n\n")
+                    return
+                }
+                append("你的狼队友是 ")
+                append(
+                    mates.joinToString("、") { mate ->
+                        "${mate.seat} 号「${mate.name}」" + when {
+                            mate.alive -> ""
+                            mate.seat in game.ghostWolves -> "（已自爆，今晚还会跟你们一起商议、定刀，定完就离场）"
+                            else -> "（已出局）"
+                        }
+                    }
+                )
+                append("。\n")
+                append("白天**一个字都不能提他们**，但你自己心里必须清楚：除非明确在演倒钩战术，")
+                append("永远不要把他们写进怀疑名单，更不要把票投给他们。\n\n")
+            }
+
+            player.role == WerewolfRole.SEER && game.seerChecks.isNotEmpty() -> {
+                val checks = game.seerChecks.joinToString("、") {
+                    "第 ${it.day} 夜 ${it.targetSeat} 号${if (it.isWerewolf) "狼人" else "好人"}"
+                }
+                append("【你的底牌与查验】你是 ").append(seat).append(" 号预言家。已查验：")
+                    .append(checks).append("。\n\n")
+            }
+
+            player.role == WerewolfRole.WITCH -> {
+                val used = game.nights.filter { it.healed || it.poisonTarget != null }
+                if (used.isNotEmpty()) {
+                    val summary = used.joinToString("；") { night ->
+                        val parts = buildList {
+                            if (night.healed) {
+                                add(
+                                    when {
+                                        night.wolfTarget == null -> "用了解药"
+                                        night.mutualProtection -> "救了 ${night.wolfTarget} 号（守救同归仍出局）"
+                                        else -> "救了 ${night.wolfTarget} 号"
+                                    }
+                                )
+                            }
+                            night.poisonTarget?.let { add("毒了 $it 号") }
+                        }
+                        "第 ${night.day} 夜" + parts.joinToString("、")
+                    }
+                    val stock = "解药${if (game.witch.antidoteAvailable) "还在" else "已空"}、毒药${if (game.witch.poisonAvailable) "还在" else "已空"}"
+                    append("【你的底牌与用药】你是 ").append(seat).append(" 号女巫（").append(stock)
+                        .append("）。用药记录：").append(summary).append("。牢记你救过和毒过的人，别在白天搞混。\n\n")
                 }
             }
-        )
-        append("。\n")
-        append("白天**一个字都不能提他们**，但你自己心里必须清楚：他们不是候选，")
-        append("永远不要把他们写进怀疑名单，更不要把票投给他们——那等于白送狼队一张牌。\n\n")
+
+            player.role == WerewolfRole.GUARD && game.nights.isNotEmpty() -> {
+                val summary = game.nights.joinToString("、") { night ->
+                    val act = night.guarded?.let { "守 $it 号" } ?: "空守"
+                    "第 ${night.day} 夜$act"
+                }
+                append("【你的底牌与守护】你是 ").append(seat).append(" 号守卫。守护记录：")
+                    .append(summary).append("。\n\n")
+            }
+        }
     }
 
     /**

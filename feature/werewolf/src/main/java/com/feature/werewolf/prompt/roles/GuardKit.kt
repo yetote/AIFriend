@@ -7,37 +7,25 @@ import com.feature.werewolf.game.WerewolfGame
 import com.feature.werewolf.game.WerewolfPromptStyle
 import com.feature.werewolf.game.WerewolfRole
 
-/**
- * 守卫。
- *
- * 规则（[rules]）写在这里，狼那边的**反制**写在 [WolfKillBrief]：同一条「不能连守」，
- * 守卫要用来安排今晚守谁，狼要用来判断哪一刀不会落空。
- */
+/** 守卫：靠预判刀口抢轮次的暗神。 */
 internal object GuardKit : RoleKit {
 
     override val roles = setOf(WerewolfRole.GUARD)
 
-    // 守救同归必须对**所有人**说：牌桌上看起来就是「明明守了又救了，怎么还是死了」。
-    // 两句拼成一行，是因为它们在板子说明里本来就是同一段连续的机制描述。
     override fun rules(role: WerewolfRole): List<String> = listOf(
         "守卫每夜先于狼人守一个人，被守的人当夜不会被刀死；不能连续两夜守同一个人，可以守自己。" +
             "守卫和解药同时作用在一个人身上时，那个人**还是会死**（守救同归）。",
     )
 
     override fun publicStrategy(role: WerewolfRole): String =
-        "守卫尤其不能说自己守过谁——那等于把守人路线和剩下的选择交给狼队，平安夜也不能当证据。"
+        "守卫未决定明跳前不要泄露守人路线，以免被狼队算清裸位。"
 
     override fun notes(game: WerewolfGame, seat: Int): List<String> =
         notes(game, seat, WerewolfPromptStyle.GUIDED)
 
     override fun notes(game: WerewolfGame, seat: Int, style: WerewolfPromptStyle): List<String> {
         val guided = style == WerewolfPromptStyle.GUIDED
-        // 白天不能读 lastGuardedSeat：`startNextNight()` 是**白天结束**时才把它换成
-        // 上一夜的守人，所以白天这一刻它指向的是「前夜的前夜」。
-        // 实测后果很严重——守卫在白天照着这个字段发言，报的守人对象整整差一夜
-        // （第 2 天说守 5 号实守 4 号、第 4 天说守 6 号实守 10 号），
-        // 好人据此认定他「前后矛盾、在编身份」，把真守卫票了出去。
-        // 白天该看的是 tonightGuardedSeat，它只在跨夜时被搬走。
+        // 白天读 tonightGuardedSeat，夜间守护阶段读 lastGuardedSeat，保证「昨夜」永远精准对齐。
         val lastNight = if (game.phase.isNight) game.lastGuardedSeat else game.tonightGuardedSeat
         val lines = mutableListOf<String>()
         lines += if (lastNight == null) {
@@ -45,34 +33,33 @@ internal object GuardKit : RoleKit {
         } else {
             "你昨夜守的是 $lastNight 号，今晚不能再守他。"
         }
+        guardHistory(game)?.let { lines += it }
         if (game.phase == Phase.NIGHT_GUARD) {
-            lines += "现在轮到你守护。你不知道今晚狼人会刀谁，只能凭白天的发言去猜。"
+            lines += "现在轮到你守护。你不知道今晚狼人会刀谁，只能凭白天的发言和局势去预判。"
         }
-        lines += "你守的人当夜不会被刀死，但你自己也可能被刀——守自己同样是合法选择。"
-        lines += "你救下人的时候不会被告知，平安夜也可能只是狼人空刀。"
-        // 「平安夜别当证据、守过谁别报出来」是藏身打法：报不报守人是守卫自己的
-        // 战术自由，自由模式里由他决定；引导式才提醒泄露风险。
+        lines += "你守的人当夜不会被刀死，但你自己也可能被刀——守自己和空守都是合法选择。"
+        lines += "你守中人时不会被系统告知；平安夜可能是你守中了、女巫救了，也可能是狼人空刀。"
         if (guided) {
-            lines += "平安夜不要在白天当成证据说出来，也不要报出你守过谁：" +
-                "那等于把守人路线和剩下的选择一起交给狼队。"
+            lines += "未到明跳时机前，白天不要报出你守过谁，也别把平安夜当成公开证据——那会把守人路线交出去。"
         }
         return lines
     }
 
+    /** 完整逐夜守护履历，防止中后期记混自己前几夜到底有没有空守、守过谁。 */
+    private fun guardHistory(game: WerewolfGame): String? {
+        if (game.nights.isEmpty()) return null
+        val text = game.nights.joinToString("；") { night ->
+            val act = night.guarded?.let { "守了 $it 号" } ?: "空守"
+            "第 ${night.day} 夜$act"
+        }
+        return "【你的守护记录】$text。"
+    }
+
     override fun playbook(role: WerewolfRole, config: WerewolfConfig): List<String> = listOf(
-        "你是守卫，你的价值在夜里，不在嘴上。",
-        "白天不要报守过谁，也不要暗示「我昨晚有信息」——那等于把守人路线交出去。",
-        // 权威守卫攻略：首夜主流空守（女巫会盲救，守中+救=守救同归反把人奶死）；
-        // 守护优先级是双药女巫 > 预言家 > 明好人，不再一味「守最像预言家的」。
-        "首夜空守是常见打法：把救人交给女巫，既避开守救同归，还能让她拿到银水信息；" +
-            "自守是另一种思路，但会少掉第二晚的灵活。",
-        "守谁：优先守还有双药的女巫，其次坐实的真预言家或身份最强的明好人，必要时守自己。",
-        "第二晚分情况：真假预言家都在场就不必守预言家，优先自守或守明好人；" +
-            "单边预言家再守预言家，至少保住两晚的验人。",
-        "第三晚起判断场上神少还是民少；若你守出过平安夜，狼多半会追刀同一人，第二天可以考虑空守。",
-        "女巫出局或解药用完前不要明跳；到该跳时，讲清每晚守谁和心路，让好人认下你。",
-        "被人怀疑身份时别急着辩解。过度解释本身就是破绽，一句「我没信息」就够了。",
-        "守人的时候别只盯着「谁像预言家」：**突然跳出来、专挑活人发金水的预言家**要留个心眼——" +
-            "那是悍跳狼最省力的做法。守错人等于白丢一个守护。",
+        "你是守卫，核心价值在夜里保人，白天不要冒充预言家抢警徽。",
+        "首夜主流打法是空守：女巫大概率盲救，空守既避开守救同归，又能把银水信息交给女巫，同时留满第 2 夜的灵活度。",
+        "第 2 夜起按优先级守护：双药女巫 > 单边坐实的真预言家 > 关键明好人或自守；双预对跳未分真假时不必赌守预言家，优先自守或守明好人。",
+        "女巫未出局且你没面临抗推前，尽量藏好守卫身份、别报守人路线；但若面临被抗推、或残局需要拍身份带队算轮次，果断跳明守卫并报出完整的逐夜守护记录。",
+        "若双死夜里警长出局并把警徽交给你，务必同时盘「他是真预吃刀」和「他是悍跳狼吃毒」两种可能——接了警徽绝不等于他必是真预言家。",
     )
 }
