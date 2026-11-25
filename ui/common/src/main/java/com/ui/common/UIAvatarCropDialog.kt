@@ -44,7 +44,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import com.ui.common.theme.UIActionBrush
+import com.ui.common.theme.UIAtelierInk
+import com.ui.common.theme.UIAtelierInkElevated
+import com.ui.common.theme.UIRadiusControl
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -76,46 +82,36 @@ fun UIAvatarCropDialog(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black)
+                .background(UIAtelierInk)
                 .safeDrawingPadding()
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                    .padding(horizontal = 20.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "调整头像",
-                    color = Color.White,
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(start = 12.dp)
-                )
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(50))
-                        .clickable { onCancel() }
-                        .padding(horizontal = 14.dp, vertical = 8.dp)
-                ) {
+                        .size(width = 3.5.dp, height = 16.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(Color(0xFFE5B869))
+                )
+                Spacer(Modifier.width(9.dp))
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "取消",
-                        color = Color.White.copy(alpha = 0.85f),
-                        fontSize = 15.sp
+                        text = "调整头像",
+                        color = Color(0xFFFFFDF9),
+                        fontSize = 17.5.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "双指缩放，拖动选择显示范围",
+                        color = Color(0xFFB3A595),
+                        fontSize = 12.sp
                     )
                 }
             }
-            Text(
-                text = "双指缩放，拖动选择显示范围",
-                color = Color.White.copy(alpha = 0.6f),
-                fontSize = 12.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-            )
 
             BoxWithConstraints(
                 modifier = Modifier
@@ -216,31 +212,32 @@ fun UIAvatarCropDialog(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .height(50.dp)
-                        .clip(RoundedCornerShape(50))
-                        .background(Color.White.copy(alpha = 0.14f))
+                        .height(46.dp)
+                        .clip(RoundedCornerShape(UIRadiusControl))
+                        .background(UIAtelierInkElevated)
+                        .border(1.dp, Color(0x2BF5E8D8), RoundedCornerShape(UIRadiusControl))
                         .clickable { onCancel() },
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = "取消",
-                        fontSize = 16.sp,
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.Medium,
-                        color = Color.White
+                        color = Color(0xFFF3ECE2)
                     )
                 }
                 Box(
                     modifier = Modifier
-                        .weight(1.4f)
-                        .height(50.dp)
-                        .clip(RoundedCornerShape(50))
+                        .weight(1.35f)
+                        .height(46.dp)
+                        .clip(RoundedCornerShape(UIRadiusControl))
                         .background(UIActionBrush)
                         .clickable {
                             val bitmap = image ?: return@clickable
@@ -255,7 +252,7 @@ fun UIAvatarCropDialog(
                 ) {
                     Text(
                         text = "使用这张",
-                        fontSize = 16.sp,
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = Color.White
                     )

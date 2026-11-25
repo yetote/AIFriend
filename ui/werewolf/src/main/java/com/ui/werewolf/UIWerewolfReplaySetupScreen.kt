@@ -265,7 +265,12 @@ private fun SubstitutePicker(
                             .padding(horizontal = 8.dp, vertical = 9.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        UIAvatar(name = friend.name, avatarPath = friend.avatarPath, size = 34.dp)
+                        UIAvatar(
+                            name = friend.name,
+                            avatarPath = friend.avatarPath,
+                            size = 34.dp,
+                            shape = RoundedCornerShape(10.dp)
+                        )
                         Spacer(Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(

@@ -853,16 +853,16 @@ private fun RecastCandidateRow(
             .fillMaxWidth()
             .clip(RoundedCornerShape(UIRadiusControl))
             .background(
-                if (selected) UIFriendBarTagTextBlue.copy(alpha = 0.10f)
-                else Color.Transparent
+                if (selected) UIFriendBarTagTextBlue.copy(alpha = 0.12f)
+                else com.ui.common.theme.UIAtelierSand.copy(alpha = 0.65f)
             )
             .border(
                 width = 1.dp,
-                color = if (selected) UIFriendBarTagTextBlue else UIFriendBarItemMetaColor.copy(alpha = 0.3f),
+                color = if (selected) UIFriendBarTagTextBlue else com.ui.common.theme.UIGlassStroke,
                 shape = RoundedCornerShape(UIRadiusControl),
             )
             .clickable { onPick(candidate.id) }
-            .padding(horizontal = 10.dp, vertical = 8.dp),
+            .padding(horizontal = 12.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {

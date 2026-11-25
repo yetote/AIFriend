@@ -94,6 +94,7 @@ import com.ui.common.theme.UIBubbleUserBrush
 import com.ui.common.theme.UIChatErrorBg
 import com.ui.common.theme.UIChatSendDisabled
 import com.ui.common.theme.UIDialogButtons
+import com.ui.common.theme.UIDialogDismissButton
 import com.ui.common.theme.UIComposerHeight
 import com.ui.common.theme.UIFieldFill
 import com.ui.common.theme.UIGlassBar
@@ -450,10 +451,9 @@ fun UIRoomChatPage(
             subtitle = formatRoomTime(target.createdAt),
             onDismiss = { actionMessage = null },
             actions = {
-                UIDialogButtons(
-                    confirmText = "关闭",
-                    onConfirm = { actionMessage = null },
-                    cancelText = null
+                UIDialogDismissButton(
+                    text = "关闭",
+                    onClick = { actionMessage = null }
                 )
             }
         ) {
@@ -1027,7 +1027,7 @@ private fun MentionPickerDialog(
                         name = member.name,
                         avatarPath = member.avatarPath,
                         size = 34.dp,
-                        shape = CircleShape
+                        shape = RoundedCornerShape(10.dp)
                     )
                     Spacer(Modifier.width(12.dp))
                     Text(
@@ -1195,35 +1195,46 @@ private fun RoomSearchDialog(
         subtitle = "仅搜索已加载的消息（最近 ${messages.size} 条）",
         onDismiss = onDismiss,
         actions = {
-            UIDialogButtons(
-                confirmText = "关闭",
-                onConfirm = onDismiss
+            UIDialogDismissButton(
+                text = "关闭",
+                onClick = onDismiss
             )
         }
     ) {
-        Box(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(42.dp)
-                .uiControl(shape = RoundedCornerShape(50), color = UIGlassSurface)
-                .padding(horizontal = 14.dp),
-            contentAlignment = Alignment.CenterStart
+                .clip(RoundedCornerShape(UIRadiusControl))
+                .background(UIAtelierSand)
+                .border(0.8.dp, UIGlassStroke, RoundedCornerShape(UIRadiusControl))
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            if (query.isEmpty()) {
-                Text(
-                    text = "输入关键词",
-                    fontSize = 14.sp,
-                    color = UIFriendBarItemMetaColor.copy(alpha = 0.7f)
+            Icon(
+                imageVector = Icons.Filled.Search,
+                contentDescription = null,
+                tint = UIFriendBarItemMetaColor,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(Modifier.width(8.dp))
+            Box(modifier = Modifier.weight(1f)) {
+                if (query.isEmpty()) {
+                    Text(
+                        text = "输入关键词",
+                        fontSize = 14.sp,
+                        color = UIFriendBarItemMetaColor.copy(alpha = 0.8f)
+                    )
+                }
+                BasicTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    textStyle = TextStyle(fontSize = 14.sp, color = UIFriendBarTitleColor),
+                    cursorBrush = SolidColor(UIFriendBarTagTextBlue)
                 )
             }
-            BasicTextField(
-                value = query,
-                onValueChange = { query = it },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                textStyle = TextStyle(fontSize = 14.sp, color = UIFriendBarTitleColor),
-                cursorBrush = SolidColor(UIFriendBarTagTextBlue)
-            )
         }
         Column(
             modifier = Modifier
@@ -1314,7 +1325,7 @@ fun RoomMembersDialog(
                 .fillMaxWidth()
                 .heightIn(max = 360.dp)
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(2.dp)
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             if (allFriends.isEmpty()) {
                 Text(
@@ -1330,17 +1341,21 @@ fun RoomMembersDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(UIRadiusControl))
+                        .background(
+                            if (checked) UIFriendBarTagBgBlue.copy(alpha = 0.55f)
+                            else Color.Transparent
+                        )
                         .clickable(enabled = canToggle) {
                             if (checked) pendingRemove = friend else onToggle(friend.id)
                         }
-                        .padding(horizontal = 8.dp, vertical = 7.dp),
+                        .padding(horizontal = 8.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     UIAvatar(
                         name = friend.name,
                         avatarPath = friend.avatarPath,
                         size = 34.dp,
-                        shape = CircleShape
+                        shape = RoundedCornerShape(10.dp)
                     )
                     Spacer(Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
@@ -1410,7 +1425,7 @@ fun RoomMembersDialog(
     }
 }
 
-/** 弹窗里的胶囊动作按钮（复制 / 引用 / 删除）。 */
+/** 弹窗里的动作按钮（复制 / 引用 / 删除）：与全站 12dp 方圆按钮体系保持一致。 */
 @Composable
 private fun DialogPillAction(
     text: String,
@@ -1419,18 +1434,20 @@ private fun DialogPillAction(
     contentColor: Color = UIFriendBarTagTextBlue,
     onClick: () -> Unit
 ) {
+    val shape = RoundedCornerShape(UIRadiusControl)
     Box(
         modifier = modifier
-            .height(38.dp)
-            .clip(RoundedCornerShape(50))
+            .height(40.dp)
+            .clip(shape)
             .background(containerColor)
+            .border(0.8.dp, contentColor.copy(alpha = 0.22f), shape)
             .clickable { onClick() },
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = text,
             fontSize = 14.sp,
-            fontWeight = FontWeight.Medium,
+            fontWeight = FontWeight.SemiBold,
             color = contentColor
         )
     }

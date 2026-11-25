@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -24,8 +25,6 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -1609,6 +1608,7 @@ private fun RoleAssignRow(
     onPick: (String?) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val assigned = options.firstOrNull { it.key == assignedKey }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1617,60 +1617,71 @@ private fun RoleAssignRow(
     ) {
         Text(
             text = friendName,
-            fontSize = 13.sp,
+            fontSize = 13.5.sp,
+            fontWeight = FontWeight.Medium,
             color = UIFriendBarTitleColor,
             modifier = Modifier.weight(1f),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
-        Box {
-            val assigned = options.firstOrNull { it.key == assignedKey }
-            Text(
-                text = assigned?.label ?: "随机",
-                fontSize = 12.sp,
-                fontWeight = if (assigned != null) FontWeight.SemiBold else FontWeight.Normal,
-                color = if (assigned != null) UIFriendBarTagTextBlue else UIFriendBarItemSubtitleColor,
+        Text(
+            text = assigned?.label ?: "随机",
+            fontSize = 12.sp,
+            fontWeight = if (assigned != null) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (assigned != null) UIFriendBarTagTextBlue else UIFriendBarItemSubtitleColor,
+            modifier = Modifier
+                .clip(RoundedCornerShape(UIRadiusControl))
+                .background(if (assigned != null) UIFriendBarTagTextBlue.copy(alpha = 0.14f) else UIAtelierSand)
+                .border(
+                    width = 1.dp,
+                    color = if (assigned != null) UIFriendBarTagTextBlue else UIGlassStroke,
+                    shape = RoundedCornerShape(UIRadiusControl)
+                )
+                .clickable { expanded = true }
+                .padding(horizontal = 12.dp, vertical = 6.dp)
+        )
+    }
+    if (expanded) {
+        com.ui.common.theme.UIIosDialog(
+            title = "指定身份 · $friendName",
+            subtitle = "选择这一席想拿的牌，也可改回随机发牌",
+            onDismiss = { expanded = false },
+            actions = {
+                com.ui.common.theme.UIDialogDismissButton(
+                    text = "取消",
+                    onClick = { expanded = false }
+                )
+            }
+        ) {
+            Column(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(UIRadiusControl))
-                    .background(if (assigned != null) UIFriendBarTagTextBlue.copy(alpha = 0.14f) else UIFieldFill)
-                    .border(
-                        width = if (assigned != null) 1.2.dp else 1.dp,
-                        color = if (assigned != null) UIFriendBarTagTextBlue else UIGlassStroke,
-                        shape = RoundedCornerShape(UIRadiusControl)
-                    )
-                    .clickable { expanded = true }
-                    .padding(horizontal = 12.dp, vertical = 6.dp)
-            )
-            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                DropdownMenuItem(
-                    text = { Text("随机（不指定）") },
+                    .fillMaxWidth()
+                    .heightIn(max = 360.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                SetupPickerOptionRow(
+                    title = "随机（不指定）",
+                    subtitle = "开局时从剩余身份里随机分配",
+                    selected = assignedKey == null,
+                    enabled = true,
                     onClick = {
                         expanded = false
                         onPick(null)
                     }
                 )
                 options.forEach { option ->
-                    // 名额 route 已经按「头狼+狼人共享」算好；自己占着的那个名额要加回来，
-                    // 否则自己那行点开选单会看到自己的身份灰着、改不回去
                     val left = if (option.key == assignedKey) option.remaining + 1 else option.remaining
-                    DropdownMenuItem(
-                        text = {
-                            // 用「·」分隔而不是再加一层括号：有些身份的名字本身带括号
-                            // （「头狼（定战术）」），套进去就是三层括号
-                            Text(
-                                text = if (left == option.total) {
-                                    "${option.label} · ${option.total} 个名额"
-                                } else {
-                                    "${option.label} · 剩 $left 个名额"
-                                },
-                                color = if (left > 0 || option.key == assignedKey) {
-                                    UIFriendBarTitleColor
-                                } else {
-                                    UIFriendBarItemSubtitleColor.copy(alpha = 0.5f)
-                                }
-                            )
+                    val selectable = left > 0 || option.key == assignedKey
+                    SetupPickerOptionRow(
+                        title = option.label,
+                        subtitle = if (left == option.total) {
+                            "${option.total} 个名额"
+                        } else {
+                            "剩 $left 个名额"
                         },
-                        enabled = left > 0 || option.key == assignedKey,
+                        selected = option.key == assignedKey,
+                        enabled = selectable,
                         onClick = {
                             expanded = false
                             onPick(option.key)
@@ -1682,12 +1693,6 @@ private fun RoleAssignRow(
     }
 }
 
-/**
- * 一个好友的牌手风格选择行。
- *
- * 「自动」是默认：引擎按好友 id 稳定分配、同桌尽量不重样。手动挑只是给
- * 想固定某人风格的人用，所以选单项第一条就是回到自动。
- */
 @Composable
 private fun StyleAssignRow(
     friendName: String,
@@ -1695,6 +1700,7 @@ private fun StyleAssignRow(
     onPick: (String?) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val assigned = UI_PLAYER_STYLES.firstOrNull { it.id == assignedId }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1703,56 +1709,134 @@ private fun StyleAssignRow(
     ) {
         Text(
             text = friendName,
-            fontSize = 13.sp,
+            fontSize = 13.5.sp,
+            fontWeight = FontWeight.Medium,
             color = UIFriendBarTitleColor,
             modifier = Modifier.weight(1f),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
-        Box {
-            val assigned = UI_PLAYER_STYLES.firstOrNull { it.id == assignedId }
-            Text(
-                text = assigned?.label ?: "自动",
-                fontSize = 12.sp,
-                fontWeight = if (assigned != null) FontWeight.SemiBold else FontWeight.Normal,
-                color = if (assigned != null) UIFriendBarTagTextBlue else UIFriendBarItemSubtitleColor,
+        Text(
+            text = assigned?.label ?: "自动",
+            fontSize = 12.sp,
+            fontWeight = if (assigned != null) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (assigned != null) UIFriendBarTagTextBlue else UIFriendBarItemSubtitleColor,
+            modifier = Modifier
+                .clip(RoundedCornerShape(UIRadiusControl))
+                .background(if (assigned != null) UIFriendBarTagTextBlue.copy(alpha = 0.14f) else UIAtelierSand)
+                .border(
+                    width = 1.dp,
+                    color = if (assigned != null) UIFriendBarTagTextBlue else UIGlassStroke,
+                    shape = RoundedCornerShape(UIRadiusControl)
+                )
+                .clickable { expanded = true }
+                .padding(horizontal = 12.dp, vertical = 6.dp)
+        )
+    }
+    if (expanded) {
+        com.ui.common.theme.UIIosDialog(
+            title = "牌手风格 · $friendName",
+            subtitle = "决定这个 AI 的发言与博弈气质",
+            onDismiss = { expanded = false },
+            actions = {
+                com.ui.common.theme.UIDialogDismissButton(
+                    text = "取消",
+                    onClick = { expanded = false }
+                )
+            }
+        ) {
+            Column(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(UIRadiusControl))
-                    .background(if (assigned != null) UIFriendBarTagTextBlue.copy(alpha = 0.14f) else UIFieldFill)
-                    .border(
-                        width = if (assigned != null) 1.2.dp else 1.dp,
-                        color = if (assigned != null) UIFriendBarTagTextBlue else UIGlassStroke,
-                        shape = RoundedCornerShape(UIRadiusControl)
-                    )
-                    .clickable { expanded = true }
-                    .padding(horizontal = 12.dp, vertical = 6.dp)
-            )
-            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                DropdownMenuItem(
-                    text = { Text("自动分配（推荐）") },
+                    .fillMaxWidth()
+                    .heightIn(max = 360.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                SetupPickerOptionRow(
+                    title = "自动分配（推荐）",
+                    subtitle = "按座位自动分配不同风格，同桌尽量不重样",
+                    selected = assignedId == null,
+                    enabled = true,
                     onClick = {
                         expanded = false
                         onPick(null)
                     }
                 )
                 UI_PLAYER_STYLES.forEach { style ->
-                    DropdownMenuItem(
-                        text = {
-                            Column {
-                                Text(text = style.label, color = UIFriendBarTitleColor)
-                                Text(
-                                    text = style.tagline,
-                                    fontSize = 11.sp,
-                                    color = UIFriendBarItemSubtitleColor
-                                )
-                            }
-                        },
+                    SetupPickerOptionRow(
+                        title = style.label,
+                        subtitle = style.tagline,
+                        selected = style.id == assignedId,
+                        enabled = true,
                         onClick = {
                             expanded = false
                             onPick(style.id)
                         }
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SetupPickerOptionRow(
+    title: String,
+    subtitle: String,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val shape = RoundedCornerShape(UIRadiusControl)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(
+                when {
+                    selected -> UIFriendBarTagTextBlue.copy(alpha = 0.12f)
+                    enabled -> UIAtelierSand.copy(alpha = 0.65f)
+                    else -> UIAtelierSand.copy(alpha = 0.30f)
+                }
+            )
+            .border(
+                width = 1.dp,
+                color = if (selected) UIFriendBarTagTextBlue else UIGlassStroke,
+                shape = shape
+            )
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = title,
+                fontSize = 13.5.sp,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                color = if (enabled) UIFriendBarTitleColor else UIFriendBarItemSubtitleColor.copy(alpha = 0.5f)
+            )
+            Text(
+                text = subtitle,
+                fontSize = 11.sp,
+                lineHeight = 15.sp,
+                color = if (enabled) UIFriendBarItemSubtitleColor else UIFriendBarItemSubtitleColor.copy(alpha = 0.45f)
+            )
+        }
+        if (selected) {
+            Spacer(Modifier.width(8.dp))
+            Box(
+                modifier = Modifier
+                    .size(20.dp)
+                    .clip(CircleShape)
+                    .background(UIActionBrush),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(13.dp)
+                )
             }
         }
     }

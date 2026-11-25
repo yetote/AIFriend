@@ -41,6 +41,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ui.common.UIAvatar
 import com.ui.common.data.getRandomColor
+import com.ui.common.theme.AtelierDialogHeader
+import com.ui.common.theme.UIAtelierSand
 import com.ui.common.theme.UIDialogButtons
 import com.ui.common.theme.UIFieldFill
 import com.ui.common.theme.UIFriendBarItemMetaColor
@@ -142,32 +144,31 @@ fun UIWerewolfPaceSheet(
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
+                verticalAlignment = Alignment.Top,
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "对局设置",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = UIFriendBarTitleColor,
-                    )
-                    Text(
-                        text = if (pace.running) "改完立刻生效，不用重开这一局" else "这一局已经结束，设置只作记录",
-                        fontSize = 11.5.sp,
-                        color = UIFriendBarItemSubtitleColor,
+                Box(modifier = Modifier.weight(1f)) {
+                    AtelierDialogHeader(
+                        title = "对局设置",
+                        subtitle = if (pace.running) "改完立刻生效，不用重开这一局" else "这一局已经结束，设置只作记录",
                     )
                 }
-                Text(
-                    text = "完成",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = UIFriendBarTagTextBlue,
+                Spacer(Modifier.width(10.dp))
+                Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(50))
-                        .background(UIFriendBarTagTextBlue.copy(alpha = 0.10f))
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(UIAtelierSand)
+                        .border(0.8.dp, UIGlassStroke, RoundedCornerShape(10.dp))
                         .clickable(onClick = onDismiss)
-                        .padding(horizontal = 14.dp, vertical = 6.dp),
-                )
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "完成",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = UIFriendBarTitleColor,
+                    )
+                }
             }
 
             Spacer(Modifier.height(14.dp))
@@ -624,8 +625,8 @@ fun UIWerewolfSwapSeatDialog(
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(UIRadiusControl))
                             .background(
-                                if (selected) UIFriendBarTagTextBlue.copy(alpha = 0.10f)
-                                else UIFieldFill
+                                if (selected) UIFriendBarTagTextBlue.copy(alpha = 0.12f)
+                                else UIAtelierSand.copy(alpha = 0.65f)
                             )
                             .border(
                                 width = 1.dp,
