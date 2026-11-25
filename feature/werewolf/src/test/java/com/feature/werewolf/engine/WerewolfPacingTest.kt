@@ -89,4 +89,57 @@ class WerewolfPacingTest {
         assertEquals(30_000L, pacing.limitMs(TurnKind.DECISION))
         assertEquals("发言段不限", 0L, pacing.limitMs(TurnKind.SPEECH))
     }
+
+    @Test
+    fun `单次超时保留深度思考，连续两次超时才自动关闭`() {
+        val pacing = WerewolfPacing()
+
+        val firstDisabled = pacing.recordTimeout(seat = 3, elapsedMs = 60_000L, kind = TurnKind.DECISION)
+        assertFalse("第 1 次超时不直接关思考", firstDisabled)
+        assertTrue("第 1 次超时后仍允许思考", pacing.thinkingAllowed(3, roleDefault = true))
+        assertEquals(1, pacing.timings.value.getValue(3).timeouts)
+
+        val secondDisabled = pacing.recordTimeout(seat = 3, elapsedMs = 60_000L, kind = TurnKind.SPEECH)
+        assertTrue("连续第 2 次超时应自动关闭思考", secondDisabled)
+        assertFalse("连续 2 次超时后关闭思考", pacing.thinkingAllowed(3, roleDefault = true))
+        assertEquals(2, pacing.timings.value.getValue(3).timeouts)
+    }
+
+    @Test
+    fun `中间正常完成一步会清零连续超时计数`() {
+        val pacing = WerewolfPacing()
+
+        assertFalse(pacing.recordTimeout(seat = 2, elapsedMs = 60_000L, kind = TurnKind.DECISION))
+        pacing.record(seat = 2, elapsedMs = 8_000L, kind = TurnKind.SPEECH, timedOut = false)
+        assertFalse("连超计数已清零，再超一次仍不关思考", pacing.recordTimeout(seat = 2, elapsedMs = 60_000L, kind = TurnKind.DECISION))
+        assertTrue(pacing.thinkingAllowed(2, roleDefault = true))
+        assertEquals(2, pacing.timings.value.getValue(2).timeouts)
+    }
+
+    @Test
+    fun `夜间连续超时只写进隐藏集合，不泄露给参与局`() {
+        val pacing = WerewolfPacing()
+        pacing.recordTimeout(seat = 5, elapsedMs = 60_000L, kind = TurnKind.DECISION, night = true)
+        val disabled = pacing.recordTimeout(seat = 5, elapsedMs = 60_000L, kind = TurnKind.DECISION, night = true)
+
+        assertTrue(disabled)
+        assertTrue(5 in pacing.nightThinkingOff.value)
+        assertFalse("参与局面板不能看到夜间超时关思考", 5 in pacing.playerThinkingOff.value)
+    }
+
+    @Test
+    fun `换人重置单座账本与关思考状态，不影响其他座位`() {
+        val pacing = WerewolfPacing()
+        pacing.recordTimeout(seat = 3, elapsedMs = 60_000L, kind = TurnKind.DECISION)
+        pacing.recordTimeout(seat = 3, elapsedMs = 60_000L, kind = TurnKind.DECISION)
+        pacing.recordTimeout(seat = 4, elapsedMs = 60_000L, kind = TurnKind.DECISION)
+        pacing.recordTimeout(seat = 4, elapsedMs = 60_000L, kind = TurnKind.DECISION)
+
+        pacing.resetSeat(3)
+
+        assertTrue("3 号恢复角色默认思考", pacing.thinkingAllowed(3, roleDefault = true))
+        assertFalse("3 号计时账本清空", 3 in pacing.timings.value)
+        assertFalse("4 号不受影响", pacing.thinkingAllowed(4, roleDefault = true))
+        assertEquals(2, pacing.timings.value.getValue(4).timeouts)
+    }
 }

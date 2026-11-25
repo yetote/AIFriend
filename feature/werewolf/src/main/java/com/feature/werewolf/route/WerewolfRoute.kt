@@ -32,9 +32,11 @@ import com.feature.werewolf.game.WerewolfRole
 import com.feature.werewolf.game.WerewolfSpeechLength
 import com.feature.werewolf.game.WerewolfTurnLimit
 import com.feature.werewolf.vm.WerewolfViewModel
+import com.feature.werewolf.vm.recastCandidates
 import kotlinx.coroutines.launch
 import com.ui.werewolf.UIWerewolfHistoryScreen
 import com.ui.werewolf.UIWerewolfPaceSheet
+import com.ui.werewolf.UIWerewolfSwapSeatDialog
 import com.ui.werewolf.UIWerewolfPromptSettingsScreen
 import com.ui.werewolf.UIWerewolfReplaySetupScreen
 import com.ui.werewolf.UIWerewolfReviewScreen
@@ -95,7 +97,13 @@ fun WerewolfRoute(
     // 所以单独收一路，再并进牌桌的展示模型。
     val retryPrompt by viewModel.retryPrompt.collectAsState()
     val retryUi = remember(retryPrompt) {
-        retryPrompt?.let { UIWerewolfRetry(message = it.message, attempt = it.attempt) }
+        retryPrompt?.let {
+            UIWerewolfRetry(
+                message = it.message,
+                attempt = it.attempt,
+                seat = it.seat,
+            )
+        }
     }
     // 这一局的节奏：档位、关掉思考的座位、每座位耗时账本。都在面板里直接呈现
     val paceLimit by viewModel.pacing.limit.collectAsState()
@@ -142,6 +150,8 @@ fun WerewolfRoute(
     var styleByFriend by remember { mutableStateOf(emptyMap<String, String>()) }
     /** 牌桌上打开的对局设置面板。 */
     var showPaceSheet by remember { mutableStateOf(false) }
+    /** 局中热换人目标座位号；非空时弹出换人选择框。 */
+    var swappingSeat by remember { mutableStateOf<Int?>(null) }
 
     /**
      * 「用户刚点了接着打或新开一局」。
@@ -200,6 +210,8 @@ fun WerewolfRoute(
             replayState != null -> viewModel.closeReplay()
             replaySetup != null -> viewModel.cancelReplaySetup()
             recordView != null -> viewModel.closeRecord()
+            screen == WerewolfScreen.Table && swappingSeat != null -> swappingSeat = null
+            screen == WerewolfScreen.Table && showPaceSheet -> showPaceSheet = false
             screen == WerewolfScreen.Table && showReview -> showReview = false
             screen == WerewolfScreen.Table -> {
                 // 回列表要真的停下：留在后台继续跑，用户在看列表，AI 却在替他打牌
@@ -603,6 +615,7 @@ fun WerewolfRoute(
                         bubbleVisible = bubbleVisible,
                         // 参与局：按座位的夜间痕迹（超时次数、思考被关、最近耗时）一律不给
                         participating = humanSeat != null && !state.finished,
+                        humanSeat = humanSeat,
                     )
                 }
                 // 面板要压在牌桌上面，必须是同一个 Box 的兄弟节点；
@@ -628,6 +641,8 @@ fun WerewolfRoute(
                     ),
                     // 牌桌左上角的返回 = 收起牌桌回列表，不是退出狼人杀
                     onExit = {
+                        swappingSeat = null
+                        showPaceSheet = false
                         viewModel.pause()
                         screen = WerewolfScreen.History
                     },
@@ -654,6 +669,7 @@ fun WerewolfRoute(
                     onHideThinkingBubble = viewModel::hideThinkingBubble,
                     onRetry = viewModel::retryFailedStep,
                     onGiveUpStep = viewModel::giveUpFailedStep,
+                    onSwapRetrySeat = { seat -> swappingSeat = seat },
                     // 自爆：能不能点由 live.canExplode 决定（牌桌内部再 gate 一次），
                     // 这里只负责把动作交下去
                     onExplode = viewModel::explodeNow,
@@ -669,8 +685,45 @@ fun WerewolfRoute(
                         bubbleOn = showThinking,
                         onBubbleChange = viewModel::setShowThinking,
                         onSeatBubbleChange = viewModel::setBubbleVisible,
+                        onRequestSwapSeat = { seat ->
+                            showPaceSheet = false
+                            swappingSeat = seat
+                        },
                         onDismiss = { showPaceSheet = false },
                     )
+                }
+                val swapTarget = swappingSeat
+                val currentPlayers = state.table?.game?.players.orEmpty()
+                if (swapTarget != null && !state.finished) {
+                    val targetPlayer = currentPlayers.firstOrNull { it.seat == swapTarget }
+                    if (targetPlayer != null && swapTarget != humanSeat) {
+                        val candidates = remember(swapTarget, currentPlayers, friends, apiChecks) {
+                            recastCandidates(
+                                failedSeats = listOf(swapTarget),
+                                players = currentPlayers,
+                                friends = friends,
+                                checks = apiChecks,
+                            )[swapTarget].orEmpty().map { c ->
+                                UIWerewolfRecastCandidate(
+                                    id = c.id,
+                                    name = c.name,
+                                    model = c.model,
+                                    reachable = c.reachable,
+                                )
+                            }
+                        }
+                        UIWerewolfSwapSeatDialog(
+                            seat = swapTarget,
+                            oldName = targetPlayer.name,
+                            oldModel = targetPlayer.model.takeIf { it != "human" }.orEmpty(),
+                            candidates = candidates,
+                            onConfirm = { newFriendId ->
+                                swappingSeat = null
+                                viewModel.swapSeatInGame(swapTarget, newFriendId)
+                            },
+                            onDismiss = { swappingSeat = null },
+                        )
+                    }
                 }
                 }
             }
@@ -755,6 +808,8 @@ internal fun buildPace(
     bubbleVisible: Map<Int, Boolean>,
     /** 参与局（有人在桌上）：按座位的夜间痕迹一律不给。 */
     participating: Boolean,
+    /** 人类座位号；用于标记人类座位不支持局中换人。 */
+    humanSeat: Int? = null,
 ): UIWerewolfPace {
     val seats = table?.game?.players.orEmpty().map { player ->
         val timing = timings[player.seat]
@@ -788,6 +843,8 @@ internal fun buildPace(
             timeoutCount = if (participating) (timing?.dayTimeouts ?: 0) else (timing?.timeouts ?: 0),
             eliminated = !player.alive,
             bubbleVisible = bubbleVisible[player.seat] ?: bubbleDefault,
+            isHuman = player.seat == humanSeat,
+            model = player.model.takeIf { it != "human" }.orEmpty(),
         )
     }.sortedWith(compareBy({ it.eliminated }, { it.seat }))
     return UIWerewolfPace(

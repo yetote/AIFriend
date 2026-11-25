@@ -548,7 +548,11 @@ internal fun timeoutNoticeText(
     val player = nameOf(timeout.seat)
     val who = if (player != null) "${timeout.seat} 号 $player" else "${timeout.seat} 号"
     val what = if (timeout.kind == TurnKind.SPEECH) "发言" else "决定"
-    return "$who 的$what 超出 ${timeout.limitSeconds} 秒时限，已按兜底继续；本局不再给它开深度思考"
+    return if (timeout.thinkingDisabled) {
+        "$who 的$what 超出 ${timeout.limitSeconds} 秒时限，已按兜底继续；连续超时，本局不再给它开深度思考"
+    } else {
+        "$who 的$what 超出 ${timeout.limitSeconds} 秒时限，已按兜底继续（再次连续超时将自动关闭深度思考）"
+    }
 }
 
 internal fun DeathCause.toFate(): UIWerewolfFate = when (this) {

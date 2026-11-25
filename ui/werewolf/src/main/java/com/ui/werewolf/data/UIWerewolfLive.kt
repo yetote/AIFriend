@@ -323,6 +323,8 @@ data class UIWerewolfRetry(
     val message: String,
     /** 这是第几次重发（第一次失败为 1）。0 或 1 都不显示「第 N 次」。 */
     val attempt: Int,
+    /** 失败对应的座位号，供重试条直接发起「局中换人」。 */
+    val seat: Int? = null,
 )
 
 data class UIWerewolfLive(

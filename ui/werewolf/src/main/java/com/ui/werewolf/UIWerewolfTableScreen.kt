@@ -85,6 +85,8 @@ fun UIWerewolfTableScreen(
     onRetry: () -> Unit = {},
     /** 错误条上「放弃这一步」：让原来的错误照常停下整局。 */
     onGiveUpStep: () -> Unit = {},
+    /** 错误条上「换人」：直接在局中替换卡住的那个 AI 座位。传 null 不显示。 */
+    onSwapRetrySeat: ((Int) -> Unit)? = null,
     /**
      * 自爆。传 null 就不画那个按钮。
      *
@@ -212,8 +214,15 @@ fun UIWerewolfTableScreen(
                     night = night,
                     onRetry = onRetry,
                     onGiveUp = onGiveUpStep,
+                    onSwapSeat = retry.seat?.let { seat ->
+                        onSwapRetrySeat?.let { cb -> { cb(seat) } }
+                    },
                 )
-                live.error != null -> ErrorStrip(message = live.error, night = night)
+                live.error != null -> ErrorStrip(
+                    message = live.error,
+                    night = night,
+                    onOpenSettings = onOpenSettings?.takeIf { replay == null && !live.finished },
+                )
             }
 
             // 超时提示只停留几秒：它不是状态，是「刚才发生了什么」。
@@ -360,7 +369,11 @@ fun UIWerewolfTableScreen(
 
 /** 出错条：局面还在，只是这一步没走通。不要做成弹窗，弹窗会挡住牌桌。 */
 @Composable
-internal fun ErrorStrip(message: String, night: Boolean) {
+internal fun ErrorStrip(
+    message: String,
+    night: Boolean,
+    onOpenSettings: (() -> Unit)? = null,
+) {
     val shape = RoundedCornerShape(UIRadiusControl)
     Box(
         modifier = Modifier
@@ -372,12 +385,28 @@ internal fun ErrorStrip(message: String, night: Boolean) {
             .border(0.8.dp, UIFriendBarRed.copy(alpha = if (night) 0.45f else 0.24f), shape)
             .padding(horizontal = 12.dp, vertical = 9.dp)
     ) {
-        Text(
-            text = "$message\n这一局的进度已经存档，下次进来可以接着打。",
-            fontSize = FsName,
-            lineHeight = 19.sp,
-            color = if (night) Color(0xFFFFB4B0) else UIFriendBarRed
-        )
+        Column {
+            Text(
+                text = "$message\n这一局的进度已经存档，可在此换人或下次接着打。",
+                fontSize = FsName,
+                lineHeight = 19.sp,
+                color = if (night) Color(0xFFFFB4B0) else UIFriendBarRed
+            )
+            if (onOpenSettings != null) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "换人 / 调整设置",
+                    fontSize = FsMeta,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(UIFriendBarRed)
+                        .clickable(onClick = onOpenSettings)
+                        .padding(horizontal = 13.dp, vertical = 5.dp)
+                )
+            }
+        }
     }
 }
 
@@ -385,8 +414,8 @@ internal fun ErrorStrip(message: String, night: Boolean) {
  * 「某一步请求失败、等人重发」的提示条。
  *
  * 和普通错误条的区别：这一局还活着，引擎正挂在那个请求上等决定，
- * 所以要在原地给出两个动作——重发（原参数再来一次）或放弃（照常停下）。
- * 不做成弹窗：弹窗会挡住牌桌，而用户可能正想看着局势判断要不要再试。
+ * 所以要在原地给出两个动作——重发（原参数再来一次）或放弃（照常停下）；
+ * 也可以直接点击「换人」就地替换该座位模型。
  */
 @Composable
 internal fun RetryStrip(
@@ -394,6 +423,7 @@ internal fun RetryStrip(
     night: Boolean,
     onRetry: () -> Unit,
     onGiveUp: () -> Unit,
+    onSwapSeat: (() -> Unit)? = null,
 ) {
     val labelColor = if (night) Color(0xFFFFB4B0) else UIFriendBarRed
     val shape = RoundedCornerShape(UIRadiusControl)
@@ -431,6 +461,20 @@ internal fun RetryStrip(
                         .clickable(onClick = onRetry)
                         .padding(horizontal = 14.dp, vertical = 5.dp)
                 )
+                if (onSwapSeat != null) {
+                    Text(
+                        text = "换人继续",
+                        fontSize = FsMeta,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (night) Color(0xFFB9C8FF) else SelfBlue,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(if (night) NightControlFill else Color(0xE6FFFFFF))
+                            .border(0.7.dp, (if (night) SelfBlueNight else SelfBlue).copy(alpha = 0.45f), RoundedCornerShape(50))
+                            .clickable(onClick = onSwapSeat)
+                            .padding(horizontal = 12.dp, vertical = 5.dp)
+                    )
+                }
                 Text(
                     text = "放弃这一步",
                     fontSize = FsMeta,

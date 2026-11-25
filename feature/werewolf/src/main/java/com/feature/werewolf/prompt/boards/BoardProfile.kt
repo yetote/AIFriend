@@ -45,6 +45,7 @@ internal object Boards {
         Guard10Board,
         King10Board,
         Guard12Board,
+        King12Board,
         Fool12Board,
         Bear12Board,
     )

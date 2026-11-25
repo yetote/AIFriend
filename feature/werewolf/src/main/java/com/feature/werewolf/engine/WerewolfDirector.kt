@@ -1549,9 +1549,17 @@ class WerewolfDirector(
 
         val elapsed = System.currentTimeMillis() - started
         if (timedOut || degradedByTimeout) {
-            pacing.disableThinking(seat, night = game.phase.isNight)
-            pacing.record(seat, elapsed, TurnKind.SPEECH, timedOut = true, night = game.phase.isNight)
-            onTimedOut(TurnTimeout(seat, TurnKind.SPEECH, timedOutLimitMs, elapsed, phase = game.phase))
+            val disabled = pacing.recordTimeout(seat, elapsed, TurnKind.SPEECH, night = game.phase.isNight)
+            onTimedOut(
+                TurnTimeout(
+                    seat = seat,
+                    kind = TurnKind.SPEECH,
+                    limitMs = timedOutLimitMs,
+                    elapsedMs = elapsed,
+                    phase = game.phase,
+                    thinkingDisabled = disabled,
+                )
+            )
         } else {
             pacing.record(seat, elapsed, TurnKind.SPEECH, timedOut = false, night = game.phase.isNight)
         }
@@ -1720,9 +1728,17 @@ class WerewolfDirector(
         // 后者以前被当成「没事」，下一轮又把思考打开，模型一次次撞同一个超时。
         // 超时的头号原因就是思考把额度吃光了，关掉之后通常几十秒就能回话。
         if (outcome == null || outcome.timedOut) {
-            pacing.disableThinking(seat, night = phase.isNight)
-            pacing.record(seat, elapsed, TurnKind.DECISION, timedOut = true, night = phase.isNight)
-            onTimedOut(TurnTimeout(seat, TurnKind.DECISION, limitMs, elapsed, phase = phase))
+            val disabled = pacing.recordTimeout(seat, elapsed, TurnKind.DECISION, night = phase.isNight)
+            onTimedOut(
+                TurnTimeout(
+                    seat = seat,
+                    kind = TurnKind.DECISION,
+                    limitMs = limitMs,
+                    elapsedMs = elapsed,
+                    phase = phase,
+                    thinkingDisabled = disabled,
+                )
+            )
         } else {
             pacing.record(seat, elapsed, TurnKind.DECISION, timedOut = false, night = phase.isNight)
         }

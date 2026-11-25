@@ -172,6 +172,22 @@ data class WerewolfConfig(
         )
 
         /**
+         * 12 人狼王守卫局：狼王 + 3 狼 + 预女猎守 + 4 民（警长）。
+         *
+         * 线下最经典的 12 人竞技板子之一：既有守卫挡刀与同守同救博弈，又有狼王的翻盘枪，
+         * 警徽争夺与白天轮次压力都拉满。
+         */
+        val King12: Map<WerewolfRole, Int> = mapOf(
+            WerewolfRole.WEREWOLF_KING to 1,
+            WerewolfRole.WEREWOLF to 3,
+            WerewolfRole.SEER to 1,
+            WerewolfRole.WITCH to 1,
+            WerewolfRole.HUNTER to 1,
+            WerewolfRole.GUARD to 1,
+            WerewolfRole.VILLAGER to 4,
+        )
+
+        /**
          * 12 人熊局：4 狼 + 预女猎白熊 + 3 民。
          *
          * 熊不升级也不下刀，它只提供一条稳定公开的线索：左右邻座有狼就咆哮。

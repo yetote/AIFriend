@@ -56,4 +56,17 @@ class WerewolfBoardsTest {
         // 和 configOf 的回落行为正好相反：取配置可以给默认值，取存储不能
         assertTrue(WerewolfBoards.configOf("").composition.isNotEmpty())
     }
+
+    @Test
+    fun `12 人狼王守卫局配置人数、警长与反查正确`() {
+        val cfg = WerewolfBoards.configOf(WerewolfBoards.KING_12)
+        assertEquals(12, cfg.playerCount)
+        assertTrue(cfg.hasSheriff)
+        assertEquals(2, cfg.maxVoteRounds)
+        assertEquals(1, cfg.composition[WerewolfRole.WEREWOLF_KING])
+        assertEquals(3, cfg.composition[WerewolfRole.WEREWOLF])
+        assertEquals(1, cfg.composition[WerewolfRole.GUARD])
+        assertEquals(4, cfg.composition[WerewolfRole.VILLAGER])
+        assertEquals(WerewolfBoards.KING_12, WerewolfBoards.keyOf(cfg))
+    }
 }

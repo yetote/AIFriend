@@ -22,6 +22,7 @@ object WerewolfBoards {
     const val GUARD_10 = "guard10"
     const val KING_10 = "king10"
     const val GUARD_12 = "guard12"
+    const val KING_12 = "king12"
     const val FOOL_12 = "fool12"
     const val BEAR_12 = "bear12"
 
@@ -48,6 +49,7 @@ object WerewolfBoards {
         Board(GUARD_10, "10 人守卫局", WerewolfConfig(composition = WerewolfConfig.Guard10)),
         Board(KING_10, "10 人狼王局", WerewolfConfig(composition = WerewolfConfig.King10)),
         Board(GUARD_12, "12 人守卫局", sheriffBoard(WerewolfConfig.Guard12)),
+        Board(KING_12, "12 人狼王守卫局", sheriffBoard(WerewolfConfig.King12)),
         Board(FOOL_12, "12 人白痴局", sheriffBoard(WerewolfConfig.Fool12)),
         Board(BEAR_12, "12 人熊局", sheriffBoard(WerewolfConfig.Bear12)),
     )

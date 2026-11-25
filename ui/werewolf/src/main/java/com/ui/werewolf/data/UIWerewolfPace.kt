@@ -19,7 +19,7 @@ enum class UIWerewolfTurnLimit(val label: String, val hint: String) {
         get() = if (this == UNLIMITED) {
             "不设上限：一个座位就可能让整局停十几分钟"
         } else {
-            "超时按兜底继续，并关掉这个座位本局的深度思考"
+            "超时按兜底继续；同一座位连续两次超时会自动关闭本局深度思考"
         }
 }
 
@@ -85,6 +85,10 @@ data class UIWerewolfSeatPace(
     val eliminated: Boolean = false,
     /** 这个座位此刻的思考气泡可见性（已算过覆盖值后的最终结果）。 */
     val bubbleVisible: Boolean = true,
+    /** 是不是人类自己（人类座位不支持局中换人）。 */
+    val isHuman: Boolean = false,
+    /** 当前绑定模型名，换人弹窗展示原模型用。 */
+    val model: String = "",
 )
 
 /**

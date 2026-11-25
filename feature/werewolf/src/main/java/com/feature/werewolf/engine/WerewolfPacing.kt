@@ -74,6 +74,8 @@ data class TurnTimeout(
      * 「又超了一次」和「还是上一次那条」，否则第二条提示不会弹出来。
      */
     val at: Long = System.currentTimeMillis(),
+    /** 本次超时是否触发了「关闭本局深度思考」（连续超时达阈值时为 true）。 */
+    val thinkingDisabled: Boolean = false,
 ) {
     val limitSeconds: Int get() = (limitMs / 1000L).toInt()
 }
@@ -91,7 +93,10 @@ data class TurnTimeout(
 class WerewolfPacing(
     limit: WerewolfTurnLimit = WerewolfTurnLimit.STANDARD,
     thinkingOff: Set<Int> = emptySet(),
+    /** 同一座位连续超时达到这次数后，才自动关闭该座位本局的深度思考（默认 2 次，避免偶发抖动一棍子打死）。 */
+    val disableAfterConsecutiveTimeouts: Int = DEFAULT_DISABLE_AFTER_CONSECUTIVE_TIMEOUTS,
 ) {
+    private val consecutiveTimeouts = mutableMapOf<Int, Int>()
     private val _limit = MutableStateFlow(limit)
     val limit: StateFlow<WerewolfTurnLimit> = _limit.asStateFlow()
 
@@ -192,9 +197,49 @@ class WerewolfPacing(
     }
 
     private fun enableThinking(seat: Int) {
+        synchronized(consecutiveTimeouts) { consecutiveTimeouts.remove(seat) }
         _playerThinkingOff.update { it - seat }
         _nightThinkingOff.update { it - seat }
         _thinkingOff.update { it - seat }
+    }
+
+    /**
+     * 局中换人后重置该座位的节奏账本与思考状态：新模型不背旧模型的超时记录。
+     */
+    fun resetSeat(seat: Int) {
+        synchronized(consecutiveTimeouts) { consecutiveTimeouts.remove(seat) }
+        _playerThinkingOff.update { it - seat }
+        _nightThinkingOff.update { it - seat }
+        _thinkingOff.update { it - seat }
+        _timings.update { it - seat }
+    }
+
+    /**
+     * 记录一次超时并按连续次数决定是否关闭该座位的深度思考。
+     *
+     * 偶发一次网络/推理抖动不直接把整个后半局的深度思考一棍子关掉，
+     * 连续超时达到 [disableAfterConsecutiveTimeouts] 次（默认 2 次）时自动关掉；
+     * 中间只要正常完成一步，连续计数清零。
+     *
+     * @return true 表示本次超时触发了自动关闭深度思考。
+     */
+    fun recordTimeout(
+        seat: Int,
+        elapsedMs: Long,
+        kind: TurnKind,
+        night: Boolean = false,
+    ): Boolean {
+        record(seat, elapsedMs, kind, timedOut = true, night = night)
+        val streak = synchronized(consecutiveTimeouts) {
+            val next = (consecutiveTimeouts[seat] ?: 0) + 1
+            consecutiveTimeouts[seat] = next
+            next
+        }
+        val shouldDisable = streak >= disableAfterConsecutiveTimeouts.coerceAtLeast(1)
+        if (shouldDisable) {
+            disableThinking(seat, night = night)
+        }
+        return shouldDisable
     }
 
     /**
@@ -214,6 +259,9 @@ class WerewolfPacing(
      * 免得「谁刚超时」变成夜间角色的定位器（见 [SeatTiming]）。
      */
     fun record(seat: Int, elapsedMs: Long, kind: TurnKind, timedOut: Boolean, night: Boolean = false) {
+        if (!timedOut) {
+            synchronized(consecutiveTimeouts) { consecutiveTimeouts.remove(seat) }
+        }
         val spent = elapsedMs.coerceAtLeast(0L)
         _timings.update { current ->
             val before = current[seat] ?: SeatTiming(seat)
@@ -232,6 +280,7 @@ class WerewolfPacing(
 
     /** 开新局时清账。续档不清——账本不该跨局，但同一局的续档要保留计时。 */
     fun reset(limit: WerewolfTurnLimit, thinkingOff: Set<Int> = emptySet()) {
+        synchronized(consecutiveTimeouts) { consecutiveTimeouts.clear() }
         _limit.value = limit
         // 存档带回来的名单来源分不清（玩家手动关的和夜里超时关的混在一起），
         // 一律进不外显的那份：参与局的界面上不出现它们，就不泄露。
@@ -243,9 +292,14 @@ class WerewolfPacing(
 
     /** 续档时把存档里的档位与关思考名单接回来，账本从零开始（它本来就没落档）。 */
     fun restore(limit: WerewolfTurnLimit, thinkingOff: Set<Int>) {
+        synchronized(consecutiveTimeouts) { consecutiveTimeouts.clear() }
         _limit.value = limit
         _playerThinkingOff.value = emptySet()
         _nightThinkingOff.value = thinkingOff
         _thinkingOff.value = thinkingOff
+    }
+
+    companion object {
+        const val DEFAULT_DISABLE_AFTER_CONSECUTIVE_TIMEOUTS = 2
     }
 }

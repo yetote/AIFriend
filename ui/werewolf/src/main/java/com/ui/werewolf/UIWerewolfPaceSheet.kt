@@ -26,7 +26,10 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -38,7 +41,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ui.common.UIAvatar
 import com.ui.common.data.getRandomColor
+import com.ui.common.theme.UIDialogButtons
 import com.ui.common.theme.UIFieldFill
+import com.ui.common.theme.UIFriendBarItemMetaColor
 import com.ui.common.theme.UIFriendBarItemSubtitleColor
 import com.ui.common.theme.UIFriendBarOnlineGreen
 import com.ui.common.theme.UIFriendBarRed
@@ -46,12 +51,14 @@ import com.ui.common.theme.UIFriendBarTagTextBlue
 import com.ui.common.theme.UIFriendBarTitleColor
 import com.ui.common.theme.UIGlassStroke
 import com.ui.common.theme.UIGlassSurfaceStrong
+import com.ui.common.theme.UIIosDialog
 import com.ui.common.theme.UIRadiusCard
 import com.ui.common.theme.UIRadiusControl
 import com.ui.common.theme.UIRadiusSheet
 import com.ui.common.theme.UISeparator
 import com.ui.common.theme.UIShadowSoft
 import com.ui.werewolf.data.UIWerewolfPace
+import com.ui.werewolf.data.UIWerewolfRecastCandidate
 import com.ui.werewolf.data.UIWerewolfSeatPace
 import com.ui.werewolf.data.UIWerewolfTurnLimit
 
@@ -83,6 +90,8 @@ fun UIWerewolfPaceSheet(
     onBubbleChange: (Boolean) -> Unit,
     /** 单独开/关某个座位的思考气泡（覆盖全局）。 */
     onSeatBubbleChange: (Int, Boolean) -> Unit,
+    /** 局中热换人：点某存活 AI 座位的「换人」按钮时触发。传 null 不显示入口。 */
+    onRequestSwapSeat: ((Int) -> Unit)? = null,
     onDismiss: () -> Unit,
 ) {
     // 遮罩直接吃掉点击：面板外面那层牌桌此刻不该被操作——正在等语音、正在投票，
@@ -312,7 +321,7 @@ fun UIWerewolfPaceSheet(
             )
             Spacer(Modifier.height(2.dp))
             Text(
-                text = "超时的那一步已经按兜底算完，并且这一局不再给它开深度思考。" +
+                text = "超时的那一步会按兜底继续；同一座位连续两次超时会自动关闭本局深度思考。" +
                     "想改回来就打开蓝色开关。",
                 fontSize = 11.5.sp,
                 lineHeight = 16.sp,
@@ -333,6 +342,11 @@ fun UIWerewolfPaceSheet(
                         enabled = pace.running,
                         onToggle = { on -> onToggleThinking(seat.seat, on) },
                         onSeatBubble = { on -> onSeatBubbleChange(seat.seat, on) },
+                        onSwap = if (pace.running && !seat.eliminated && !seat.isHuman && onRequestSwapSeat != null) {
+                            { onRequestSwapSeat(seat.seat) }
+                        } else {
+                            null
+                        },
                     )
                 }
             }
@@ -385,6 +399,8 @@ private fun SeatPaceRow(
     onToggle: (Boolean) -> Unit,
     /** 单独开/关这个座位的思考气泡。覆盖全局开关；想跟全局就拨到和全局一样。 */
     onSeatBubble: (Boolean) -> Unit,
+    /** 局中热换人入口；非 null 时显示「换人」胶囊。 */
+    onSwap: (() -> Unit)? = null,
 ) {
     // 用和牌桌头像兜底色同一个函数取色：设置页这一抹颜色，正是牌桌上
     // 这个 AI 的头像色，用户能对上号——不是凭空造一套和牌桌无关的配色。
@@ -445,6 +461,19 @@ private fun SeatPaceRow(
                 if (seat.eliminated) {
                     Spacer(Modifier.width(6.dp))
                     Text(text = "已出局", fontSize = 10.sp, color = UIFriendBarItemSubtitleColor)
+                } else if (onSwap != null) {
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = "换人",
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = UIFriendBarTagTextBlue,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(UIFriendBarTagTextBlue.copy(alpha = 0.10f))
+                            .clickable(onClick = onSwap)
+                            .padding(horizontal = 8.dp, vertical = 2.dp),
+                    )
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -539,5 +568,103 @@ private fun SwitchLabelRow(
                 checkedTrackColor = trackColor,
             ),
         )
+    }
+}
+
+/**
+ * 局中热换人弹窗：在不退出牌桌的情况下，把单个 AI 座位替换成另一位不在场上的好友。
+ */
+@Composable
+fun UIWerewolfSwapSeatDialog(
+    seat: Int,
+    oldName: String,
+    oldModel: String,
+    candidates: List<UIWerewolfRecastCandidate>,
+    onConfirm: (friendId: String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var picked by remember(seat, candidates) {
+        mutableStateOf(candidates.firstOrNull { it.reachable }?.id)
+    }
+    UIIosDialog(
+        title = "更换 $seat 号位 AI",
+        subtitle = buildString {
+            append("原 $oldName")
+            if (oldModel.isNotBlank()) append("（$oldModel）")
+            append("。换人后身份、死活、历史进度全部保留，并自动接着打。")
+        },
+        onDismiss = onDismiss,
+        actions = {
+            UIDialogButtons(
+                confirmText = if (picked != null) "换人并继续" else "请选择好友",
+                confirmEnabled = picked != null,
+                onConfirm = { picked?.let(onConfirm) },
+                onCancel = onDismiss,
+            )
+        },
+    ) {
+        if (candidates.isEmpty()) {
+            Text(
+                text = "当前没有不在场上的备用好友可换。可以先回好友页再建一位好友。",
+                fontSize = 13.sp,
+                lineHeight = 19.sp,
+                color = UIFriendBarRed,
+            )
+        } else {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 360.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                candidates.forEach { candidate ->
+                    val selected = picked == candidate.id
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(UIRadiusControl))
+                            .background(
+                                if (selected) UIFriendBarTagTextBlue.copy(alpha = 0.10f)
+                                else UIFieldFill
+                            )
+                            .border(
+                                width = 1.dp,
+                                color = if (selected) UIFriendBarTagTextBlue else UIGlassStroke,
+                                shape = RoundedCornerShape(UIRadiusControl),
+                            )
+                            .clickable { picked = candidate.id }
+                            .padding(horizontal = 12.dp, vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = candidate.name,
+                                fontSize = 13.5.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = UIFriendBarTitleColor,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                text = candidate.model,
+                                fontSize = 11.sp,
+                                color = UIFriendBarItemMetaColor,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        if (candidate.reachable) {
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = "推荐",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = UIFriendBarTagTextBlue,
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }

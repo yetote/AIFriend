@@ -1521,10 +1521,11 @@ class WerewolfDirectorTest {
     // ------------------------------------------------------------------
 
     @Test
-    fun `决策超出时限时按兜底继续，并关掉这个座位的深度思考`() = runBlocking {
+    fun `决策超出时限时按兜底继续，单次不关思考，连续两次才关`() = runBlocking {
         val pacing = WerewolfPacing()
         // 档位最小也是 30 秒，测试里压到 150ms，让「等不到」真的发生
         pacing.overrideMs = 150L
+        val timeouts = mutableListOf<TurnTimeout>()
         val director = WerewolfDirector(
             agents = agentsOf(
                 1 to HangingAI(),
@@ -1532,23 +1533,31 @@ class WerewolfDirectorTest {
                 3 to ScriptedAI(listOf("""{"target": 7, "reason": "我也觉得是他。"}""")),
             ),
             pacing = pacing,
+            onTimedOut = { timeouts += it },
         )
 
         val result = director.nightWolf(WerewolfTable(standard9().beginWolfVote()))
 
         // 一个座位卡住不该把整夜空掉：它走兜底，另外两票照样决定刀口
         assertEquals("两票仍能定刀", 7, result.game.tonightVictim)
-        assertTrue("超时的座位本局不再开深度思考", 1 in pacing.thinkingOff.value)
+        assertFalse("单次超时不直接关思考，避免偶发抖动一棍子打死", 1 in pacing.thinkingOff.value)
+        assertFalse("第一次超时事件标明未关思考", timeouts.last().thinkingDisabled)
         assertEquals("记了一次超时", 1, pacing.timings.value.getValue(1).timeouts)
         assertEquals("没超时的座位不受影响", 0, pacing.timings.value.getValue(2).timeouts)
         assertTrue("没人被关掉思考", 2 !in pacing.thinkingOff.value)
+
+        // 同一个座位连续第二次超时 → 自动关闭本局深度思考
+        director.nightWolf(WerewolfTable(standard9().beginWolfVote()))
+        assertTrue("连续两次超时后应自动关闭本局深度思考", 1 in pacing.thinkingOff.value)
+        assertTrue("第二次超时事件标明已关思考", timeouts.last().thinkingDisabled)
+        assertEquals("累计两次超时", 2, pacing.timings.value.getValue(1).timeouts)
     }
 
     @Test
-    fun `内部超时重试成功的座位也要关掉深度思考`() = runBlocking {
+    fun `内部超时重试成功的座位同样计入超时并连续两次关思考`() = runBlocking {
         // 真机反馈的 bug：模型第一次请求超时，decide 内部关思考重试成功，
         // 外层时限没到、outcome 也正常，于是以前当成「没超时」——下一轮又把思考打开，
-        // 同一个座位反复撞超时。现在靠 outcome.timedOut 把这个座位本局关掉。
+        // 同一个座位反复撞超时。现在靠 outcome.timedOut 计入超时，连续两次关闭思考。
         val pacing = WerewolfPacing()
         pacing.overrideMs = 10_000L // 外层时限给足，超时只发生在 AI 内部
         var calls = 0
@@ -1567,7 +1576,7 @@ class WerewolfDirectorTest {
                 webSearch: Boolean,
             ): String {
                 calls++
-                if (calls == 1) throw java.net.SocketTimeoutException("第一次超时")
+                if (calls % 2 == 1) throw java.net.SocketTimeoutException("超时")
                 // 关掉思考后第二次很快回来，给一个合法刀口
                 return """{"target": 7, "reason": "7 号可疑。"}"""
             }
@@ -1588,13 +1597,17 @@ class WerewolfDirectorTest {
         val result = director.nightWolf(WerewolfTable(standard9().beginWolfVote()))
 
         assertEquals("重试成功，刀口正常定下", 7, result.game.tonightVictim)
-        assertTrue("内部降级过的座位本局不再开深度思考", 1 in pacing.thinkingOff.value)
         assertEquals("记了一次超时", 1, pacing.timings.value.getValue(1).timeouts)
+        assertFalse("单次内部超时先保留思考", 1 in pacing.thinkingOff.value)
         assertFalse("没超时的座位不受影响", 2 in pacing.thinkingOff.value)
+
+        director.nightWolf(WerewolfTable(standard9().beginWolfVote()))
+        assertTrue("连续两次内部超时后应关闭深度思考", 1 in pacing.thinkingOff.value)
+        assertEquals("累计两次超时", 2, pacing.timings.value.getValue(1).timeouts)
     }
 
     @Test
-    fun `发言时底层超时降级也关掉深度思考`() = runBlocking {
+    fun `发言时底层超时降级计入超时，连续两次关掉深度思考`() = runBlocking {
         // chatStream 内部超时后关思考补发成功，是正常返回的一场发言，
         // 外层看不到异常。靠 delta.timeoutDegraded 把信号带出来。
         val pacing = WerewolfPacing()
@@ -1642,10 +1655,13 @@ class WerewolfDirectorTest {
         val director = WerewolfDirector(agents = agents, pacing = pacing)
 
         director.discussion(WerewolfTable(game.copy(phase = Phase.DAY_DISCUSSION)))
-
-        assertTrue("发言降级过的座位本局不再开深度思考", 1 in pacing.thinkingOff.value)
         assertEquals("记了一次超时", 1, pacing.timings.value.getValue(1).timeouts)
+        assertFalse("单次发言降级先不关思考", 1 in pacing.thinkingOff.value)
         assertFalse("没超时的座位不受影响", 2 in pacing.thinkingOff.value)
+
+        director.discussion(WerewolfTable(game.copy(day = 2, phase = Phase.DAY_DISCUSSION)))
+        assertTrue("连续两次发言降级后关掉深度思考", 1 in pacing.thinkingOff.value)
+        assertEquals("累计两次超时", 2, pacing.timings.value.getValue(1).timeouts)
     }
 
     @Test
@@ -1666,7 +1682,8 @@ class WerewolfDirectorTest {
         assertEquals("每个人都要留下一条，不能空过", game.aliveSeats.size, speeches.size)
         // 说到一半被打断，已经说出去的话必须留着——清空会让后面的人对着空白接话
         assertTrue("半句要留下：${speeches.first().text}", speeches.first().text.contains("我觉得 5 号"))
-        assertEquals("超时的座位这一局都不再开思考", game.aliveSeats.toSet(), pacing.thinkingOff.value)
+        assertTrue("单次超时计入超时次数", game.aliveSeats.all { pacing.timings.value.getValue(it).timeouts == 1 })
+        assertEquals("单次超时尚未关思考", emptySet<Int>(), pacing.thinkingOff.value)
     }
 
 
@@ -1694,7 +1711,7 @@ class WerewolfDirectorTest {
             // SILENT_SPEECH 的值（companion 是 private，抄一份字面量）
             speeches.all { it.text == "……我这轮先听大家的。" },
         )
-        assertEquals("超时的座位本局不再开思考", game.aliveSeats.toSet(), pacing.thinkingOff.value)
+        assertEquals("单次超时不急于关思考", emptySet<Int>(), pacing.thinkingOff.value)
         assertEquals("按思考时限记账", 1, pacing.timings.value.getValue(1).timeouts)
     }
 
@@ -1728,7 +1745,7 @@ class WerewolfDirectorTest {
             // SILENT_SPEECH 的值（companion 是 private，抄一份字面量）
             speeches.all { it.text == "……我这轮先听大家的。" },
         )
-        assertEquals("超时的座位本局不再开思考", game.aliveSeats.toSet(), pacing.thinkingOff.value)
+        assertEquals("单次超时先记账不立即关思考", emptySet<Int>(), pacing.thinkingOff.value)
         assertEquals("按超时记账", 1, pacing.timings.value.getValue(1).timeouts)
     }
 
