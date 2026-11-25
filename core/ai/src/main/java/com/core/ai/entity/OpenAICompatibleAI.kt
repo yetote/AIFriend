@@ -11,6 +11,7 @@ import com.core.ai.model.ChatStreamEvent
 import com.core.ai.model.ChatStreamParser
 import com.core.ai.model.ResponseFormat
 import com.core.ai.model.StreamOptions
+import com.core.ai.model.ThinkTagSplitter
 import com.core.ai.model.TokenCounter
 import com.core.ai.model.TokenUsage
 import com.core.ai.model.WebSearchOptions
@@ -47,7 +48,7 @@ abstract class OpenAICompatibleAI(
         jsonMode: Boolean,
         webSearch: Boolean
     ): String = rawChat(messages, model, systemPrompt, enableThinking, jsonMode, webSearch).let { response ->
-        val content = response.choices.firstOrNull()?.message?.content
+        val content = response.choices.firstOrNull()?.message?.content?.let(ThinkTagSplitter::strip)
         content?.takeIf { it.isNotBlank() }
             ?: throw IllegalStateException("模型没有返回内容，请重试")
     }
@@ -62,6 +63,7 @@ abstract class OpenAICompatibleAI(
     ): ChatReply {
         val response = rawChat(messages, model, systemPrompt, enableThinking, jsonMode, webSearch)
         val text = response.choices.firstOrNull()?.message?.content
+            ?.let(ThinkTagSplitter::strip)
             ?.takeIf { it.isNotBlank() }
             ?: throw IllegalStateException("模型没有返回内容，请重试")
         val usage = response.usage?.toUsage() ?: TokenUsage(
@@ -114,13 +116,20 @@ abstract class OpenAICompatibleAI(
             // 下面的降级分支会改用非流式请求，那时照样能拿到用量。
             .copy(streamOptions = StreamOptions(includeUsage = true))
         var hasContent = false
+        // 正文里内联的 <think> 要在这里拆掉，见 [ThinkTagSplitter]：不拆的话上层以为
+        // 已经开始说话，思考时限失效。一条流一个实例。
+        val splitter = ThinkTagSplitter()
 
         val failure = runCatching {
             WebRepository.instance.streamChat(config, request) { line ->
                 when (val event = ChatStreamParser.parse(line)) {
                     is ChatStreamEvent.Delta -> {
-                        if (event.content.isNotEmpty()) hasContent = true
-                        send(ChatDelta(content = event.content, reasoning = event.reasoning))
+                        val (text, inlineThink) = splitter.feed(event.content)
+                        val reasoning = event.reasoning + inlineThink
+                        if (text.isNotEmpty()) hasContent = true
+                        if (text.isNotEmpty() || reasoning.isNotEmpty()) {
+                            send(ChatDelta(content = text, reasoning = reasoning))
+                        }
                     }
 
                     is ChatStreamEvent.Usage -> {
@@ -135,6 +144,15 @@ abstract class OpenAICompatibleAI(
                 }
             }
         }.exceptionOrNull()
+
+        // 流正常收尾（或断在半路）时把拆分器里攒着的残留吐出来
+        if (failure == null || failure !is CancellationException) {
+            val (tailText, tailThink) = splitter.finish()
+            if (tailText.isNotBlank()) hasContent = true
+            if (tailText.isNotEmpty() || tailThink.isNotEmpty()) {
+                send(ChatDelta(content = tailText, reasoning = tailThink))
+            }
+        }
 
         if (failure != null) {
             // 用户按了停止：这不叫失败，不能顺手再发一个完整请求

@@ -16,13 +16,14 @@ import org.junit.Test
 class WerewolfPacingTest {
 
     @Test
-    fun `每个档位给思考秒数，发言段不限`() {
-        // AI「说」就是吐 token，和思考同一条链路，掐发言段只会把话说一半——
-        // 所以各档位只限思考，发言交给传输层兜底
+    fun `每个档位给思考秒数，发言段有宽松的安全上限`() {
+        // 发言段的上限是安全网：把思考写进正文的模型会让看门狗误以为已在发言，
+        // 发言段不限的话思考就没了上限（实测夜聊能想二十分钟）
         assertEquals(30_000L, WerewolfTurnLimit.FAST.decisionMs)
-        assertEquals(0L, WerewolfTurnLimit.FAST.speechMs)
+        assertEquals(60_000L, WerewolfTurnLimit.FAST.speechMs)
         assertEquals(60_000L, WerewolfTurnLimit.STANDARD.decisionMs)
-        assertEquals(0L, WerewolfTurnLimit.STANDARD.speechMs)
+        assertEquals(90_000L, WerewolfTurnLimit.STANDARD.speechMs)
+        assertEquals(150_000L, WerewolfTurnLimit.RELAXED.speechMs)
         // 0 是「不设限」而不是「立刻超时」——写反了整局会瞬间全走兜底
         assertEquals(0L, WerewolfTurnLimit.UNLIMITED.decisionMs)
         assertEquals(0L, WerewolfTurnLimit.UNLIMITED.speechMs)
@@ -87,7 +88,7 @@ class WerewolfPacingTest {
         assertEquals(60_000L, pacing.limitMs(TurnKind.DECISION))
         pacing.setLimit(WerewolfTurnLimit.FAST)
         assertEquals(30_000L, pacing.limitMs(TurnKind.DECISION))
-        assertEquals("发言段不限", 0L, pacing.limitMs(TurnKind.SPEECH))
+        assertEquals("快速档发言安全上限", 60_000L, pacing.limitMs(TurnKind.SPEECH))
     }
 
     @Test

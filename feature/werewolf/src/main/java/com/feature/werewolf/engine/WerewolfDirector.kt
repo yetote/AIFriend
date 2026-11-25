@@ -1496,9 +1496,9 @@ class WerewolfDirector(
         // 时限分两段，口径和界面一致：**气泡里是思考、发言列表里是发言**。
         // - 思考段：正文一个字都还没吐出来，受思考时限（决策档）管——
         //   想太久就掐，多等一分钟换来的往往不是更好的话，是更犹豫的话。
-        // - 发言段：正文开始往外流。AI「说」就是吐 token，和思考同一条链路，
-        //   掐它只会把话说一半，所以档位默认不限（0）；流挂住有传输层兜底。
-        //   字段保留是为了万一要给喋喋不休的模型自定义上限。
+        // - 发言段：正文开始往外流。正常一段话几十秒就吐完，档位给的是宽松的安全上限，
+        //   防的是「把思考写进正文」的模型让看门狗误判成已在发言、思考从此没了上限
+        //   （内联 <think> 已在传输层拆成思维链，这里兜的是不带标签的）。
         // 超时不抛异常——说话说到一半被打断，把已经说出去的那半句留下就行，牌桌能继续。
         val thinkingMs = pacing.limitMs(TurnKind.DECISION)
         val speechMs = pacing.limitMs(TurnKind.SPEECH)
@@ -1607,13 +1607,20 @@ class WerewolfDirector(
             content.isNotEmpty() -> content.toString()
             // 整段都是刷屏、被截成空：再发一次完整请求多半还是坏的，直接兜底。
             timedOut || cutByDegeneration -> SILENT_SPEECH
-            else -> agent.ai.chat(
-                messages = messages,
-                model = agent.model,
-                systemPrompt = system,
-                enableThinking = thinking,
-                webSearch = webSearchFor(agent),
-            )
+            // 这一补发在看门狗之外：关掉思考、并按思考时限兜住，免得在这里再死等一个传输层超时。
+            else -> {
+                val retry: suspend () -> String = {
+                    agent.ai.chat(
+                        messages = messages,
+                        model = agent.model,
+                        systemPrompt = system,
+                        enableThinking = false,
+                        webSearch = webSearchFor(agent),
+                    )
+                }
+                if (bounded && thinkingMs > 0) withTimeoutOrNull(thinkingMs) { retry() } ?: SILENT_SPEECH
+                else retry()
+            }
         }
         return SpeechResult(
             text = sanitize(raw, seat, game.playerAt(seat).name),

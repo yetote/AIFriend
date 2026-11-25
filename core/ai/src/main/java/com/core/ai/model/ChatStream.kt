@@ -117,3 +117,121 @@ object ChatStreamParser {
         return ChatStreamEvent.Delta(content = content, reasoning = reasoning)
     }
 }
+
+/**
+ * 把正文开头的 `<think>…</think>` 拆成思维链。
+ *
+ * MiniMax（官方兼容层默认）、经网关/混元转发的 MiniMax、部分 DeepSeek-R1 / QwQ 部署
+ * **不走 `reasoning_content` 字段**，而是把思考过程直接塞进 `content`，用 `<think>` 包住。
+ * 不拆的后果很严重：上层看到「正文已经开始吐字」，狼人杀的看门狗就从思考时限切到
+ * 发言时限——思考彻底失去上限，一只狼夜聊能想十几分钟；同时整段思考还会被当成发言念出来。
+ *
+ * 只认**开头**的 `<think>`（允许前导空白）：正文中间出现的同名字符串是模型在说话，不能吞。
+ * 标签可能被切在两帧之间，所以是有状态的，一条流一个实例；流结束时调用 [finish] 吐出残留。
+ */
+class ThinkTagSplitter {
+    private enum class State { START, THINK, CONTENT }
+
+    private var state = State.START
+    private val buffer = StringBuilder()
+
+    /** 喂一帧原始 content，返回拆好的 (正文, 思维链)。 */
+    fun feed(chunk: String): Pair<String, String> {
+        if (chunk.isEmpty()) return "" to ""
+        if (state == State.CONTENT) return chunk to ""
+        buffer.append(chunk)
+        val content = StringBuilder()
+        val reasoning = StringBuilder()
+        drain(content, reasoning)
+        return content.toString() to reasoning.toString()
+    }
+
+    /** 流结束：开头还在攒的算正文；没等到闭合标签的算思维链（模型被截断了）。 */
+    fun finish(): Pair<String, String> {
+        val rest = buffer.toString()
+        buffer.setLength(0)
+        return when (state) {
+            State.START -> { state = State.CONTENT; rest to "" }
+            State.THINK -> rest.removeSuffixPartial(CLOSE).let { "" to it }
+            State.CONTENT -> rest to ""
+        }
+    }
+
+    private fun drain(content: StringBuilder, reasoning: StringBuilder) {
+        while (true) {
+            when (state) {
+                State.START -> {
+                    val lead = buffer.indexOfFirst { !it.isWhitespace() }
+                    if (lead < 0) return // 全是空白，继续攒
+                    val rest = buffer.substring(lead)
+                    when {
+                        rest.startsWith(OPEN) -> {
+                            buffer.setLength(0)
+                            buffer.append(rest.substring(OPEN.length))
+                            state = State.THINK
+                        }
+                        OPEN.startsWith(rest) -> return // 标签被切成两半，等下一帧
+                        else -> {
+                            state = State.CONTENT
+                            content.append(buffer)
+                            buffer.setLength(0)
+                            return
+                        }
+                    }
+                }
+
+                State.THINK -> {
+                    val close = buffer.indexOf(CLOSE)
+                    if (close >= 0) {
+                        reasoning.append(buffer, 0, close)
+                        val after = buffer.substring(close + CLOSE.length).trimStart()
+                        buffer.setLength(0)
+                        state = State.CONTENT
+                        content.append(after)
+                        return
+                    }
+                    // 末尾可能是半个 `</think>`，留着等下一帧
+                    val keep = partialSuffixLength(buffer, CLOSE)
+                    val emit = buffer.length - keep
+                    reasoning.append(buffer, 0, emit)
+                    buffer.delete(0, emit)
+                    return
+                }
+
+                State.CONTENT -> {
+                    content.append(buffer)
+                    buffer.setLength(0)
+                    return
+                }
+            }
+        }
+    }
+
+    companion object {
+        private const val OPEN = "<think>"
+        private const val CLOSE = "</think>"
+
+        /** 一次性回复用：去掉开头的 `<think>…</think>`，只留正文。 */
+        fun strip(text: String): String {
+            val splitter = ThinkTagSplitter()
+            val (c1, _) = splitter.feed(text)
+            val (c2, _) = splitter.finish()
+            return c1 + c2
+        }
+
+        private fun partialSuffixLength(text: CharSequence, tag: String): Int {
+            for (len in minOf(tag.length - 1, text.length) downTo 1) {
+                if (text.regionMatchesAt(text.length - len, tag, len)) return len
+            }
+            return 0
+        }
+
+        private fun CharSequence.regionMatchesAt(start: Int, tag: String, len: Int): Boolean {
+            for (i in 0 until len) if (this[start + i] != tag[i]) return false
+            return true
+        }
+
+        private fun String.removeSuffixPartial(tag: String): String =
+            dropLast(partialSuffixLength(this, tag))
+    }
+}
