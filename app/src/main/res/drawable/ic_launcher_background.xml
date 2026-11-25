@@ -1,19 +1,34 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 图标兜底背景：与全新「暮靛极光」前景图同源的黑曜石至暮靛斜向渐变。 -->
+<!-- AIFriend 宣纸朱砂自适应图标背景：暖陶釉面斜向渐变 + 左上微光。 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
     <path android:pathData="M0,0h108v108h-108z">
-        <aapt:attr xmlns:aapt="http://schemas.android.com/aapt" name="android:fillColor">
+        <aapt:attr name="android:fillColor">
             <gradient
-                android:startX="0" android:startY="0"
-                android:endX="108" android:endY="108"
+                android:startX="0"
+                android:startY="0"
+                android:endX="108"
+                android:endY="108"
                 android:type="linear">
-                <item android:offset="0.0" android:color="#FF0B1124" />
-                <item android:offset="0.52" android:color="#FF1B2453" />
-                <item android:offset="1.0" android:color="#FF36319A" />
+                <item android:offset="0.0" android:color="#FFE0623D" />
+                <item android:offset="0.52" android:color="#FFC84B2A" />
+                <item android:offset="1.0" android:color="#FFA43417" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:pathData="M0,0h108v108h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:centerX="30"
+                android:centerY="24"
+                android:gradientRadius="66"
+                android:type="radial">
+                <item android:offset="0.0" android:color="#30FFE8CC" />
+                <item android:offset="1.0" android:color="#00FFE8CC" />
             </gradient>
         </aapt:attr>
     </path>
