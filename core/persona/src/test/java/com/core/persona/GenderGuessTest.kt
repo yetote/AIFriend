@@ -62,11 +62,15 @@ class GenderGuessTest {
             "夜澄" to CharacterGender.FEMALE,
             "文姐" to CharacterGender.FEMALE,
             "数姐" to CharacterGender.FEMALE,
+            "长文娘" to CharacterGender.FEMALE,
+            "傻包" to CharacterGender.FEMALE,
+            "哈基米" to CharacterGender.FEMALE,
+            "小酒窝" to CharacterGender.FEMALE,
+            "清言" to CharacterGender.FEMALE,
             "Mia" to CharacterGender.FEMALE,
             "审哥" to CharacterGender.MALE,
             "铁哥" to CharacterGender.MALE,
             "字叔" to CharacterGender.MALE,
-            "长文兄" to CharacterGender.MALE,
             "半仙" to CharacterGender.MALE,
         )
         val catalog = PersonaCatalog.all.associateBy { it.name }

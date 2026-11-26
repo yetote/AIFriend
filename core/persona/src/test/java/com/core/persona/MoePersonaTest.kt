@@ -183,4 +183,16 @@ class MoePersonaTest {
             PersonaCategory.entries.count { it.name == "COMPANION" }
         )
     }
+
+    @Test
+    fun `AI拟人全员都是AI娘且性别可稳定识别为女性`() {
+        moe.forEach { persona ->
+            assertEquals(
+                "${persona.id}（${persona.name}）应当能稳定识别为女性 AI 娘",
+                CharacterGender.FEMALE,
+                GenderGuess.of(persona.name, persona.descriptionText),
+            )
+            assertTrue("${persona.id} 缺少 AI娘 标签", "AI娘" in persona.tags)
+        }
+    }
 }
