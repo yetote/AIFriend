@@ -34,6 +34,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -42,15 +44,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ui.common.UIAvatar
 import com.ui.common.UIMarkdownText
+import com.ui.common.theme.UIShadowSoft
 import com.ui.werewolf.data.UIWerewolfBallotCard
-import com.ui.werewolf.data.UIWerewolfLine
 import com.ui.werewolf.data.UIWerewolfBubbleKind
+import com.ui.werewolf.data.UIWerewolfBubbleStyle
+import com.ui.werewolf.data.UIWerewolfLine
 import com.ui.werewolf.data.UIWerewolfLineKind
-import com.ui.werewolf.data.tableBubbleStyle
 import com.ui.werewolf.data.UIWerewolfLive
 import com.ui.werewolf.data.UIWerewolfSeatLive
 import com.ui.werewolf.data.UIWerewolfStreaming
 import com.ui.werewolf.data.UIWerewolfWaiting
+import com.ui.werewolf.data.tableBubbleStyle
 import kotlinx.coroutines.delay
 
 /**
@@ -270,13 +274,21 @@ internal fun WaitingCard(
         "${elapsedSeconds}s"
     }
 
+    val waitingShape = RoundedCornerShape(14.dp)
+    val waitingBrush = if (night) {
+        Brush.verticalGradient(listOf(Color(0x9E241C17), Color(0x881A1411)))
+    } else {
+        Brush.verticalGradient(listOf(Color(0xE8FFFEFA), Color(0xDCF7EFE2)))
+    }
+    val waitingBorder = if (night) Color(0x3BE5B869) else DayStroke
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(if (night) Color(0x781E1815) else Color(0xCCFFFDF9))
-            .border(0.75.dp, if (night) NightStroke else DayStroke, RoundedCornerShape(14.dp))
-            .padding(horizontal = 11.dp, vertical = 9.dp),
+            .shadow(1.5.dp, waitingShape, clip = false, ambientColor = UIShadowSoft, spotColor = UIShadowSoft)
+            .clip(waitingShape)
+            .background(waitingBrush)
+            .border(0.75.dp, waitingBorder, waitingShape)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Row(
@@ -408,6 +420,65 @@ internal fun waitingMicroStatus(waiting: UIWerewolfWaiting, elapsedSeconds: Int)
 }
 
 /**
+ * 公开发言和流式发言共用的气泡头部：头像描边环 + 座位号徽标 + 昵称 + 右侧角标 + 细分隔线。
+ * 两者复用同一布局与间距，流式结束切换成正式记录时零跳动。
+ */
+@Composable
+private fun SpeechBubbleHeader(
+    speaker: String?,
+    seat: Int?,
+    avatarPath: String?,
+    night: Boolean,
+    style: UIWerewolfBubbleStyle,
+    textColor: Color,
+    tagText: String,
+    isStreaming: Boolean = false,
+) {
+    val avatarRingColor = style.accent.copy(alpha = if (isStreaming) 0.72f else if (night) 0.42f else 0.34f)
+    val hairlineColor = if (night) Color(0x1CF5E8D8) else Color(0x14241C14)
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .border(if (isStreaming) 1.3.dp else 0.9.dp, avatarRingColor, CircleShape)
+                    .padding(1.dp)
+            ) {
+                UIAvatar(
+                    name = speaker ?: "?",
+                    avatarPath = avatarPath,
+                    size = 26.dp,
+                    shape = CircleShape,
+                )
+            }
+            Spacer(Modifier.width(7.dp))
+            seat?.let {
+                SeatNumberBadge(seat = it, accent = style.accent, night = night)
+                Spacer(Modifier.width(6.dp))
+            }
+            Text(
+                text = speaker ?: "未知",
+                fontSize = FsName,
+                fontWeight = FontWeight.SemiBold,
+                color = textColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(Modifier.width(6.dp))
+            BubbleTag(text = tagText, accent = style.accent)
+        }
+        Spacer(Modifier.height(6.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(0.6.dp)
+                .background(hairlineColor)
+        )
+    }
+}
+
+/**
  * 「某人正在说」的一行，逐字长出来。
  *
  * 排版和落定后的发言卡**一模一样**（气泡头部的头像 + 名字 + 正文），只多末尾一个光标。
@@ -421,46 +492,37 @@ internal fun StreamingLine(
     dimColor: Color,
 ) {
     val style = tableBubbleStyle(UIWerewolfBubbleKind.SPEECH, night)
-    UIWerewolfBubble(style = style, modifier = Modifier.fillMaxWidth()) {
-        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            UIAvatar(
-                name = stream.speaker ?: "?",
-                avatarPath = stream.avatarPath,
-                size = 26.dp,
-                shape = CircleShape
-            )
-            Spacer(Modifier.width(7.dp))
-            Text(
-                text = stream.speaker ?: "未知",
-                fontSize = FsName,
-                fontWeight = FontWeight.SemiBold,
-                color = textColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false),
-            )
-            Text(
-                text = " ${stream.seat} 号",
-                fontSize = 12.sp,
-                color = dimColor,
-                maxLines = 1
-            )
-        }
+    UIWerewolfBubble(
+        style = style,
+        modifier = Modifier.fillMaxWidth(),
+        shape = SpeechBubbleShape,
+        elevation = 3.dp,
+    ) {
+        SpeechBubbleHeader(
+            speaker = stream.speaker,
+            seat = stream.seat,
+            avatarPath = stream.avatarPath,
+            night = night,
+            style = style,
+            textColor = textColor,
+            tagText = "发言中",
+            isStreaming = true,
+        )
         if (stream.text.isNotBlank()) {
             // 光标走 trailing 单独追加，不参与 MD 解析——否则半句里的 `**` 会被当标记吃掉
             UIMarkdownText(
                 text = stream.text,
                 trailing = "▌",
-                modifier = Modifier.padding(top = 2.dp),
+                modifier = Modifier.padding(top = 6.dp),
                 baseSize = FsSpeech,
                 baseLineHeight = FsSpeechLine,
-                color = textColor.copy(alpha = 0.92f),
+                color = textColor.copy(alpha = 0.94f),
             )
         } else {
             // 还在思考、一个字没说：只显示「正在组织语言」，不把思考流放出来——
             // 对局里看 AI 推理会把「读心」变成主要玩法，思考留给复盘
             Row(
-                modifier = Modifier.padding(top = 2.dp),
+                modifier = Modifier.padding(top = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(text = "正在组织语言", fontSize = FsName, color = dimColor)
@@ -479,13 +541,20 @@ internal fun StreamingLine(
  */
 @Composable
 internal fun ThinkingLine(seat: UIWerewolfSeatLive, night: Boolean, dimColor: Color) {
+    val shape = SpeechBubbleShape
+    val brush = if (night) {
+        Brush.verticalGradient(listOf(Color(0x96231B17), Color(0x801A1411)))
+    } else {
+        Brush.verticalGradient(listOf(Color(0xE0FFFEFA), Color(0xD4F6EFE2)))
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(if (night) Color(0x701E1815) else Color(0xC2FFFDF9))
-            .border(0.75.dp, if (night) NightStroke else DayStroke, RoundedCornerShape(14.dp))
-            .padding(horizontal = 10.dp, vertical = 8.dp),
+            .shadow(1.5.dp, shape, clip = false, ambientColor = UIShadowSoft, spotColor = UIShadowSoft)
+            .clip(shape)
+            .background(brush)
+            .border(0.75.dp, if (night) Color(0x38E5B869) else DayStroke, shape)
+            .padding(horizontal = 12.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         UIAvatar(
@@ -493,7 +562,7 @@ internal fun ThinkingLine(seat: UIWerewolfSeatLive, night: Boolean, dimColor: Co
             avatarPath = seat.avatarPath,
             size = 24.dp,
             shape = CircleShape,
-            modifier = Modifier.alpha(0.85f)
+            modifier = Modifier.alpha(0.88f)
         )
         Spacer(Modifier.width(8.dp))
         Text(
@@ -529,43 +598,59 @@ internal fun LineRow(
         } ?: Unit
 
         UIWerewolfLineKind.DIVINE -> {
-            // 播报是居中的系统宣告：两侧短细线 + 圆角卡片底（多行时也不变形成怪椭圆）
+            // 播报是居中的系统宣告：两侧渐变细线 + 菱点装饰 + 磨砂圆角卡
             val style = tableBubbleStyle(UIWerewolfBubbleKind.BROADCAST, night)
-            val dividerColor = if (night) Color(0x28F5E8D8) else Color(0x1E241C14)
-            val pillShape = RoundedCornerShape(12.dp)
+            val dividerColor = if (night) Color(0x4AE5B869) else Color(0x2E241C14)
+            val dotColor = if (night) Color(0xFFE5B869) else Color(0xFF9C7B56)
+            val pillShape = RoundedCornerShape(14.dp)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 2.dp),
+                    .padding(vertical = 3.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center
             ) {
                 Box(
                     modifier = Modifier
-                        .width(14.dp)
-                        .height(0.6.dp)
-                        .background(dividerColor)
+                        .width(22.dp)
+                        .height(0.8.dp)
+                        .background(Brush.horizontalGradient(listOf(Color.Transparent, dividerColor)))
+                )
+                Box(
+                    modifier = Modifier
+                        .padding(start = 4.dp)
+                        .size(3.5.dp)
+                        .clip(CircleShape)
+                        .background(dotColor.copy(alpha = 0.65f))
                 )
                 Text(
                     text = line.text,
                     modifier = Modifier
                         .weight(1f, fill = false)
-                        .padding(horizontal = 7.dp)
+                        .padding(horizontal = 8.dp)
+                        .shadow(1.dp, pillShape, clip = false, ambientColor = UIShadowSoft, spotColor = UIShadowSoft)
                         .clip(pillShape)
-                        .background(style.fill)
-                        .border(0.6.dp, style.border, pillShape)
-                        .padding(horizontal = 11.dp, vertical = 5.dp),
+                        .background(Brush.verticalGradient(listOf(style.fill, style.fillBottom)))
+                        .border(0.7.dp, style.border, pillShape)
+                        .padding(horizontal = 13.dp, vertical = 6.dp),
                     fontSize = FsMeta,
                     fontWeight = FontWeight.Medium,
-                    color = dimColor,
+                    color = if (night) Color(0xFFE5DACB) else dimColor,
                     lineHeight = 18.sp,
                     textAlign = TextAlign.Center
                 )
                 Box(
                     modifier = Modifier
-                        .width(14.dp)
-                        .height(0.6.dp)
-                        .background(dividerColor)
+                        .padding(end = 4.dp)
+                        .size(3.5.dp)
+                        .clip(CircleShape)
+                        .background(dotColor.copy(alpha = 0.65f))
+                )
+                Box(
+                    modifier = Modifier
+                        .width(22.dp)
+                        .height(0.8.dp)
+                        .background(Brush.horizontalGradient(listOf(dividerColor, Color.Transparent)))
                 )
             }
         }
@@ -620,41 +705,27 @@ internal fun SpeechRow(
     val style = tableBubbleStyle(UIWerewolfBubbleKind.SPEECH, night)
     // 头像放在气泡头部里，而不是和气泡并排占掉一整列：气泡因此能铺满整行，
     // 长发言不再被挤成窄条。「谁在说」由头部第一行承担，视觉上更像一条完整的卡片。
-    UIWerewolfBubble(style = style, modifier = Modifier.fillMaxWidth()) {
-        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            UIAvatar(
-                name = line.speaker ?: "?",
-                avatarPath = line.avatarPath,
-                size = 26.dp,
-                shape = CircleShape
-            )
-            Spacer(Modifier.width(7.dp))
-            Text(
-                text = line.speaker ?: "未知",
-                fontSize = FsName,
-                fontWeight = FontWeight.SemiBold,
-                color = textColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false),
-            )
-            line.seat?.let {
-                Text(
-                    text = " $it 号",
-                    fontSize = 12.sp,
-                    color = dimColor,
-                    maxLines = 1
-                )
-            }
-            Spacer(Modifier.width(6.dp))
-            BubbleTag(text = style.tag, accent = style.accent)
-        }
+    UIWerewolfBubble(
+        style = style,
+        modifier = Modifier.fillMaxWidth(),
+        shape = SpeechBubbleShape,
+        elevation = 2.5.dp,
+    ) {
+        SpeechBubbleHeader(
+            speaker = line.speaker,
+            seat = line.seat,
+            avatarPath = line.avatarPath,
+            night = night,
+            style = style,
+            textColor = textColor,
+            tagText = style.tag,
+        )
         UIMarkdownText(
             text = line.text,
-            modifier = Modifier.padding(top = 2.dp),
+            modifier = Modifier.padding(top = 6.dp),
             baseSize = FsSpeech,
             baseLineHeight = FsSpeechLine,
-            color = textColor.copy(alpha = 0.92f),
+            color = textColor.copy(alpha = 0.94f),
         )
     }
 }
@@ -674,14 +745,18 @@ internal fun InnerRow(
     kind: UIWerewolfBubbleKind = UIWerewolfBubbleKind.INNER,
 ) {
     val style = tableBubbleStyle(kind, night)
+    val isThought = kind == UIWerewolfBubbleKind.INNER
     UIWerewolfBubble(
         style = style,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 38.dp, end = 6.dp),
-        corner = 8.dp,
+            .padding(start = 34.dp, end = 4.dp),
+        corner = 10.dp,
+        shape = InnerBubbleShape,
+        elevation = if (isThought) 0.dp else 1.5.dp,
+        dashed = isThought,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             BubbleTag(text = line.innerLabel ?: style.tag, accent = style.accent)
             val who = listOfNotNull(line.seat?.let { "$it 号" }, line.speaker)
                 .joinToString(" ")
@@ -689,22 +764,21 @@ internal fun InnerRow(
                 Text(
                     text = " $who",
                     fontSize = FsMeta,
-                    color = dimColor.copy(alpha = 0.72f),
+                    fontWeight = FontWeight.Medium,
+                    color = dimColor.copy(alpha = 0.8f),
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
                 )
             }
             if (line.secret) {
-                Text(
-                    text = " · 仅你可见",
-                    fontSize = FsMeta,
-                    color = dimColor.copy(alpha = 0.55f)
-                )
+                Spacer(Modifier.weight(1f))
+                VisibilityPill(text = "仅你可见", accent = style.accent, night = night)
             }
         }
         UIMarkdownText(
             text = line.text,
-            modifier = Modifier.padding(top = 2.dp),
+            modifier = Modifier.padding(top = 4.dp),
             baseSize = FsName,
             baseLineHeight = 18.sp,
             color = dimColor,
@@ -735,8 +809,9 @@ internal fun SeerResultRow(
         modifier = Modifier
             .fillMaxWidth()
             .padding(start = 8.dp),
+        elevation = 2.5.dp,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             BubbleTag(text = style.tag, accent = style.accent)
             val who = listOfNotNull(line.seat?.let { "$it 号" }, line.speaker)
                 .joinToString(" ")
@@ -744,24 +819,32 @@ internal fun SeerResultRow(
                 Text(
                     text = " · $who",
                     fontSize = FsMeta,
+                    fontWeight = FontWeight.Medium,
                     color = dimColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
             }
             Spacer(Modifier.weight(1f))
-            Text(
+            VisibilityPill(
                 text = if (line.secret) "仅你可见" else "上帝视角",
-                fontSize = FsMeta,
-                color = dimColor.copy(alpha = 0.6f)
+                accent = style.accent,
+                night = night,
             )
         }
+        Spacer(Modifier.height(5.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(0.6.dp)
+                .background(style.accent.copy(alpha = 0.22f))
+        )
         UIMarkdownText(
             text = line.text,
-            modifier = Modifier.padding(top = 3.dp),
+            modifier = Modifier.padding(top = 5.dp),
             baseSize = 13.5.sp,
             baseLineHeight = 20.sp,
-            color = textColor.copy(alpha = 0.95f),
+            color = textColor.copy(alpha = 0.96f),
         )
     }
 }
@@ -781,8 +864,9 @@ internal fun PrivateRow(
         modifier = Modifier
             .fillMaxWidth()
             .padding(start = 8.dp),
+        elevation = 2.5.dp,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             BubbleTag(text = style.tag, accent = style.accent)
             val who = listOfNotNull(line.seat?.let { "$it 号" }, line.speaker)
                 .joinToString(" ")
@@ -790,24 +874,28 @@ internal fun PrivateRow(
                 Text(
                     text = " · $who",
                     fontSize = FsMeta,
+                    fontWeight = FontWeight.Medium,
                     color = dimColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
             }
             Spacer(Modifier.weight(1f))
-            Text(
-                text = "仅你可见",
-                fontSize = FsMeta,
-                color = dimColor.copy(alpha = 0.6f)
-            )
+            VisibilityPill(text = "仅你可见", accent = style.accent, night = night)
         }
+        Spacer(Modifier.height(5.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(0.6.dp)
+                .background(style.accent.copy(alpha = 0.22f))
+        )
         UIMarkdownText(
             text = line.text,
-            modifier = Modifier.padding(top = 3.dp),
+            modifier = Modifier.padding(top = 5.dp),
             baseSize = 13.sp,
             baseLineHeight = 19.sp,
-            color = textColor.copy(alpha = 0.9f),
+            color = textColor.copy(alpha = 0.92f),
         )
     }
 }
@@ -840,8 +928,9 @@ internal fun BallotCardRow(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 2.dp)
+            .shadow(2.dp, shape, clip = false, ambientColor = UIShadowSoft, spotColor = UIShadowSoft)
             .clip(shape)
-            .background(style.fill)
+            .background(Brush.verticalGradient(listOf(style.fill, style.fillBottom)))
             .border(0.9.dp, style.border, shape)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -1004,8 +1093,9 @@ internal fun SheriffRosterCardRow(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 2.dp)
+            .shadow(2.dp, shape, clip = false, ambientColor = UIShadowSoft, spotColor = UIShadowSoft)
             .clip(shape)
-            .background(style.fill)
+            .background(Brush.verticalGradient(listOf(style.fill, style.fillBottom)))
             .border(0.9.dp, style.border, shape)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),

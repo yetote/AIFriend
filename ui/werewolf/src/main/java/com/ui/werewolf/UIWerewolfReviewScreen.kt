@@ -1270,11 +1270,17 @@ private fun DialogueLine(line: UIWerewolfSpeechLine) {
     }
 
     val style = bubbleStyle(kind, night = false)
+    val bubbleShape = if (kind == UIWerewolfBubbleKind.SPEECH) {
+        SpeechBubbleShape
+    } else {
+        RoundedCornerShape(10.dp)
+    }
     // 头像收进气泡头部，气泡铺满整行；和对局里的发言卡保持同一套排版。
     UIWerewolfBubble(
         style = style,
         modifier = Modifier.fillMaxWidth(),
-        corner = 8.dp,
+        shape = bubbleShape,
+        elevation = 1.5.dp,
     ) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             UIAvatar(
