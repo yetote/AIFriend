@@ -141,7 +141,7 @@ class WerewolfRetryTest {
             ai.chat(listOf(ChatMessage.user("轮到你发言")), model = "m-1")
         }
         while (coordinator.prompt.value == null) kotlinx.coroutines.yield()
-        assertEquals("小咪：请求过于频繁，被上游限流（429）", coordinator.prompt.value!!.message)
+        assertEquals("3 号 小咪（测试 · m-1）：请求过于频繁，被上游限流（429）", coordinator.prompt.value!!.message)
 
         coordinator.resolve(RetryDecision.RETRY)
         assertEquals("好了", answer.await())
@@ -263,5 +263,29 @@ class WerewolfRetryTest {
             // 用户退出 / 暂停：照常取消，不当成可重试的失败
         }
         assertNull(coordinator.prompt.value)
+    }
+
+    @Test
+    fun `模型没有返回内容时弹重试条并标明座位与具体模型`() = runBlocking {
+        val coordinator = WerewolfRetryCoordinator()
+        val stub = stub(
+            listOf(
+                Result.failure(IllegalStateException("[硅基流动 · zai-org/GLM-5.3-Flash] 模型没有返回内容，请重试")),
+                Result.success("补发成功"),
+            )
+        ).apply { brandName = "硅基流动" }
+        val ai = RetryableAI(stub, 7, "小恬", coordinator)
+
+        val reply = async {
+            ai.chatWithUsage(listOf(ChatMessage.user("请投票")), model = "zai-org/GLM-5.3-Flash")
+        }
+        while (coordinator.prompt.value == null) kotlinx.coroutines.yield()
+        assertEquals(
+            "7 号 小恬（硅基流动 · zai-org/GLM-5.3-Flash）：模型没有返回内容，请重试",
+            coordinator.prompt.value!!.message,
+        )
+
+        coordinator.resolve(RetryDecision.RETRY)
+        assertEquals("补发成功", reply.await().text)
     }
 }

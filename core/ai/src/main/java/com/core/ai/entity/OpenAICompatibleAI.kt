@@ -50,7 +50,7 @@ abstract class OpenAICompatibleAI(
     ): String = rawChat(messages, model, systemPrompt, enableThinking, jsonMode, webSearch).let { response ->
         val content = response.choices.firstOrNull()?.message?.content?.let(ThinkTagSplitter::strip)
         content?.takeIf { it.isNotBlank() }
-            ?: throw IllegalStateException("模型没有返回内容，请重试")
+            ?: throw emptyReplyError(model)
     }
 
     override suspend fun chatWithUsage(
@@ -65,7 +65,7 @@ abstract class OpenAICompatibleAI(
         val text = response.choices.firstOrNull()?.message?.content
             ?.let(ThinkTagSplitter::strip)
             ?.takeIf { it.isNotBlank() }
-            ?: throw IllegalStateException("模型没有返回内容，请重试")
+            ?: throw emptyReplyError(model)
         val usage = response.usage?.toUsage() ?: TokenUsage(
             input = TokenCounter.estimateInput(apiMessages(messages, systemPrompt), null),
             output = TokenCounter.estimate(text),
@@ -210,7 +210,16 @@ abstract class OpenAICompatibleAI(
             throw failure
         }
 
-        if (!hasContent) throw IllegalStateException("模型没有返回内容，请重试")
+        if (!hasContent) throw emptyReplyError(model)
+    }
+
+    /** 空回复报错带上厂商与模型 ID，多模型混打（狼人杀/群聊）时一眼就能定位是哪一个模型出问题。 */
+    private fun emptyReplyError(model: String): IllegalStateException {
+        val label = listOf(brandName.trim(), model.trim())
+            .filter { it.isNotEmpty() }
+            .joinToString(" · ")
+        val prefix = if (label.isNotEmpty()) "[$label] " else ""
+        return IllegalStateException("${prefix}模型没有返回内容，请重试")
     }
 
     /**

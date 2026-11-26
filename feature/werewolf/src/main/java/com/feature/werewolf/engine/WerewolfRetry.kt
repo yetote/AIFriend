@@ -4,6 +4,7 @@ import com.core.ai.entity.IAI
 import com.core.ai.isTimeoutLike
 import com.core.ai.model.ChatDelta
 import com.core.ai.model.ChatMessage
+import com.core.ai.model.ChatReply
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.Flow
@@ -110,7 +111,33 @@ class RetryableAI(
                 if (t is CancellationException) throw t
                 if (!t.isRetryableTransport()) throw t
                 attempt++
-                when (park(t, attempt)) {
+                when (park(t, model, attempt)) {
+                    RetryDecision.RETRY -> continue
+                    RetryDecision.GIVE_UP -> throw t
+                }
+            }
+        }
+    }
+
+    override suspend fun chatWithUsage(
+        messages: List<ChatMessage>,
+        model: String,
+        systemPrompt: String?,
+        enableThinking: Boolean,
+        jsonMode: Boolean,
+        webSearch: Boolean,
+    ): ChatReply {
+        var attempt = 0
+        while (true) {
+            try {
+                return delegate.chatWithUsage(
+                    messages, model, systemPrompt, enableThinking, jsonMode, webSearch,
+                )
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t
+                if (!t.isRetryableTransport()) throw t
+                attempt++
+                when (park(t, model, attempt)) {
                     RetryDecision.RETRY -> continue
                     RetryDecision.GIVE_UP -> throw t
                 }
@@ -145,28 +172,37 @@ class RetryableAI(
             }
             val error = failure!!
             // 已经吐了字就不能从头再放一遍：前半句会重复出现在牌桌上。
-            // 这种情况交给引擎保留半句，原本就是这么设计的。
-            if (emitted || !error.isRetryableTransport()) throw error
+            // 但「只有思考、没有正文」导致的空回复除外——正文一个字都没上屏，可以安全重发。
+            if (emitted && !error.isEmptyReply()) throw error
+            if (!error.isRetryableTransport()) throw error
             attempt++
-            when (park(error, attempt)) {
+            when (park(error, model, attempt)) {
                 RetryDecision.RETRY -> continue
                 RetryDecision.GIVE_UP -> throw error
             }
         }
     }
 
-    private suspend fun park(error: Throwable, attempt: Int): RetryDecision =
-        coordinator.park(seat, "$seatName：${readableReason(error)}", attempt)
+    private suspend fun park(error: Throwable, model: String, attempt: Int): RetryDecision {
+        val modelTag = listOf(delegate.brandName.trim(), model.trim())
+            .filter { it.isNotEmpty() }
+            .joinToString(" · ")
+        val who = if (modelTag.isNotEmpty()) "${seat} 号 $seatName（$modelTag）" else "${seat} 号 $seatName"
+        return coordinator.park(seat, "$who：${readableReason(error)}", attempt)
+    }
 }
 
 /**
- * 只有「重试一次可能就好」的传输错误才值得占用一条重试条。
+ * 只有「重试一次可能就好」的失败才值得占用一条重试条：
+ * - 传输错误（429 / 5xx / 断网）
+ * - 模型空回复（没有返回正文内容：上游偶发抖动或思考耗尽 token，重发或就地换人即可恢复）
  *
  * 异常类型按类名认：core:network 是 core:ai 的 implementation 依赖，
  * 这一层看不到 [DomainException]，硬引用会把模块边界拆掉。
  */
 private fun Throwable.isRetryableTransport(): Boolean {
     if (isTimeoutLike()) return false
+    if (isEmptyReply()) return true
     return when (this::class.simpleName) {
         "ServerException", "NetworkException" -> true
         // Key 错、模型没开通：重试一百次也一样，照旧走错误条
@@ -174,9 +210,17 @@ private fun Throwable.isRetryableTransport(): Boolean {
     }
 }
 
+private fun Throwable.isEmptyReply(): Boolean =
+    this is IllegalStateException && message?.contains("没有返回内容") == true
+
 /** 把传输异常翻成牌桌上能读的一句话；重试条不是错误页，别把堆栈式文案摆上去。 */
 private fun readableReason(error: Throwable): String {
-    val raw = error.message?.take(160)?.takeIf { it.isNotBlank() } ?: "请求失败"
+    val raw = error.message
+        // OpenAICompatibleAI 的空回复已自带 `[厂商 · 模型] ` 前缀；重试条头部已展示模型，去掉避免重复
+        ?.replace(Regex("""^\[[^\]]+]\s*"""), "")
+        ?.take(160)
+        ?.takeIf { it.isNotBlank() }
+        ?: "请求失败"
     return when {
         raw.contains("429") -> "请求过于频繁，被上游限流（429）"
         raw.contains("402") -> "账户余额不足（402）"
