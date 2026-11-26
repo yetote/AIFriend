@@ -644,4 +644,28 @@ class WerewolfPromptTest {
         assertTrue(wolfNoGuard.contains("本局没有守卫"))
         assertFalse(wolfNoGuard.contains("和守卫博弈"))
     }
+
+    @Test
+    fun `全局规则包含退水不能补发言、女巫中刀仍可用毒，守卫白天给抗推拍身份提示`() {
+        val guardGame = gameWithGuard().copy(phase = Phase.DAY_DISCUSSION, day = 2)
+        val guardSeat = guardGame.players.first { it.role == WerewolfRole.GUARD }.seat
+        val wolfSeat = guardGame.players.first { it.role.isWerewolf }.seat
+
+        val wolfPrompt = WerewolfPrompt.systemPrompt(guardGame, seat = wolfSeat)
+        val freeWolfPrompt = WerewolfPrompt.systemPrompt(guardGame, seat = wolfSeat, style = WerewolfPromptStyle.FREE)
+        val guardPrompt = WerewolfPrompt.systemPrompt(guardGame, seat = guardSeat)
+
+        // 2: 退水不能补发言 / 前置位被质疑不能在退水回应（引导式 + 自由式全体共享规则）
+        assertTrue(wolfPrompt.contains("退水阶段只能表态「退水/不退水」、不能补发言或反驳"))
+        assertTrue(freeWolfPrompt.contains("退水阶段只能表态「退水/不退水」、不能补发言或反驳"))
+
+        // 4: 女巫中刀当夜仍可用毒 + 警长 1.5 票口径（全体玩家遵守的硬规则）
+        assertTrue(wolfPrompt.contains("女巫当夜被狼刀中，仍然可以在天亮出局前照常使用毒药"))
+        assertTrue(freeWolfPrompt.contains("女巫当夜被狼刀中，仍然可以在天亮出局前照常使用毒药"))
+        assertTrue(wolfPrompt.contains("3 狼含警长共 3.5 票"))
+
+        // 3: 守卫白天面临抗推或残局必须拍身份报逐夜守护记录
+        assertTrue(guardPrompt.contains("必须立刻拍明守卫身份并报出完整的逐夜守护记录"))
+        assertTrue(guardPrompt.contains("必须果断拍明守卫身份并报出完整的逐夜守护记录"))
+    }
 }
