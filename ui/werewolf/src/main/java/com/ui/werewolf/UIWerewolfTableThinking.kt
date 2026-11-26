@@ -174,6 +174,8 @@ internal fun ThinkingBubble(
     seat: Int = 0,
     /** 正文已经开始进发言列表。发言段秒表重新起算：说的和想的是两个时钟。 */
     speechStarted: Boolean = false,
+    /** 当前段计时起点（毫秒）；由外层牌桌固定，避免气泡隐藏再打开时秒表归零。0 表示自行起算。 */
+    startedAtMs: Long = 0L,
     /** 当前段的上限，0 表示不设限。有值时才显示「/ 60s」。 */
     limitSeconds: Int = 0,
     /** 长按气泡时回调：本局隐藏这个座位的思考气泡。null = 不响应长按。 */
@@ -206,11 +208,15 @@ internal fun ThinkingBubble(
     // 而「模型一声不吭地干等」恰恰是最需要看到秒数的时刻——那一整段时间引擎是静默的。
     // 它回答的是用户最常问的那句话：这个模型到底慢在哪一步、慢了多久。
     // 思考段和发言段各算各的：正文开始吐的那一刻，时钟归零重新数说话的时间。
-    var elapsedSeconds by remember(seat, speechStarted) { mutableIntStateOf(0) }
-    LaunchedEffect(seat, speechStarted) {
-        val started = System.currentTimeMillis()
+    val anchorStartedAt = remember(seat, speechStarted, startedAtMs) {
+        if (startedAtMs > 0L) startedAtMs else System.currentTimeMillis()
+    }
+    var elapsedSeconds by remember(seat, speechStarted, anchorStartedAt) {
+        mutableIntStateOf(elapsedSecondsSince(anchorStartedAt))
+    }
+    LaunchedEffect(seat, speechStarted, anchorStartedAt) {
         while (true) {
-            elapsedSeconds = ((System.currentTimeMillis() - started) / 1000L).toInt()
+            elapsedSeconds = elapsedSecondsSince(anchorStartedAt)
             delay(500L)
         }
     }

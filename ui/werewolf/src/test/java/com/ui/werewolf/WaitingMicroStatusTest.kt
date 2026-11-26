@@ -98,4 +98,14 @@ class WaitingMicroStatusTest {
         val noWaiting = liveThinking.copy(waiting = null)
         assertNotNull(resolveFeedStreaming(noWaiting, allowed = thinkingOnly, pinned = null))
     }
+
+    @Test
+    fun `等待计时器锚定起始时间戳后重建卡片不会归零且不会产生负数`() {
+        val started = 10_000L
+        // 卡片划出视野后 18.9 秒重新进入组合，首帧即按锚定时间继续计时而非归零
+        assertEquals(18, elapsedSecondsSince(startedAtMs = started, nowMs = started + 18_900L))
+        assertEquals(0, elapsedSecondsSince(startedAtMs = 0L, nowMs = started + 5_000L))
+        // 系统时钟回调时不出现负秒数
+        assertEquals(0, elapsedSecondsSince(startedAtMs = started, nowMs = started - 2_000L))
+    }
 }

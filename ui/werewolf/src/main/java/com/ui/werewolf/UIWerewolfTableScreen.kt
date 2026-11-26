@@ -374,6 +374,10 @@ fun UIWerewolfTableScreen(
         // 思考气泡浮在最上层：它要盖在座位和对话流上面，
         // 画在别处会被对话流压住。
         val stream = live.streaming
+        val thinkingTimerKey = stream?.let { it.seat to it.text.isNotEmpty() }
+        val thinkingStartedAtMs = remember(thinkingTimerKey) {
+            if (thinkingTimerKey != null) System.currentTimeMillis() else 0L
+        }
         val anchor = stream?.let { seatAnchors[it.seat] }
         if (stream != null && anchor != null && stream.reasoning.isNotBlank()) {
             ThinkingBubble(
@@ -385,6 +389,7 @@ fun UIWerewolfTableScreen(
                 // 正文开始进发言列表后这段算发言，时钟换成发言时限（秒表重新起算）。
                 // 决策步全程没有正文，永远停在思考时限上。
                 speechStarted = stream.text.isNotEmpty(),
+                startedAtMs = thinkingStartedAtMs,
                 usage = stream.usage,
                 limitSeconds = if (stream.text.isEmpty()) {
                     live.thinkingDecisionSeconds

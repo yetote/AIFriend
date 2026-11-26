@@ -138,6 +138,12 @@ internal fun Feed(
     } else {
         null
     }
+    // 起始时刻提升到 LazyColumn 之外：用户下拉消息列表查看历史时，
+    // 位于底部的 WaitingCard 会离开可视区被 LazyColumn 回收/重建，
+    // 把起始时刻固定在 Feed 组合节点上，滑回底部时秒表即可按真实耗时连续走字，不会归零。
+    val waitingStartedAtMs = remember(waiting?.key) {
+        if (waiting != null) System.currentTimeMillis() else 0L
+    }
     val thinkingSeat = if (waiting == null && live.running && live.turn == null && streaming == null && !live.speechBusy) {
         live.seats.firstOrNull { it.active }
     } else {
@@ -197,6 +203,7 @@ internal fun Feed(
             item(key = "waiting") {
                 WaitingCard(
                     waiting = waiting,
+                    startedAtMs = waitingStartedAtMs,
                     night = night,
                     textColor = textColor,
                     dimColor = dimColor,
@@ -218,18 +225,32 @@ internal fun Feed(
  * - 白天并发阶段实时展示「已完成 X/Y」进度条与仍在纠结的座位号；
  * - 单人思考阶段展示头像、秒表与按秒数推进的微状态，缓解干等焦躁感。
  */
+internal fun elapsedSecondsSince(
+    startedAtMs: Long,
+    nowMs: Long = System.currentTimeMillis(),
+): Int = if (startedAtMs <= 0L) {
+    0
+} else {
+    ((nowMs - startedAtMs).coerceAtLeast(0L) / 1000L).toInt()
+}
+
 @Composable
 internal fun WaitingCard(
     waiting: UIWerewolfWaiting,
+    startedAtMs: Long = 0L,
     night: Boolean,
     textColor: Color,
     dimColor: Color,
 ) {
-    var elapsedSeconds by remember(waiting.key) { mutableIntStateOf(0) }
-    LaunchedEffect(waiting.key) {
-        val started = System.currentTimeMillis()
+    val anchorStartedAt = remember(waiting.key, startedAtMs) {
+        if (startedAtMs > 0L) startedAtMs else System.currentTimeMillis()
+    }
+    var elapsedSeconds by remember(waiting.key, anchorStartedAt) {
+        mutableIntStateOf(elapsedSecondsSince(anchorStartedAt))
+    }
+    LaunchedEffect(waiting.key, anchorStartedAt) {
         while (true) {
-            elapsedSeconds = ((System.currentTimeMillis() - started) / 1000L).toInt()
+            elapsedSeconds = elapsedSecondsSince(anchorStartedAt)
             delay(500L)
         }
     }
