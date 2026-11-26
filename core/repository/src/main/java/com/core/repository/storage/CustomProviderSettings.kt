@@ -6,6 +6,8 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.core.repository.settings.AIProvider
 import com.core.repository.settings.AIProviderCatalog
+import com.core.repository.settings.CustomNameDefaults
+import com.core.repository.settings.RelayStationDetector
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -125,27 +127,39 @@ class CustomProviderSettings(context: Context) {
         }
     }
 
-    suspend fun add(name: String): CustomApiConfig? {
-        val trimmed = name.trim().ifBlank { "自定义 API" }
+    suspend fun add(name: String = CustomNameDefaults.DEFAULT_NAME): CustomApiConfig? {
+        val base = name.trim().ifBlank { CustomNameDefaults.DEFAULT_NAME }
+        val occupied = configs.map { it.name }.toSet()
+        val unique = RelayStationDetector.uniqueName(
+            desired = base,
+            occupiedNames = occupied,
+            builtinNames = AIProviderCatalog.builtin.map { it.name }.toSet(),
+        )
         val config = CustomApiConfig(
             id = "${AIProviderCatalog.LEGACY_CUSTOM_ID}_${UUID.randomUUID().toString().take(8)}",
-            name = trimmed,
+            name = unique,
         )
         return if (persist(configs + config)) config else null
     }
 
     /**
-     * 改名。旧名字记进 [CustomApiConfig.aliases]，老好友不用跟着改数据库。
+     * 改名。旧名字默认记进 [CustomApiConfig.aliases]，老好友不用跟着改数据库。
+     * 首次连接测试自动命名时可传 `recordAlias = false`，避免未用过的默认占位名污染别名表。
      * @return 旧名字；失败（撞名 / 写盘失败）返回 null。
      */
-    suspend fun rename(id: String, newName: String): String? {
+    suspend fun rename(id: String, newName: String, recordAlias: Boolean = true): String? {
         val current = byId(id) ?: return null
         val name = newName.trim().ifBlank { return null }
         if (name == current.name) return current.name
 
         val next = configs.map { config ->
             if (config.id == id) {
-                config.copy(name = name, aliases = (config.aliases + config.name).distinct())
+                val updatedAliases = if (recordAlias) {
+                    (config.aliases + config.name).distinct()
+                } else {
+                    config.aliases
+                }
+                config.copy(name = name, aliases = updatedAliases)
             } else {
                 config
             }

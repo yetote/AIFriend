@@ -240,7 +240,7 @@ fun UIModelSettingsPage(
                         }
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            text = "改名后，已经用这个接口创建的好友仍然可以调用。",
+                            text = "保持默认名称或留空，测试连接时会自动识别中转站名称；改名后已有好友仍可调用。",
                             fontSize = 11.sp,
                             color = UIFriendBarItemMetaColor
                         )
@@ -752,7 +752,11 @@ private fun PlainField(
 @Composable
 private fun VerifyBanner(result: UIVerifyResult) {
     val (text, color) = when (result) {
-        is UIVerifyResult.Success -> "连接成功，拉取到 ${result.modelCount} 个可用模型" to UIFriendBarOnlineGreen
+        is UIVerifyResult.Success -> {
+            val base = "连接成功，拉取到 ${result.modelCount} 个可用模型"
+            val suffix = result.detectedName?.let { "，已自动命名为「$it」" }.orEmpty()
+            (base + suffix) to UIFriendBarOnlineGreen
+        }
         is UIVerifyResult.Failure -> result.message to UIFriendBarRed
     }
     Row(

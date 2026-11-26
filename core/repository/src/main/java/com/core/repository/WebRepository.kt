@@ -49,4 +49,13 @@ class WebRepository {
     suspend fun getPage(url: String): Result<String> = runCatching {
         httpClient.getText(url)
     }
+
+    /** 短超时拉取原始文本，专供中转站名称探测等尽力而为的接口使用。 */
+    suspend fun getTextShort(
+        url: String,
+        headers: Map<String, String> = emptyMap(),
+        timeoutMs: Long = 2_500L,
+    ): Result<String> = runCatching {
+        httpClient.getTextShort(url, headers, timeoutMs)
+    }
 }

@@ -100,7 +100,11 @@ data class UIModelSettingsState(
 
 /** 测试连接的结果，区分成功和失败两种展示。 */
 sealed interface UIVerifyResult {
-    data class Success(val modelCount: Int) : UIVerifyResult
+    data class Success(
+        val modelCount: Int,
+        /** 自定义接口测试连接时自动识别并应用的中转站名称；未自动改名时为 null。 */
+        val detectedName: String? = null,
+    ) : UIVerifyResult
     data class Failure(val message: String) : UIVerifyResult
 }
 

@@ -13,6 +13,8 @@ import com.core.repository.ApiConfig
 import com.core.repository.WebRepository
 import com.core.repository.settings.AIProvider
 import com.core.repository.settings.AIProviderCatalog
+import com.core.repository.settings.CustomNameDefaults
+import com.core.repository.settings.RelayStationDetector
 import com.core.repository.settings.TTSProviderCatalog
 import com.core.repository.settings.validateBaseUrl
 import com.core.repository.storage.AICredential
@@ -30,12 +32,14 @@ import com.ui.home.UITTSProviderOption
 import com.ui.home.UITTSState
 import com.ui.home.UIVerifyResult
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * 模型与密钥设置页的状态管理。
@@ -421,9 +425,29 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
                 }
             )
 
+            // 自定义接口在名称仍为默认占位（或用户清空名称框）时，与 /models 并行探测中转站名，
+            // 成功连接后自动设为当前厂商名，几乎零额外耗时；已由用户手动命名的接口绝不覆盖。
+            val isCustom = AIProviderCatalog.isCustom(provider.id)
+            val inputName = snapshot.customNameInput.trim()
+            val shouldAutoName = isCustom &&
+                CustomNameDefaults.isDefaultName(inputName) &&
+                (CustomNameDefaults.isDefaultName(provider.name) || inputName.isEmpty())
+            val detectedDeferred = if (shouldAutoName) {
+                async(Dispatchers.IO) {
+                    runCatching {
+                        RelayStationDetector.detect(baseUrl) { url, timeoutMs ->
+                            WebRepository.instance.getTextShort(url, timeoutMs = timeoutMs)
+                        }
+                    }.getOrNull()
+                }
+            } else {
+                null
+            }
+
             // 没有 /models 的厂商（目前是星火）验证不了 Key，只能直接存下来：
             // 模型名走目录里的兜底列表，等真聊一次才知道 Key 对不对。
             if (!provider.hasModelList) {
+                detectedDeferred?.cancel()
                 saveCredential(
                     provider, apiKey, baseUrl, provider.fallbackModels,
                     accessKeyId = accessKeyId,
@@ -467,6 +491,7 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
                 val models = priced.map { it.id }.ifEmpty { provider.fallbackModels }
 
                 if (models.isEmpty()) {
+                    detectedDeferred?.cancel()
                     _state.value = _state.value.copy(
                         isVerifying = false,
                         isLoadingModels = false,
@@ -477,12 +502,16 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
                     return@launch
                 }
 
+                val detectedName = withTimeoutOrNull(3_500L) { detectedDeferred?.await()?.name }
+                detectedDeferred?.cancel()
                 saveCredential(
                     provider, apiKey, baseUrl, models, priced,
                     accessKeyId = accessKeyId,
                     accessKeySecret = accessKeySecret,
+                    autoDetectedName = detectedName,
                 )
             }.onFailure { error ->
+                detectedDeferred?.cancel()
                 _state.value = _state.value.copy(
                     isVerifying = false,
                     isLoadingModels = false,
@@ -501,23 +530,52 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
         priced: List<UISettingsModel> = emptyList(),
         accessKeyId: String = "",
         accessKeySecret: String = "",
+        autoDetectedName: String? = null,
     ) {
+        val isCustom = AIProviderCatalog.isCustom(provider.id)
+        val hadSavedModels = isCustom && settings.custom.modelsOf(provider.id).isNotEmpty()
         val credential = AICredential(
             providerId = provider.id,
             apiKey = apiKey,
             // 只有自定义服务商的地址是用户填的，其余用目录里的固定地址，
             // 存下来的话用户以后改目录也改不动它。
-            baseUrl = if (AIProviderCatalog.isCustom(provider.id)) baseUrl else "",
+            baseUrl = if (isCustom) baseUrl else "",
             accessKeyId = accessKeyId,
             accessKeySecret = accessKeySecret,
         )
+        var appliedAutoName: String? = null
         val stored = withContext(Dispatchers.IO) {
             val ok = settings.save(credential)
             if (ok) {
                 // 自定义接口把这次拉到的模型也存下来：断网时还有兜底列表可选，
                 // 创建页不用等一次成功的 /models 才知道有哪些模型。
-                if (AIProviderCatalog.isCustom(provider.id)) {
+                if (isCustom) {
                     settings.custom.saveModels(provider.id, models)
+                    if (!autoDetectedName.isNullOrBlank()) {
+                        val occupied = AIProviderCatalog.all
+                            .filter { it.id != provider.id }
+                            .map { it.name }
+                            .toSet()
+                        val builtins = AIProviderCatalog.builtin.map { it.name }.toSet()
+                        val uniqueName = RelayStationDetector.uniqueName(
+                            desired = autoDetectedName,
+                            occupiedNames = occupied,
+                            builtinNames = builtins,
+                        )
+                        val oldName = settings.custom.rename(
+                            id = provider.id,
+                            newName = uniqueName,
+                            recordAlias = hadSavedModels,
+                        )
+                        if (oldName != null && oldName != uniqueName) {
+                            appliedAutoName = uniqueName
+                            val previousNames = AIProviderCatalog.byId(provider.id)?.aliases.orEmpty() + oldName
+                            val friends = friendRepository.load()
+                            friends.filter { it.brand in previousNames }.forEach { friend ->
+                                friendRepository.upsert(friend.copy(brand = uniqueName, company = uniqueName))
+                            }
+                        }
+                    }
                 }
                 // 默认选一个：优先沿用上次的，否则取列表第一个
                 val previous = settings.selectedModel(provider.id)
@@ -538,7 +596,10 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
             return
         }
         saved = saved + (provider.id to credential)
-        FriendProbeStore.invalidateBrands(listOf(provider.name) + provider.aliases)
+        val latestProvider = AIProviderCatalog.byId(provider.id) ?: provider
+        FriendProbeStore.invalidateBrands(
+            (listOf(provider.name, latestProvider.name) + provider.aliases + latestProvider.aliases).distinct()
+        )
         modelCache[provider.id] = models
         pricedCache[provider.id] = priced
 
@@ -552,6 +613,7 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
             keyInput = "",
             accessKeyIdInput = "",
             accessKeySecretInput = "",
+            customNameInput = if (visible && appliedAutoName != null) appliedAutoName!! else current.customNameInput,
             models = if (visible) models else current.models,
             pricedModels = if (visible) priced else current.pricedModels,
             selectedModel = if (visible) {
@@ -562,7 +624,7 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
             priceIsSnapshot = if (visible) false else current.priceIsSnapshot,
             priceSnapshotDate = ModelPrices.snapshotDate(provider.id),
             canRefreshPrice = ModelPrices.canRefresh(provider.id),
-            verifyResult = UIVerifyResult.Success(models.size),
+            verifyResult = UIVerifyResult.Success(models.size, detectedName = appliedAutoName),
             error = null
         )
     }

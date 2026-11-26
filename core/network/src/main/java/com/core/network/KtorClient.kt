@@ -256,6 +256,26 @@ class KtorClient {
     suspend fun getText(url: String): String = client.get(url).bodyAsText()
 
     /**
+     * 短超时抓原始文本（用于中转站探测等尽力而为的辅助请求）。
+     *
+     * 与 [getText] 分开：探测请求可能打在不支持 `/api/status` 或挂起不回的站点上，
+     * 必须限制在几秒内快速失败，且跳过全量日志以免把整页 HTML 刷进 logcat。
+     */
+    suspend fun getTextShort(
+        url: String,
+        headers: Map<String, String> = emptyMap(),
+        timeoutMs: Long = 2_500L,
+    ): String = client.get(url) {
+        headers.forEach { (key, value) -> header(key, value) }
+        attributes.put(SkipCallLogging, Unit)
+        timeout {
+            connectTimeoutMillis = timeoutMs
+            requestTimeoutMillis = timeoutMs
+            socketTimeoutMillis = timeoutMs
+        }
+    }.bodyAsText()
+
+    /**
      * 带请求头取原始文本。
      *
      * 余额查询要用这个：各家返回的字段名和层级都不一样（有的把金额写成字符串，
