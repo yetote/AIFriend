@@ -31,13 +31,24 @@ class MoePersonaTest {
 
     @Test
     fun `每个模型拟人都标明原型是哪个模型`() {
-        // role 里写清楚来源（DeepSeek / Claude / GPT…），
+        // role 里写清楚来源（DeepSeek / Claude / GPT / Grok / Gemini / Perplexity / Copilot…），
         // 用户才知道自己在跟谁聊天，而不是一个没有出处的纸片人。
         // 二次元 archetype 没有真实模型原型，不在这条约束内。
-        val expected = listOf("DeepSeek", "Claude", "GPT", "豆包", "Gemini", "通义千问", "Kimi", "智谱")
+        val expected = listOf(
+            "DeepSeek", "Claude", "GPT", "Grok", "Gemini",
+            "豆包", "通义千问", "Kimi", "智谱", "Perplexity", "Copilot",
+        )
         val roles = modelPersonas.joinToString(" ") { it.role }
         expected.forEach { model ->
             assertTrue("没有 $model 的拟人模板", roles.contains(model))
+        }
+    }
+
+    @Test
+    fun `主流AI模型提供多个不同切面的拟人形象`() {
+        listOf("DeepSeek", "Claude", "GPT", "Grok", "Gemini", "豆包", "通义千问", "Kimi", "智谱").forEach { brand ->
+            val count = modelPersonas.count { brand in it.role }
+            assertTrue("$brand 应当至少有 2 个不同拟人形象，当前只有 $count 个", count >= 2)
         }
     }
 
@@ -46,13 +57,25 @@ class MoePersonaTest {
         // 每个模型拟人都有一处「只有那个模型才成立」的具体设定
         val signature = mapOf(
             "moe-deepseek" to listOf("白饭", "Token", "鲸", "摸鱼"),
+            "moe-deepseek-geek" to listOf("算力", "开源", "性价比"),
             "moe-claude" to listOf("大小姐", "钢琴", "礼仪", "道歉"),
-            "moe-gpt" to listOf("龙", "算力", "语料"),
-            "moe-doubao" to listOf("最", "道歉", "傻"),
+            "moe-claude-poet" to listOf("诗集", "代码", "严谨", "粗鄙"),
+            "moe-gpt" to listOf("龙", "算力", "语料", "1-2-3"),
+            "moe-gpt-monitor" to listOf("班长", "官话", "非常棒"),
+            "moe-grok-ani" to listOf("哥特", "毒舌", "说教"),
+            "moe-grok-punk" to listOf("热搜", "吃瓜", "梗"),
             "moe-gemini" to listOf("整活", "损"),
+            "moe-gemini-twin" to listOf("全息", "多模态", "检索"),
+            "moe-doubao" to listOf("最", "道歉", "傻"),
+            "moe-doubao-cheer" to listOf("情绪价值", "滑跪", "夸"),
             "moe-qianwen" to listOf("小酒窝", "规划"),
+            "moe-qianwen-guofeng" to listOf("新中式", "管家", "需求"),
             "moe-kimi" to listOf("长", "文档", "书"),
-            "moe-zhipu" to listOf("概念", "依据", "例外")
+            "moe-kimi-moon" to listOf("PDF", "长对话", "原话"),
+            "moe-zhipu" to listOf("概念", "依据", "例外"),
+            "moe-zhipu-lab" to listOf("变量", "工具", "验证"),
+            "moe-perplexity" to listOf("[1][2]", "出处", "交叉验证"),
+            "moe-copilot" to listOf("表格", "幻灯片", "颗粒度"),
         )
         modelPersonas.forEach { persona ->
             val markers = signature[persona.id] ?: emptyList()
