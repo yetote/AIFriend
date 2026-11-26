@@ -465,6 +465,8 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
      * 最近一个阶段边界上（每个阶段都已落档），回到列表页不会继续偷偷烧钱。
      */
     private var playJob: Job? = null
+    /** 暂停落档协程：续档前必须等它写完盘，避免返回列表后立刻点「接着打」读到落档前的旧快照。 */
+    private var pauseJob: Job? = null
 
     private val _record = MutableStateFlow<WerewolfRecordView?>(null)
 
@@ -794,9 +796,11 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
      */
     fun resume(id: String) {
         val previous = playJob
+        val pendingPause = pauseJob
         playJob = viewModelScope.launch {
-            // 上一局可能刚「暂停」、协程还没真的停下（取消是异步的），等它收尾
+            // 上一局可能刚「暂停」、协程还没真的停下或 flush 还没写完盘，等它收尾后再读档
             previous?.cancelAndJoin()
+            pendingPause?.join()
             retryCoordinator.cancelAll()
             try {
                 val table = store.load(id) ?: run {
@@ -1059,7 +1063,7 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
         retryCoordinator.cancelAll()
         val job = playJob
         playJob = null
-        viewModelScope.launch {
+        pauseJob = viewModelScope.launch {
             // 等它真的停下：取消是异步的，立刻 flush 可能写进一个马上要被覆盖的局面
             job?.cancelAndJoin()
             // 牌桌上可能已经说了几句、但还没到阶段边界，补存一次，

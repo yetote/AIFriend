@@ -2381,4 +2381,150 @@ class WerewolfDirectorTest {
         assertTrue("超时通知仍应触发", timeouts.any { it.seat == 2 })
     }
 
+    @Test
+    fun `三路并发时预言家查完人中途退出再续档，不再重复弹窗查验且不丢查验结果`() = runBlocking {
+        // 复现真机问题：守卫/狼人/预言家三路并发期间，人类预言家先查完人，
+        // 狼人还在夜聊时玩家返回列表再进对局，之前因为没增量合并落 onTranscript，
+        // 狼人推快照还会把预言家结果覆盖掉，续档时又弹窗让预言家重查一次。
+        val roles = listOf(
+            WerewolfRole.WEREWOLF, WerewolfRole.WEREWOLF, WerewolfRole.WEREWOLF,
+            WerewolfRole.SEER, WerewolfRole.WITCH, WerewolfRole.HUNTER, WerewolfRole.GUARD,
+            WerewolfRole.VILLAGER, WerewolfRole.VILLAGER, WerewolfRole.VILLAGER,
+        )
+        val cfg = com.feature.werewolf.game.WerewolfBoards.configOf(com.feature.werewolf.game.WerewolfBoards.GUARD_10)
+        val game = WerewolfGame.withRoles(cfg, roster(10), roles)
+        val human = HumanSeatAI()
+        val guardCalls = java.util.concurrent.atomic.AtomicInteger(0)
+        val wolfGate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val wolfSpokeOnce = kotlinx.coroutines.CompletableDeferred<Unit>()
+
+        val slowWolf = object : IAI {
+            override suspend fun requestModel() = Unit
+            override var modelSet: MutableSet<String> = mutableSetOf()
+            override var brandName: String = "慢狼"
+            override var company: String = "测试"
+
+            override fun chatStream(
+                messages: List<ChatMessage>,
+                model: String,
+                systemPrompt: String?,
+                enableThinking: Boolean,
+                jsonMode: Boolean,
+                webSearch: Boolean,
+            ): kotlinx.coroutines.flow.Flow<ChatDelta> = kotlinx.coroutines.flow.flow {
+                if (!wolfSpokeOnce.isCompleted) {
+                    // 第一只狼等预言家查完再说一句，验证狼人推快照不会把预言家结果冲掉
+                    wolfGate.await()
+                    emit(ChatDelta(content = "今晚刀 8 号。"))
+                    wolfSpokeOnce.complete(Unit)
+                } else {
+                    // 第二只狼卡住，模拟玩家在狼人夜聊中途退出
+                    delay(60_000L)
+                }
+            }
+
+            override suspend fun chat(
+                messages: List<ChatMessage>,
+                model: String,
+                systemPrompt: String?,
+                enableThinking: Boolean,
+                jsonMode: Boolean,
+                webSearch: Boolean,
+            ): String = """{"target": 8, "reason": "刀 8 号。"}"""
+
+            @Deprecated("测试用不到")
+            override suspend fun chat(message: String, model: String): String = "今晚刀 8 号。"
+        }
+
+        val fastGuard = object : IAI {
+            override suspend fun requestModel() = Unit
+            override var modelSet: MutableSet<String> = mutableSetOf()
+            override var brandName: String = "快守卫"
+            override var company: String = "测试"
+            override suspend fun chat(
+                messages: List<ChatMessage>,
+                model: String,
+                systemPrompt: String?,
+                enableThinking: Boolean,
+                jsonMode: Boolean,
+                webSearch: Boolean,
+            ): String {
+                guardCalls.incrementAndGet()
+                return """{"target": null, "reason": "首夜空守。"}"""
+            }
+            @Deprecated("测试用不到")
+            override suspend fun chat(message: String, model: String): String = """{"target": null}"""
+        }
+
+        var latestSnapshot: WerewolfTable? = null
+        val agents1 = game.players.associate { p ->
+            p.seat to when (p.seat) {
+                4 -> SeatAgent(human, "human")
+                7 -> SeatAgent(fastGuard, "guard-m")
+                1, 2, 3 -> SeatAgent(slowWolf, "wolf-m")
+                else -> SeatAgent(AutoAI(), "auto-m")
+            }
+        }
+        val director1 = WerewolfDirector(
+            agents = agents1,
+            random = Random(7),
+            onTranscript = { latestSnapshot = it },
+        )
+
+        val run1 = launch { director1.nightPending(WerewolfTable(game)) }
+        repeat(100) { if (human.turn.value == null) delay(10) }
+        assertTrue("首轮人类预言家应弹出查验", human.turn.value != null)
+        human.submit("""{"target": 2, "reason": "验 2 号"}""")
+        // 等预言家和守卫增量合入快照
+        repeat(100) {
+            val snap = latestSnapshot
+            if (snap != null && snap.game.seerChecks.any { it.day == 1 && it.targetSeat == 2 } && guardCalls.get() == 1) {
+                return@repeat
+            }
+            delay(10)
+        }
+        assertTrue(
+            "预言家查完应立刻合入最新快照，不必等狼人聊完",
+            latestSnapshot!!.game.seerChecks.any { it.day == 1 && it.targetSeat == 2 },
+        )
+
+        // 放行第一只狼发言，确认狼人推快照后仍保留预言家查验与守卫记录
+        wolfGate.complete(Unit)
+        wolfSpokeOnce.await()
+        delay(30)
+        val flushed = latestSnapshot!!
+        assertTrue(
+            "狼人夜聊推快照不能覆盖已完成预言家的查验",
+            flushed.game.seerChecks.any { it.day == 1 && it.targetSeat == 2 },
+        )
+        assertTrue(
+            "狼人夜聊推快照不能覆盖已完成守卫的记录",
+            flushed.transcript.any { it.day == 1 && it.phase == Phase.NIGHT_GUARD },
+        )
+
+        // 模拟玩家在狼人夜聊中途退出暂停
+        run1.cancelAndJoin()
+
+        // 续档重跑 nightPending（狼人换成正常 AutoAI，人类预言家不能再被问！）
+        val human2 = HumanSeatAI()
+        val agents2 = game.players.associate { p ->
+            p.seat to when (p.seat) {
+                4 -> SeatAgent(human2, "human")
+                7 -> SeatAgent(fastGuard, "guard-m")
+                else -> SeatAgent(AutoAI(), "auto-m")
+            }
+        }
+        val director2 = WerewolfDirector(agents = agents2, random = Random(7))
+        val resumed = director2.nightPending(flushed)
+
+        assertEquals("续档时绝不能再让预言家重复查验", null, human2.turn.value)
+        assertEquals("守卫已完成，续档不应重复守护", 1, guardCalls.get())
+        assertEquals(
+            "第 1 夜只应保留原先那 1 条查验记录（2 号）",
+            listOf(2),
+            resumed.game.seerChecks.filter { it.day == 1 }.map { it.targetSeat },
+        )
+        assertEquals("三路合并完成后应推进到女巫阶段", Phase.NIGHT_WITCH, resumed.game.phase)
+    }
+
 }

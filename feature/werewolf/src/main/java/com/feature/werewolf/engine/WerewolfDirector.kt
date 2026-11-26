@@ -37,7 +37,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
@@ -160,7 +162,8 @@ class WerewolfDirector(
     internal suspend fun nightPending(table: WerewolfTable): WerewolfTable {
         val base = table.game
         val guardDone = nightActorDone(table, Phase.NIGHT_GUARD)
-        val seerDone = nightActorDone(table, Phase.NIGHT_SEER)
+        val seerDone = nightActorDone(table, Phase.NIGHT_SEER) ||
+            base.seerChecks.any { it.day == base.day }
         // 狼人「完成」不能只看有没有商议发言：商议说一半、或平票定刀中落档时，
         // 商议消息已经出现但刀口还没定，续档若跳过狼人就会按空刀结算。
         // 狼人路跑完必然把 phase 推过 NIGHT_WOLF（有预言家→NIGHT_SEER，没有→DAWN_SETTLE）；
@@ -172,75 +175,124 @@ class WerewolfDirector(
         }
         fun alive(role: WerewolfRole) = base.alivePlayers.any { it.role == role }
 
-        val guardTable: WerewolfTable?
-        val wolfTable: WerewolfTable?
-        val seerTable: WerewolfTable?
+        // 三路并发增量合并：任意一路有进展（预言家查完、守卫守完、狼人说完一句或定完刀）
+        // 立刻合并到同一份快照推给 onTranscript。
+        // 否则：1) 人类预言家查完在狼聊期间退出再进，查验结果会彻底丢失并重新弹窗查验；
+        //      2) 狼人 talkRound 直接推自己的孤立副本，会把已完成的那两路覆盖抹掉。
+        val mergeLock = Mutex()
+        var guardTable: WerewolfTable? = null
+        var wolfTable: WerewolfTable? = null
+        var seerTable: WerewolfTable? = null
+        var wolvesFinished = wolvesDone
+
+        fun buildMerged(final: Boolean): WerewolfTable {
+            var merged = table
+            val guardGame = guardTable?.game
+            val wolfGame = wolfTable?.game
+            val seerGame = seerTable?.game
+            // 并发三路各自可能更新自己座位的私密狼坑本，按「相对 base 变动过的键」合并，互不覆盖。
+            val mergedNotes = LinkedHashMap(base.beliefNotes)
+            listOfNotNull(guardGame, wolfGame, seerGame).forEach { part ->
+                part.beliefNotes.forEach { (seat, note) ->
+                    if (base.beliefNotes[seat] != note) mergedNotes[seat] = note
+                }
+            }
+            val nextPhase = when {
+                final -> if (base.alivePlayers.any { it.role == WerewolfRole.WITCH }) {
+                    Phase.NIGHT_WITCH
+                } else {
+                    Phase.DAWN_SETTLE
+                }
+                // 狼人路已定刀完成但守卫/预言家还在想：把中间快照的 phase 推进到 NIGHT_SEER
+                // （仍路由到 nightPending），续档时 wolvesDone 为 true，不重跑狼队。
+                wolvesFinished -> Phase.NIGHT_SEER
+                else -> wolfGame?.phase ?: base.phase
+            }
+            val finalGame = base.copy(
+                phase = nextPhase,
+                // 守卫写入
+                tonightGuardedSeat = if (guardGame != null) guardGame.tonightGuardedSeat else base.tonightGuardedSeat,
+                lastGuardedSeat = base.lastGuardedSeat,
+                // 狼人写入
+                wolfVotes = if (wolfGame != null) wolfGame.wolfVotes else base.wolfVotes,
+                wolfVoteRound = if (wolfGame != null) wolfGame.wolfVoteRound else base.wolfVoteRound,
+                tonightVictim = if (wolfGame != null) wolfGame.tonightVictim else base.tonightVictim,
+                ghostWolves = if (wolfGame != null) wolfGame.ghostWolves else base.ghostWolves,
+                nightHead = if (wolfGame != null) wolfGame.nightHead else base.nightHead,
+                wolfPlan = if (wolfGame != null) wolfGame.wolfPlan else base.wolfPlan,
+                wolfStyleSeed = if (wolfGame != null) wolfGame.wolfStyleSeed else base.wolfStyleSeed,
+                // 预言家写入
+                seerChecks = if (seerGame != null) seerGame.seerChecks else base.seerChecks,
+                beliefNotes = mergedNotes,
+                // 发言进度：狼人路 talkRound 的 markSpoken 要保留——续档靠它跳过已发言的狼。
+                // 守卫 / 预言家是单次决策不走 markSpoken，所以取狼人路的值即可。
+                spokenPhaseKey = if (wolfGame != null) wolfGame.spokenPhaseKey else base.spokenPhaseKey,
+                spokenSeats = if (wolfGame != null) wolfGame.spokenSeats else base.spokenSeats,
+            )
+            // 消息按固定顺序 append（并发完成顺序不定，但落库顺序固定）
+            for (part in listOfNotNull(guardTable, wolfTable, seerTable)) {
+                // 只取这一路新产生的消息（相对 base 的 transcript）
+                part.transcript.drop(table.transcript.size).forEach { merged = merged.append(it) }
+            }
+            return merged.copy(game = finalGame)
+        }
+
+        val publishWolf: suspend (WerewolfTable) -> Unit = { wt ->
+            withContext(NonCancellable) {
+                mergeLock.withLock {
+                    wolfTable = wt
+                    wolvesFinished = wt.game.phase != Phase.NIGHT_WOLF_CHAT && wt.game.phase != Phase.NIGHT_WOLF
+                    onTranscript(buildMerged(final = false))
+                }
+            }
+        }
+
         coroutineScope {
             val g = if (alive(WerewolfRole.GUARD) && !guardDone) {
-                async { nightGuard(table.copy(game = base.copy(phase = Phase.NIGHT_GUARD))) }
+                async {
+                    val gt = nightGuard(table.copy(game = base.copy(phase = Phase.NIGHT_GUARD)))
+                    withContext(NonCancellable) {
+                        mergeLock.withLock {
+                            guardTable = gt
+                            onTranscript(buildMerged(final = false))
+                        }
+                    }
+                    gt
+                }
             } else null
             val w = if (!wolvesDone) {
                 async {
-                    var wt = nightWolfChat(table.copy(game = base.copy(phase = Phase.NIGHT_WOLF_CHAT)))
-                    wt = nightWolf(wt)
+                    var wt = if (base.phase == Phase.NIGHT_WOLF) {
+                        table.copy(game = base.copy(phase = Phase.NIGHT_WOLF))
+                    } else {
+                        nightWolfChat(
+                            table.copy(game = base.copy(phase = Phase.NIGHT_WOLF_CHAT)),
+                            onUpdate = publishWolf,
+                        )
+                    }
+                    wt = nightWolf(wt, onUpdate = publishWolf)
+                    publishWolf(wt)
                     wt
                 }
             } else null
             val s = if (alive(WerewolfRole.SEER) && !seerDone) {
-                async { nightSeer(table.copy(game = base.copy(phase = Phase.NIGHT_SEER))) }
+                async {
+                    val st = nightSeer(table.copy(game = base.copy(phase = Phase.NIGHT_SEER)))
+                    withContext(NonCancellable) {
+                        mergeLock.withLock {
+                            seerTable = st
+                            onTranscript(buildMerged(final = false))
+                        }
+                    }
+                    st
+                }
             } else null
-            guardTable = g?.await()
-            wolfTable = w?.await()
-            seerTable = s?.await()
+            g?.await()
+            w?.await()
+            s?.await()
         }
 
-        // 合并：字段各取各路的写入，消息按守卫 → 狼人 → 预言家顺序落（气泡顺序）
-        var merged = table
-        // 写 null / 空集也是合法结果（空守、空刀、首夜无昨守）。只要这一路跑了，
-        // 就用它的值，不用 `?:` 回退 base——否则异常存档下会把上一夜的刀口/守护带进本夜。
-        val guardGame = guardTable?.game
-        val wolfGame = wolfTable?.game
-        val seerGame = seerTable?.game
-        // 并发三路各自可能更新自己座位的私密狼坑本，按「相对 base 变动过的键」合并，互不覆盖。
-        val mergedNotes = LinkedHashMap(base.beliefNotes)
-        listOfNotNull(guardGame, wolfGame, seerGame).forEach { part ->
-            part.beliefNotes.forEach { (seat, note) ->
-                if (base.beliefNotes[seat] != note) mergedNotes[seat] = note
-            }
-        }
-        val finalGame = base.copy(
-            // 守卫写入
-            tonightGuardedSeat = if (guardGame != null) guardGame.tonightGuardedSeat else base.tonightGuardedSeat,
-            lastGuardedSeat = base.lastGuardedSeat,
-            // 狼人写入
-            wolfVotes = if (wolfGame != null) wolfGame.wolfVotes else base.wolfVotes,
-            wolfVoteRound = if (wolfGame != null) wolfGame.wolfVoteRound else base.wolfVoteRound,
-            tonightVictim = if (wolfGame != null) wolfGame.tonightVictim else base.tonightVictim,
-            ghostWolves = if (wolfGame != null) wolfGame.ghostWolves else base.ghostWolves,
-            nightHead = if (wolfGame != null) wolfGame.nightHead else base.nightHead,
-            wolfPlan = if (wolfGame != null) wolfGame.wolfPlan else base.wolfPlan,
-            wolfStyleSeed = if (wolfGame != null) wolfGame.wolfStyleSeed else base.wolfStyleSeed,
-            // 预言家写入
-            seerChecks = if (seerGame != null) seerGame.seerChecks else base.seerChecks,
-            beliefNotes = mergedNotes,
-            // 发言进度：狼人路 talkRound 的 markSpoken 要保留——续档靠它跳过已发言的狼。
-            // 守卫 / 预言家是单次决策不走 markSpoken，所以取狼人路的值即可。
-            spokenPhaseKey = if (wolfGame != null) wolfGame.spokenPhaseKey else base.spokenPhaseKey,
-            spokenSeats = if (wolfGame != null) wolfGame.spokenSeats else base.spokenSeats,
-        )
-        // 消息按固定顺序 append（并发完成顺序不定，但落库顺序固定）
-        for (part in listOfNotNull(guardTable, wolfTable, seerTable)) {
-            // 只取这一路新产生的消息（相对 base 的 transcript）
-            part.transcript.drop(table.transcript.size).forEach { merged = merged.append(it) }
-        }
-        merged = merged.copy(game = finalGame)
-
-        // 三路都完成后：有女巫进用药，否则直接天亮结算
-        return if (finalGame.alivePlayers.any { it.role == WerewolfRole.WITCH }) {
-            merged.copy(game = finalGame.copy(phase = Phase.NIGHT_WITCH))
-        } else {
-            merged.copy(game = finalGame.copy(phase = Phase.DAWN_SETTLE))
-        }
+        return buildMerged(final = true)
     }
 
     /** 当夜该阶段是否已经有落库发言（续档据此跳过已完成的身份）。 */
@@ -289,7 +341,10 @@ class WerewolfDirector(
      * 2. **单独成阶段**，不和下刀合并。合成一个请求的话，模型会一边说一边把目标定了，
      *    嘴上说「刀 3 号」、JSON 里填 5 号，而它自己也不觉得矛盾。
      */
-    suspend fun nightWolfChat(table: WerewolfTable): WerewolfTable {
+    suspend fun nightWolfChat(
+        table: WerewolfTable,
+        onUpdate: suspend (WerewolfTable) -> Unit = onTranscript,
+    ): WerewolfTable {
         val game = table.game
         if (game.phase != Phase.NIGHT_WOLF_CHAT) return table
         val aliveWolves = game.aliveWolves()
@@ -308,7 +363,7 @@ class WerewolfDirector(
                 wolfStyleSeed = styleSeed,
             )
         )
-        val spoken = talkRound(prepared, note = null)
+        val spoken = talkRound(prepared, note = null, onUpdate = onUpdate)
         return spoken.copy(game = spoken.game.beginWolfVote())
     }
 
@@ -321,7 +376,10 @@ class WerewolfDirector(
      * 平票时**回到商议**再谈一轮，而不是直接空刀：谈不拢说明话没说透，
      * 那就把分歧摆出来再说一次——这一步才是第一夜空刀的正解。
      */
-    suspend fun nightWolf(table: WerewolfTable): WerewolfTable {
+    suspend fun nightWolf(
+        table: WerewolfTable,
+        onUpdate: suspend (WerewolfTable) -> Unit = onTranscript,
+    ): WerewolfTable {
         var current = table
         var rounds = 0
         while (current.game.phase == Phase.NIGHT_WOLF && rounds < WerewolfGame.MAX_WOLF_VOTE_ROUNDS) {
@@ -396,13 +454,13 @@ class WerewolfDirector(
             current = next.copy(game = afterVote).syncPublicEvents(game)
             // 定刀结果也推一次：平票时界面要能立刻看到「谁指了谁」，
             // 否则下一轮商议的发言会显得凭空多出来一段
-            onTranscript(current)
+            onUpdate(current)
 
             if (current.game.phase == Phase.NIGHT_WOLF) {
                 // 平票。把阶段真的退回商议，提示词里那句「现在定刀」才不会和
                 // 「再商量一次」打架
                 val reopened = current.copy(game = current.game.reopenWolfChat())
-                val talked = talkRound(reopened, note = "平票，再商一次")
+                val talked = talkRound(reopened, note = "平票，再商一次", onUpdate = onUpdate)
                 current = talked.copy(game = talked.game.beginWolfVote())
             }
             rounds++
@@ -416,7 +474,11 @@ class WerewolfDirector(
      * 只追加消息、不碰 [WerewolfGame]——阶段推进由调用方决定。
      * 这样「第一次商议」和「平票后再商一次」能共用同一段逻辑。
      */
-    private suspend fun talkRound(table: WerewolfTable, note: String?): WerewolfTable {
+    private suspend fun talkRound(
+        table: WerewolfTable,
+        note: String?,
+        onUpdate: suspend (WerewolfTable) -> Unit = onTranscript,
+    ): WerewolfTable {
         val game = table.game
         // 含自爆未离场的狼：他今晚还能说一句。
         val wolves = game.nightWolves().sortedBy { it.seat }
@@ -477,7 +539,7 @@ class WerewolfDirector(
             }
             current = current.copy(game = current.game.markSpoken(wolf.seat))
             // 说一句推一次：界面上一个一个冒出来，看得出来现在轮到谁在想
-            onTranscript(current)
+            onUpdate(current)
         }
         return current
     }
