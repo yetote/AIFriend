@@ -48,6 +48,8 @@ import com.ui.agent.data.UIPriceTone
 import com.ui.common.pageInsetsBottom
 import com.ui.common.pageInsetsTop
 import com.ui.common.theme.UIActionBrush
+import com.ui.common.theme.UIAtelierBrass
+import com.ui.common.theme.UIAtelierJade
 import com.ui.common.theme.UIFriendBarCreateButtonText
 import com.ui.common.theme.UIFriendBarGray
 import com.ui.common.theme.UIFriendBarItemMetaColor
@@ -986,10 +988,11 @@ private fun ModelList(
 }
 
 /** 价格档位对应的颜色，和创建页保持一致。 */
+@Composable
 private fun settingsPriceToneColor(tone: UIPriceTone?): Color = when (tone) {
-    UIPriceTone.CHEAP -> Color(0xFF1F7A5A)
+    UIPriceTone.CHEAP -> UIAtelierJade
     UIPriceTone.NORMAL -> UIFriendBarItemMetaColor
-    UIPriceTone.EXPENSIVE -> Color(0xFFB87A1F)
+    UIPriceTone.EXPENSIVE -> UIAtelierBrass
     null -> UIFriendBarItemMetaColor
 }
 
@@ -1005,7 +1008,7 @@ private fun SaveButton(
             .fillMaxWidth()
             .height(48.dp)
             .background(
-                brush = if (enabled) UIActionBrush else UIActionBrushDisabled,
+                brush = if (enabled) UIActionBrush else uiActionBrushDisabled(),
                 shape = RoundedCornerShape(UIRadiusControl)
             )
             .clickable(enabled = enabled) { onClick() },
@@ -1029,6 +1032,7 @@ private fun SaveButton(
 }
 
 /** 禁用态用一个低饱和的灰蓝渐变，和可用态保持同样的形，只是不发光。 */
-private val UIActionBrushDisabled = Brush.linearGradient(
+@Composable
+private fun uiActionBrushDisabled(): Brush = Brush.linearGradient(
     listOf(UIFriendBarGray, UIFriendBarGray)
 )

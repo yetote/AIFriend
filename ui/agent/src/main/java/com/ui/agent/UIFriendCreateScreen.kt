@@ -1141,6 +1141,7 @@ private fun PriceFootnote(
 }
 
 /** 按价格档位给文字上色，不用比数字也能看出便宜还是贵。 */
+@Composable
 private fun priceToneColor(tone: UIPriceTone?): Color = when (tone) {
     UIPriceTone.CHEAP -> UIAtelierJade
     UIPriceTone.NORMAL -> UIFriendBarItemMetaColor

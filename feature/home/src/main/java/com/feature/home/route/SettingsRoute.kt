@@ -49,6 +49,7 @@ fun SettingsRoute(
             onBack = onExit,
             onOpenModel = { page = SettingsPage.Model },
             onOpenTts = { page = SettingsPage.Tts },
+            onThemeModeSelect = viewModel::selectThemeMode,
         )
 
         SettingsPage.Model -> UIModelSettingsPage(

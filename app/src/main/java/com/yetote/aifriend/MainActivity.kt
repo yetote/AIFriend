@@ -7,23 +7,56 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.core.common.theme.AIFriendTheme
+import com.core.common.theme.AppThemeController
+import com.core.common.theme.AppThemeMode
+import com.core.repository.storage.ThemeSettings
 import com.feature.home.route.HomeRoute
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // API 30 以下没有可靠的 IME insets，保持系统默认 fit + adjustResize，
-        // 让窗口自己为键盘让出空间。
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            // 全站是浅色底，强制深色状态栏图标，避免系统深色模式下图标「白到看不见」。
             enableEdgeToEdge(
                 statusBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
                 navigationBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
             )
         }
+        val themeSettings = ThemeSettings(applicationContext)
         setContent {
-            AIFriendTheme {
+            LaunchedEffect(Unit) {
+                val modeId = withContext(Dispatchers.IO) {
+                    runCatching { themeSettings.loadModeId() }.getOrDefault(AppThemeMode.SYSTEM.id)
+                }
+                AppThemeController.setMode(AppThemeMode.fromId(modeId))
+            }
+            val mode by AppThemeController.mode.collectAsStateWithLifecycle()
+            val darkTheme = when (mode) {
+                AppThemeMode.SYSTEM -> isSystemInDarkTheme()
+                AppThemeMode.LIGHT -> false
+                AppThemeMode.DARK -> true
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                SideEffect {
+                    val style = if (darkTheme) {
+                        SystemBarStyle.dark(Color.TRANSPARENT)
+                    } else {
+                        SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
+                    }
+                    enableEdgeToEdge(
+                        statusBarStyle = style,
+                        navigationBarStyle = style
+                    )
+                }
+            }
+            AIFriendTheme(darkTheme = darkTheme) {
                 GlobalUiEventObserver()
                 HomeRoute()
             }

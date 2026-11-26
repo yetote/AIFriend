@@ -1,6 +1,7 @@
 package com.ui.home
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -41,6 +42,8 @@ import com.ui.common.theme.UIFriendBarOnlineGreen
 import com.ui.common.theme.UIFriendBarTagBgBlue
 import com.ui.common.theme.UIFriendBarTagTextBlue
 import com.ui.common.theme.UIFriendBarTitleColor
+import com.ui.common.theme.UIGlassStroke
+import com.ui.common.theme.UIGlassSurfaceStrong
 import com.ui.common.theme.UIGradientBackground
 import com.ui.common.theme.UIRadiusCard
 import com.ui.common.theme.UITopBar
@@ -55,6 +58,7 @@ fun UISettingsHomePage(
     onBack: () -> Unit,
     onOpenModel: () -> Unit,
     onOpenTts: () -> Unit,
+    onThemeModeSelect: (String) -> Unit = {},
 ) {
     UIGradientBackground(modifier = Modifier.pageInsetsTop()) {
         Column(
@@ -111,6 +115,20 @@ fun UISettingsHomePage(
                     },
                     configured = tts?.hasKey == true,
                     onClick = onOpenTts
+                )
+
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "外观与显示",
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.6.sp,
+                    color = UIFriendBarItemMetaColor,
+                    modifier = Modifier.padding(horizontal = 4.dp)
+                )
+                ThemeModeCard(
+                    selectedId = state.themeModeId,
+                    onSelect = onThemeModeSelect
                 )
 
                 Spacer(Modifier.height(4.dp))
@@ -235,5 +253,76 @@ private fun SettingsEntry(
             tint = UIFriendBarItemMetaColor,
             modifier = Modifier.size(20.dp)
         )
+    }
+}
+
+@Composable
+private fun ThemeModeCard(
+    selectedId: String,
+    onSelect: (String) -> Unit,
+) {
+    val options = listOf(
+        "system" to "跟随系统",
+        "light" to "浅色宣纸",
+        "dark" to "深色曜石",
+    )
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .uiCard(shape = RoundedCornerShape(UIRadiusCard), elevation = 2.dp)
+            .padding(horizontal = 15.dp, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Column {
+            Text(
+                text = "夜间模式",
+                fontSize = 15.5.sp,
+                fontWeight = FontWeight.Bold,
+                color = UIFriendBarTitleColor
+            )
+            Spacer(Modifier.height(3.dp))
+            Text(
+                text = "可跟随系统深浅切换，或手动锁定昼夜视觉风格",
+                fontSize = 12.sp,
+                color = UIFriendBarItemSubtitleColor
+            )
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(UIAtelierSand)
+                .padding(3.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            options.forEach { (id, label) ->
+                val selected = selectedId == id
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (selected) UIGlassSurfaceStrong else Color.Transparent)
+                        .then(
+                            if (selected) {
+                                Modifier.border(0.75.dp, UIGlassStroke, RoundedCornerShape(10.dp))
+                            } else {
+                                Modifier
+                            }
+                        )
+                        .clickable { onSelect(id) }
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = label,
+                        fontSize = 12.5.sp,
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                        color = if (selected) UIFriendBarTagTextBlue else UIFriendBarItemSubtitleColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
     }
 }

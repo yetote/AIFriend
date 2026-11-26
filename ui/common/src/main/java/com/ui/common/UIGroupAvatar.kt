@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -26,6 +27,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ui.common.data.getRandomColor
+import com.ui.common.theme.UIGlassSurfaceStrong
 
 /** 群头像里的一个成员：只需要画图要用的两个字段。 */
 data class UIGroupMember(
@@ -142,6 +144,7 @@ private fun EmptyGroupCell(size: Dp) {
 }
 
 /** 成员之间的缝，透出来的就是这层颜色。 */
-private val UIGroupAvatarGap = Color(0xFFFFFDF9)
+private val UIGroupAvatarGap: Color
+    @Composable @ReadOnlyComposable get() = UIGlassSurfaceStrong
 private val UIGroupAvatarGapWidth = 1.5.dp
 private val UIGroupAvatarTextColor = Color(0xFF26201B)

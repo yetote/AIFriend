@@ -26,6 +26,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -52,6 +53,7 @@ import com.ui.common.theme.UIGlassBar
 import com.ui.common.theme.UIGlassStroke
 import com.ui.common.theme.UIGlassSurfaceStrong
 import com.ui.common.theme.UIGradientBackground
+import com.ui.common.theme.UIIsDarkTheme
 import com.ui.common.theme.UIRadiusCard
 import com.ui.common.theme.UIRadiusControl
 import com.ui.common.theme.UISeparator
@@ -81,13 +83,19 @@ import com.ui.werewolf.data.UITokenUsage
 // 不用来装饰。赢家横幅例外，那是整页唯一需要「一眼看到」的东西。
 // ---------------------------------------------------------------------------
 
-private val ReviewTitle = Color(0xFF171411)
-private val ReviewBody = Color(0xFF3E362E)
-private val ReviewDim = Color(0xFF7B7166)
+private val ReviewTitle: Color
+    @Composable @ReadOnlyComposable get() = if (UIIsDarkTheme) Color(0xFFF3ECE2) else Color(0xFF171411)
+private val ReviewBody: Color
+    @Composable @ReadOnlyComposable get() = if (UIIsDarkTheme) Color(0xFFD6CAC0) else Color(0xFF3E362E)
+private val ReviewDim: Color
+    @Composable @ReadOnlyComposable get() = if (UIIsDarkTheme) Color(0xFF9C8E80) else Color(0xFF7B7166)
 
-private val WolfRed = Color(0xFFC2302B)
-private val GodBlue = Color(0xFF2F5DA8)
-private val VillagerGray = Color(0xFF7B7166)
+private val WolfRed: Color
+    @Composable @ReadOnlyComposable get() = if (UIIsDarkTheme) Color(0xFFE86660) else Color(0xFFC2302B)
+private val GodBlue: Color
+    @Composable @ReadOnlyComposable get() = if (UIIsDarkTheme) Color(0xFF8AB4F8) else Color(0xFF2F5DA8)
+private val VillagerGray: Color
+    @Composable @ReadOnlyComposable get() = if (UIIsDarkTheme) Color(0xFF9C8E80) else Color(0xFF7B7166)
 
 private val WolfBanner = listOf(Color(0xFF17100E), Color(0xFF5A1D19))
 private val GoodBanner = listOf(Color(0xFF171412), Color(0xFF283E66))
@@ -874,7 +882,7 @@ private fun NightDetailCard(detail: UIWerewolfNightDetail) {
             )
             if (expanded) {
                 detail.lines.forEach { line ->
-                    val style = bubbleStyle(line.kind, night = false)
+                    val style = bubbleStyle(line.kind, night = UIIsDarkTheme)
                     UIWerewolfBubble(
                         style = style,
                         modifier = Modifier
@@ -1269,7 +1277,7 @@ private fun DialogueLine(line: UIWerewolfSpeechLine) {
         return
     }
 
-    val style = bubbleStyle(kind, night = false)
+    val style = bubbleStyle(kind, night = UIIsDarkTheme)
     val bubbleShape = if (kind == UIWerewolfBubbleKind.SPEECH) {
         SpeechBubbleShape
     } else {
@@ -1337,7 +1345,7 @@ private fun DialogueLine(line: UIWerewolfSpeechLine) {
 @Composable
 private fun ReviewThought(reasoning: String) {
     var expanded by rememberSaveable { mutableStateOf(false) }
-    val style = bubbleStyle(UIWerewolfBubbleKind.THOUGHT, night = false)
+    val style = bubbleStyle(UIWerewolfBubbleKind.THOUGHT, night = UIIsDarkTheme)
 
     // 虚线框：这是「他说出口的话之外的东西」，实线框会和发言气泡混在一起
     UIWerewolfBubble(

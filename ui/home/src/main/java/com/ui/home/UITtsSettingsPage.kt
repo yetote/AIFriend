@@ -55,6 +55,7 @@ import com.ui.common.theme.UIFriendBarTagBgBlue
 import com.ui.common.theme.UIFriendBarTagTextBlue
 import com.ui.common.theme.UIFriendBarTitleColor
 import com.ui.common.theme.UIGlassStroke
+import com.ui.common.theme.UIGlassSurfaceStrong
 import com.ui.common.theme.UIGradientBackground
 import com.ui.common.theme.UIRadiusCard
 import com.ui.common.theme.UIRadiusControl
@@ -150,7 +151,7 @@ private fun TtsSection(
                 .fillMaxWidth()
                 .uiCard(
                     shape = RoundedCornerShape(16.dp),
-                    color = if (selected) UIFriendBarTagBgBlue.copy(alpha = 0.7f) else Color(0xFFFFFDF9),
+                    color = if (selected) UIFriendBarTagBgBlue.copy(alpha = 0.7f) else UIGlassSurfaceStrong,
                     borderColor = if (selected) UIFriendBarCreateButtonText.copy(alpha = 0.55f) else UIGlassStroke,
                     elevation = 2.dp
                 )
@@ -432,7 +433,7 @@ private fun TtsSaveButton(enabled: Boolean, loading: Boolean, onClick: () -> Uni
             .height(48.dp)
             .clip(RoundedCornerShape(UIRadiusControl))
             .background(
-                brush = if (enabled) UIActionBrush else TtsActionBrushDisabled,
+                brush = if (enabled) UIActionBrush else ttsActionBrushDisabled(),
                 shape = RoundedCornerShape(UIRadiusControl)
             )
             .clickable(enabled = enabled) { onClick() },
@@ -456,6 +457,7 @@ private fun TtsSaveButton(enabled: Boolean, loading: Boolean, onClick: () -> Uni
 }
 
 /** 禁用态用一个低饱和的灰蓝渐变，和模型页保持同样的形。 */
-private val TtsActionBrushDisabled = Brush.linearGradient(
+@Composable
+private fun ttsActionBrushDisabled(): Brush = Brush.linearGradient(
     listOf(UIFriendBarGray, UIFriendBarGray)
 )

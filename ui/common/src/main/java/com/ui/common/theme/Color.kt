@@ -1,50 +1,107 @@
 package com.ui.common.theme
 
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 
-// 宣纸朱砂（Warm Editorial Atelier）语义色体系
-val UIFriendBarTitleColor = Color(0xFF171411)             // 浓墨主标题
-val UIFriendBarTitle2Color = Color(0xFF8C8277)            // 温润灰褐追踪副标
-val UIFriendBarGray = Color(0xFFEDE7DC)                   // 暖砂石分组底
-val UIFriendBarRed = Color(0xFFC2302B)                    // 赤印警示红
-val UIFriendBarBlue = Color(0xFF26201B)                   // 炭墨深棕
-val UIFriendBarHeaderTagGreenColor = Color(0xFFE5B869)    // 暗锚卡古铜金标签
-val UIFriendBarDividerLineColor = Color(0xFF3A312A)       // 深色卡分割线
-val UIFriendBarDecorativeWaveColor = Color(0xFFE07855)    // 暖陶微光点缀
+/**
+ * 当前是否处于全站夜间（深色）模式。
+ * 通过 [MaterialTheme.colorScheme.background] 亮度实时判定，
+ * 所有 UI 模块零跨层依赖即可响应 `AIFriendTheme(darkTheme = ...)`。
+ */
+val UIIsDarkTheme: Boolean
+    @Composable
+    @ReadOnlyComposable
+    get() = MaterialTheme.colorScheme.background.luminance() < 0.5f
+
+@Composable
+@ReadOnlyComposable
+private fun themed(light: Color, dark: Color): Color = if (UIIsDarkTheme) dark else light
+
+// 宣纸朱砂（白昼） × 烛影曜石（夜间）语义色体系
+val UIFriendBarTitleColor: Color
+    @Composable @ReadOnlyComposable get() = themed(Color(0xFF171411), Color(0xFFF3ECE2))
+val UIFriendBarTitle2Color: Color
+    @Composable @ReadOnlyComposable get() = themed(Color(0xFF8C8277), Color(0xFF9C8E80))
+val UIFriendBarGray: Color
+    @Composable @ReadOnlyComposable get() = themed(Color(0xFFEDE7DC), Color(0xFF28221D))
+val UIFriendBarRed: Color
+    @Composable @ReadOnlyComposable get() = themed(Color(0xFFC2302B), Color(0xFFE86660))
+val UIFriendBarBlue: Color
+    @Composable @ReadOnlyComposable get() = themed(Color(0xFF26201B), Color(0xFFF3ECE2))
+val UIFriendBarHeaderTagGreenColor: Color
+    @Composable @ReadOnlyComposable get() = Color(0xFFE5B869)
+val UIFriendBarDividerLineColor: Color
+    @Composable @ReadOnlyComposable get() = themed(Color(0xFF3A312A), Color(0xFF473C33))
+val UIFriendBarDecorativeWaveColor: Color
+    @Composable @ReadOnlyComposable get() = Color(0xFFE07855)
 
 // 全站通用语义色
-val UIFriendBarTitleColor2 = Color(0xFF171411)            // 区块主标题
-val UIFriendBarSubtitleColor = Color(0xFF5A524A)          // 焦茶次级正文
-val UIFriendBarCreateButtonBg = Color(0xFFF9EAE3)         // 浅朱砂胶囊底
-val UIFriendBarCreateButtonText = Color(0xFFC84B2A)       // 朱砂暖陶主强调
-val UIFriendBarSearchInputBg = Color(0xFFFFFDF9)          // 暖象牙白输入底
-val UIFriendBarTabSelectedBg = Color(0xFF171411)          // 选中 Tab 浓墨底
-val UIFriendBarTabSelectedText = Color(0xFFFFFDF9)        // 选中 Tab 暖白字
-val UIFriendBarTabUnselectedBg = Color(0xFFEDE7DC)        // 未选中 Tab 暖砂底
-val UIFriendBarTabUnselectedText = Color(0xFF7B7166)      // 未选中 Tab 褐灰字
-val UIFriendBarListCardBg = Color(0xFFFFFDF9)             // 象牙纸面卡片底
-val UIFriendBarItemTitleColor = Color(0xFF171411)         // 角色名称浓墨色
-val UIFriendBarItemSubtitleColor = Color(0xFF5A524A)      // 角色描述茶褐色
-val UIFriendBarItemMetaColor = Color(0xFF8C8277)          // 元数据砂岩灰
-val UIFriendBarOnlineGreen = Color(0xFF1F7A5A)            // 松石翡翠绿
-val UIFriendBarTagBgBlue = Color(0xFFF9EAE3)              // 标签浅朱砂底
-val UIFriendBarTagTextBlue = Color(0xFFC84B2A)            // 标签朱砂红字
-val UIFriendBarDividerColor = Color(0xFFE4DDD0)           // 纸面极细分割线
+val UIFriendBarTitleColor2: Color
+    @Composable @ReadOnlyComposable get() = themed(Color(0xFF171411), Color(0xFFF3ECE2))
+val UIFriendBarSubtitleColor: Color
+    @Composable @ReadOnlyComposable get() = themed(Color(0xFF5A524A), Color(0xFFC2B6A8))
+val UIFriendBarCreateButtonBg: Color
+    @Composable @ReadOnlyComposable get() = themed(Color(0xFFF9EAE3), Color(0xFF3A2118))
+val UIFriendBarCreateButtonText: Color
+    @Composable @ReadOnlyComposable get() = themed(Color(0xFFC84B2A), Color(0xFFE8704D))
+val UIFriendBarSearchInputBg: Color
+    @Composable @ReadOnlyComposable get() = themed(Color(0xFFFFFDF9), Color(0xFF1D1815))
+val UIFriendBarTabSelectedBg: Color
+    @Composable @ReadOnlyComposable get() = themed(Color(0xFF171411), Color(0xFFF3ECE2))
+val UIFriendBarTabSelectedText: Color
+    @Composable @ReadOnlyComposable get() = themed(Color(0xFFFFFDF9), Color(0xFF171411))
+val UIFriendBarTabUnselectedBg: Color
+    @Composable @ReadOnlyComposable get() = themed(Color(0xFFEDE7DC), Color(0xFF28221D))
+val UIFriendBarTabUnselectedText: Color
+    @Composable @ReadOnlyComposable get() = themed(Color(0xFF7B7166), Color(0xFFA6998B))
+val UIFriendBarListCardBg: Color
+    @Composable @ReadOnlyComposable get() = themed(Color(0xFFFFFDF9), Color(0xFF1D1815))
+val UIFriendBarItemTitleColor: Color
+    @Composable @ReadOnlyComposable get() = themed(Color(0xFF171411), Color(0xFFF3ECE2))
+val UIFriendBarItemSubtitleColor: Color
+    @Composable @ReadOnlyComposable get() = themed(Color(0xFF5A524A), Color(0xFFC2B6A8))
+val UIFriendBarItemMetaColor: Color
+    @Composable @ReadOnlyComposable get() = themed(Color(0xFF8C8277), Color(0xFF9C8E80))
+val UIFriendBarOnlineGreen: Color
+    @Composable @ReadOnlyComposable get() = themed(Color(0xFF1F7A5A), Color(0xFF4CB894))
+val UIFriendBarTagBgBlue: Color
+    @Composable @ReadOnlyComposable get() = themed(Color(0xFFF9EAE3), Color(0xFF3A2118))
+val UIFriendBarTagTextBlue: Color
+    @Composable @ReadOnlyComposable get() = themed(Color(0xFFC84B2A), Color(0xFFE8704D))
+val UIFriendBarDividerColor: Color
+    @Composable @ReadOnlyComposable get() = themed(Color(0xFFE4DDD0), Color(0xFF332B24))
 
 // 额外扩展色：用于新版 Bento 与编辑排版层次
-val UIAtelierInk = Color(0xFF1C1815)                      // 曜石炭墨锚点底
-val UIAtelierInkElevated = Color(0xFF28221D)              // 炭墨次级面板底
-val UIAtelierBrass = Color(0xFFB87A1F)                    // 古铜金点缀
-val UIAtelierBrassBg = Color(0xFFFBF1DF)                  // 浅古铜金底
-val UIAtelierJade = Color(0xFF1F7A5A)                     // 松石绿点缀
-val UIAtelierJadeBg = Color(0xFFE5F3ED)                   // 浅松石绿底
-val UIAtelierSlate = Color(0xFF364D7C)                    // 靛石蓝（理性/代码辅助）
-val UIAtelierSlateBg = Color(0xFFEAEFF7)                  // 浅靛石蓝底
-val UIAtelierSand = Color(0xFFEFEAE0)                     // 凹陷暖砂底
+val UIAtelierInk: Color
+    @Composable @ReadOnlyComposable get() = themed(Color(0xFF1C1815), Color(0xFF221C18))
+val UIAtelierInkElevated: Color
+    @Composable @ReadOnlyComposable get() = themed(Color(0xFF28221D), Color(0xFF2F2721))
+val UIAtelierBrass: Color
+    @Composable @ReadOnlyComposable get() = themed(Color(0xFFB87A1F), Color(0xFFE5B869))
+val UIAtelierBrassBg: Color
+    @Composable @ReadOnlyComposable get() = themed(Color(0xFFFBF1DF), Color(0xFF332614))
+val UIAtelierJade: Color
+    @Composable @ReadOnlyComposable get() = themed(Color(0xFF1F7A5A), Color(0xFF4CB894))
+val UIAtelierJadeBg: Color
+    @Composable @ReadOnlyComposable get() = themed(Color(0xFFE5F3ED), Color(0xFF162E25))
+val UIAtelierSlate: Color
+    @Composable @ReadOnlyComposable get() = themed(Color(0xFF364D7C), Color(0xFF8AB4F8))
+val UIAtelierSlateBg: Color
+    @Composable @ReadOnlyComposable get() = themed(Color(0xFFEAEFF7), Color(0xFF1C2538))
+val UIAtelierSand: Color
+    @Composable @ReadOnlyComposable get() = themed(Color(0xFFEFEAE0), Color(0xFF2A231E))
 
 // 对话页
-val UIChatUserBubble = Color(0xFF1E1A17)                  // 用户消息浓墨气泡
-val UIChatAssistantBubble = Color(0xFFFFFDF9)             // AI 消息暖宣白卡
-val UIChatInputBg = Color(0xFFEFEAE0)                     // 输入框暖砂内胆
-val UIChatErrorBg = Color(0xFFFDF0EE)                     // 错误提示浅绯底
-val UIChatSendDisabled = Color(0xFFD2C9BC)                // 发送按钮禁用态
+val UIChatUserBubble: Color
+    @Composable @ReadOnlyComposable get() = themed(Color(0xFF1E1A17), Color(0xFF9C381C))
+val UIChatAssistantBubble: Color
+    @Composable @ReadOnlyComposable get() = themed(Color(0xFFFFFDF9), Color(0xFF1E1916))
+val UIChatInputBg: Color
+    @Composable @ReadOnlyComposable get() = themed(Color(0xFFEFEAE0), Color(0xFF2A231E))
+val UIChatErrorBg: Color
+    @Composable @ReadOnlyComposable get() = themed(Color(0xFFFDF0EE), Color(0xFF381A18))
+val UIChatSendDisabled: Color
+    @Composable @ReadOnlyComposable get() = themed(Color(0xFFD2C9BC), Color(0xFF40372F))

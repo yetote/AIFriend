@@ -46,6 +46,7 @@ import com.core.ai.model.VoiceCatalog
 import com.core.ai.model.VoiceGroup
 import com.ui.common.theme.UIActionBrush
 import com.ui.common.theme.UIAtelierSand
+import com.ui.common.theme.UIFriendBarDividerColor
 import com.ui.common.theme.UIFriendBarItemMetaColor
 import com.ui.common.theme.UIFriendBarRed
 import com.ui.common.theme.UIFriendBarTagBgBlue
@@ -270,7 +271,7 @@ private fun VoiceRow(
             modifier = Modifier
                 .size(16.dp)
                 .background(
-                    if (selected) UIFriendBarTagTextBlue else Color(0xFFE4DDD0),
+                    if (selected) UIFriendBarTagTextBlue else UIFriendBarDividerColor,
                     CircleShape
                 )
         )

@@ -93,7 +93,9 @@ data class UIModelSettingsState(
     val verifyResult: UIVerifyResult? = null,
     val error: String? = null,
     /** 语音合成配置（独立于模型 Key）。 */
-    val tts: UITTSState = UITTSState()
+    val tts: UITTSState = UITTSState(),
+    /** 全站外观模式（system / light / dark）。 */
+    val themeModeId: String = "system",
 ) {
     val selectedProvider: UIProviderOption?
         get() = providers.firstOrNull { it.id == selectedProviderId }

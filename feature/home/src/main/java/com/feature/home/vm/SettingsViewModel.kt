@@ -9,6 +9,8 @@ import com.core.ai.model.VoiceCatalog
 import com.core.ai.model.toSelectableChatModelsWithPrices
 import com.core.ai.probe.FriendProbeStore
 import com.core.common.BaseViewModel
+import com.core.common.theme.AppThemeController
+import com.core.common.theme.AppThemeMode
 import com.core.repository.ApiConfig
 import com.core.repository.WebRepository
 import com.core.repository.settings.AIProvider
@@ -24,6 +26,7 @@ import com.core.repository.storage.CustomApiGroup
 import com.core.repository.storage.FriendRepository
 import com.core.repository.storage.TTSCredential
 import com.core.repository.storage.TTSProviderSettings
+import com.core.repository.storage.ThemeSettings
 import com.core.tts.TTSPreviewPlayer
 import com.feature.agent.data.toUITone
 import com.ui.home.UIProviderGroup
@@ -60,6 +63,7 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
 
     /** TTS 凭证独立存储，和模型 Key 完全分开。 */
     private val ttsSettings = TTSProviderSettings(application)
+    private val themeSettings = ThemeSettings(application)
     private var savedTts: Map<String, TTSCredential> = emptyMap()
 
     /** 设置页试听：和新凭证一起传进去，不依赖狼人杀那边读到的快照。 */
@@ -151,6 +155,10 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
         val activeGroup = initialGroups.firstOrNull()
         val initialModels = initialModelsFor(provider.id, activeGroup?.id)
         val initialPriced = initialPricedFor(provider.id, activeGroup?.id)
+        val themeModeId = withContext(Dispatchers.IO) {
+            runCatching { themeSettings.loadModeId() }.getOrDefault(AppThemeMode.SYSTEM.id)
+        }
+        AppThemeController.setMode(AppThemeMode.fromId(themeModeId))
         _state.value = UIModelSettingsState(
             providers = AIProviderCatalog.all.map { it.toOption() },
             selectedProviderId = provider.id,
@@ -162,8 +170,20 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
             pricedModels = initialPriced,
             selectedModel = models.orEmpty(),
             priceSnapshotDate = ModelPrices.snapshotDate(provider.id),
-            canRefreshPrice = ModelPrices.canRefresh(provider.id)
+            canRefreshPrice = ModelPrices.canRefresh(provider.id),
+            tts = _state.value.tts,
+            themeModeId = themeModeId,
         )
+    }
+
+    /** 切换全站外观模式（跟随系统 / 浅色宣纸 / 深色曜石）。 */
+    fun selectThemeMode(modeId: String) {
+        val mode = AppThemeMode.fromId(modeId)
+        AppThemeController.setMode(mode)
+        _state.value = _state.value.copy(themeModeId = mode.id)
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { themeSettings.saveModeId(mode.id) }
+        }
     }
 
     /**

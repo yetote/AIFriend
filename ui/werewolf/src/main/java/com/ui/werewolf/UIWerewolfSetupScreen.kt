@@ -1145,6 +1145,7 @@ private fun PresetCard(
 @Composable
 private fun SeatStrip(seats: List<UIWerewolfSeat>) {
     val diameter = if (seats.size >= 11) 22.dp else if (seats.size >= 10) 25.dp else 30.dp
+    val emptySeatColor = UIFriendBarItemSubtitleColor.copy(alpha = 0.35f)
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -1157,7 +1158,7 @@ private fun SeatStrip(seats: List<UIWerewolfSeat>) {
                         .size(diameter)
                         .drawBehind {
                             drawCircle(
-                                color = UIFriendBarItemSubtitleColor.copy(alpha = 0.35f),
+                                color = emptySeatColor,
                                 radius = this.size.minDimension / 2f - 1.dp.toPx(),
                                 style = Stroke(
                                     width = 1.2.dp.toPx(),
@@ -1635,18 +1636,21 @@ private fun MyRolePicker(
     val ordered = remember(options) {
         options.sortedBy { roleDisplayOrder(it.key) }
     }
-    val tiles: List<MyRoleTile> = remember(ordered) {
+    val randomAccent = UIFriendBarCreateButtonText
+    val godAccent = UIFriendBarTagTextBlue
+    val wolfAccent = UIFriendBarRed
+    val tiles: List<MyRoleTile> = remember(ordered, randomAccent, godAccent, wolfAccent) {
         buildList {
             add(
                 MyRoleTile(
                     key = null,
                     title = "随机",
                     subtitle = "听天由命",
-                    accent = UIFriendBarCreateButtonText,
+                    accent = randomAccent,
                 )
             )
             ordered.forEach { option ->
-                val meta = roleTileMeta(option.key, option.label)
+                val meta = roleTileMeta(option.key, option.label, godAccent, wolfAccent)
                 add(
                     MyRoleTile(
                         key = option.key,
@@ -1755,9 +1759,12 @@ private fun roleDisplayOrder(key: String): Int = when (key) {
     else -> 30
 }
 
-private fun roleTileMeta(key: String, fallbackLabel: String): RoleTileMeta {
-    val godAccent = UIFriendBarTagTextBlue
-    val wolfAccent = UIFriendBarRed
+private fun roleTileMeta(
+    key: String,
+    fallbackLabel: String,
+    godAccent: Color,
+    wolfAccent: Color,
+): RoleTileMeta {
     val villagerAccent = ConnectedGreen
     return when (key) {
         "SEER" -> RoleTileMeta("预言家", "夜间查验", godAccent)

@@ -42,6 +42,7 @@ android {
 dependencies {
     implementation(project(":feature:home"))
     implementation(project(":core:common"))
+    implementation(project(":core:repository"))
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)
