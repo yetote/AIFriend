@@ -136,6 +136,12 @@ class WerewolfDirector(
      * 某个人突然投了个莫名其妙的票。
      */
     private val onTimedOut: suspend (TurnTimeout) -> Unit = {},
+    /**
+     * 可选：裁判 / GM 小模型。配置后负责把每条公开发言抽取为 [SpeechLedgerFacts] 供台账使用，
+     * 消耗的 token 独立记在消息的 [WerewolfMessage.gmUsage] 上并在复盘汇总展示。
+     * null 时全程走本地规则抽取，零额外网络调用。
+     */
+    private val gmAgent: GmAgent? = null,
 ) {
 
     // ---------------------------------------------------------------------
@@ -672,13 +678,19 @@ class WerewolfDirector(
             // 先把刚说完的完整发言立刻推上牌桌，再去做狼队插爆判断：
             // 否则插爆询问期间牌桌还冻在半句话光标「▌」上，体感上像整局卡死。
             onTranscript(current)
-            // 这一句如果点了某只狼的名，被点到的可以先插爆——白天就此结束，
-            // 后面的人不该再被叫起来说话（循环开头的阶段检查会兜住）。
-            val afterWatch = current.watchExplode(seat, text.text)
-            if (afterWatch !== current) {
-                current = afterWatch
-                onTranscript(current)
+            // 刚说完的人如果自己没自爆，并发跑「插爆询问 + GM 裁判台账抽取」
+            val speechIdx = current.transcript.indexOfLast {
+                it.kind == MessageKind.SPEECH && it.seat == seat && it.isPublic
             }
+            val stillInDiscussion = current.game.phase == Phase.DAY_DISCUSSION
+            current = afterPublicSpeech(
+                table = current,
+                speechIdx = speechIdx,
+                speaker = seat,
+                speech = text.text,
+                allowWatchExplode = stillInDiscussion,
+                allowGm = stillInDiscussion,
+            )
         }
         return current
     }
@@ -805,12 +817,18 @@ class WerewolfDirector(
                 usage = text.usage,
             )
             onTranscript(current)
-            // 竞选发言里被点名也一样：可以当场插爆，把这场选举炸掉。
-            val afterWatch = current.watchExplode(seat, text.text)
-            if (afterWatch !== current) {
-                current = afterWatch
-                onTranscript(current)
+            val speechIdx = current.transcript.indexOfLast {
+                it.kind == MessageKind.SPEECH && it.seat == seat && it.isPublic
             }
+            val stillInCampaign = current.game.phase == Phase.DAY_SHERIFF_SPEECH
+            current = afterPublicSpeech(
+                table = current,
+                speechIdx = speechIdx,
+                speaker = seat,
+                speech = text.text,
+                allowWatchExplode = stillInCampaign,
+                allowGm = stillInCampaign,
+            )
         }
 
         // 中途自爆的话阶段已经变了，这里不能再往下推进。
@@ -1003,9 +1021,9 @@ class WerewolfDirector(
                 val outcome = askBadge(current, seat)
                 val target = outcome.value.target
                 val head = if (target == null) "我把警徽撕了。" else "我把警徽交给 $target 号。"
-                // 被猎人一枪带走的警长没有遗言：他只有「处理警徽」这一个动作，
+                // 被猎人带走、自爆、或第二夜起夜里出局的警长没有遗言：他只有「处理警徽」这一个动作，
                 // 多出来的 reason 不能当成他的话念出去，否则牌桌上会冒出一具尸体的长篇大论。
-                val silent = current.game.playerAt(seat).deathCause == DeathCause.HUNTER_SHOOT
+                val silent = current.game.isSilentBadgeTransfer(seat)
                 current = current.append(
                     WerewolfMessage(
                         day = current.game.day,
@@ -1038,6 +1056,15 @@ class WerewolfDirector(
                 )
             }
             current = current.copy(game = current.game.markSpoken(seat))
+            val lastIdx = current.transcript.lastIndex
+            current = afterPublicSpeech(
+                table = current,
+                speechIdx = lastIdx,
+                speaker = seat,
+                speech = current.transcript.getOrNull(lastIdx)?.text.orEmpty(),
+                allowWatchExplode = false,
+                allowGm = gmAgent != null && (!current.game.canTransferBadge(seat) || !current.game.isSilentBadgeTransfer(seat)),
+            )
             onTranscript(current)
         }
         val beforeFinish = current.game
@@ -1423,15 +1450,15 @@ class WerewolfDirector(
 
     private suspend fun askBadge(table: WerewolfTable, seat: Int): StructuredOutcome<VoteChoice> {
         val game = table.game
-        val shot = game.playerAt(seat).deathCause == DeathCause.HUNTER_SHOOT
+        val silent = game.isSilentBadgeTransfer(seat)
         return ask(
             table = table,
             seat = seat,
             spec = WerewolfDecisions.badgeTransfer(game, seat, free = promptStyle == WerewolfPromptStyle.FREE),
-            // 兜底撕掉警徽，而不是随便找个人接手：交错的代价比没有警长大得多
-            fallback = { VoteChoice(target = null, reason = "我来不及交代了。") },
-            task = if (shot) {
-                "你被开枪带走、没有遗言，请直接决定警徽交给谁或撕掉。"
+            // 兜底撕掉警徽，而不是随便找个人接手：交错的代价比没有警长大得多；reason 留空避免兜底台词露馅
+            fallback = { VoteChoice(target = null, reason = "") },
+            task = if (silent) {
+                "按规则你本轮没有遗言，请直接决定警徽交给谁或撕掉。"
             } else {
                 "请在遗言里交代警徽交给谁。"
             },
@@ -2489,6 +2516,48 @@ class WerewolfDirector(
     }
 
     /**
+     * 公开发言上屏后的统一后处理：并发跑「狼队插爆判断」与「裁判 / GM 台账抽取」。
+     *
+     * 两者互相独立且均只读刚说完的话，并发跑可以做到「需要插爆询问时不额外多等 GM」；
+     * 抽回的 [SpeechLedgerFacts] 与 [WerewolfMessage.gmUsage] 直接挂回同一条消息，
+     * 既不影响回放/朗读进度闸门，也避免重算或重复计费。
+     */
+    private suspend fun afterPublicSpeech(
+        table: WerewolfTable,
+        speechIdx: Int,
+        speaker: Int,
+        speech: String,
+        allowWatchExplode: Boolean,
+        allowGm: Boolean,
+    ): WerewolfTable {
+        val gm = gmAgent?.takeIf { allowGm && speechIdx in table.transcript.indices && speech.isNotBlank() }
+        if (!allowWatchExplode && gm == null) return table
+        val msgPhase = table.transcript.getOrNull(speechIdx)?.phase ?: table.game.phase
+        val outcomeAndWatch = coroutineScope {
+            val gmJob = gm?.let {
+                async { GmJudge.judgeSpeech(it, table.game, speaker, msgPhase, speech) }
+            }
+            val afterWatch = if (allowWatchExplode) {
+                table.watchExplode(speaker, speech)
+            } else {
+                table
+            }
+            val gmOutcome = gmJob?.await()
+            afterWatch to gmOutcome
+        }
+        val (afterWatch, gmOutcome) = outcomeAndWatch
+        val enriched = if (gmOutcome != null) {
+            afterWatch.withSpeechGm(speechIdx, gmOutcome.facts, gmOutcome.usage)
+        } else {
+            afterWatch
+        }
+        if (enriched !== table) {
+            onTranscript(enriched)
+        }
+        return enriched
+    }
+
+    /**
      * 别人说完一句，看看有没有狼想当场插爆。
      *
      * 只问**被这句话点名**的活狼（见 [ExplodeWatch]）：全量询问会把一天的调用量翻倍，
@@ -2581,7 +2650,13 @@ class WerewolfDirector(
                 model = agent.model,
                 spec = WerewolfDecisions.explodeWatch(),
                 fallback = { fallback },
-                systemPrompt = WerewolfPrompt.explodeWatchBrief(table.game, seat, speaker, speech),
+                systemPrompt = WerewolfPrompt.explodeWatchBrief(
+                    game = table.game,
+                    seat = seat,
+                    speaker = speaker,
+                    speech = speech,
+                    roundContext = ExplodeWatch.briefContext(table, seat),
+                ),
                 // 这一步只判断「要不要」，不需要深度思考，也不值得为它多等几秒。
                 enableThinking = false,
                 maxAttempts = 1,

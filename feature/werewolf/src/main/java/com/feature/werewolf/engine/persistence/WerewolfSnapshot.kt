@@ -3,6 +3,7 @@ package com.feature.werewolf.engine.persistence
 import com.core.ai.model.TokenUsage
 import com.feature.werewolf.engine.BallotCard
 import com.feature.werewolf.engine.MessageKind
+import com.feature.werewolf.engine.SpeechLedgerFacts
 import com.feature.werewolf.engine.WerewolfMessage
 import com.feature.werewolf.engine.WerewolfTable
 import com.feature.werewolf.game.Ballot
@@ -93,8 +94,11 @@ object WerewolfSnapshot {
      *
      * v25：对局多出 `beliefNotes`（每座位的私密心证笔记）与 `wolfStyleSeed`（本局狼队开局风向卡）。
      * 均为带默认值的新增字段，旧档兼容读出为空映射 / null。
+     *
+     * v26：消息多出 `facts`（裁判/GM 抽取的台账事实）与 `gmUsage`（裁判消耗的 token）。
+     * 均为带默认值 null 的新增字段，旧档兼容读出为 null / EMPTY，回退本地正则抽取。
      */
-    const val VERSION = 25
+    const val VERSION = 26
 
     private val json = Json {
         ignoreUnknownKeys = true   // 旧档多出来的字段不该让新版本读不出来
@@ -399,9 +403,13 @@ internal data class MessageSnapshot(
     val ballot: BallotSnapshotCard? = null,
     /** v20 起：那次模型调用的 token 用量。没有模型调用的消息（上帝播报）为 null。 */
     val usage: UsageSnapshot? = null,
+    /** v26 起：裁判 / GM 对这条发言抽取出的台账结构化事实。 */
+    val facts: SpeechLedgerFacts? = null,
+    /** v26 起：裁判 / GM 解析这条发言消耗的 token 用量。 */
+    val gmUsage: UsageSnapshot? = null,
 )
 
-/** token 用量的存档形态。[estimated] 必须一起存，否则旧估算值会被当成账单数展示。 */
+/** token 用量的存档形态。 */
 @Serializable
 internal data class UsageSnapshot(
     val input: Int = 0,
@@ -522,6 +530,8 @@ internal fun WerewolfTable.toSnapshot(
                 audience = it.audience?.sorted(),
                 reasoning = it.reasoning,
                 usage = it.usage.toSnapshot(),
+                facts = it.facts,
+                gmUsage = it.gmUsage.toSnapshot(),
                 ballot = it.ballot?.let { card ->
                     BallotSnapshotCard(
                         ballots = card.ballots.map { b -> BallotSnapshot(b.voterSeat, b.targetSeat) },
@@ -673,6 +683,8 @@ internal fun TableSnapshot.toTable(): WerewolfTable = WerewolfTable(
             audience = it.audience?.toSet(),
             reasoning = it.reasoning,
             usage = it.usage?.toUsage() ?: TokenUsage.EMPTY,
+            facts = it.facts,
+            gmUsage = it.gmUsage?.toUsage() ?: TokenUsage.EMPTY,
             ballot = it.ballot?.let { card ->
                 BallotCard(
                     ballots = card.ballots.map { b -> Ballot(b.voterSeat, b.targetSeat) },

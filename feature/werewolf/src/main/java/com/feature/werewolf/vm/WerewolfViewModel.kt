@@ -10,6 +10,8 @@ import com.core.ai.factory.AIFactory
 import com.core.ai.model.Friend
 import com.core.ai.model.toFriend
 import com.core.ai.probe.FriendProbeStore
+import com.core.repository.settings.AIProviderCatalog
+import com.core.repository.storage.AICredentials
 import com.core.repository.storage.AIProviderSettings
 import com.core.repository.settings.TTSProviderCatalog
 import com.core.repository.storage.FriendRepository
@@ -25,6 +27,7 @@ import com.feature.werewolf.decision.VoteChoice
 import com.feature.werewolf.decision.WitchChoice
 import com.feature.werewolf.decision.WithdrawChoice
 import com.feature.werewolf.engine.EXPLODE_MARKER
+import com.feature.werewolf.engine.GmAgent
 import com.feature.werewolf.engine.HumanSeatAI
 import com.feature.werewolf.engine.HumanTurn
 import com.feature.werewolf.engine.SeatAgent
@@ -54,6 +57,7 @@ import com.feature.werewolf.replay.ReplayFrame
 import com.feature.werewolf.store.WerewolfGameSummary
 import com.feature.werewolf.store.WerewolfStore
 import com.ui.werewolf.data.UIWerewolfFriend
+import com.ui.werewolf.data.UIWerewolfGmProvider
 import com.ui.werewolf.data.UIWerewolfMissingSeat
 import com.ui.werewolf.data.UIWerewolfPromptState
 import kotlinx.coroutines.CancellationException
@@ -270,6 +274,23 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
     val playerStyleOn: StateFlow<Boolean> = _playerStyleOn.asStateFlow()
 
     /**
+     * 裁判 / GM 小模型配置（厂商名 + 模型名）。两者为空表示「不使用，纯本地规则」。
+     */
+    private val _gmBrand = MutableStateFlow("")
+    val gmBrand: StateFlow<String> = _gmBrand.asStateFlow()
+
+    private val _gmModel = MutableStateFlow("")
+    val gmModel: StateFlow<String> = _gmModel.asStateFlow()
+
+    private val _gmProviders = MutableStateFlow<List<UIWerewolfGmProvider>>(emptyList())
+    val gmProviders: StateFlow<List<UIWerewolfGmProvider>> = _gmProviders.asStateFlow()
+
+    private val _gmCheck = MutableStateFlow<ApiCheck?>(null)
+    val gmCheck: StateFlow<ApiCheck?> = _gmCheck.asStateFlow()
+
+    private var gmLoadingBrands: Set<String> = emptySet()
+
+    /**
      * 开局页手动指定的风格（friendId → styleId）。空 = 全部自动分配。
      * 和 roleByFriend 一样是本局选择，不持久化；续档时按 friendId 重新自动分配。
      */
@@ -295,6 +316,7 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
     init {
         viewModelScope.launch {
             runCatching { providerSettings.load() }
+            rebuildGmProviders()
             // TTS 凭证独立异步加载；available / 朗读都依赖它的内存快照。
             runCatching { ttsSettings.load() }
             // 云端引擎的 available 取决于是否配了 TTS Key，而凭证是异步 load 的：
@@ -502,6 +524,26 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
                 }
             }
         }
+        viewModelScope.launch {
+            runCatching {
+                combine(werewolfSettings.gmBrand, werewolfSettings.gmModel) { brand, model ->
+                    brand to model
+                }.collect { (brand, model) ->
+                    _gmBrand.value = brand
+                    _gmModel.value = model
+                }
+            }
+        }
+        combine(_gmBrand, _gmModel, FriendProbeStore.checks) { brand, model, snapshot ->
+            val dummy = gmProbeFriend(brand, model) ?: return@combine null
+            FriendProbeStore.resolveForFriends(
+                friends = listOf(dummy),
+                webSearch = false,
+                snapshot = snapshot,
+            )[GM_PROBE_ID]
+        }
+            .onEach { _gmCheck.value = it }
+            .launchIn(viewModelScope)
 
         // 消息流一有新发言就喂给朗读播放器。
         state
@@ -554,6 +596,104 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
     fun setPlayerStyleOn(enabled: Boolean) {
         _playerStyleOn.value = enabled
         viewModelScope.launch { runCatching { werewolfSettings.setPlayerStyleOn(enabled) } }
+    }
+
+    /** 配置裁判 / GM 模型；传空串表示停用（退回纯本地规则）。 */
+    fun setGmModel(brand: String, model: String) {
+        val cleanBrand = brand.trim()
+        val cleanModel = model.trim()
+        _gmBrand.value = cleanBrand
+        _gmModel.value = cleanModel
+        viewModelScope.launch {
+            runCatching { werewolfSettings.setGmModel(cleanBrand, cleanModel) }
+            if (cleanBrand.isNotBlank() && cleanModel.isNotBlank()) {
+                checkGmApi(force = false)
+            }
+        }
+    }
+
+    /** 刷新裁判面板可选厂商列表（含本地无需 Key 的服务与已填 Key 的厂商）。 */
+    fun refreshGmProviders() {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { providerSettings.load() } }
+            rebuildGmProviders()
+        }
+    }
+
+    /** 展开某家厂商时拉取一次可用模型列表，并合并兜底列表。 */
+    fun loadGmProviderModels(brand: String) {
+        if (brand in gmLoadingBrands) return
+        viewModelScope.launch {
+            gmLoadingBrands = gmLoadingBrands + brand
+            rebuildGmProviders()
+            try {
+                withContext(Dispatchers.IO) { runCatching { providerSettings.load() } }
+                val ai = aiFor(brand)
+                if (ai != null) {
+                    withContext(Dispatchers.IO) { runCatching { ai.requestModel() } }
+                }
+            } finally {
+                gmLoadingBrands = gmLoadingBrands - brand
+                rebuildGmProviders()
+            }
+        }
+    }
+
+    /** 测试当前选中的裁判 / GM 模型连通性。 */
+    fun checkGmApi(force: Boolean = true) {
+        val dummy = gmProbeFriend(_gmBrand.value, _gmModel.value) ?: return
+        viewModelScope.launch {
+            FriendProbeStore.probe(
+                friends = listOf(dummy),
+                force = force,
+                webSearch = false,
+                loadCredentials = {
+                    withContext(Dispatchers.IO) { runCatching { providerSettings.load() } }
+                },
+                aiFor = { b -> aiFor(b) },
+            )
+        }
+    }
+
+    private fun gmProbeFriend(brand: String, model: String): Friend? {
+        if (brand.isBlank() || model.isBlank()) return null
+        return Friend(
+            id = GM_PROBE_ID,
+            name = "裁判/GM",
+            role = "裁判",
+            prompt = "",
+            brand = brand,
+            company = brand,
+            model = model,
+        )
+    }
+
+    private fun rebuildGmProviders() {
+        val configured = AIProviderCatalog.all.filter { provider ->
+            !provider.requiresKey || AICredentials.apiKeyOf(provider.id).isNotBlank()
+        }
+        _gmProviders.value = configured.map { provider ->
+            val loaded = ais[provider.name]?.modelSet?.toList().orEmpty()
+            val models = (loaded + provider.fallbackModels)
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+                .distinct()
+            UIWerewolfGmProvider(
+                brand = provider.name,
+                description = provider.description,
+                models = models,
+                loading = provider.name in gmLoadingBrands,
+            )
+        }
+    }
+
+    /** 构建裁判代理：用原始 [IAI] 而不包 [RetryableAI]，避免小模型波动打断对局或弹出重发条。 */
+    private fun buildGmAgent(): GmAgent? {
+        val brand = _gmBrand.value.trim()
+        val model = _gmModel.value.trim()
+        if (brand.isBlank() || model.isBlank()) return null
+        val ai = aiFor(brand) ?: return null
+        return GmAgent(ai = ai, model = model, label = "$brand · $model")
     }
 
     fun setAutoSpeak(enabled: Boolean) {
@@ -730,6 +870,8 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
                 controller.applyPromptStyle(_promptStyle.value)
                 // 发言长度同样开局定死；续档时由控制器从存档接回。
                 controller.applySpeechLength(speechLength)
+                // 裁判 / GM：使用当前设置（不绑定进玩家席位）。
+                controller.applyGmAgent(buildGmAgent())
 
                 // 开局前先确认每个模型真的能回话。这一步失败比打到第三天某个 AI 突然
                 // 报错要好得多：那时牌桌已经铺开，用户分不清是游戏坏了还是模型坏了
@@ -821,6 +963,7 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
                 controller.applyCustomPrompt(loadCustomPrompt(WerewolfBoards.keyOf(table.game.config)))
                 // 续档只用当前设置——玩家刚切过风格就是想立刻生效，不按存档里的旧值。
                 controller.applyPromptStyle(_promptStyle.value)
+                controller.applyGmAgent(buildGmAgent())
 
                 // 续档也要检：这一局可能是昨天开的，Key 过期、模型下线都在这中间发生过
                 //
@@ -963,6 +1106,7 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
 
                 controller.applyCustomPrompt(loadCustomPrompt(WerewolfBoards.keyOf(table.game.config)))
                 controller.applyPromptStyle(_promptStyle.value)
+                controller.applyGmAgent(buildGmAgent())
 
                 if (!controller.resume(gameId)) {
                     _error.value = "这条存档读不出来，可能已经损坏"
@@ -1652,5 +1796,6 @@ class WerewolfViewModel(application: Application) : AndroidViewModel(application
 
     private companion object {
         const val TAG = "WerewolfViewModel"
+        const val GM_PROBE_ID = "__werewolf_gm__"
     }
 }

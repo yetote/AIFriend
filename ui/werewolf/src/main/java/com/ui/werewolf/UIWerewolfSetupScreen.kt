@@ -80,6 +80,8 @@ import com.ui.werewolf.data.UI_PLAYER_STYLES
 import com.ui.werewolf.data.UIWerewolfApiCheck
 import com.ui.werewolf.data.UIWerewolfApiState
 import com.ui.werewolf.data.UIWerewolfFriend
+import com.ui.werewolf.data.UIWerewolfGmFriendOption
+import com.ui.werewolf.data.UIWerewolfGmProvider
 import com.ui.werewolf.data.UIWerewolfMode
 import com.ui.werewolf.data.UIWerewolfPlayerStyle
 import com.ui.werewolf.data.UIWerewolfPromptStyle
@@ -123,6 +125,16 @@ fun UIWerewolfSetupScreen(
     /** 要不要给每个 AI 注入牌手风格画像（决策气质 + 读人习惯）。 */
     playerStyleOn: Boolean,
     onPlayerStyleOnChange: (Boolean) -> Unit,
+    /** 裁判 / GM 小模型配置（空串表示纯本地规则）。 */
+    gmBrand: String = "",
+    gmModel: String = "",
+    gmCheck: UIWerewolfApiCheck? = null,
+    gmFriendOptions: List<UIWerewolfGmFriendOption> = emptyList(),
+    gmProviders: List<UIWerewolfGmProvider> = emptyList(),
+    onGmModelChange: (brand: String, model: String) -> Unit = { _, _ -> },
+    onOpenGmPicker: () -> Unit = {},
+    onLoadGmProviderModels: (String) -> Unit = {},
+    onCheckGm: () -> Unit = {},
     /** 好友 id → 手动指定的风格 id；没指定的自动分配。 */
     styleByFriend: Map<String, String>,
     onAssignStyle: (friendId: String, styleId: String?) -> Unit,
@@ -475,6 +487,21 @@ fun UIWerewolfSetupScreen(
                             color = UIFriendBarItemSubtitleColor
                         )
                     }
+                    SectionTitle(
+                        title = "裁判 / GM",
+                        subtitle = "可选一个小/免费/本地模型旁听发言并整理公开台账，不用正则硬抠；消耗记入复盘 Token 汇总"
+                    )
+                    GmSettingCard(
+                        gmBrand = gmBrand,
+                        gmModel = gmModel,
+                        gmCheck = gmCheck,
+                        gmFriendOptions = gmFriendOptions,
+                        gmProviders = gmProviders,
+                        onOpenPicker = onOpenGmPicker,
+                        onSelect = onGmModelChange,
+                        onLoadProviderModels = onLoadGmProviderModels,
+                        onCheck = onCheckGm,
+                    )
                     // 牌手风格：给每个 AI 一份「在牌桌上是什么牌手」的画像。
                     // 和陪伴人设分工——陪伴人设管怎么说（猫娘、傲娇），这里管怎么想
                     // （多疑、强攻、盘逻辑）。实测只有陪伴人设时，AI 把脑力花在口头禅上，
@@ -2045,6 +2072,203 @@ private fun SetupPickerOptionRow(
                     tint = Color.White,
                     modifier = Modifier.size(13.dp)
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun GmSettingCard(
+    gmBrand: String,
+    gmModel: String,
+    gmCheck: UIWerewolfApiCheck?,
+    gmFriendOptions: List<UIWerewolfGmFriendOption>,
+    gmProviders: List<UIWerewolfGmProvider>,
+    onOpenPicker: () -> Unit,
+    onSelect: (brand: String, model: String) -> Unit,
+    onLoadProviderModels: (String) -> Unit,
+    onCheck: () -> Unit,
+) {
+    var pickerOpen by remember { mutableStateOf(false) }
+    var expandedBrand by remember { mutableStateOf<String?>(null) }
+    val enabled = gmBrand.isNotBlank() && gmModel.isNotBlank()
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .uiCard(shape = RoundedCornerShape(UIRadiusCard))
+            .clickable {
+                onOpenPicker()
+                pickerOpen = true
+            }
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = if (enabled) gmModel else "不使用（纯本地规则）",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = UIFriendBarTitleColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = if (enabled) "$gmBrand · 仅旁听提取台账，不带好友性格" else "零额外消耗；复杂条件句或口语可能漏抓",
+                    fontSize = 11.sp,
+                    color = UIFriendBarItemSubtitleColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            if (enabled && gmCheck != null && gmCheck.state != UIWerewolfApiState.IDLE) {
+                CheckTag(state = gmCheck.state, elapsedMs = gmCheck.elapsedMs)
+                Spacer(Modifier.width(6.dp))
+            }
+            if (enabled) {
+                val checkingGm = gmCheck?.state == UIWerewolfApiState.CHECKING
+                Text(
+                    text = if (checkingGm) "检测中" else "测一下",
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = UIFriendBarCreateButtonText,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .border(1.dp, UIFriendBarCreateButtonText.copy(alpha = 0.35f), RoundedCornerShape(50))
+                        .clickable(enabled = !checkingGm) { onCheck() }
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = "选择裁判模型",
+                    tint = UIFriendBarTagTextBlue,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+        if (enabled && gmCheck?.state == UIWerewolfApiState.FAILED && !gmCheck.message.isNullOrBlank()) {
+            Text(
+                text = "裁判模型连不上（${gmCheck.message}），对局中会自动回退到本地规则",
+                fontSize = 11.sp,
+                lineHeight = 15.sp,
+                color = UIFriendBarRed,
+            )
+        }
+    }
+
+    if (pickerOpen) {
+        com.ui.common.theme.UIIosDialog(
+            title = "选择裁判 / GM 模型",
+            subtitle = "推荐选免费、本地 Ollama 或低延迟轻量模型",
+            onDismiss = { pickerOpen = false },
+            actions = {
+                com.ui.common.theme.UIDialogDismissButton(
+                    text = "关闭",
+                    onClick = { pickerOpen = false }
+                )
+            }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 400.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                SetupPickerOptionRow(
+                    title = "不使用（纯本地规则）",
+                    subtitle = "完全离线确定性正则，零 Token 与耗时开销",
+                    selected = !enabled,
+                    enabled = true,
+                    onClick = {
+                        pickerOpen = false
+                        onSelect("", "")
+                    }
+                )
+                if (gmFriendOptions.isNotEmpty()) {
+                    Text(
+                        text = "从已建好友模型快速选用（只借用模型，不带性格）",
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = UIFriendBarItemSubtitleColor,
+                        modifier = Modifier.padding(start = 2.dp, end = 2.dp, top = 4.dp)
+                    )
+                    gmFriendOptions.forEach { opt ->
+                        val selected = gmBrand == opt.brand && gmModel == opt.model
+                        SetupPickerOptionRow(
+                            title = opt.model,
+                            subtitle = "${opt.brand} · 好友「${opt.friendNames}」在用",
+                            selected = selected,
+                            enabled = true,
+                            onClick = {
+                                pickerOpen = false
+                                onSelect(opt.brand, opt.model)
+                            }
+                        )
+                    }
+                }
+                if (gmProviders.isNotEmpty()) {
+                    Text(
+                        text = "从已配厂商 / 本地服务选用",
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = UIFriendBarItemSubtitleColor,
+                        modifier = Modifier.padding(start = 2.dp, end = 2.dp, top = 6.dp)
+                    )
+                    gmProviders.forEach { provider ->
+                        val isExpanded = expandedBrand == provider.brand
+                        SetupFoldRow(
+                            title = provider.brand,
+                            subtitle = if (provider.loading) {
+                                "正在拉取可用模型…"
+                            } else {
+                                provider.description.ifBlank { "${provider.models.size} 个可用模型" }
+                            },
+                            expanded = isExpanded,
+                            onToggle = {
+                                if (isExpanded) {
+                                    expandedBrand = null
+                                } else {
+                                    expandedBrand = provider.brand
+                                    onLoadProviderModels(provider.brand)
+                                }
+                            },
+                        )
+                        if (isExpanded) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 10.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                if (provider.models.isEmpty()) {
+                                    Text(
+                                        text = if (provider.loading) "加载中…" else "暂未拉到模型列表，请先在设置页测试连接或用好友模型",
+                                        fontSize = 11.sp,
+                                        color = UIFriendBarItemSubtitleColor,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
+                                    )
+                                } else {
+                                    provider.models.forEach { modelName ->
+                                        SetupPickerOptionRow(
+                                            title = modelName,
+                                            subtitle = provider.brand,
+                                            selected = gmBrand == provider.brand && gmModel == modelName,
+                                            enabled = true,
+                                            onClick = {
+                                                pickerOpen = false
+                                                onSelect(provider.brand, modelName)
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }

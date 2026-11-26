@@ -147,6 +147,19 @@ data class WerewolfMessage(
      * 不进任何提示词上下文——AI 不需要知道别人烧了多少 token。
      */
     val usage: TokenUsage = TokenUsage.EMPTY,
+    /**
+     * 可选：由裁判 / GM 模型对这条公开发言抽取出的结构化台账事实。
+     *
+     * 为 null 时 [PublicLedger] 回退到本地正则抽取；非 null 时优先使用这里的语义解析。
+     */
+    val facts: SpeechLedgerFacts? = null,
+    /**
+     * 可选：裁判 / GM 处理这条发言时消耗的 token。
+     *
+     * 单独记在 [gmUsage] 而不混进玩家本人的 [usage]：复盘按人算账时，
+     * 某位玩家花了多少、裁判花了多少要分得清清楚楚。
+     */
+    val gmUsage: TokenUsage = TokenUsage.EMPTY,
 ) {
     val isPublic: Boolean get() = audience == null
 
@@ -171,6 +184,22 @@ data class WerewolfTable(
 
     internal fun append(message: WerewolfMessage): WerewolfTable =
         copy(transcript = transcript + message)
+
+    internal fun withSpeechGm(
+        index: Int,
+        facts: SpeechLedgerFacts?,
+        gmUsage: TokenUsage = TokenUsage.EMPTY,
+    ): WerewolfTable {
+        if (index !in transcript.indices) return this
+        if (facts == null && gmUsage.total == 0) return this
+        val updated = transcript.toMutableList()
+        val current = updated[index]
+        updated[index] = current.copy(
+            facts = facts ?: current.facts,
+            gmUsage = if (gmUsage.total > 0) gmUsage else current.gmUsage,
+        )
+        return copy(transcript = updated)
+    }
 }
 
 /** 自爆时如果没留下别的话，牌桌上就显示这一句。 */

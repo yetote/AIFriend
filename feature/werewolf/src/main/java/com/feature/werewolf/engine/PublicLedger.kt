@@ -31,7 +31,13 @@ object PublicLedger {
 
     internal data class WitchReport(val day: Int, val seat: Int, val action: String, val target: Int)
 
-    internal data class VoteLine(val day: Int, val seat: Int, val said: Int?, val actual: Int?)
+    internal data class VoteLine(
+        val day: Int,
+        val seat: Int,
+        val said: Int?,
+        val actual: Int?,
+        val conditionalAlts: List<Int> = emptyList(),
+    )
 
     internal data class SheriffVoteRound(val day: Int, val ballots: List<Ballot>)
 
@@ -62,6 +68,8 @@ object PublicLedger {
         val sheriffVotes = mutableListOf<SheriffVoteRound>()
         val votes = mutableListOf<VoteLine>()
         val promised = HashMap<Pair<Int, Int>, Int>()
+        val conditionalPromised = HashMap<Pair<Int, Int>, List<Int>>()
+        val validSeats = table.game.players.map { it.seat }.toSet()
 
         val withdrawnSeats = table.game.history
             .filterIsInstance<GameEvent.SheriffWithdrawn>()
@@ -77,10 +85,61 @@ object PublicLedger {
                     if (!message.isPublic) return@forEach
                     val seat = message.seat ?: return@forEach
                     val text = message.text
+                    val gmFacts = message.facts
 
                     if (message.phase == Phase.DAY_SHERIFF_WITHDRAW && text.contains("我退水")) {
                         withdrawnSeats += seat
                     }
+
+                    if (gmFacts != null) {
+                        if (gmFacts.retractedSeer) retractedSeerSeats += seat
+                        gmFacts.claimRole?.takeIf { it in ALLOWED_CLAIM_ROLES }?.let { role ->
+                            claims.getOrPut(seat to role) { Claim(message.day, seat, role) }
+                            if (role == SEER_ROLE) seerClaimants += seat
+                            if (role == WITCH_ROLE) witchClaimants += seat
+                        }
+                        if (seat in seerClaimants && seat !in retractedSeerSeats) {
+                            gmFacts.checks.forEach { check ->
+                                if (check.target in validSeats && check.target != seat) {
+                                    val verdict = normalizeVerdict(check.verdict)
+                                    checks.getOrPut(Triple(seat, check.target, verdict)) {
+                                        Check(message.day, seat, check.target, verdict)
+                                    }
+                                }
+                            }
+                            val flow = gmFacts.badgeFlow
+                                .filter { it in validSeats && it != seat }
+                                .distinct()
+                                .take(3)
+                            if (flow.isNotEmpty()) {
+                                badgeFlows[seat] = BadgeFlow(message.day, seat, flow)
+                            }
+                        }
+                        if (seat in witchClaimants) {
+                            gmFacts.witchReports.forEach { report ->
+                                val okTarget = report.target in validSeats &&
+                                    (report.action != "毒" || report.target != seat)
+                                if (okTarget) {
+                                    witchReports.getOrPut(Triple(seat, report.action, report.target)) {
+                                        WitchReport(message.day, seat, report.action, report.target)
+                                    }
+                                }
+                            }
+                        }
+                        if (message.phase == Phase.DAY_DISCUSSION) {
+                            gmFacts.voteTarget
+                                ?.takeIf { it in validSeats && it != seat }
+                                ?.let { promised[message.day to seat] = it }
+                            val alts = gmFacts.conditionalVoteTargets
+                                .filter { it in validSeats && it != seat }
+                                .distinct()
+                            if (alts.isNotEmpty()) {
+                                conditionalPromised[message.day to seat] = alts
+                            }
+                        }
+                        return@forEach
+                    }
+
                     if (isSeerRetraction(text)) {
                         retractedSeerSeats += seat
                     }
@@ -133,6 +192,7 @@ object PublicLedger {
                                     seat = ballot.voterSeat,
                                     said = promised[message.day to ballot.voterSeat],
                                     actual = ballot.targetSeat,
+                                    conditionalAlts = conditionalPromised[message.day to ballot.voterSeat].orEmpty(),
                                 )
                             }
                         }
@@ -167,6 +227,7 @@ object PublicLedger {
 
     private const val SEER_ROLE = "预言家"
     private const val WITCH_ROLE = "女巫"
+    private val ALLOWED_CLAIM_ROLES = setOf("预言家", "女巫", "猎人", "白痴", "守卫", "熊")
     private val ROLE_WORDS = "(预言家|女巫|猎人|白痴|守卫|熊)"
 
     private val ROLE_CLAIM = Regex(
@@ -492,11 +553,26 @@ object PublicLedger {
                     append("· 第 $day 天票型对账：\n")
                     lines.forEach { line ->
                         append("  · ").append(line.seat).append(" 号")
-                        append(if (line.said != null) "说投 ${line.said} 号" else "投票前没说票向")
-                        append("，实际")
-                        append(if (line.actual != null) "投了 ${line.actual} 号" else "弃票")
-                        if (line.said != null && line.said != line.actual) {
-                            append("  ← 话和票对不上")
+                        val hitConditional = line.actual != null && line.actual in line.conditionalAlts
+                        when {
+                            line.said != null && hitConditional && line.said != line.actual ->
+                                append("主说投 ${line.said} 号（留有条件改投 ${line.actual} 号），实际投了 ${line.actual} 号")
+                            line.said != null -> {
+                                append("说投 ${line.said} 号，实际")
+                                append(if (line.actual != null) "投了 ${line.actual} 号" else "弃票")
+                                if (line.said != line.actual) {
+                                    append("  ← 话和票对不上")
+                                }
+                            }
+                            line.conditionalAlts.isNotEmpty() -> {
+                                val alts = line.conditionalAlts.joinToString(" / ") { "${it}号" }
+                                append("做了条件表态（$alts），实际")
+                                append(if (line.actual != null) "投了 ${line.actual} 号" else "弃票")
+                            }
+                            else -> {
+                                append("投票前没说票向，实际")
+                                append(if (line.actual != null) "投了 ${line.actual} 号" else "弃票")
+                            }
                         }
                         append("\n")
                     }

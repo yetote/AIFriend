@@ -588,14 +588,25 @@ class WerewolfPromptTest {
 
     @Test
     fun `插爆简报写明被查杀不是自爆理由，每张板子都有匹配打法`() {
+        val sheriffGame = standardGame().let { base ->
+            base.copy(
+                config = base.config.copy(hasSheriff = true),
+                phase = Phase.DAY_DISCUSSION,
+                sheriffSeat = 2,
+            )
+        }
         val brief = WerewolfPrompt.explodeWatchBrief(
-            standardGame().copy(phase = Phase.DAY_DISCUSSION),
+            sheriffGame,
             seat = 1,
             speaker = 3,
             speech = "3 号查杀 1 号。",
+            roundContext = "已起跳：2号(队友)跳预言家、3号跳预言家",
         )
         assertTrue(brief.contains("被查杀、被踩、被点名表水都不是理由"))
         assertTrue(brief.contains("替预言家作证"))
+        assertTrue("应标注警长是否队友", brief.contains("当前警长：2 号（我方队友"))
+        assertTrue("应明确非队友边界", brief.contains("其余所有座位都是你的对手"))
+        assertTrue("应注入本轮上下文", brief.contains("已起跳：2号(队友)跳预言家"))
 
         WerewolfBoards.all.forEach { board ->
             val text = Boards.text(board.config)
@@ -606,6 +617,39 @@ class WerewolfPromptTest {
             composition = mapOf(WerewolfRole.WEREWOLF to 2, WerewolfRole.SEER to 1, WerewolfRole.VILLAGER to 3)
         )
         assertEquals(BoardText(), Boards.text(custom))
+    }
+
+    @Test
+    fun `局势时间线与第二夜起夜死警长无遗言规则一致`() {
+        val day2Situation = WerewolfPrompt.publicSituation(standardGame().copy(day = 2, phase = Phase.DAY_DISCUSSION))
+        assertTrue(day2Situation.contains("刚结束第 2 夜，现在是第 2 天白天，今晚将进入第 3 夜"))
+
+        val night2Situation = WerewolfPrompt.publicSituation(standardGame().copy(day = 2, phase = Phase.NIGHT_WOLF))
+        assertTrue(night2Situation.contains("现在是第 2 夜，第 1 天白天已结束"))
+
+        val poisonedSheriffDay2 = gameWithGuard().copy(
+            day = 2,
+            phase = Phase.DAY_LAST_WORDS,
+            sheriffSeat = 3,
+            pendingLastWords = listOf(3),
+            players = gameWithGuard().players.map {
+                if (it.seat == 3) it.copy(alive = false, deathCause = com.feature.werewolf.game.DeathCause.WITCH_POISON, deathDay = 2) else it
+            },
+        )
+        assertTrue(poisonedSheriffDay2.isSilentBadgeTransfer(3))
+        val day2BadgeSpec = com.feature.werewolf.decision.WerewolfDecisions.badgeTransfer(poisonedSheriffDay2, seat = 3)
+        assertTrue("第二夜起夜死警长无遗言", day2BadgeSpec.instruction.contains("没有遗言"))
+        assertTrue(day2BadgeSpec.instruction.contains("不会公开显示或朗读"))
+
+        val day1Sheriff = poisonedSheriffDay2.copy(
+            day = 1,
+            players = gameWithGuard().players.map {
+                if (it.seat == 3) it.copy(alive = false, deathCause = com.feature.werewolf.game.DeathCause.WOLF_KILL, deathDay = 1) else it
+            },
+        )
+        assertFalse("首夜出局警长仍有遗言", day1Sheriff.isSilentBadgeTransfer(3))
+        val day1BadgeSpec = com.feature.werewolf.decision.WerewolfDecisions.badgeTransfer(day1Sheriff, seat = 3)
+        assertTrue(day1BadgeSpec.instruction.contains("会被当成你的遗言公开说出来"))
     }
 
     @Test

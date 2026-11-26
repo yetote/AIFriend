@@ -531,6 +531,23 @@ data class WerewolfGame(
     fun canTransferBadge(seat: Int): Boolean =
         phase == Phase.DAY_LAST_WORDS && sheriffSeat == seat && !playerAt(seat).alive
 
+    /**
+     * 已出局警长在遗言阶段是否只有「处理警徽」而没有公开遗言：
+     * - 被猎人/狼王开枪带走（[DeathCause.HUNTER_SHOOT]）没有遗言；
+     * - 自爆中断白天（[DeathCause.SELF_EXPLODE]）没有遗言；
+     * - 第二夜起夜里出局（[DeathCause.WOLF_KILL] / [DeathCause.WITCH_POISON] 且 `deathDay > 1`）按线下规则没有遗言。
+     * 只有首夜出局或白天被放逐（[DeathCause.EXILE]）才公开发表遗言。
+     */
+    fun isSilentBadgeTransfer(seat: Int): Boolean {
+        if (!canTransferBadge(seat)) return false
+        val player = playerAt(seat)
+        return when (player.deathCause) {
+            DeathCause.HUNTER_SHOOT, DeathCause.SELF_EXPLODE -> true
+            DeathCause.WOLF_KILL, DeathCause.WITCH_POISON -> (player.deathDay ?: day) > 1
+            DeathCause.EXILE, null -> false
+        }
+    }
+
     /** 尚未向全场公布的昨夜倒牌座位（有警长竞选时，昨夜死讯压在 [pendingDawn] 里等竞选结束再公布）。 */
     val pendingDawnDeaths: Set<Int>
         get() = pendingDawn?.deaths?.toSet().orEmpty()

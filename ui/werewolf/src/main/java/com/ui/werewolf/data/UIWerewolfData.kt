@@ -198,3 +198,18 @@ data class UIWerewolfApiCheck(
      */
     val searchUnsupported: Boolean = false,
 )
+
+/** 裁判 / GM 的快捷候选项（来自已建好友正在使用的模型）。 */
+data class UIWerewolfGmFriendOption(
+    val brand: String,
+    val model: String,
+    val friendNames: String,
+)
+
+/** 裁判 / GM 可选的已配厂商 / 本地服务（如 Ollama / 免费中转 / 官方厂商）。 */
+data class UIWerewolfGmProvider(
+    val brand: String,
+    val description: String,
+    val models: List<String>,
+    val loading: Boolean = false,
+)

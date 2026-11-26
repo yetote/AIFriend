@@ -70,10 +70,35 @@ class WerewolfSettings(context: Context) {
         runCatching { store.edit { it[PLAYER_STYLE_ON] = enabled } }
     }
 
+    /**
+     * 狼人杀「裁判 / GM」小模型配置（厂商展示名 + 模型名）。
+     *
+     * 两者都为空串表示「不使用（纯本地规则抽取台账）」；
+     * 配置后，每当白天有公开发言结束，异步由该小模型增量抽取台账结构化事实。
+     */
+    val gmBrand: Flow<String> = store.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[GM_BRAND].orEmpty() }
+
+    val gmModel: Flow<String> = store.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[GM_MODEL].orEmpty() }
+
+    suspend fun setGmModel(brand: String, model: String) {
+        runCatching {
+            store.edit { prefs ->
+                prefs[GM_BRAND] = brand.trim()
+                prefs[GM_MODEL] = model.trim()
+            }
+        }
+    }
+
     private companion object {
         val AUTO_SPEAK = booleanPreferencesKey("werewolf_auto_speak")
         val SHOW_THINKING = booleanPreferencesKey("werewolf_show_thinking")
         val PROMPT_STYLE = stringPreferencesKey("werewolf_prompt_style")
         val PLAYER_STYLE_ON = booleanPreferencesKey("werewolf_player_style_on")
+        val GM_BRAND = stringPreferencesKey("werewolf_gm_brand")
+        val GM_MODEL = stringPreferencesKey("werewolf_gm_model")
     }
 }

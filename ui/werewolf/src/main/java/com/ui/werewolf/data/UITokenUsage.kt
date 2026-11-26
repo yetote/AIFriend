@@ -38,9 +38,12 @@ data class UITokenUsage(
     }
 }
 
-/** 复盘汇总里的一行：谁、多少 token。 */
+/** 复盘汇总里的一行：谁、多少 token。`seat <= 0` 表示非座位角色（例如裁判 / GM）。 */
 data class UITokenSeatTotal(
     val seat: Int,
     val name: String,
     val usage: UITokenUsage,
-)
+) {
+    val displayLabel: String
+        get() = if (seat > 0) "$seat 号 $name".trim() else name.ifBlank { "裁判 / GM" }
+}

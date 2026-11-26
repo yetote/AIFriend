@@ -74,4 +74,21 @@ class ExplodeWatchTest {
         assertFalse("11 号不能误中 1 号", ExplodeWatch.shouldAsk(game, 1, "今天必投 11 号，先出 11号。"))
         assertFalse("12 号不能误中 2 号", ExplodeWatch.shouldAsk(game, 2, "我归票 12 号，大家跟我出 12号。"))
     }
+
+    @Test
+    fun `插爆上下文压缩包含已起跳与先前发言立场且标记队友`() {
+        val table = WerewolfTable(
+            game = game,
+            transcript = listOf(
+                WerewolfMessage(1, Phase.DAY_DISCUSSION, 3, MessageKind.SPEECH, "我是预言家，昨夜验了 5 号金水。"),
+                WerewolfMessage(1, Phase.DAY_DISCUSSION, 1, MessageKind.SPEECH, "我先听后置位怎么归票，暂压 3 号。"),
+                WerewolfMessage(1, Phase.DAY_DISCUSSION, 4, MessageKind.SPEECH, "先投 3 号；1 号若改口我再跟 1 号。"),
+            ),
+        )
+        val context = ExplodeWatch.briefContext(table, wolfSeat = 2)
+        assertTrue("应包含跳预言家信息", context.contains("3号跳预言家"))
+        assertTrue("应标出队友发言", context.contains("1号(队友)"))
+        assertFalse("末尾待判断的 4 号正文不重复写进先前摘要", context.contains("4号:"))
+        assertTrue("总长需控制在轻量预算内", context.length <= 260)
+    }
 }

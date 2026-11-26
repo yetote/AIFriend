@@ -301,9 +301,9 @@ internal fun WerewolfUiState.toReview(
 
     val deaths = game.players.count { !it.alive }
 
-    // token 汇总只认座位消息：上帝播报没有模型调用，计入只会虚高。
-    // 按人分组再按总量降序，复盘第一眼看到的就是「谁最能烧 token」。
-    val tokenBySeat = table.transcript
+    // token 汇总认两块：座位消息（玩家发言/思考/夜间行动）+ 裁判 GM 解析消息消耗（记在 gmUsage 上）。
+    // 上帝播报没有模型调用，依然不计入；各座位按总量降序，「裁判 / GM」单独附在末尾便于单看开销。
+    val seatTokenRows = table.transcript
         .filter { it.seat != null && it.usage.total > 0 }
         .groupBy { it.seat!! }
         .map { (seat, messages) ->
@@ -320,6 +320,20 @@ internal fun WerewolfUiState.toReview(
             )
         }
         .sortedByDescending { it.usage.total }
+    val gmUsageTotal = table.transcript
+        .filter { it.gmUsage.total > 0 }
+        .fold(UITokenUsage()) { acc, message ->
+            acc + UITokenUsage(
+                input = message.gmUsage.input,
+                output = message.gmUsage.output,
+                estimated = message.gmUsage.estimated,
+            )
+        }
+    val tokenBySeat = if (gmUsageTotal.total > 0) {
+        seatTokenRows + UITokenSeatTotal(seat = 0, name = "裁判 / GM", usage = gmUsageTotal)
+    } else {
+        seatTokenRows
+    }
     val tokenTotal = tokenBySeat.fold(UITokenUsage()) { acc, row -> acc + row.usage }
 
     return UIWerewolfReview(

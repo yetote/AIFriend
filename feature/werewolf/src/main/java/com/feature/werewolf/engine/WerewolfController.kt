@@ -100,6 +100,8 @@ class WerewolfController(
      * 关掉某个座位的思考，改的都是这个对象；而导演是每次 [play] 新建的。
      */
     val pacing: WerewolfPacing = WerewolfPacing(),
+    /** 可选：裁判 / GM 小模型，负责在白天气泡结束后抽取结构化台账并计入复盘用量。 */
+    private var gmAgent: GmAgent? = null,
 ) {
 
     private val _state = MutableStateFlow(WerewolfUiState())
@@ -131,6 +133,11 @@ class WerewolfController(
     /** 换发言长度档。必须在 [play] 之前调：导演在 play 里创建，拿的是当时的值。 */
     fun applySpeechLength(length: WerewolfSpeechLength) {
         speechLength = length
+    }
+
+    /** 换这一局使用的裁判 / GM 模型（null 表示纯本地规则）。必须在 [play] 之前调。 */
+    fun applyGmAgent(agent: GmAgent?) {
+        gmAgent = agent
     }
 
     /** 开一局新的，立刻落档——先存再打，中途被杀进程也不会丢。 */
@@ -229,6 +236,7 @@ class WerewolfController(
             speechLength = speechLength,
             pacing = pacing,
             onTimedOut = { timeout -> _state.update { it.copy(lastTimeout = timeout) } },
+            gmAgent = gmAgent,
         )
 
         _state.update { it.copy(running = true, error = null) }

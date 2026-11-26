@@ -293,14 +293,20 @@ object WerewolfDecisions {
      */
     fun badgeTransfer(game: WerewolfGame, seat: Int, free: Boolean = false): StructuredSpec<VoteChoice> {
         val valid = game.aliveSeats.filter { it != seat }
-        val shot = game.playerAt(seat).deathCause == DeathCause.HUNTER_SHOOT
-        val lead = if (shot) {
-            "你被猎人开枪带走，当场出局，**没有遗言**。只有一个动作：处理警徽。"
+        val player = game.playerAt(seat)
+        val silent = game.isSilentBadgeTransfer(seat)
+        val lead = if (silent) {
+            val causeText = when (player.deathCause) {
+                DeathCause.HUNTER_SHOOT -> "你被猎人开枪带走，当场出局"
+                DeathCause.SELF_EXPLODE -> "你已自爆出局"
+                else -> "从第二夜起夜里出局"
+            }
+            "$causeText，**没有遗言**。只有一个动作：处理警徽。"
         } else {
             "你在遗言里要交代警徽。"
         }
-        val tail = if (shot) {
-            "reason 仅作内心记录（不会公开显示或朗读，你被开枪带走没有遗言），一句话写清移交或撕徽的理由即可。"
+        val tail = if (silent) {
+            "reason 仅作内心记录（不会公开显示或朗读，本轮你没有遗言），一句话写清移交或撕徽的理由即可。"
         } else {
             "reason 会被当成你的遗言公开说出来，用 1-2 句中文交代你的判断。"
         }

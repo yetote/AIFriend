@@ -441,4 +441,42 @@ class WerewolfReviewMappingTest {
         assertEquals("上帝", day.open.last().speaker)
         assertNull("上帝没有身份标签", day.open.last().roleLabel)
     }
+
+    @Test
+    fun `裁判GM消耗的token会计入复盘汇总与总量且不占座位号`() {
+        val start = WerewolfGame.deal(com.feature.werewolf.game.WerewolfBoards.configOf(com.feature.werewolf.game.WerewolfBoards.QUICK_6), roster(6), Random(3))
+        val finished = playOut(start, Random(4))
+        val table = WerewolfTable(
+            game = finished,
+            transcript = listOf(
+                WerewolfMessage(
+                    day = 1,
+                    phase = Phase.DAY_DISCUSSION,
+                    seat = 2,
+                    kind = MessageKind.SPEECH,
+                    text = "我跳预言家，1 号金水。",
+                    usage = com.core.ai.model.TokenUsage(input = 1000, output = 200),
+                    gmUsage = com.core.ai.model.TokenUsage(input = 300, output = 50),
+                ),
+                WerewolfMessage(
+                    day = 1,
+                    phase = Phase.DAY_DISCUSSION,
+                    seat = 4,
+                    kind = MessageKind.SPEECH,
+                    text = "我过麦。",
+                    usage = com.core.ai.model.TokenUsage(input = 900, output = 100),
+                    gmUsage = com.core.ai.model.TokenUsage(input = 250, output = 40),
+                ),
+            ),
+        )
+        val review = WerewolfUiState(table = table, finished = true).toReview(humanSeat = null, avatars = emptyMap())!!
+
+        val gmRow = review.tokenBySeat.firstOrNull { it.seat == 0 }
+        assertNotNull("复盘应包含裁判/GM token 行", gmRow)
+        assertEquals("裁判 / GM", gmRow!!.displayLabel)
+        assertEquals(550, gmRow.usage.input)
+        assertEquals(90, gmRow.usage.output)
+        assertEquals(1000 + 900 + 550, review.tokenTotal.input)
+        assertEquals(200 + 100 + 90, review.tokenTotal.output)
+    }
 }

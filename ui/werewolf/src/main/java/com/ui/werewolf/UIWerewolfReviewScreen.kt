@@ -488,7 +488,7 @@ private fun TokenSummaryCard(rows: List<UITokenSeatTotal>, total: UITokenUsage) 
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "${row.seat} 号 ${row.name}".trim(),
+                        text = row.displayLabel,
                         fontSize = 11.sp,
                         color = ReviewBody,
                         modifier = Modifier.weight(1f)

@@ -226,4 +226,43 @@ class PublicLedgerTest {
         assertFalse("9 号未来计划「今晚打算毒10号」不入账：$text", text.contains("9 号称第 2 天毒了 10 号"))
         assertFalse("9 号假设句「如果…就毒11号」不入账：$text", text.contains("9 号称第 2 天毒了 11 号"))
     }
+
+    @Test
+    fun `GM结构化事实优先于正则，条件兜底改投不误标话票对不上`() {
+        val m1 = WerewolfMessage(
+            day = 2,
+            phase = Phase.DAY_DISCUSSION,
+            seat = 5,
+            kind = MessageKind.SPEECH,
+            text = "如果 12 号后面乱改口我就改投 12 号，不过只要口径一致我就投 11 号。",
+            facts = SpeechLedgerFacts(
+                claimRole = "女巫",
+                witchReports = listOf(SpeechWitchFact(action = "救", target = 7)),
+                voteTarget = 11,
+                conditionalVoteTargets = listOf(12),
+            ),
+        )
+        val m2 = WerewolfMessage(
+            day = 2,
+            phase = Phase.DAY_DISCUSSION,
+            seat = 6,
+            kind = MessageKind.SPEECH,
+            text = "若 12 号改口我改投 12 号，不然就跟票 11 号。",
+            facts = SpeechLedgerFacts(
+                voteTarget = 11,
+                conditionalVoteTargets = listOf(12),
+            ),
+        )
+        val text = PublicLedger.of(
+            table(
+                m1,
+                m2,
+                ballot(2, 5 to 12, 6 to 11),
+            )
+        )
+        assertTrue("GM 抽出的女巫与银水应入账：$text", text.contains("5 号自称女巫") && text.contains("5 号称第 2 天救了 7 号"))
+        assertTrue("兑现条件改投 12 号时不误报话票对不上：$text", text.contains("5 号主说投 11 号（留有条件改投 12 号），实际投了 12 号"))
+        assertFalse("条件改投不应贴「话和票对不上」：$text", text.contains("话和票对不上"))
+        assertTrue("投主选 11 号照常核对一致：$text", text.contains("6 号说投 11 号，实际投了 11 号"))
+    }
 }

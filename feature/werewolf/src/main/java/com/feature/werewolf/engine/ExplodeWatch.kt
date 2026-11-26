@@ -1,5 +1,6 @@
 package com.feature.werewolf.engine
 
+import com.feature.werewolf.game.Phase
 import com.feature.werewolf.game.WerewolfGame
 
 /**
@@ -38,12 +39,56 @@ object ExplodeWatch {
      */
     fun shouldAsk(game: WerewolfGame, wolfSeat: Int, speech: String): Boolean {
         if (speech.isBlank()) return false
-        val mates = game.wolves().filter { it.seat != wolfSeat }.map { it.seat }
+        val mates = game.aliveWolves().filter { it.seat != wolfSeat }.map { it.seat }
         val targets = mates + wolfSeat
         val pointed = targets.any { seat ->
             mentions(speech, seat, game.playerAt(seat).name)
         }
         return pointed && BANISH_WORDS.any { speech.contains(it) }
+    }
+
+    /**
+     * 为插爆简报压缩当前回合的公开上下文（起跳阵容 + 本阶段先前发言的极简立场）。
+     *
+     * 控制在 ~260 字以内，既让无思考的小模型分辨清谁是队友、谁是对跳、当前在推谁，
+     * 又不会把一次轻量询问撑成完整长提示词。
+     */
+    fun briefContext(table: WerewolfTable, wolfSeat: Int, maxChars: Int = 260): String {
+        val game = table.game
+        fun tagSeat(seat: Int): String = if (game.isWerewolf(seat)) "${seat}号(队友)" else "${seat}号"
+
+        val parts = mutableListOf<String>()
+        val claims = PublicLedger.collect(table).claims
+        if (claims.isNotEmpty()) {
+            val claimText = claims.joinToString("、") { claim ->
+                val retired = if (claim.withdrawn || claim.retracted) "[已退]" else ""
+                "${tagSeat(claim.seat)}跳${claim.role}$retired"
+            }
+            parts += "已起跳：$claimText"
+        }
+
+        val phaseSpeeches = table.transcript.filter {
+            it.day == game.day && it.phase == game.phase && it.kind == MessageKind.SPEECH && it.isPublic
+        }
+        // watchExplode 在 speaker 刚说完上屏后调用；末尾若就是当前这句 speech，则略过避免与正文重复
+        val prior = if (phaseSpeeches.size > 1) phaseSpeeches.dropLast(1) else emptyList()
+        if (prior.isNotEmpty()) {
+            val speechSummary = prior.takeLast(5).joinToString("；") { msg ->
+                val seatLabel = msg.seat?.let(::tagSeat) ?: "未知"
+                "$seatLabel:${condenseSpeech(msg.text)}"
+            }
+            parts += "本轮先前发言：$speechSummary"
+        }
+
+        if (parts.isEmpty()) return ""
+        val joined = parts.joinToString("\n")
+        return if (joined.length <= maxChars) joined else joined.take(maxChars - 1) + "…"
+    }
+
+    private fun condenseSpeech(text: String): String {
+        val clean = text.replace('\n', ' ').replace(Regex("""\s+"""), " ").trim()
+        if (clean.length <= 36) return clean
+        return clean.take(16) + "…" + clean.takeLast(18)
     }
 
     /**

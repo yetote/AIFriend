@@ -592,4 +592,35 @@ class WerewolfSnapshotTest {
         assertNotNull("旧档照样能续", restored)
         assertEquals("没有进度就是谁都没说过", emptySet<Int>(), restored!!.game.spokenSeats)
     }
+
+    @Test
+    fun `裁判抽取的台账事实与裁判token用量随消息完整存档还原`() {
+        val base = richTable()
+        val withGmMsg = base.copy(
+            transcript = listOf(
+                WerewolfMessage(
+                    day = 1,
+                    phase = Phase.DAY_DISCUSSION,
+                    seat = 4,
+                    kind = MessageKind.SPEECH,
+                    text = "若 1 号爆了就投 2 号，否则主投 1 号。",
+                    usage = TokenUsage(input = 1000, output = 120),
+                    facts = com.feature.werewolf.engine.SpeechLedgerFacts(
+                        claimRole = "女巫",
+                        witchReports = listOf(com.feature.werewolf.engine.SpeechWitchFact("救", 6)),
+                        voteTarget = 1,
+                        conditionalVoteTargets = listOf(2),
+                    ),
+                    gmUsage = TokenUsage(input = 320, output = 45, estimated = false),
+                )
+            )
+        )
+        val encoded = WerewolfSnapshot.encode(withGmMsg)
+        val restored = WerewolfSnapshot.decode(encoded)
+
+        assertEquals(withGmMsg, restored)
+        assertEquals(320, restored!!.transcript.first().gmUsage.input)
+        assertEquals(45, restored.transcript.first().gmUsage.output)
+        assertEquals(listOf(2), restored.transcript.first().facts?.conditionalVoteTargets)
+    }
 }

@@ -134,22 +134,66 @@ object WerewolfPrompt {
     }
 
     /** 「要不要当场插爆」的精简判断简报。 */
-    fun explodeWatchBrief(game: WerewolfGame, seat: Int, speaker: Int, speech: String): String = buildString {
+    fun explodeWatchBrief(
+        game: WerewolfGame,
+        seat: Int,
+        speaker: Int,
+        speech: String,
+        roundContext: String? = null,
+    ): String = buildString {
         val player = game.playerAt(seat)
         val speakerPlayer = game.playerAt(speaker)
-        val mates = game.wolves().filter { it.seat != seat }.map { it.seat }
+        val aliveMates = game.aliveWolves().filter { it.seat != seat }.map { it.seat }
+        val deadMates = game.wolves().filter { !it.alive && it.seat != seat }.map { it.seat }
         append("你是 ").append(seat).append(" 号")
         append(if (player.role == WerewolfRole.WEREWOLF_KING) "狼王" else "狼人")
         append("，身份只有你自己知道。")
-        if (mates.isEmpty()) {
-            append("这一局你没有队友。\n")
-        } else {
-            append("你的队友是 ").append(mates.joinToString("、") { "$it 号" }).append("。\n")
+        when {
+            aliveMates.isEmpty() && deadMates.isEmpty() -> append("这一局你没有队友。")
+            deadMates.isEmpty() -> append("你的存活队友是 ").append(aliveMates.joinToString("、") { "$it 号" }).append("。")
+            aliveMates.isEmpty() -> append("你的队友（已出局）是 ").append(deadMates.joinToString("、") { "$it 号" }).append("，目前只剩你一人。")
+            else -> {
+                append("你的存活队友是 ").append(aliveMates.joinToString("、") { "$it 号" })
+                append("（已出局队友：").append(deadMates.joinToString("、") { "$it 号" }).append("）。")
+            }
         }
-        append("现在是第 ").append(game.day).append(" 天白天，")
-        append(speakerPlayer.seat).append(" 号「").append(speakerPlayer.name).append("」刚说完一段话。\n")
+        append("除了你和以上队友之外，其余所有座位都是你的对手（绝不是队友）。\n")
+        append("当前存活 ").append(game.aliveSeats.size).append(" 人，存活狼人 ")
+            .append(game.aliveWolves().size).append(" 人。")
+        if (game.config.hasSheriff) {
+            when {
+                game.phase == Phase.DAY_SHERIFF_SPEECH -> {
+                    val mateRunners = game.sheriffCandidates.filter { it != seat && game.isWerewolf(it) }
+                    append("当前是警上竞选发言（候选：").append(seatsText(game.sheriffCandidates))
+                    if (mateRunners.isNotEmpty()) {
+                        append("，其中队友：").append(seatsText(mateRunners))
+                    }
+                    append("）。")
+                }
+                game.aliveSheriffSeat != null -> {
+                    val sheriff = game.aliveSheriffSeat!!
+                    val ownerTag = when {
+                        sheriff == seat -> "你自己"
+                        game.isWerewolf(sheriff) -> "我方队友"
+                        else -> "非队友"
+                    }
+                    append("当前警长：").append(sheriff).append(" 号（").append(ownerTag)
+                        .append("，1.5 票并负责最后归票）。")
+                }
+                else -> append("当前暂无警长。")
+            }
+        }
+        append("\n")
+        if (!roundContext.isNullOrBlank()) {
+            append(roundContext.trimEnd()).append("\n")
+        }
+        append("现在是第 ").append(game.day).append(" 天").append(game.phase.displayName).append("，")
+        append(speakerPlayer.seat).append(" 号「").append(speakerPlayer.name).append("」")
+        if (game.isWerewolf(speakerPlayer.seat)) append("（你的队友）")
+        append("刚说完一段话。\n")
         append("自爆＝你当场出局，这一天立刻结束、直接入夜（无放逐）；今晚狼队商议和定刀你仍参加，定完离场。\n")
         append("默认**不自爆**。只在这两种情况下值得爆：① 夜里战术需要吞掉这个白天/警徽（如双爆吞警徽）；② 再说下去会直接牵出队友。\n")
+        append("如果发言者在推你的对手（非队友），或我方队友掌握警徽、场上形势对我方有利，**绝不要自爆**。\n")
         append("**被查杀、被踩、被点名表水都不是理由**——那是一句指控，不是判决：自爆等于当场替预言家作证。\n")
         append("算不出明确收益的自爆就是白送一命。\n")
         append("刚那段话：「").append(speech.take(WATCH_SPEECH_CHARS)).append("」")
@@ -176,6 +220,14 @@ object WerewolfPrompt {
 
     fun publicSituation(game: WerewolfGame): String = buildString {
         append("【当前局势】第 ").append(game.day).append(" 天 · ").append(game.phase.displayName).append("\n")
+        if (game.phase.name.startsWith("NIGHT_")) {
+            append("（时间线：现在是第 ").append(game.day).append(" 夜")
+            if (game.day > 1) append("，第 ").append(game.day - 1).append(" 天白天已结束")
+            append("）\n")
+        } else if (game.phase != Phase.FINISHED) {
+            append("（时间线：刚结束第 ").append(game.day).append(" 夜，现在是第 ")
+                .append(game.day).append(" 天白天，今晚将进入第 ").append(game.day + 1).append(" 夜）\n")
+        }
         val announcedDead = announcedDeadSeats(game)
         val alive = game.players.map { it.seat }.filter { it !in announcedDead }
         append("存活：").append(seatsText(alive)).append("（共 ").append(alive.size).append(" 人）\n")
@@ -420,8 +472,12 @@ object WerewolfPrompt {
         }
 
         if (game.phase == Phase.DAY_LAST_WORDS && seat in game.pendingLastWords) {
-            lines += if (player.deathCause == DeathCause.HUNTER_SHOOT && game.sheriffSeat == seat) {
-                "你被开枪带走，按规则无遗言，但必须处理警徽（移交或撕掉）。"
+            lines += if (game.isSilentBadgeTransfer(seat)) {
+                when (player.deathCause) {
+                    DeathCause.HUNTER_SHOOT -> "你被开枪带走，按规则无遗言，但必须处理警徽（移交或撕掉）。"
+                    DeathCause.SELF_EXPLODE -> "你已自爆出局，按规则无遗言，但必须处理警徽（移交或撕掉）。"
+                    else -> "从第二夜起夜里出局按规则无遗言，但必须处理警徽（移交或撕掉）。"
+                }
             } else {
                 "你已出局，现在发表遗言，把有价值的判断留给活着的人。"
             }

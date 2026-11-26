@@ -1254,8 +1254,56 @@ class WerewolfDirectorTest {
         val result = director.lastWords(WerewolfTable(dead))
 
         assertEquals(7, result.game.sheriffSeat)
-        assertTrue(result.transcript.any { it.text.contains("7 号") && it.text.contains("警徽") })
+        val badgeSpeech = result.transcript.first { it.seat == 4 && it.kind == MessageKind.SPEECH }
+        assertEquals("第二夜起夜里出局警长只静默移交警徽，不公开念出内心理由", "我把警徽交给 7 号。", badgeSpeech.text)
         assertEquals("遗言说完就进下一夜", Phase.NIGHT_WOLF_CHAT, result.game.phase)
+    }
+
+    @Test
+    fun `首夜出局警长保留遗言，第二夜被毒警长超限兜底撕徽不露兜底台词`() = runBlocking {
+        val day1Dead = standard9().let { game ->
+            game.copy(
+                day = 1,
+                phase = Phase.DAY_LAST_WORDS,
+                sheriffSeat = 4,
+                pendingLastWords = listOf(4),
+                afterLastWordsPhase = Phase.DAY_DISCUSSION,
+                players = game.players.map {
+                    if (it.seat == 4) {
+                        it.copy(alive = false, deathCause = DeathCause.WOLF_KILL, deathDay = 1)
+                    } else {
+                        it
+                    }
+                },
+            )
+        }
+        val day1Director = WerewolfDirector(
+            agentsOf(4 to ScriptedAI(listOf("""{"target": 7, "reason": "警徽给 7 号，他是真好人。"}"""))),
+        )
+        val day1Result = day1Director.lastWords(WerewolfTable(day1Dead))
+        val day1Speech = day1Result.transcript.first { it.seat == 4 && it.kind == MessageKind.SPEECH }
+        assertTrue("首夜警长仍应保留公开遗言", day1Speech.text.contains("他是真好人"))
+
+        val day2Poisoned = standard9().let { game ->
+            game.copy(
+                day = 2,
+                phase = Phase.DAY_LAST_WORDS,
+                sheriffSeat = 4,
+                pendingLastWords = listOf(4),
+                afterLastWordsPhase = Phase.DAY_DISCUSSION,
+                players = game.players.map {
+                    if (it.seat == 4) {
+                        it.copy(alive = false, deathCause = DeathCause.WITCH_POISON, deathDay = 2)
+                    } else {
+                        it
+                    }
+                },
+            )
+        }
+        val garbageDirector = WerewolfDirector(agentsOf(4 to GarbageAI()))
+        val day2Result = garbageDirector.lastWords(WerewolfTable(day2Poisoned))
+        val day2Speech = day2Result.transcript.first { it.seat == 4 && it.kind == MessageKind.SPEECH }
+        assertEquals("兜底撕徽只写事实，不出「我来不及交代了」", "我把警徽撕了。", day2Speech.text)
     }
 
     @Test

@@ -204,8 +204,8 @@ internal fun taskBrief(
             Phase.DAY_LAST_WORDS -> {
                 val shootAfter = game.afterLastWordsPhase == Phase.HUNTER_SHOOT && game.pendingHunterSeat == seat
                 if (game.sheriffSeat == seat) {
-                    if (player.deathCause == DeathCause.HUNTER_SHOOT) {
-                        append("你被猎人开枪带走，按规则无遗言，只需处理警徽：target 填移交的存活座位或 null（撕徽），reason 仅作内心记录不会公开显示。")
+                    if (game.isSilentBadgeTransfer(seat)) {
+                        append("按规则你本轮无遗言，只需处理警徽：target 填移交的存活座位或 null（撕徽），reason 仅作内心记录不会公开显示。")
                     } else {
                         append("你已出局，请留 1-2 句遗言并处理警徽：target 填移交的存活座位或 null（撕徽），reason 将作为遗言公开。")
                     }

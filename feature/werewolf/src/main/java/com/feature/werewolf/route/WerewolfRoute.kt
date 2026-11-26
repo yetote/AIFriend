@@ -43,6 +43,7 @@ import com.ui.werewolf.UIWerewolfReviewScreen
 import com.ui.werewolf.UIWerewolfSetupScreen
 import com.ui.werewolf.UIWerewolfTableScreen
 import com.ui.werewolf.data.UIWerewolfFriend
+import com.ui.werewolf.data.UIWerewolfGmFriendOption
 import com.ui.werewolf.data.UIWerewolfMode
 import com.ui.werewolf.data.UIWerewolfNotice
 import com.ui.werewolf.data.UIWerewolfPromptStyle
@@ -87,6 +88,10 @@ fun WerewolfRoute(
     val promptStyle by viewModel.promptStyle.collectAsState()
     // 牌手风格画像总开关同样是全局偏好
     val playerStyleOn by viewModel.playerStyleOn.collectAsState()
+    val gmBrand by viewModel.gmBrand.collectAsState()
+    val gmModel by viewModel.gmModel.collectAsState()
+    val gmProviders by viewModel.gmProviders.collectAsState()
+    val gmCheck by viewModel.gmCheck.collectAsState()
     val revealedIndex by viewModel.revealedIndex.collectAsState()
     val speechBusy by viewModel.speechBusy.collectAsState()
     val speakingSeat by viewModel.speakingSeat.collectAsState()
@@ -226,6 +231,21 @@ fun WerewolfRoute(
     val uiFriends = remember(friends) {
         friends.map { it.toUiFriend(supportsWebSearch = viewModel.supportsWebSearchFor(it.brand)) }
     }
+    val gmFriendOptions = remember(friends) {
+        friends
+            .filter { it.brand.isNotBlank() && it.model.isNotBlank() }
+            .groupBy { it.brand to it.model }
+            .map { (key, list) ->
+                val names = list.take(2).joinToString("、") { it.name } +
+                    if (list.size > 2) " 等${list.size}位" else ""
+                UIWerewolfGmFriendOption(
+                    brand = key.first,
+                    model = key.second,
+                    friendNames = names,
+                )
+            }
+    }
+    val uiGmCheck = remember(gmCheck) { gmCheck?.toUiCheck() }
     // 续档换人面板：feature 的 WerewolfRecast → ui 展示模型。
     val uiRecast = remember(recast) {
         recast?.let {
@@ -480,6 +500,15 @@ fun WerewolfRoute(
             },
             playerStyleOn = playerStyleOn,
             onPlayerStyleOnChange = { viewModel.setPlayerStyleOn(it) },
+            gmBrand = gmBrand,
+            gmModel = gmModel,
+            gmCheck = uiGmCheck,
+            gmFriendOptions = gmFriendOptions,
+            gmProviders = gmProviders,
+            onGmModelChange = viewModel::setGmModel,
+            onOpenGmPicker = viewModel::refreshGmProviders,
+            onLoadGmProviderModels = viewModel::loadGmProviderModels,
+            onCheckGm = { viewModel.checkGmApi(force = true) },
             styleByFriend = styleByFriend,
             onAssignStyle = { friendId, styleId ->
                 styleByFriend = if (styleId == null) {
