@@ -1,5 +1,6 @@
 package com.core.ai.entity
 
+import com.core.ai.isConnectionResetLike
 import com.core.ai.isTimeoutLike
 import com.core.ai.looksLikeSearchConflict
 import com.core.ai.model.ChatCompletionRequest
@@ -96,9 +97,17 @@ abstract class OpenAICompatibleAI(
         val request = buildRequest(
             messages, model, systemPrompt, enableThinking, jsonMode, webSearch, stream = false,
         )
-        return WebRepository.instance
-            .chat<ChatCompletionResponse>(config = configFor(model), body = request)
-            .getOrElse { throw it }
+        val cfg = configFor(model)
+        val first = WebRepository.instance.chat<ChatCompletionResponse>(config = cfg, body = request)
+        val firstError = first.exceptionOrNull()
+        if (firstError != null && firstError !is CancellationException && firstError.isConnectionResetLike()) {
+            // 池化连接被服务端/代理半途重置：立刻清掉旧池并换新连接重发一次
+            WebRepository.instance.evictIdleConnections()
+            return WebRepository.instance
+                .chat<ChatCompletionResponse>(config = cfg, body = request)
+                .getOrElse { throw it }
+        }
+        return first.getOrElse { throw it }
     }
 
     /**
@@ -127,42 +136,49 @@ abstract class OpenAICompatibleAI(
             // 下面的降级分支会改用非流式请求，那时照样能拿到用量。
             .copy(streamOptions = StreamOptions(includeUsage = true))
         var hasContent = false
-        // 正文里内联的 <think> 要在这里拆掉，见 [ThinkTagSplitter]：不拆的话上层以为
-        // 已经开始说话，思考时限失效。一条流一个实例。
-        val splitter = ThinkTagSplitter()
-
-        val failure = runCatching {
-            WebRepository.instance.streamChat(configFor(model), request) { line ->
-                when (val event = ChatStreamParser.parse(line)) {
-                    is ChatStreamEvent.Delta -> {
-                        val (text, inlineThink) = splitter.feed(event.content)
-                        val reasoning = event.reasoning + inlineThink
-                        if (text.isNotEmpty()) hasContent = true
-                        if (text.isNotEmpty() || reasoning.isNotEmpty()) {
-                            send(ChatDelta(content = text, reasoning = reasoning))
+        suspend fun runStreamAttempt(): Throwable? {
+            // 每条流新建拆分器，避免首次重置重试时残留上一轮的半截标签状态
+            val splitter = ThinkTagSplitter()
+            val err = runCatching {
+                WebRepository.instance.streamChat(configFor(model), request) { line ->
+                    when (val event = ChatStreamParser.parse(line)) {
+                        is ChatStreamEvent.Delta -> {
+                            val (text, inlineThink) = splitter.feed(event.content)
+                            val reasoning = event.reasoning + inlineThink
+                            if (text.isNotEmpty()) hasContent = true
+                            if (text.isNotEmpty() || reasoning.isNotEmpty()) {
+                                send(ChatDelta(content = text, reasoning = reasoning))
+                            }
                         }
-                    }
 
-                    is ChatStreamEvent.Usage -> {
-                        // 只有服务端真回了 usage 才推这一帧；不回的平台由上层估算。
-                        send(ChatDelta(usage = event.usage))
-                    }
+                        is ChatStreamEvent.Usage -> {
+                            // 只有服务端真回了 usage 才推这一帧；不回的平台由上层估算。
+                            send(ChatDelta(usage = event.usage))
+                        }
 
-                    // 大多数厂商发完 [DONE] 就关连接，循环会自然结束；
-                    // 不发也不影响，读到 EOF 一样能收尾
-                    ChatStreamEvent.Done -> Unit
-                    ChatStreamEvent.Skip -> Unit
+                        // 大多数厂商发完 [DONE] 就关连接，循环会自然结束；
+                        // 不发也不影响，读到 EOF 一样能收尾
+                        ChatStreamEvent.Done -> Unit
+                        ChatStreamEvent.Skip -> Unit
+                    }
+                }
+            }.exceptionOrNull()
+            // 流正常收尾（或断在半路）时把拆分器里攒着的残留吐出来
+            if (err == null || err !is CancellationException) {
+                val (tailText, tailThink) = splitter.finish()
+                if (tailText.isNotBlank()) hasContent = true
+                if (tailText.isNotEmpty() || tailThink.isNotEmpty()) {
+                    send(ChatDelta(content = tailText, reasoning = tailThink))
                 }
             }
-        }.exceptionOrNull()
+            return err
+        }
 
-        // 流正常收尾（或断在半路）时把拆分器里攒着的残留吐出来
-        if (failure == null || failure !is CancellationException) {
-            val (tailText, tailThink) = splitter.finish()
-            if (tailText.isNotBlank()) hasContent = true
-            if (tailText.isNotEmpty() || tailThink.isNotEmpty()) {
-                send(ChatDelta(content = tailText, reasoning = tailThink))
-            }
+        var failure = runStreamAttempt()
+        if (failure != null && failure !is CancellationException && !hasContent && failure.isConnectionResetLike()) {
+            // 尚未吐字前连接被代理/服务端重置（如 HTTP/2 reset 或旧连接失效）：清池后用新连接再跑一次流式
+            WebRepository.instance.evictIdleConnections()
+            failure = runStreamAttempt()
         }
 
         if (failure != null) {
@@ -185,10 +201,10 @@ abstract class OpenAICompatibleAI(
                 // 带搜索再失败一次就把搜索摘掉重试：少查一次远好过整段发言失败——
                 // 发言失败会在这张牌上留下一个空回合，用户看到的是「它突然不说话了」。
                 //
-                // 若流式本身已经因为超时失败：先清掉可能半开僵死的空闲连接池，且非流式降级只给
+                // 若流式本身已经因为超时或连接重置失败：先清掉可能半开僵死的空闲连接池，且超时降级只给
                 // TIMEOUT_FALLBACK_MS（45 秒）上限；若依然无响应则抛回原超时异常让上层立刻兜底，
                 // 绝不叠加再死等 8 分钟 ONESHOT_MS。
-                if (degradedByTimeout) {
+                if (degradedByTimeout || failure.isConnectionResetLike()) {
                     WebRepository.instance.evictIdleConnections()
                 }
                 suspend fun attemptFallback(useSearch: Boolean): ChatReply {

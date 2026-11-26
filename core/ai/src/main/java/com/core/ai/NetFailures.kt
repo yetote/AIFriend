@@ -15,6 +15,28 @@ fun Throwable.isTimeoutLike(): Boolean =
         .any { cause -> cause::class.simpleName?.contains("Timeout", ignoreCase = true) == true }
 
 /**
+ * 这次失败是不是底层连接/流被对端或代理重置（如 HTTP/2 `stream was reset: PROTOCOL_ERROR` 或 TCP RST）。
+ *
+ * 与超时分开：这类失败说明底层池化连接可能已半坏或被中转站重置，清空连接池并在新连接上重试往往立即可恢复。
+ */
+fun Throwable.isConnectionResetLike(): Boolean =
+    generateSequence(this) { it.cause }.any { cause ->
+        val name = cause::class.simpleName.orEmpty()
+        if (name.equals("StreamResetException", ignoreCase = true) ||
+            name.equals("EOFException", ignoreCase = true)
+        ) {
+            return@any true
+        }
+        val msg = cause.message?.lowercase().orEmpty()
+        "stream was reset" in msg ||
+            "protocol_error" in msg ||
+            "connection reset" in msg ||
+            "unexpected end of stream" in msg ||
+            "broken pipe" in msg ||
+            "流被重置" in msg
+    }
+
+/**
  * 这次失败像不像「联网字段把请求弄挂了」。
  *
  * 摘搜索重试是有代价的：这一次检索白丢，模型退化成凭记忆答。所以只在两种情况下摘——

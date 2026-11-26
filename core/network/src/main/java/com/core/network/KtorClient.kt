@@ -29,10 +29,12 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.utils.io.readUTF8Line
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 import okhttp3.ConnectionPool
+import okhttp3.Protocol
+import java.io.IOException
 import java.net.SocketTimeoutException
-import java.util.concurrent.TimeUnit
 
 /**
  * 全应用的时间上限，集中在这里改，别散落在各个调用点。
@@ -93,7 +95,10 @@ class KtorClient {
         engine {
             config {
                 connectionPool(okHttpConnectionPool)
-                pingInterval(NetTimeouts.HTTP2_PING_MS, TimeUnit.MILLISECONDS)
+                // 大模型长耗时 POST / SSE 对多路复用的 HTTP/2 及反代/代理中转兼容较差，
+                // 极易被 Cloudflare / Nginx / 代理发 RST_STREAM (PROTOCOL_ERROR) 杀流。
+                // 统一协商 HTTP/1.1 可从协议层根除 HTTP/2 stream reset；WebSocket 也工作在 HTTP/1.1。
+                protocols(listOf(Protocol.HTTP_1_1))
                 retryOnConnectionFailure(true)
             }
         }
@@ -159,6 +164,10 @@ class KtorClient {
                     is HttpRequestTimeoutException ->
                         throw DomainException.NetworkException(cause)
 
+                    is IOException -> if (cause !is DomainException && cause !is CancellationException) {
+                        throw DomainException.NetworkException(cause)
+                    }
+
                     else -> Unit
                 }
             }
@@ -213,34 +222,42 @@ class KtorClient {
         onLine: suspend (String) -> Unit
     ) {
         Log.d(LOG_TAG, "SSE 请求发出 $url")
-        client.preparePost(url) {
-            contentType(ContentType.Application.Json)
-            setBody(body)
-            headers.forEach { (key, value) ->
-                header(key, value)
+        try {
+            client.preparePost(url) {
+                contentType(ContentType.Application.Json)
+                setBody(body)
+                headers.forEach { (key, value) ->
+                    header(key, value)
+                }
+                // 这个请求不能被 Logging 插件接管：BODY/ALL 级别下插件会把响应体读完之后
+                // 才写日志，等于等模型说完才把第一行交给我们——流式当场退化成一次性。
+                // 首尾状态由下面自己打。
+                attributes.put(SkipCallLogging, Unit)
+                timeout {
+                    requestTimeoutMillis = NetTimeouts.STREAM_REQUEST_MS
+                    // socket 超时是「两个数据包之间最长等多久」。深度思考模型在流式下
+                    // 常常先沉默着思考完再吐第一个字，这段沉默也算「没吐字」——
+                    // 原来 120 秒会把还在思考的请求直接掐断，用户看到的是半句话。
+                    socketTimeoutMillis = NetTimeouts.STREAM_IDLE_MS
+                }
+            }.execute { response ->
+                Log.d(LOG_TAG, "SSE 开始 ${response.status.value} $url")
+                val channel = response.bodyAsChannel()
+                var lines = 0
+                while (true) {
+                    // 行尾可能是 \n 也可能是 \r\n，readUTF8Line 两种都吃得下
+                    val line = channel.readUTF8Line() ?: break
+                    lines++
+                    onLine(line)
+                }
+                Log.d(LOG_TAG, "SSE 结束 共 $lines 行 $url")
             }
-            // 这个请求不能被 Logging 插件接管：BODY/ALL 级别下插件会把响应体读完之后
-            // 才写日志，等于等模型说完才把第一行交给我们——流式当场退化成一次性。
-            // 首尾状态由下面自己打。
-            attributes.put(SkipCallLogging, Unit)
-            timeout {
-                requestTimeoutMillis = NetTimeouts.STREAM_REQUEST_MS
-                // socket 超时是「两个数据包之间最长等多久」。深度思考模型在流式下
-                // 常常先沉默着思考完再吐第一个字，这段沉默也算「没吐字」——
-                // 原来 120 秒会把还在思考的请求直接掐断，用户看到的是半句话。
-                socketTimeoutMillis = NetTimeouts.STREAM_IDLE_MS
-            }
-        }.execute { response ->
-            Log.d(LOG_TAG, "SSE 开始 ${response.status.value} $url")
-            val channel = response.bodyAsChannel()
-            var lines = 0
-            while (true) {
-                // 行尾可能是 \n 也可能是 \r\n，readUTF8Line 两种都吃得下
-                val line = channel.readUTF8Line() ?: break
-                lines++
-                onLine(line)
-            }
-            Log.d(LOG_TAG, "SSE 结束 共 $lines 行 $url")
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (domain: DomainException) {
+            throw domain
+        } catch (io: IOException) {
+            throw DomainException.NetworkException(io)
         }
     }
 

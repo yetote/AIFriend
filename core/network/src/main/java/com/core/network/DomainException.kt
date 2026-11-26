@@ -4,7 +4,10 @@ import io.ktor.client.network.sockets.ConnectTimeoutException
 import io.ktor.client.plugins.HttpRequestTimeoutException
 import java.net.SocketTimeoutException
 
-sealed class DomainException(override val message: String) : Exception(message) {
+sealed class DomainException(
+    override val message: String,
+    cause: Throwable? = null,
+) : Exception(message, cause) {
     object UnauthorizedException : DomainException("API Key 无效或已过期，请检查配置")
     object NotFoundException : DomainException("接口或模型不存在（404），请检查模型 ID 或开通状态")
     class ServerException(val code: Int) : DomainException("请求失败（$code）")
@@ -17,17 +20,26 @@ sealed class DomainException(override val message: String) : Exception(message) 
      * 而实际上多半是他自己开的深度思考把等待额度吃光了，网络好得很。
      * 判据用类名（各家超时类不统一，但都带 Timeout），见 [isTimeoutLike]。
      *
+     * 保留原始 `cause`，便于上层（如重试器或连接池清理）识别重置类断流与超时。
      * 文案写在这里而不是只写在 [getReadableMessage] 里：界面有好几处直接把
      * `t.message` 丢给用户看（比如狼人杀的 `_error`），走不到那个映射函数。
      */
     class NetworkException(e: Throwable) : DomainException(
-        if (e.isTimeoutLike()) TIMEOUT_HINT else "网络开小差了，请检查网络连接"
+        message = when {
+            e.isTimeoutLike() -> TIMEOUT_HINT
+            e.isConnectionResetLike() -> RESET_HINT
+            else -> "网络开小差了，请检查网络连接"
+        },
+        cause = e,
     )
 }
 
 /** 超时 / 断连共用的一句解释。 */
 private const val TIMEOUT_HINT =
     "模型响应超时（开了深度思考时最容易碰上）。可以稍后重试，或者先关掉深度思考、换个更快的模型"
+
+private const val RESET_HINT =
+    "连接被服务端或代理中断（流被重置），请稍后重试或检查代理/线路设置"
 
 /**
  * 这次传输失败是不是「等太久了」。
@@ -39,6 +51,26 @@ private const val TIMEOUT_HINT =
 private fun Throwable.isTimeoutLike(): Boolean =
     generateSequence(this) { it.cause }
         .any { cause -> cause::class.simpleName?.contains("Timeout", ignoreCase = true) == true }
+
+/**
+ * 这次传输失败是不是 HTTP/2 `RST_STREAM` 或连接被对端/代理强行重置。
+ */
+private fun Throwable.isConnectionResetLike(): Boolean =
+    generateSequence(this) { it.cause }.any { cause ->
+        val name = cause::class.simpleName.orEmpty()
+        if (name.equals("StreamResetException", ignoreCase = true) ||
+            name.equals("EOFException", ignoreCase = true)
+        ) {
+            return@any true
+        }
+        val msg = cause.message?.lowercase().orEmpty()
+        "stream was reset" in msg ||
+            "protocol_error" in msg ||
+            "connection reset" in msg ||
+            "unexpected end of stream" in msg ||
+            "broken pipe" in msg ||
+            "software caused connection abort" in msg
+    }
 
 /**
  * 404 时把「是哪个模型」补进去。
