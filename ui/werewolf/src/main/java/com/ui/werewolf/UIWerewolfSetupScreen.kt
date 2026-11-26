@@ -311,25 +311,17 @@ fun UIWerewolfSetupScreen(
                         SeatStrip(seats = seats)
                     }
                     // 参与局先定「我是谁」，放在选人之前：先定自己这张牌，再挑对手。
-                    // 只改自己那一席，其他座位照常随机——想练狼不必为此开整页导演模式。
+                    // 只改自己那一席，其他座位照常随机——直接铺开成三列网格一键切换，不必弹窗再翻列表。
                     if (mode == UIWerewolfMode.PLAY) {
                         SectionTitle(
                             title = "我的身份",
-                            subtitle = "只影响你自己这一席，其他座位照常随机发"
+                            subtitle = "只影响你自己这一席，其他座位照常随机发；再点一次可改回随机"
                         )
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .uiCard(shape = RoundedCornerShape(UIRadiusCard))
-                                .padding(vertical = 4.dp)
-                        ) {
-                            RoleAssignRow(
-                                friendName = "你",
-                                assignedKey = myRole,
-                                options = roleOptions,
-                                onPick = onMyRoleChange,
-                            )
-                        }
+                        MyRolePicker(
+                            selectedKey = myRole,
+                            options = roleOptions,
+                            onPick = onMyRoleChange,
+                        )
                     }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -1597,6 +1589,214 @@ private fun SetupSpeechChip(
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             color = UIFriendBarItemSubtitleColor
+        )
+    }
+}
+
+/**
+ * 参与局「我的身份」选择器：三列网格一键直选，不再借用导演模式的单行弹窗。
+ *
+ * 按「随机 → 神职 → 平民 → 狼阵营」归类排序，并按阵营轻度着色，一眼分清好人/神/狼；
+ * 点已选中的牌可直接取消回到「随机」。
+ */
+@Composable
+private fun MyRolePicker(
+    selectedKey: String?,
+    options: List<UIWerewolfRoleOption>,
+    onPick: (String?) -> Unit,
+) {
+    val ordered = remember(options) {
+        options.sortedBy { roleDisplayOrder(it.key) }
+    }
+    val tiles: List<MyRoleTile> = remember(ordered) {
+        buildList {
+            add(
+                MyRoleTile(
+                    key = null,
+                    title = "随机",
+                    subtitle = "听天由命",
+                    accent = UIFriendBarCreateButtonText,
+                )
+            )
+            ordered.forEach { option ->
+                val meta = roleTileMeta(option.key, option.label)
+                add(
+                    MyRoleTile(
+                        key = option.key,
+                        title = meta.title,
+                        subtitle = meta.subtitle,
+                        accent = meta.accent,
+                    )
+                )
+            }
+        }
+    }
+    val selectedTile = tiles.firstOrNull { it.key == selectedKey } ?: tiles.first()
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .uiCard(shape = RoundedCornerShape(UIRadiusCard))
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(selectedTile.accent)
+            )
+            Text(
+                text = if (selectedKey == null) "当前：随机发牌" else "已指定：${selectedTile.title}",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = UIFriendBarTitleColor,
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (selectedKey != null) {
+                Text(
+                    text = "恢复随机",
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = UIFriendBarItemSubtitleColor,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(UIAtelierSand)
+                        .clickable { onPick(null) }
+                        .padding(horizontal = 9.dp, vertical = 3.dp),
+                )
+            }
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            tiles.chunked(3).forEach { row ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    row.forEach { tile ->
+                        val selected = tile.key == selectedKey
+                        MyRoleCard(
+                            tile = tile,
+                            selected = selected,
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                if (tile.key == null || selected) onPick(null) else onPick(tile.key)
+                            },
+                        )
+                    }
+                    repeat(3 - row.size) {
+                        Spacer(Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+    }
+}
+
+private data class MyRoleTile(
+    val key: String?,
+    val title: String,
+    val subtitle: String,
+    val accent: Color,
+)
+
+private data class RoleTileMeta(
+    val title: String,
+    val subtitle: String,
+    val accent: Color,
+)
+
+private fun roleDisplayOrder(key: String): Int = when (key) {
+    "SEER" -> 1
+    "WITCH" -> 2
+    "HUNTER" -> 3
+    "GUARD" -> 4
+    "IDIOT" -> 5
+    "BEAR" -> 6
+    "VILLAGER" -> 10
+    "WEREWOLF" -> 20
+    "ALPHA_WOLF" -> 21
+    "WEREWOLF_KING" -> 22
+    else -> 30
+}
+
+private fun roleTileMeta(key: String, fallbackLabel: String): RoleTileMeta {
+    val godAccent = UIFriendBarTagTextBlue
+    val wolfAccent = UIFriendBarRed
+    val villagerAccent = ConnectedGreen
+    return when (key) {
+        "SEER" -> RoleTileMeta("预言家", "夜间查验", godAccent)
+        "WITCH" -> RoleTileMeta("女巫", "解药毒药", godAccent)
+        "HUNTER" -> RoleTileMeta("猎人", "出局开枪", godAccent)
+        "GUARD" -> RoleTileMeta("守卫", "夜间守护", godAccent)
+        "IDIOT" -> RoleTileMeta("白痴", "翻牌免死", godAccent)
+        "BEAR" -> RoleTileMeta("熊", "咆哮验邻", godAccent)
+        "VILLAGER" -> RoleTileMeta("平民", "好人阵营", villagerAccent)
+        "WEREWOLF" -> RoleTileMeta("狼人", "狼人阵营", wolfAccent)
+        "ALPHA_WOLF" -> RoleTileMeta("头狼", "首夜指挥", wolfAccent)
+        "WEREWOLF_KING" -> RoleTileMeta("狼王", "出局带人", wolfAccent)
+        else -> RoleTileMeta(fallbackLabel, "可选身份", godAccent)
+    }
+}
+
+@Composable
+private fun MyRoleCard(
+    tile: MyRoleTile,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val shape = RoundedCornerShape(UIRadiusControl)
+    Column(
+        modifier = modifier
+            .clip(shape)
+            .background(
+                if (selected) tile.accent.copy(alpha = 0.13f)
+                else UIAtelierSand.copy(alpha = 0.55f)
+            )
+            .border(
+                width = if (selected) 1.4.dp else 0.6.dp,
+                color = if (selected) tile.accent else UIGlassStroke,
+                shape = shape,
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 9.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .clip(CircleShape)
+                    .background(if (selected) tile.accent else tile.accent.copy(alpha = 0.55f))
+            )
+            Text(
+                text = tile.title,
+                fontSize = 13.sp,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                color = if (selected) tile.accent else UIFriendBarTitleColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Text(
+            text = tile.subtitle,
+            fontSize = 10.sp,
+            color = if (selected) tile.accent.copy(alpha = 0.85f) else UIFriendBarItemSubtitleColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
