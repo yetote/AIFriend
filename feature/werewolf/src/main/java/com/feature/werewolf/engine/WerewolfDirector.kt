@@ -1591,7 +1591,10 @@ class WerewolfDirector(
             //
             // 只对超时这么办：连接被重置、鉴权失败这类是「链路真的坏了」，
             // 必须让编排层把错误显示出来，别伪装成一局正常但奇怪的发言。
-            if (!error.isTimeoutLike()) throw error
+            if (!error.isTimeoutLike()) {
+                recordFailedActor(seat, game.playerAt(seat).name, agent)
+                throw error
+            }
             // 流式吐了一半才超时：底层抛上来的超时同样要关思考，
             // 只是这半句还得留着（下面的 raw 分支用 content），不能当整体超时丢掉。
             degradedByTimeout = true
@@ -1660,13 +1663,20 @@ class WerewolfDirector(
             // 这一补发在看门狗之外：关掉思考、并按思考时限兜住，免得在这里再死等一个传输层超时。
             else -> {
                 val retry: suspend () -> String = {
-                    agent.ai.chat(
-                        messages = messages,
-                        model = agent.model,
-                        systemPrompt = system,
-                        enableThinking = false,
-                        webSearch = webSearchFor(agent),
-                    )
+                    try {
+                        agent.ai.chat(
+                            messages = messages,
+                            model = agent.model,
+                            systemPrompt = system,
+                            enableThinking = false,
+                            webSearch = webSearchFor(agent),
+                        )
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Throwable) {
+                        recordFailedActor(seat, game.playerAt(seat).name, agent)
+                        throw error
+                    }
                 }
                 if (bounded && thinkingMs > 0) withTimeoutOrNull(thinkingMs) { retry() } ?: SILENT_SPEECH
                 else retry()
@@ -1853,6 +1863,9 @@ class WerewolfDirector(
             if (!bounded && !nudged && !reasoningDegenerated) throw cancelled
             if (!nudged && !reasoningDegenerated) timedOut = true
             null
+        } catch (error: Throwable) {
+            recordFailedActor(seat, table.game.playerAt(seat).name, agent)
+            throw error
         } finally {
             if (holdsBubble) {
                 // 先收回再让位：反过来的话，下一位刚推上来的一段会被这里清掉
@@ -2017,6 +2030,27 @@ class WerewolfDirector(
 
     private fun agentOf(seat: Int): SeatAgent =
         agents[seat] ?: throw IllegalStateException("$seat 号没有配置模型，无法行动")
+
+    /**
+     * 最近一次抛出致命异常的座位与好友/模型标识（例如 `7 号 小恬（硅基流动 · zai-org/GLM-5.3-Flash）`）。
+     *
+     * 不在引擎里改写异常类型（保留原始 `IOException` 等供调用方和单测识别），
+     * 而是把「谁出的错」记在这里，由 [WerewolfController] 拼到牌桌红条上。
+     */
+    @Volatile
+    internal var lastFailedActor: String? = null
+        private set
+
+    private fun recordFailedActor(seat: Int, friendName: String, agent: SeatAgent) {
+        val modelTag = listOf(agent.ai.brandName.trim(), agent.model.trim())
+            .filter { it.isNotEmpty() }
+            .joinToString(" · ")
+        lastFailedActor = if (modelTag.isNotEmpty()) {
+            "${seat} 号 $friendName（$modelTag）"
+        } else {
+            "${seat} 号 $friendName"
+        }
+    }
 
     /**
      * 这一步要不要真的联网检索。

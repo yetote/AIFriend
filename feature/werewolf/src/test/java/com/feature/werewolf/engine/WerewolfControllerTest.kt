@@ -214,7 +214,9 @@ class WerewolfControllerTest {
 
         val state = c.state.value
         assertNotNull("要给出错误提示", state.error)
-        assertTrue(state.error!!.contains("网络"))
+        assertTrue("错误提示应包含原因：${state.error}", state.error!!.contains("网络"))
+        assertTrue("错误提示应标明出问题的好友座位与名字：${state.error}", state.error!!.contains("号 玩家"))
+        assertTrue("错误提示应标明出问题的模型：${state.error}", state.error!!.contains("test-model"))
         assertNotNull("局面不能丢，否则玩家回来一无所有", state.table)
         assertFalse(state.running)
         assertFalse("没打完不能标成结束", state.finished)

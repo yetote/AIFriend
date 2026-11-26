@@ -257,12 +257,18 @@ class WerewolfController(
             throw cancelled
         } catch (t: Throwable) {
             // 网络/Key 这类传输层问题会走到这里。局面原样保留，
-            // 用户可以稍后点「继续」从当前阶段接着打
+            // 用户可以稍后点「继续」从当前阶段接着打；带上出问题的座位、好友名与模型，方便直接换人。
+            val raw = t.message
+                ?.replace(Regex("""^\[[^\]]+]\s*"""), "")
+                ?.takeIf { it.isNotBlank() }
+                ?: "对局中断，请重试"
+            val who = director.lastFailedActor
+            val formatted = if (who != null && !raw.startsWith(who)) "$who：$raw" else raw
             _state.update {
                 it.copy(
                     running = false,
                     live = null,
-                    error = t.message?.take(200) ?: "对局中断，请重试",
+                    error = formatted.take(220),
                 )
             }
         }
