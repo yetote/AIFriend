@@ -16,8 +16,14 @@ package com.ui.werewolf.data
 internal fun shortModelLabel(raw: String): String {
     val trimmed = raw.trim()
     if (trimmed.isEmpty() || trimmed == "human") return ""
+    // 自定义中转站多分组编码 `@groupId::rawModelId`，先剥离分组前缀再缩写
+    val stripped = if (trimmed.startsWith("@") && "::" in trimmed) {
+        trimmed.substringAfter("::").trim()
+    } else {
+        trimmed
+    }
     // 聚合平台的计费/模式后缀
-    val base = trimmed.substringBefore(":")
+    val base = stripped.substringBefore(":")
     val last = base.substringAfterLast("/")
     // openrouter 的 x-ai/grok-pro 这类两段不重复，取后一段即可；
     // deepseek/deepseek-chat 这类重复前缀，last 已经是干净的模型名。

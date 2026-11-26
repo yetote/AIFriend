@@ -47,6 +47,15 @@ data class UISettingsModel(
     val bands: List<String> = emptyList()
 )
 
+/** 自定义中转站下的单个分组令牌展示数据。 */
+data class UIProviderGroup(
+    val id: String,
+    val name: String,
+    val maskedKey: String,
+    val hasKey: Boolean,
+    val modelCount: Int = 0,
+)
+
 /** 设置页的整体状态。 */
 data class UIModelSettingsState(
     val providers: List<UIProviderOption> = emptyList(),
@@ -59,6 +68,12 @@ data class UIModelSettingsState(
     val baseUrlInput: String = "",
     /** 当前选中的自定义接口的名字，可以直接改。 */
     val customNameInput: String = "",
+    /** 当前选中自定义中转站下的所有分组令牌；内置厂商恒为空。 */
+    val groups: List<UIProviderGroup> = emptyList(),
+    /** 当前正在编辑的分组 ID。 */
+    val selectedGroupId: String = "",
+    /** 当前正在编辑的分组名称输入框。 */
+    val groupNameInput: String = "",
     val models: List<String> = emptyList(),
     /** 带价格的模型列表，聚合平台才有内容。 */
     val pricedModels: List<UISettingsModel> = emptyList(),
@@ -83,11 +98,19 @@ data class UIModelSettingsState(
     val selectedProvider: UIProviderOption?
         get() = providers.firstOrNull { it.id == selectedProviderId }
 
+    val selectedGroup: UIProviderGroup?
+        get() = groups.firstOrNull { it.id == selectedGroupId } ?: groups.firstOrNull()
+
     /** 能不能点「测试并保存」。 */
     val canSave: Boolean
         get() {
             val provider = selectedProvider ?: return false
-            if (keyInput.isBlank() && provider.hasKey.not()) {
+            val hasStoredKey = if (provider.customId != null) {
+                selectedGroup?.hasKey == true || provider.hasKey
+            } else {
+                provider.hasKey
+            }
+            if (keyInput.isBlank() && !hasStoredKey) {
                 // 自定义服务商允许不填 Key（本地部署）
                 if (!provider.editableBaseUrl) return false
             }
@@ -104,6 +127,10 @@ sealed interface UIVerifyResult {
         val modelCount: Int,
         /** 自定义接口测试连接时自动识别并应用的中转站名称；未自动改名时为 null。 */
         val detectedName: String? = null,
+        /** 同地址自动合并到的目标中转站名；未触发合并时为 null。 */
+        val mergedInto: String? = null,
+        /** 多分组或合并场景下的分组名称。 */
+        val groupName: String? = null,
     ) : UIVerifyResult
     data class Failure(val message: String) : UIVerifyResult
 }

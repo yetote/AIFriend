@@ -40,6 +40,17 @@ abstract class OpenAICompatibleAI(
 
     override var modelSet: MutableSet<String> = mutableSetOf()
 
+    /**
+     * 按本次请求的模型选择实际配置。
+     * 默认共用 [config]；多分组自定义中转站（[AIGateway]）会按模型所属分组路由到对应 API Key。
+     */
+    protected open fun configFor(model: String): ApiConfig = config
+
+    /**
+     * 把内部可能带分组前缀的模型 ID 还原为发给远端接口的真实模型名。
+     */
+    protected open fun resolveApiModel(model: String): String = model
+
     override suspend fun chat(
         messages: List<ChatMessage>,
         model: String,
@@ -86,7 +97,7 @@ abstract class OpenAICompatibleAI(
             messages, model, systemPrompt, enableThinking, jsonMode, webSearch, stream = false,
         )
         return WebRepository.instance
-            .chat<ChatCompletionResponse>(config = config, body = request)
+            .chat<ChatCompletionResponse>(config = configFor(model), body = request)
             .getOrElse { throw it }
     }
 
@@ -121,7 +132,7 @@ abstract class OpenAICompatibleAI(
         val splitter = ThinkTagSplitter()
 
         val failure = runCatching {
-            WebRepository.instance.streamChat(config, request) { line ->
+            WebRepository.instance.streamChat(configFor(model), request) { line ->
                 when (val event = ChatStreamParser.parse(line)) {
                     is ChatStreamEvent.Delta -> {
                         val (text, inlineThink) = splitter.feed(event.content)
@@ -215,7 +226,7 @@ abstract class OpenAICompatibleAI(
 
     /** 空回复报错带上厂商与模型 ID，多模型混打（狼人杀/群聊）时一眼就能定位是哪一个模型出问题。 */
     private fun emptyReplyError(model: String): IllegalStateException {
-        val label = listOf(brandName.trim(), model.trim())
+        val label = listOf(brandName.trim(), resolveApiModel(model).trim())
             .filter { it.isNotEmpty() }
             .joinToString(" · ")
         val prefix = if (label.isNotEmpty()) "[$label] " else ""
@@ -237,7 +248,7 @@ abstract class OpenAICompatibleAI(
         webSearch: Boolean,
         stream: Boolean,
     ): ChatCompletionRequest = ChatCompletionRequest(
-        model = model,
+        model = resolveApiModel(model),
         messages = apiMessages(messages, systemPrompt),
         stream = stream
     )

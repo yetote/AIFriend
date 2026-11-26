@@ -1,5 +1,6 @@
 package com.core.ai.model
 
+import com.core.repository.settings.CustomGroupCodec
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -161,9 +162,13 @@ data class GatewayModel(
     val price: ModelPrice? = null
 ) {
 
+    /** 去掉自定义中转站分组编码后的真实模型名，用于展示和路径切分。 */
+    private val rawId: String
+        get() = CustomGroupCodec.rawModelId(id)
+
     /** id 按 `/` 切开的路径段，`Pro/deepseek-ai/DeepSeek-V3.2` → [Pro, deepseek-ai, DeepSeek-V3.2]。 */
     private val segments: List<String>
-        get() = id.split('/').filter { it.isNotBlank() }
+        get() = rawId.split('/').filter { it.isNotBlank() }
 
     /**
      * 厂商的展示名，用作列表的分组标题。
@@ -179,7 +184,7 @@ data class GatewayModel(
             val owned = vendor.trim()
             // owned_by 只有和 id 不等、且不是部署前缀时才是可信的厂商名
             val usableOwned = owned.isNotEmpty() &&
-                !owned.equals(id, ignoreCase = true) &&
+                !owned.equals(rawId, ignoreCase = true) &&
                 owned.lowercase() !in DEPLOY_PREFIXES
             if (usableOwned) return owned.substringAfterLast('/')
 
@@ -198,13 +203,13 @@ data class GatewayModel(
     val displayName: String
         get() {
             val path = segments
-            if (path.size <= 1) return id
+            if (path.size <= 1) return rawId
             val index = path.indexOfFirst { it.equals(vendorLabel, ignoreCase = true) }
-            if (index < 0) return id
+            if (index < 0) return rawId
             // 厂商段之前只保留 `Pro` 这种产品线标记，部署前缀丢掉
             val head = path.take(index).filter { it.lowercase() in PRODUCT_LINES }
             val tail = path.drop(index + 1)
-            if (tail.isEmpty()) return id
+            if (tail.isEmpty()) return rawId
             return (head + tail).joinToString("/")
         }
 

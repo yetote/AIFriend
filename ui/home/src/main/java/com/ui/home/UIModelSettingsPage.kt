@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -96,6 +97,11 @@ fun UIModelSettingsPage(
     onDeleteCustom: (String) -> Unit = {},
     onCustomNameChange: (String) -> Unit = {},
     onRenameCustom: () -> Unit = {},
+    onGroupSelect: (String) -> Unit = {},
+    onAddGroup: () -> Unit = {},
+    onDeleteGroup: (String) -> Unit = {},
+    onGroupNameChange: (String) -> Unit = {},
+    onRenameGroup: () -> Unit = {},
 ) {
     var keyVisible by remember { mutableStateOf(false) }
     // 第二对凭证各自一份显示开关：Secret 露出来比 API Key 更敏感，
@@ -245,17 +251,117 @@ fun UIModelSettingsPage(
                             color = UIFriendBarItemMetaColor
                         )
                         Spacer(Modifier.height(14.dp))
+
+                        // 同站多分组令牌区：单组时只给一个紧凑的「+ 添加分组 Key」入口，
+                        // 多组时展开横向分组标签与独立组名编辑。
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = "令牌分组",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = UIFriendBarTitleColor,
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = "同站不同分组可合并管理",
+                                fontSize = 11.sp,
+                                color = UIFriendBarItemMetaColor,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Text(
+                                text = "+ 新增分组",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = UIFriendBarCreateButtonText,
+                                modifier = Modifier.clickable { onAddGroup() }
+                            )
+                        }
+                        if (state.groups.size > 1) {
+                            Spacer(Modifier.height(8.dp))
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                items(state.groups, key = { it.id }) { group ->
+                                    val selectedGroup = group.id == state.selectedGroup?.id
+                                    Row(
+                                        modifier = Modifier
+                                            .uiControl(
+                                                shape = RoundedCornerShape(50),
+                                                color = if (selectedGroup) UIFriendBarTagBgBlue else Color.White.copy(alpha = 0.85f),
+                                            )
+                                            .clickable { onGroupSelect(group.id) }
+                                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(6.dp)
+                                                .background(
+                                                    color = if (group.hasKey) UIFriendBarOnlineGreen else UIFriendBarGray,
+                                                    shape = CircleShape,
+                                                )
+                                        )
+                                        Spacer(Modifier.width(6.dp))
+                                        Text(
+                                            text = if (group.modelCount > 0) "${group.name} · ${group.modelCount}" else group.name,
+                                            fontSize = 12.sp,
+                                            fontWeight = if (selectedGroup) FontWeight.SemiBold else FontWeight.Normal,
+                                            color = if (selectedGroup) UIFriendBarTagTextBlue else UIFriendBarTitleColor,
+                                        )
+                                    }
+                                }
+                            }
+                            Spacer(Modifier.height(10.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(modifier = Modifier.weight(1f)) {
+                                    PlainField(
+                                        value = state.groupNameInput,
+                                        onValueChange = onGroupNameChange,
+                                        placeholder = "分组名称（如 默认 / VIP / Claude）",
+                                        keyboardType = KeyboardType.Text
+                                    )
+                                }
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    text = "保存组名",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = UIFriendBarCreateButtonText,
+                                    modifier = Modifier.clickable { onRenameGroup() }
+                                )
+                                state.selectedGroup?.let { activeGroup ->
+                                    Spacer(Modifier.width(10.dp))
+                                    Text(
+                                        text = "删除",
+                                        fontSize = 12.sp,
+                                        color = UIFriendBarRed,
+                                        modifier = Modifier.clickable { onDeleteGroup(activeGroup.id) }
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(14.dp))
                     }
 
-                    SectionLabel("API Key")
+                    val activeGroup = if (provider.customId != null) state.selectedGroup else null
+                    val effectiveHasKey = activeGroup?.hasKey ?: provider.hasKey
+                    val effectiveMaskedKey = activeGroup?.maskedKey ?: provider.maskedKey
+                    SectionLabel(
+                        if (activeGroup != null && state.groups.size > 1) {
+                            "API Key（${activeGroup.name}）"
+                        } else {
+                            "API Key"
+                        }
+                    )
                     Spacer(Modifier.height(8.dp))
                     KeyField(
                         value = state.keyInput,
                         onValueChange = onKeyChange,
                         visible = keyVisible,
                         onToggleVisible = { keyVisible = !keyVisible },
-                        placeholder = if (provider.hasKey) {
-                            "已保存 ${provider.maskedKey}，留空则保持不变"
+                        placeholder = if (effectiveHasKey) {
+                            "已保存 $effectiveMaskedKey，留空则保持不变"
                         } else {
                             "粘贴你的 API Key"
                         }
@@ -314,7 +420,7 @@ fun UIModelSettingsPage(
                         )
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            text = "填到 /v1 为止，不要带 /chat/completions",
+                            text = "填到 /v1 为止，不要带 /chat/completions；与已有自定义接口同地址时将自动合并为新分组",
                             fontSize = 11.sp,
                             color = UIFriendBarItemMetaColor
                         )
@@ -326,9 +432,13 @@ fun UIModelSettingsPage(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        if (provider.hasKey) {
+                        if (effectiveHasKey) {
                             Text(
-                                text = "清除已保存的 Key",
+                                text = if (activeGroup != null && state.groups.size > 1) {
+                                    "清除当前分组 Key"
+                                } else {
+                                    "清除已保存的 Key"
+                                },
                                 fontSize = 12.sp,
                                 color = UIFriendBarRed,
                                 modifier = Modifier.clickable { onClearKey() }
@@ -753,9 +863,17 @@ private fun PlainField(
 private fun VerifyBanner(result: UIVerifyResult) {
     val (text, color) = when (result) {
         is UIVerifyResult.Success -> {
-            val base = "连接成功，拉取到 ${result.modelCount} 个可用模型"
-            val suffix = result.detectedName?.let { "，已自动命名为「$it」" }.orEmpty()
-            (base + suffix) to UIFriendBarOnlineGreen
+            val message = when {
+                result.mergedInto != null && result.groupName != null ->
+                    "已自动合并到「${result.mergedInto}」的分组「${result.groupName}」，拉取到 ${result.modelCount} 个可用模型"
+                result.groupName != null ->
+                    "分组「${result.groupName}」连接成功，拉取到 ${result.modelCount} 个可用模型"
+                result.detectedName != null ->
+                    "连接成功，拉取到 ${result.modelCount} 个可用模型，已自动命名为「${result.detectedName}」"
+                else ->
+                    "连接成功，拉取到 ${result.modelCount} 个可用模型"
+            }
+            message to UIFriendBarOnlineGreen
         }
         is UIVerifyResult.Failure -> result.message to UIFriendBarRed
     }

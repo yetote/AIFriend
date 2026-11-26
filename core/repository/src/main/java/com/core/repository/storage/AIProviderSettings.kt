@@ -5,7 +5,16 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.core.repository.settings.AIProvider
 import com.core.repository.settings.AIProviderCatalog
+import com.core.repository.settings.CustomGroupCodec
 import kotlinx.coroutines.flow.first
+
+/** 同一自定义中转站下的单个分组令牌快照（只用于运行时路由与模型拉取）。 */
+data class AICredentialGroup(
+    val id: String,
+    val name: String,
+    val apiKey: String = "",
+    val models: List<String> = emptyList(),
+)
 
 /**
  * 单个服务商的凭证。
@@ -26,6 +35,8 @@ data class AICredential(
     val accessKeyId: String = "",
     /** 火山的 Secret Access Key。 */
     val accessKeySecret: String = "",
+    /** 自定义中转站的分组令牌列表；空表示单 Key 模式。 */
+    val groups: List<AICredentialGroup> = emptyList(),
 ) {
     /** 实际请求用的 baseUrl：自定义优先用户填写，其余回落到目录。 */
     fun resolvedBaseUrl(provider: AIProvider): String =
@@ -46,20 +57,42 @@ object AICredentials {
 
     fun get(providerId: String): AICredential? = snapshot[providerId]
 
-    fun apiKeyOf(providerId: String): String = snapshot[providerId]?.apiKey.orEmpty()
+    fun apiKeyOf(providerId: String): String {
+        val cred = snapshot[providerId] ?: return ""
+        return cred.apiKey.ifBlank { cred.groups.firstOrNull { it.apiKey.isNotBlank() }?.apiKey.orEmpty() }
+    }
+
+    fun groupsOf(providerId: String): List<AICredentialGroup> = snapshot[providerId]?.groups.orEmpty()
+
+    /**
+     * 按模型解析实际要用的 API Key：
+     * 1. 若模型带 `@groupId::` 前缀，精确命中对应分组的 Key；
+     * 2. 若无前缀（单分组或老好友），先找包含该模型的分组，找不到再回落到主 Key。
+     */
+    fun apiKeyFor(providerId: String, model: String): String {
+        val cred = snapshot[providerId] ?: return ""
+        if (cred.groups.isEmpty()) return cred.apiKey
+        val decoded = CustomGroupCodec.decode(model)
+        if (decoded.groupId != null) {
+            cred.groups.firstOrNull { it.id == decoded.groupId }?.let { return it.apiKey }
+        }
+        cred.groups.firstOrNull { decoded.rawModelId in it.models && it.apiKey.isNotBlank() }
+            ?.let { return it.apiKey }
+        return cred.groups.firstOrNull { it.apiKey.isNotBlank() }?.apiKey ?: cred.apiKey
+    }
 
     fun baseUrlOf(provider: AIProvider): String =
         snapshot[provider.id]?.resolvedBaseUrl(provider) ?: provider.baseUrl
 
-    internal fun replaceAll(credentials: List<AICredential>) {
+    fun replaceAll(credentials: List<AICredential>) {
         snapshot = credentials.associateBy { it.providerId }
     }
 
-    internal fun put(credential: AICredential) {
+    fun put(credential: AICredential) {
         snapshot = snapshot + (credential.providerId to credential)
     }
 
-    internal fun remove(providerId: String) {
+    fun remove(providerId: String) {
         snapshot = snapshot - providerId
     }
 }

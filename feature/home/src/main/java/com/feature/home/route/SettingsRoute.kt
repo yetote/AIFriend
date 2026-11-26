@@ -67,6 +67,11 @@ fun SettingsRoute(
             onDeleteCustom = viewModel::deleteCustom,
             onCustomNameChange = viewModel::setCustomNameInput,
             onRenameCustom = viewModel::renameCustom,
+            onGroupSelect = viewModel::selectGroup,
+            onAddGroup = viewModel::addGroup,
+            onDeleteGroup = viewModel::deleteGroup,
+            onGroupNameChange = viewModel::setGroupNameInput,
+            onRenameGroup = viewModel::renameGroup,
             onOpenConsole = { providerId ->
                 val url = AIProviderCatalog.byId(providerId)?.consoleUrl.orEmpty()
                 openUrl(context, url)

@@ -13,17 +13,20 @@ import com.core.repository.ApiConfig
 import com.core.repository.WebRepository
 import com.core.repository.settings.AIProvider
 import com.core.repository.settings.AIProviderCatalog
+import com.core.repository.settings.CustomGroupCodec
 import com.core.repository.settings.CustomNameDefaults
 import com.core.repository.settings.RelayStationDetector
 import com.core.repository.settings.TTSProviderCatalog
 import com.core.repository.settings.validateBaseUrl
 import com.core.repository.storage.AICredential
 import com.core.repository.storage.AIProviderSettings
+import com.core.repository.storage.CustomApiGroup
 import com.core.repository.storage.FriendRepository
 import com.core.repository.storage.TTSCredential
 import com.core.repository.storage.TTSProviderSettings
 import com.core.tts.TTSPreviewPlayer
 import com.feature.agent.data.toUITone
+import com.ui.home.UIProviderGroup
 import com.ui.home.UIProviderOption
 import com.ui.home.UIModelSettingsState
 import com.ui.home.UISettingsModel
@@ -144,12 +147,19 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
         val models = withContext(Dispatchers.IO) { settings.selectedModel(provider.id) }
         // 价格可能刚被刷过，缓存里的明细要按最新的价格重算一遍
         pricedCache[provider.id]?.let { pricedCache[provider.id] = repriced(it, provider.id) }
+        val initialGroups = uiGroupsOf(provider.id)
+        val activeGroup = initialGroups.firstOrNull()
+        val initialModels = initialModelsFor(provider.id, activeGroup?.id)
+        val initialPriced = initialPricedFor(provider.id, activeGroup?.id)
         _state.value = UIModelSettingsState(
             providers = AIProviderCatalog.all.map { it.toOption() },
             selectedProviderId = provider.id,
             customNameInput = provider.name.takeIf { AIProviderCatalog.isCustom(provider.id) }.orEmpty(),
-            models = modelCache[provider.id].orEmpty(),
-            pricedModels = pricedCache[provider.id].orEmpty(),
+            groups = initialGroups,
+            selectedGroupId = activeGroup?.id.orEmpty(),
+            groupNameInput = activeGroup?.name.orEmpty(),
+            models = initialModels,
+            pricedModels = initialPriced,
             selectedModel = models.orEmpty(),
             priceSnapshotDate = ModelPrices.snapshotDate(provider.id),
             canRefreshPrice = ModelPrices.canRefresh(provider.id)
@@ -212,10 +222,13 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
         }
     }
 
-    fun selectProvider(providerId: String) {
+    fun selectProvider(providerId: String, preferredGroupId: String? = null) {
         val provider = AIProviderCatalog.byId(providerId) ?: return
         val credential = saved[providerId]
-        val cached = pricedCache[providerId].orEmpty()
+        val groups = uiGroupsOf(providerId)
+        val activeGroup = groups.firstOrNull { it.id == preferredGroupId } ?: groups.firstOrNull()
+        val models = initialModelsFor(providerId, activeGroup?.id)
+        val cached = initialPricedFor(providerId, activeGroup?.id)
         _state.value = _state.value.copy(
             selectedProviderId = providerId,
             keyInput = "",
@@ -223,9 +236,12 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
             accessKeySecretInput = "",
             baseUrlInput = credential?.baseUrl.orEmpty().ifBlank { provider.baseUrl },
             customNameInput = provider.name.takeIf { AIProviderCatalog.isCustom(providerId) }.orEmpty(),
-            models = modelCache[providerId].orEmpty(),
+            groups = groups,
+            selectedGroupId = activeGroup?.id.orEmpty(),
+            groupNameInput = activeGroup?.name.orEmpty(),
+            models = models,
             pricedModels = cached,
-            selectedModel = modelCache[providerId]?.firstOrNull().orEmpty(),
+            selectedModel = models.firstOrNull().orEmpty(),
             priceIsSnapshot = cached.any { it.price != null } &&
                 ModelPrices.isSnapshot(providerId),
             priceSnapshotDate = ModelPrices.snapshotDate(providerId),
@@ -234,6 +250,127 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
             verifyResult = null,
             error = null
         )
+    }
+
+    fun selectGroup(groupId: String) {
+        val providerId = _state.value.selectedProviderId
+        val groups = uiGroupsOf(providerId)
+        val target = groups.firstOrNull { it.id == groupId } ?: return
+        val models = initialModelsFor(providerId, target.id)
+        val priced = initialPricedFor(providerId, target.id)
+        _state.value = _state.value.copy(
+            groups = groups,
+            selectedGroupId = target.id,
+            groupNameInput = target.name,
+            keyInput = "",
+            models = models,
+            pricedModels = priced,
+            selectedModel = models.firstOrNull().orEmpty(),
+            verifyResult = null,
+            error = null,
+        )
+    }
+
+    fun setGroupNameInput(value: String) {
+        _state.value = _state.value.copy(groupNameInput = value, error = null)
+    }
+
+    /** 在当前自定义中转站下新增一个分组令牌。 */
+    fun addGroup() {
+        val providerId = _state.value.selectedProvider?.customId ?: return
+        viewModelScope.launch {
+            val created = withContext(Dispatchers.IO) { settings.custom.addGroup(providerId) }
+            if (created == null) {
+                _state.value = _state.value.copy(error = "新增分组失败，请重试")
+                return@launch
+            }
+            settings.custom.byId(providerId)?.let { saved = saved + (providerId to it.toCredential()) }
+            refreshProviderOptions()
+            selectGroup(created.id)
+        }
+    }
+
+    /** 修改当前选中分组的名称；组 ID 不变，已有好友完全不受影响。 */
+    fun renameGroup() {
+        val current = _state.value
+        val providerId = current.selectedProvider?.customId ?: return
+        val groupId = current.selectedGroup?.id ?: return
+        val newName = current.groupNameInput.trim()
+        if (newName.isBlank()) {
+            _state.value = current.copy(error = "分组名称不能为空")
+            return
+        }
+        viewModelScope.launch {
+            val ok = withContext(Dispatchers.IO) { settings.custom.renameGroup(providerId, groupId, newName) }
+            if (!ok) {
+                _state.value = _state.value.copy(error = "保存组名失败：可能与其他分组重名")
+                return@launch
+            }
+            settings.custom.byId(providerId)?.let { saved = saved + (providerId to it.toCredential()) }
+            val updatedGroups = uiGroupsOf(providerId)
+            _state.value = _state.value.copy(
+                providers = AIProviderCatalog.all.map { it.toOption() },
+                groups = updatedGroups,
+                groupNameInput = updatedGroups.firstOrNull { it.id == groupId }?.name ?: newName,
+                error = null,
+            )
+        }
+    }
+
+    /** 删除一个分组令牌（至少保留 1 组）。 */
+    fun deleteGroup(groupId: String) {
+        val providerId = _state.value.selectedProvider?.customId ?: return
+        viewModelScope.launch {
+            val ok = withContext(Dispatchers.IO) { settings.custom.removeGroup(providerId, groupId) }
+            if (!ok) {
+                _state.value = _state.value.copy(error = "至少保留一个分组，无法删除")
+                return@launch
+            }
+            modelCache.remove(cacheKey(providerId, groupId))
+            pricedCache.remove(cacheKey(providerId, groupId))
+            settings.custom.byId(providerId)?.let { saved = saved + (providerId to it.toCredential()) }
+            AIProviderCatalog.byId(providerId)?.let { p ->
+                FriendProbeStore.invalidateBrands(listOf(p.name) + p.aliases)
+            }
+            refreshProviderOptions()
+            val remaining = uiGroupsOf(providerId)
+            val nextGroup = remaining.firstOrNull()
+            if (nextGroup != null) {
+                selectGroup(nextGroup.id)
+            }
+        }
+    }
+
+    private fun uiGroupsOf(providerId: String): List<UIProviderGroup> {
+        if (!AIProviderCatalog.isCustom(providerId)) return emptyList()
+        return settings.custom.groupsOf(providerId).map { group ->
+            UIProviderGroup(
+                id = group.id,
+                name = group.name,
+                maskedKey = maskKey(group.apiKey),
+                hasKey = group.apiKey.isNotBlank(),
+                modelCount = group.models.size,
+            )
+        }
+    }
+
+    private fun cacheKey(providerId: String, groupId: String?): String =
+        if (groupId.isNullOrBlank()) providerId else "$providerId::$groupId"
+
+    private fun initialModelsFor(providerId: String, groupId: String?): List<String> {
+        val key = cacheKey(providerId, groupId)
+        modelCache[key]?.let { return it }
+        if (AIProviderCatalog.isCustom(providerId) && !groupId.isNullOrBlank()) {
+            val groupModels = settings.custom.groupsOf(providerId)
+                .firstOrNull { it.id == groupId }?.models.orEmpty()
+            if (groupModels.isNotEmpty()) return groupModels
+        }
+        return modelCache[providerId].orEmpty()
+    }
+
+    private fun initialPricedFor(providerId: String, groupId: String?): List<UISettingsModel> {
+        val key = cacheKey(providerId, groupId)
+        return pricedCache[key] ?: pricedCache[providerId].orEmpty()
     }
 
     fun setKeyInput(value: String) {
@@ -340,18 +477,39 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
     }
 
     fun clearKey() {
-        val providerId = _state.value.selectedProviderId
+        val current = _state.value
+        val providerId = current.selectedProviderId
         val provider = AIProviderCatalog.byId(providerId)
+        val isCustom = AIProviderCatalog.isCustom(providerId)
+        val activeGroupId = current.selectedGroup?.id
         viewModelScope.launch {
-            withContext(Dispatchers.IO) { settings.clear(providerId) }
+            withContext(Dispatchers.IO) {
+                if (isCustom && !activeGroupId.isNullOrBlank() && settings.custom.groupsOf(providerId).size > 1) {
+                    settings.custom.clearGroupKey(providerId, activeGroupId)
+                } else {
+                    settings.clear(providerId)
+                }
+            }
             if (provider != null) {
                 FriendProbeStore.invalidateBrands(listOf(provider.name) + provider.aliases)
             }
-            saved = saved - providerId
-            modelCache.remove(providerId)
-            pricedCache.remove(providerId)
+            if (isCustom && settings.custom.byId(providerId)?.effectiveGroups()?.size ?: 0 > 1) {
+                settings.custom.byId(providerId)?.let { saved = saved + (providerId to it.toCredential()) }
+                modelCache.remove(cacheKey(providerId, activeGroupId))
+                pricedCache.remove(cacheKey(providerId, activeGroupId))
+            } else {
+                saved = saved - providerId
+                modelCache.remove(providerId)
+                pricedCache.remove(providerId)
+                if (!activeGroupId.isNullOrBlank()) {
+                    modelCache.remove(cacheKey(providerId, activeGroupId))
+                    pricedCache.remove(cacheKey(providerId, activeGroupId))
+                }
+            }
+            val updatedGroups = uiGroupsOf(providerId)
             _state.value = _state.value.copy(
                 providers = AIProviderCatalog.all.map { it.toOption() },
+                groups = updatedGroups,
                 keyInput = "",
                 accessKeyIdInput = "",
                 accessKeySecretInput = "",
@@ -373,8 +531,17 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
     fun verifyAndSave() {
         val snapshot = _state.value
         val provider = AIProviderCatalog.byId(snapshot.selectedProviderId) ?: return
+        val isCustom = AIProviderCatalog.isCustom(provider.id)
+        val activeGroup: CustomApiGroup? = if (isCustom) {
+            val allGroups = settings.custom.groupsOf(provider.id)
+            allGroups.firstOrNull { it.id == snapshot.selectedGroupId } ?: allGroups.firstOrNull()
+        } else {
+            null
+        }
 
-        val apiKey = snapshot.keyInput.ifBlank { saved[provider.id]?.apiKey.orEmpty() }
+        val apiKey = snapshot.keyInput.ifBlank {
+            activeGroup?.apiKey?.takeIf { it.isNotBlank() } ?: saved[provider.id]?.apiKey.orEmpty()
+        }
         if (provider.requiresKey && apiKey.isBlank()) {
             _state.value = snapshot.copy(error = "请先填写 API Key")
             return
@@ -425,11 +592,17 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
                 }
             )
 
-            // 自定义接口在名称仍为默认占位（或用户清空名称框）时，与 /models 并行探测中转站名，
-            // 成功连接后自动设为当前厂商名，几乎零额外耗时；已由用户手动命名的接口绝不覆盖。
-            val isCustom = AIProviderCatalog.isCustom(provider.id)
+            // 自定义接口在名称仍为默认占位（或用户清空名称框）且不触发同址合并时，
+            // 与 /models 并行探测中转站名，成功连接后自动设为当前厂商名，几乎零额外耗时。
             val inputName = snapshot.customNameInput.trim()
+            val inputGroupName = snapshot.groupNameInput.trim()
+            val mergeCandidate = if (isCustom && settings.custom.groupsOf(provider.id).size <= 1) {
+                settings.custom.findByBaseUrl(baseUrl, excludeId = provider.id)
+            } else {
+                null
+            }
             val shouldAutoName = isCustom &&
+                mergeCandidate == null &&
                 CustomNameDefaults.isDefaultName(inputName) &&
                 (CustomNameDefaults.isDefaultName(provider.name) || inputName.isEmpty())
             val detectedDeferred = if (shouldAutoName) {
@@ -509,6 +682,12 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
                     accessKeyId = accessKeyId,
                     accessKeySecret = accessKeySecret,
                     autoDetectedName = detectedName,
+                    groupId = activeGroup?.id,
+                    editedGroupName = inputGroupName.takeIf { it.isNotBlank() },
+                    preferredMergedGroupName = inputName.takeIf {
+                        !CustomNameDefaults.isDefaultName(it) && it != mergeCandidate?.name
+                    },
+                    mergeTargetId = mergeCandidate?.id,
                 )
             }.onFailure { error ->
                 detectedDeferred?.cancel()
@@ -521,7 +700,7 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
         }
     }
 
-    /** 把验证通过的凭证落盘，并更新列表与缓存。 */
+    /** 把验证通过的凭证落盘，并更新列表与缓存；同地址自定义接口自动合并为新分组。 */
     private suspend fun saveCredential(
         provider: com.core.repository.settings.AIProvider,
         apiKey: String,
@@ -531,9 +710,82 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
         accessKeyId: String = "",
         accessKeySecret: String = "",
         autoDetectedName: String? = null,
+        groupId: String? = null,
+        editedGroupName: String? = null,
+        preferredMergedGroupName: String? = null,
+        mergeTargetId: String? = null,
     ) {
         val isCustom = AIProviderCatalog.isCustom(provider.id)
         val hadSavedModels = isCustom && settings.custom.modelsOf(provider.id).isNotEmpty()
+
+        // 同 Base URL 的另一条自定义接口已存在：自动合并为它的一个新分组，避免重复厂商条目。
+        if (isCustom && mergeTargetId != null) {
+            val merged = withContext(Dispatchers.IO) {
+                val res = settings.custom.mergeInto(
+                    sourceId = provider.id,
+                    targetId = mergeTargetId,
+                    apiKey = apiKey,
+                    models = models,
+                    preferredGroupName = preferredMergedGroupName,
+                    recordSourceAlias = hadSavedModels,
+                )
+                if (res != null && hadSavedModels) {
+                    val oldNames = (res.removedSourceAliases + res.removedSourceName).toSet()
+                    val friends = friendRepository.load()
+                    friends.filter { it.brand in oldNames }.forEach { friend ->
+                        val encodedModel = CustomGroupCodec.encode(res.addedGroup.id, friend.model)
+                        friendRepository.upsert(
+                            friend.copy(
+                                brand = res.targetName,
+                                company = res.targetName,
+                                model = encodedModel,
+                            )
+                        )
+                    }
+                }
+                res
+            }
+            if (merged != null) {
+                saved = saved - provider.id
+                settings.custom.byId(merged.targetId)?.let {
+                    saved = saved + (merged.targetId to it.toCredential())
+                }
+                FriendProbeStore.invalidateBrands(
+                    (listOf(merged.removedSourceName, merged.targetName) + merged.removedSourceAliases).distinct()
+                )
+                val targetCacheKey = cacheKey(merged.targetId, merged.addedGroup.id)
+                modelCache[targetCacheKey] = models
+                pricedCache[targetCacheKey] = priced
+
+                val current = _state.value
+                val visible = current.selectedProviderId == provider.id
+                val targetGroups = uiGroupsOf(merged.targetId)
+                _state.value = current.copy(
+                    providers = AIProviderCatalog.all.map { it.toOption() },
+                    selectedProviderId = if (visible) merged.targetId else current.selectedProviderId,
+                    customNameInput = if (visible) merged.targetName else current.customNameInput,
+                    groups = if (visible) targetGroups else current.groups,
+                    selectedGroupId = if (visible) merged.addedGroup.id else current.selectedGroupId,
+                    groupNameInput = if (visible) merged.addedGroup.name else current.groupNameInput,
+                    isVerifying = false,
+                    isLoadingModels = false,
+                    keyInput = "",
+                    accessKeyIdInput = "",
+                    accessKeySecretInput = "",
+                    models = if (visible) models else current.models,
+                    pricedModels = if (visible) priced else current.pricedModels,
+                    selectedModel = if (visible) models.firstOrNull().orEmpty() else current.selectedModel,
+                    verifyResult = UIVerifyResult.Success(
+                        modelCount = models.size,
+                        mergedInto = merged.targetName,
+                        groupName = merged.addedGroup.name,
+                    ),
+                    error = null,
+                )
+                return
+            }
+        }
+
         val credential = AICredential(
             providerId = provider.id,
             apiKey = apiKey,
@@ -544,13 +796,25 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
             accessKeySecret = accessKeySecret,
         )
         var appliedAutoName: String? = null
+        var savedGroupName: String? = null
         val stored = withContext(Dispatchers.IO) {
-            val ok = settings.save(credential)
-            if (ok) {
-                // 自定义接口把这次拉到的模型也存下来：断网时还有兜底列表可选，
-                // 创建页不用等一次成功的 /models 才知道有哪些模型。
-                if (isCustom) {
-                    settings.custom.saveModels(provider.id, models)
+            val ok = if (isCustom) {
+                val targetGroupId = groupId?.takeIf { it.isNotBlank() }
+                    ?: settings.custom.groupsOf(provider.id).firstOrNull()?.id
+                    ?: com.core.repository.storage.CustomApiConfig.DEFAULT_GROUP_ID
+                val savedOk = settings.custom.saveGroupCredential(
+                    providerId = provider.id,
+                    groupId = targetGroupId,
+                    baseUrl = baseUrl,
+                    apiKey = apiKey,
+                    models = models,
+                    groupName = editedGroupName,
+                )
+                if (savedOk) {
+                    val currentGroups = settings.custom.groupsOf(provider.id)
+                    if (currentGroups.size > 1) {
+                        savedGroupName = currentGroups.firstOrNull { it.id == targetGroupId }?.name
+                    }
                     if (!autoDetectedName.isNullOrBlank()) {
                         val occupied = AIProviderCatalog.all
                             .filter { it.id != provider.id }
@@ -577,6 +841,11 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
                         }
                     }
                 }
+                savedOk
+            } else {
+                settings.save(credential)
+            }
+            if (ok) {
                 // 默认选一个：优先沿用上次的，否则取列表第一个
                 val previous = settings.selectedModel(provider.id)
                 val chosen = previous?.takeIf { it in models } ?: models.firstOrNull()
@@ -595,19 +864,31 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
             )
             return
         }
-        saved = saved + (provider.id to credential)
+        val latestCredential = if (isCustom) {
+            settings.custom.byId(provider.id)?.toCredential() ?: credential
+        } else {
+            credential
+        }
+        saved = saved + (provider.id to latestCredential)
         val latestProvider = AIProviderCatalog.byId(provider.id) ?: provider
         FriendProbeStore.invalidateBrands(
             (listOf(provider.name, latestProvider.name) + provider.aliases + latestProvider.aliases).distinct()
         )
-        modelCache[provider.id] = models
-        pricedCache[provider.id] = priced
+        val key = if (isCustom) cacheKey(provider.id, groupId) else provider.id
+        modelCache[key] = models
+        pricedCache[key] = priced
 
         val current = _state.value
         // 保存期间用户可能已经切到别的服务商了，别把模型列表写到人家头上
         val visible = current.selectedProviderId == provider.id
+        val updatedGroups = if (visible) uiGroupsOf(provider.id) else current.groups
+        val activeGroupObj = updatedGroups.firstOrNull { it.id == (groupId ?: current.selectedGroupId) }
+            ?: updatedGroups.firstOrNull()
         _state.value = current.copy(
             providers = AIProviderCatalog.all.map { it.toOption() },
+            groups = updatedGroups,
+            selectedGroupId = if (visible) activeGroupObj?.id.orEmpty() else current.selectedGroupId,
+            groupNameInput = if (visible) activeGroupObj?.name.orEmpty() else current.groupNameInput,
             isVerifying = false,
             isLoadingModels = false,
             keyInput = "",
@@ -624,7 +905,11 @@ class SettingsViewModel(application: Application) : BaseViewModel(application) {
             priceIsSnapshot = if (visible) false else current.priceIsSnapshot,
             priceSnapshotDate = ModelPrices.snapshotDate(provider.id),
             canRefreshPrice = ModelPrices.canRefresh(provider.id),
-            verifyResult = UIVerifyResult.Success(models.size, detectedName = appliedAutoName),
+            verifyResult = UIVerifyResult.Success(
+                modelCount = models.size,
+                detectedName = appliedAutoName,
+                groupName = savedGroupName,
+            ),
             error = null
         )
     }

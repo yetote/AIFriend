@@ -184,7 +184,8 @@ class RetryableAI(
     }
 
     private suspend fun park(error: Throwable, model: String, attempt: Int): RetryDecision {
-        val modelTag = listOf(delegate.brandName.trim(), model.trim())
+        val cleanModel = com.core.repository.settings.CustomGroupCodec.rawModelId(model)
+        val modelTag = listOf(delegate.brandName.trim(), cleanModel.trim())
             .filter { it.isNotEmpty() }
             .joinToString(" · ")
         val who = if (modelTag.isNotEmpty()) "${seat} 号 $seatName（$modelTag）" else "${seat} 号 $seatName"

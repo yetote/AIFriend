@@ -2104,7 +2104,8 @@ class WerewolfDirector(
         private set
 
     private fun recordFailedActor(seat: Int, friendName: String, agent: SeatAgent) {
-        val modelTag = listOf(agent.ai.brandName.trim(), agent.model.trim())
+        val cleanModel = com.core.repository.settings.CustomGroupCodec.rawModelId(agent.model)
+        val modelTag = listOf(agent.ai.brandName.trim(), cleanModel.trim())
             .filter { it.isNotEmpty() }
             .joinToString(" · ")
         lastFailedActor = if (modelTag.isNotEmpty()) {
